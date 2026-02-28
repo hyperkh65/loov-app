@@ -261,7 +261,7 @@ export default function LandingPage() {
           </div>
 
           {/* ── 3D 동물 캐러셀 (오른쪽) ── */}
-          <div className="relative w-full h-[480px] lg:h-[600px]">
+          <div className="relative w-full h-[560px] lg:h-[720px]">
             {/* 아래 글로우 */}
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4/5 h-24 bg-indigo-600/20 rounded-full blur-3xl" />
             <AnimalHero3D />

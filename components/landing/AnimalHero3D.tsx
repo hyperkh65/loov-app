@@ -3,23 +3,35 @@
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { SkeletonUtils } from 'three-stdlib';
-import { Suspense, useRef, useState, useMemo } from 'react';
+import { Suspense, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 
-// ── 캐릭터 목록 ─────────────────────────────────────
+// ── 10명 캐릭터 ─────────────────────────────────────
+// 2줄 × 5열 배치
 const CHARACTERS = [
-  { path: '/models/cat-new.glb',   label: 'AI 마케터',   role: '마케팅·SNS·콘텐츠', color: '#6366f1' },
-  { path: '/models/tiger-new.glb', label: 'AI 영업팀장', role: '영업·전략·CRM',     color: '#f59e0b' },
-  { path: '/models/fox-new.glb',   label: 'AI 개발자',   role: '개발·자동화·API',   color: '#10b981' },
-  { path: '/models/dog-new.glb',   label: 'AI 회계팀장', role: '회계·세무·정산',    color: '#3b82f6' },
+  // 윗줄 (row 0)
+  { path: '/models/cat-new.glb',      label: 'AI 마케터',   role: '마케팅·SNS·콘텐츠' },
+  { path: '/models/tiger-new.glb',    label: 'AI 영업팀장', role: '영업·전략·CRM'     },
+  { path: '/models/fox-new.glb',      label: 'AI 개발자',   role: '개발·자동화·API'   },
+  { path: '/models/dog-new.glb',      label: 'AI 회계팀장', role: '회계·세무·정산'    },
+  { path: '/models/wolf-new.glb',     label: 'AI 전략가',   role: '전략·기획·분석'    },
+  // 아랫줄 (row 1)
+  { path: '/models/penguin-new.glb',  label: 'AI HR매니저', role: '인사·채용·교육'    },
+  { path: '/models/bunny-new.glb',    label: 'AI 디자이너', role: '디자인·브랜딩·UI'  },
+  { path: '/models/elephant-new.glb', label: 'AI 고객지원', role: 'CS·상담·피드백'    },
+  { path: '/models/owl-new.glb',      label: 'AI 법무팀장', role: '법무·계약·규정'    },
+  { path: '/models/otter-new.glb',    label: 'AI 홍보팀장', role: '홍보·PR·커뮤니티'  },
 ];
 
 CHARACTERS.forEach(c => useGLTF.preload(c.path));
 
-const N       = CHARACTERS.length;
-const SPACING = 3.2;           // 캐릭터 간격
-const TOTAL   = N * SPACING;   // 전체 루프 폭
-const SPEED   = 1.4;           // 이동 속도 (units/s)
+// ── 그리드 파라미터 ──────────────────────────────────
+const COLS    = 5;
+const X_GAP   = 3.0;   // 열 간격
+const Y_GAP   = 3.6;   // 행 간격
+const X_START = -((COLS - 1) / 2) * X_GAP;   // -6
+const Y_TOP   =  Y_GAP / 2;                   // 상단 행 y
+const Y_BOT   = -Y_GAP / 2;                   // 하단 행 y
 
 // ── A포즈 ────────────────────────────────────────────
 const AQL = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI / 4));
@@ -33,31 +45,28 @@ interface BD {
 }
 
 function ampFor(n: string): [number, number, number] {
-  if (/head/.test(n))                                 return [0.14, 0.22, 0.09];
-  if (/neck/.test(n))                                 return [0.08, 0.12, 0.06];
-  if (/spine|chest|torso/.test(n))                    return [0.06, 0.05, 0.05];
-  if (/shoulder|upper.?arm|arm.?upper/.test(n))       return [0.28, 0.14, 0.34];
-  if (/forearm|lower.?arm|arm.?lower|elbow/.test(n))  return [0.22, 0.08, 0.28];
-  if (/hand|wrist/.test(n))                           return [0.18, 0.22, 0.16];
-  if (/finger|thumb|index|middle|ring|pinky/.test(n)) return [0.14, 0.07, 0.11];
-  if (/thigh|upleg|upper.?leg/.test(n))               return [0.07, 0.04, 0.05];
-  if (/shin|calf|lower.?leg|knee/.test(n))            return [0.04, 0.02, 0.03];
-  if (/foot|ankle/.test(n))                           return [0.09, 0.06, 0.08];
-  if (/tail/.test(n))                                 return [0.32, 0.50, 0.28];
-  if (/ear/.test(n))                                  return [0.13, 0.09, 0.16];
+  if (/head/.test(n))                                 return [0.12, 0.18, 0.08];
+  if (/neck/.test(n))                                 return [0.07, 0.10, 0.05];
+  if (/spine|chest|torso/.test(n))                    return [0.05, 0.04, 0.04];
+  if (/shoulder|upper.?arm|arm.?upper/.test(n))       return [0.24, 0.12, 0.28];
+  if (/forearm|lower.?arm|arm.?lower|elbow/.test(n))  return [0.18, 0.07, 0.22];
+  if (/hand|wrist/.test(n))                           return [0.15, 0.18, 0.13];
+  if (/finger|thumb|index|middle|ring|pinky/.test(n)) return [0.10, 0.06, 0.09];
+  if (/thigh|upleg|upper.?leg/.test(n))               return [0.06, 0.03, 0.04];
+  if (/shin|calf|lower.?leg|knee/.test(n))            return [0.03, 0.02, 0.02];
+  if (/foot|ankle/.test(n))                           return [0.07, 0.05, 0.06];
+  if (/tail/.test(n))                                 return [0.28, 0.44, 0.24];
+  if (/ear/.test(n))                                  return [0.11, 0.08, 0.13];
   return [0.02, 0.02, 0.02];
 }
 
-// ── 캐릭터 메시 ─────────────────────────────────────
-// posRef: 공유 positions 배열 ref, charIdx: 자신의 인덱스
-function CharMesh({
-  path, charIdx, posRef, phase,
+// ── 단일 캐릭터 ──────────────────────────────────────
+function Character({
+  path, posX, posY, phase,
 }: {
-  path: string; charIdx: number;
-  posRef: React.MutableRefObject<number[]>;
-  phase: number;
+  path: string; posX: number; posY: number; phase: number;
 }) {
-  const groupRef = useRef<THREE.Group>(null!);
+  const ref = useRef<THREE.Group>(null!);
   const { scene } = useGLTF(path);
 
   const { clone, s, bones } = useMemo(() => {
@@ -65,7 +74,7 @@ function CharMesh({
     const box = new THREE.Box3().setFromObject(c);
     const cen = new THREE.Vector3(), sz = new THREE.Vector3();
     box.getCenter(cen); box.getSize(sz);
-    const scale = 2.8 / (Math.max(sz.x, sz.y, sz.z) || 1);
+    const scale = 2.6 / (Math.max(sz.x, sz.y, sz.z) || 1);
     c.position.set(-cen.x * scale, -cen.y * scale, -cen.z * scale);
 
     const bd: BD[] = [];
@@ -93,24 +102,9 @@ function CharMesh({
   const tq = useRef(new THREE.Quaternion());
 
   useFrame(({ clock }) => {
-    if (!groupRef.current) return;
+    if (!ref.current) return;
     const t = clock.elapsedTime;
-    const x = posRef.current[charIdx];
-
-    // 위치
-    groupRef.current.position.x = x;
-    groupRef.current.position.y = Math.sin(t * 0.7 + phase) * 0.07;
-
-    // 가운데일수록 크게: 가우시안 스케일
-    const sigma = SPACING * 0.9;
-    const g = Math.exp(-0.5 * (x * x) / (sigma * sigma));
-    const sc = 0.70 + g * 0.52;   // 0.70(양쪽) ~ 1.22(중앙)
-    groupRef.current.scale.setScalar(sc);
-
-    // 가운데가 앞으로 살짝 튀어나옴
-    groupRef.current.position.z = g * 1.0;
-
-    // 본 애니메이션
+    ref.current.position.y = posY + Math.sin(t * 0.65 + phase) * 0.055;
     for (const b of bones) {
       te.current.set(
         Math.sin(t * b.fx + b.px) * b.ax,
@@ -123,7 +117,7 @@ function CharMesh({
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={ref} position={[posX, posY, 0]}>
       <group scale={s}>
         <primitive object={clone} />
       </group>
@@ -131,96 +125,43 @@ function CharMesh({
   );
 }
 
-// ── 스크롤 컨트롤러 ──────────────────────────────────
-function ScrollController({
-  posRef,
-  onCenter,
-}: {
-  posRef: React.MutableRefObject<number[]>;
-  onCenter: (i: number) => void;
-}) {
-  const lastCenter = useRef(-1);
-  const tick = useRef(0);
-  const edge = TOTAL / 2 + SPACING * 0.55;
-
-  useFrame((_, delta) => {
-    // 모두 왼쪽으로 이동 + 루프
-    for (let i = 0; i < N; i++) {
-      posRef.current[i] -= delta * SPEED;
-      if (posRef.current[i] < -edge) posRef.current[i] += TOTAL;
-    }
-
-    // 10프레임마다 가운데 캐릭터 확인
-    if (++tick.current % 10 !== 0) return;
-    let minD = Infinity, ci = 0;
-    for (let i = 0; i < N; i++) {
-      const d = Math.abs(posRef.current[i]);
-      if (d < minD) { minD = d; ci = i; }
-    }
-    if (ci !== lastCenter.current) { lastCenter.current = ci; onCenter(ci); }
-  });
-
-  return null;
+function Spinner() {
+  const r = useRef<THREE.Mesh>(null!);
+  useFrame(({ clock }) => { if (r.current) r.current.rotation.y = clock.elapsedTime * 2; });
+  return <mesh ref={r}><octahedronGeometry args={[0.3, 0]} /><meshStandardMaterial color="#4f46e5" wireframe /></mesh>;
 }
 
 // ── 메인 ────────────────────────────────────────────
 export default function AnimalHero3D() {
-  // 초기 위치: 화면 중앙 기준으로 퍼뜨림
-  const posRef = useRef<number[]>(
-    CHARACTERS.map((_, i) => (i - (N - 1) / 2) * SPACING)
-  );
-  const [centerIdx, setCenterIdx] = useState(0);
-  const char = CHARACTERS[centerIdx];
-
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <Canvas
+      camera={{ position: [0, 0, 13.5], fov: 68 }}
+      gl={{ antialias: true, alpha: true }}
+      dpr={[1, 1.5]}
+      style={{ width: '100%', height: '100%' }}
+    >
+      <ambientLight intensity={2.6} />
+      <directionalLight position={[5, 10, 7]}  intensity={2.0} />
+      <directionalLight position={[-5, 3, -3]} intensity={0.6} color="#ffe4cc" />
+      <pointLight position={[0, 3, 6]}  intensity={0.8} color="#818cf8" />
+      <pointLight position={[0, -1, 4]} intensity={0.4} color="#fbbf24" />
 
-      <Canvas
-        camera={{ position: [0, 0.6, 10], fov: 64 }}
-        gl={{ antialias: true, alpha: true }}
-        dpr={[1, 1.5]}
-        style={{ width: '100%', height: '100%' }}
-      >
-        <ambientLight intensity={2.5} />
-        <directionalLight position={[4, 8, 6]}  intensity={2.2} />
-        <directionalLight position={[-4, 3, -3]} intensity={0.7} color="#ffe4cc" />
-        <pointLight position={[0, 2, 5]} intensity={0.9} color="#818cf8" />
-
-        <ScrollController posRef={posRef} onCenter={setCenterIdx} />
-
-        {CHARACTERS.map((c, i) => (
-          <Suspense key={c.path} fallback={null}>
-            <CharMesh
+      {CHARACTERS.map((c, i) => {
+        const col = i % COLS;
+        const row = Math.floor(i / COLS);
+        const posX = X_START + col * X_GAP;
+        const posY = row === 0 ? Y_TOP : Y_BOT;
+        return (
+          <Suspense key={c.path} fallback={<group position={[posX, posY, 0]}><Spinner /></group>}>
+            <Character
               path={c.path}
-              charIdx={i}
-              posRef={posRef}
-              phase={i * 1.57}
+              posX={posX}
+              posY={posY}
+              phase={i * 0.63}
             />
           </Suspense>
-        ))}
-      </Canvas>
-
-      {/* 가운데 캐릭터 이름 태그 */}
-      <div
-        key={centerIdx}
-        style={{
-          position: 'absolute', bottom: 20, left: '50%',
-          transform: 'translateX(-50%)',
-          background: `${char.color}e0`,
-          borderRadius: 14, padding: '8px 24px', textAlign: 'center',
-          backdropFilter: 'blur(8px)', whiteSpace: 'nowrap',
-          animation: 'fadeIn 0.4s ease',
-        }}
-      >
-        <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', fontFamily: '-apple-system,sans-serif' }}>
-          {char.label}
-        </div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.82)', marginTop: 2, fontFamily: '-apple-system,sans-serif' }}>
-          {char.role}
-        </div>
-      </div>
-
-      <style>{`@keyframes fadeIn { from { opacity:0; transform:translateX(-50%) translateY(6px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }`}</style>
-    </div>
+        );
+      })}
+    </Canvas>
   );
 }
