@@ -24,7 +24,7 @@ export async function GET(
   };
   if (missingEnv[platform]) {
     return NextResponse.redirect(
-      `${siteUrl}/dashboard/settings?tab=sns&error=${encodeURIComponent('SNS 앱 키가 설정되지 않았습니다. Vercel 환경변수를 등록해 주세요.')}`
+      `${siteUrl}/dashboard/sns?error=${encodeURIComponent('SNS 앱 키가 설정되지 않았습니다. Vercel 환경변수를 등록해 주세요.')}`
     );
   }
 

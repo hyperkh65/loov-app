@@ -12,7 +12,7 @@ export async function GET(
   const state = searchParams.get('state');
   const error = searchParams.get('error');
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://loov.co.kr';
-  const returnUrl = `${siteUrl}/dashboard/settings?tab=sns`;
+  const returnUrl = `${siteUrl}/dashboard/sns`;
 
   if (error) return NextResponse.redirect(`${returnUrl}&error=${encodeURIComponent(error)}`);
   if (!code || !state) return NextResponse.redirect(`${returnUrl}&error=invalid_response`);
