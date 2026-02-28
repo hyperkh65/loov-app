@@ -123,7 +123,7 @@ function Spinner() {
 }
 
 // ── 원형 배치 파라미터 ────────────────────────────────
-const RING_RADIUS = 5.4;
+const RING_RADIUS = 8.0;
 const RING_POSITIONS = CHARACTERS.map((_, i) => {
   // 12시 방향부터 시계 방향으로
   const angle = -Math.PI / 2 + (2 * Math.PI * i) / CHARACTERS.length;
@@ -133,32 +133,11 @@ const RING_POSITIONS = CHARACTERS.map((_, i) => {
   };
 });
 
-// ── 원형 링 장식 ──────────────────────────────────────
-function RingDecoration() {
-  const r = useRef<THREE.Mesh>(null!);
-  useFrame(({ clock }) => {
-    if (!r.current) return;
-    r.current.rotation.z = clock.elapsedTime * 0.08;
-  });
-  return (
-    <mesh ref={r} position={[0, 0, -0.5]}>
-      <torusGeometry args={[RING_RADIUS, 0.04, 8, 80]} />
-      <meshStandardMaterial
-        color="#6366f1"
-        emissive="#4f46e5"
-        emissiveIntensity={0.6}
-        transparent
-        opacity={0.5}
-      />
-    </mesh>
-  );
-}
-
 // ── 메인 ────────────────────────────────────────────
 export default function AnimalHero3D() {
   return (
     <Canvas
-      camera={{ position: [0, 0, 17.5], fov: 64 }}
+      camera={{ position: [0, 0, 22], fov: 68 }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 1.5]}
       style={{ width: '100%', height: '100%' }}
@@ -172,17 +151,15 @@ export default function AnimalHero3D() {
       <pointLight position={[0, 4, 5]} intensity={2.0} color="#ffffff" />
       <pointLight position={[0, -3, 4]} intensity={0.8} color="#c7d2fe" />
 
-      {/* 원형 링 장식 */}
-      <RingDecoration />
-
-      {/* 해치 — 중앙 보스 */}
+      {/* 해치 — 중앙 보스 (rotY로 정면 보정) */}
       <Suspense fallback={<group position={[0, 0, 0]}><Spinner /></group>}>
         <Character
           path="/models/haechi.glb"
           posX={0}
           posY={0}
           phase={0}
-          targetSize={4.0}
+          targetSize={6.0}
+          rotY={Math.PI / 2}
         />
       </Suspense>
 
@@ -196,7 +173,7 @@ export default function AnimalHero3D() {
               posX={x}
               posY={y}
               phase={i * 0.63}
-              targetSize={2.2}
+              targetSize={3.2}
             />
           </Suspense>
         );
