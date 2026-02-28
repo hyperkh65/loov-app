@@ -17,16 +17,34 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), 8000)
+      );
+      const request = supabase.auth.signInWithPassword({ email, password });
+      const { error } = await Promise.race([request, timeout]) as Awaited<typeof request>;
 
-    if (error) {
-      setError(error.message === 'Invalid login credentials'
-        ? '이메일 또는 비밀번호가 올바르지 않습니다.'
-        : error.message);
-      setLoading(false);
-    } else {
-      router.push('/dashboard');
+      if (error) {
+        if (error.message.includes('Email not confirmed')) {
+          setError('이메일 인증이 필요합니다. Supabase 대시보드에서 계정을 수동 확인해 주세요.');
+        } else if (error.message === 'Invalid login credentials') {
+          setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+        } else {
+          setError(`오류: ${error.message}`);
+        }
+      } else {
+        router.push('/dashboard');
+        return;
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg === 'TIMEOUT') {
+        setError('서버 응답 없음. Supabase 프로젝트가 일시정지 상태일 수 있습니다.\nsupabase.com/dashboard 에서 프로젝트를 재개해 주세요.');
+      } else {
+        setError(`연결 오류: ${msg}`);
+      }
     }
+    setLoading(false);
   };
 
   return (
