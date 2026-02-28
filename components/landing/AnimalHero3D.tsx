@@ -65,32 +65,87 @@ function pickRandom(arr: string[]) {
 
 useGLTF.preload('/models/cat-hero.glb');
 
-const TARGET_HEIGHT = 2.0; // 전체 바운딩박스 기준 높이
+const TARGET_SIZE = 2.0;
+
+// 본 이름 패턴 → 애니메이션 설정
+interface BoneAnim {
+  bone: THREE.Bone;
+  initQ: THREE.Quaternion;
+  rx: number; ry: number; rz: number; // 진폭 (라디안)
+  fx: number; fy: number; fz: number; // 주파수
+  px: number; py: number; pz: number; // 위상
+}
+
+function matchesBone(name: string, ...keywords: string[]) {
+  const n = name.toLowerCase();
+  return keywords.some((k) => n.includes(k));
+}
 
 function CatHero() {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene, animations } = useGLTF('/models/cat-hero.glb');
 
-  const { clone, scale } = useMemo(() => {
+  const { clone, scale, boneAnims } = useMemo(() => {
     const c = scene.clone(true);
     const box = new THREE.Box3().setFromObject(c);
     const center = new THREE.Vector3();
     const size = new THREE.Vector3();
     box.getCenter(center);
     box.getSize(size);
-    // 바운딩박스 전체를 원점 기준으로 정렬 (발 아닌 중심 기준)
     c.position.set(-center.x, -center.y, -center.z);
-    const s = TARGET_HEIGHT / (Math.max(size.y, size.x, size.z) || 1);
-    return { clone: c, scale: s };
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const s = TARGET_SIZE / maxDim;
+
+    // 본 수집 및 애니메이션 설정 할당
+    const anims: BoneAnim[] = [];
+    c.traverse((obj) => {
+      if (!(obj instanceof THREE.Bone)) return;
+      const n = obj.name;
+      const initQ = obj.quaternion.clone();
+      let cfg: Omit<BoneAnim, 'bone' | 'initQ'> | null = null;
+
+      if (matchesBone(n, 'head')) {
+        cfg = { rx: 0.08, ry: 0.12, rz: 0.04, fx: 0.4, fy: 0.3, fz: 0.5, px: 0, py: 1.2, pz: 2.1 };
+      } else if (matchesBone(n, 'neck')) {
+        cfg = { rx: 0.05, ry: 0.06, rz: 0.02, fx: 0.4, fy: 0.3, fz: 0.5, px: 0.3, py: 1.0, pz: 1.8 };
+      } else if (matchesBone(n, 'spine', 'chest', 'torso')) {
+        cfg = { rx: 0.04, ry: 0.05, rz: 0.03, fx: 0.35, fy: 0.28, fz: 0.4, px: 0.5, py: 0.8, pz: 1.5 };
+      } else if (matchesBone(n, 'shoulder', 'upperarm', 'upper_arm', 'uparm', 'arm_l', 'arm_r', 'leftarm', 'rightarm')) {
+        const isLeft = /left|_l\b|\.l\b/i.test(n);
+        cfg = { rx: 0.10, ry: 0.08, rz: isLeft ? 0.12 : -0.12, fx: 0.5, fy: 0.4, fz: 0.45, px: isLeft ? 0 : 1.5, py: isLeft ? 0.7 : 2.2, pz: isLeft ? 0.5 : 0.3 };
+      } else if (matchesBone(n, 'forearm', 'lowerarm', 'lower_arm', 'elbow')) {
+        cfg = { rx: 0.06, ry: 0.04, rz: 0.08, fx: 0.55, fy: 0.35, fz: 0.5, px: 0.8, py: 1.4, pz: 0.6 };
+      } else if (matchesBone(n, 'hand', 'wrist')) {
+        cfg = { rx: 0.08, ry: 0.10, rz: 0.06, fx: 0.7, fy: 0.6, fz: 0.65, px: 1.0, py: 0.5, pz: 1.8 };
+      } else if (matchesBone(n, 'finger', 'thumb', 'index', 'middle', 'ring', 'pinky')) {
+        cfg = { rx: 0.06, ry: 0.03, rz: 0.04, fx: 0.9, fy: 0.7, fz: 0.8, px: Math.random() * 3, py: Math.random() * 3, pz: Math.random() * 3 };
+      } else if (matchesBone(n, 'thigh', 'upleg', 'upper_leg', 'hip')) {
+        cfg = { rx: 0.04, ry: 0.03, rz: 0.02, fx: 0.3, fy: 0.25, fz: 0.35, px: 1.2, py: 0.6, pz: 2.0 };
+      } else if (matchesBone(n, 'shin', 'lowerleg', 'lower_leg', 'calf', 'knee')) {
+        cfg = { rx: 0.03, ry: 0.02, rz: 0.02, fx: 0.3, fy: 0.25, fz: 0.35, px: 1.5, py: 1.0, pz: 0.8 };
+      } else if (matchesBone(n, 'foot', 'ankle')) {
+        cfg = { rx: 0.05, ry: 0.03, rz: 0.04, fx: 0.4, fy: 0.3, fz: 0.45, px: 0.4, py: 1.8, pz: 0.9 };
+      } else if (matchesBone(n, 'tail')) {
+        cfg = { rx: 0.15, ry: 0.20, rz: 0.10, fx: 0.6, fy: 0.5, fz: 0.55, px: 0, py: 0.4, pz: 1.0 };
+      } else if (matchesBone(n, 'ear')) {
+        cfg = { rx: 0.06, ry: 0.04, rz: 0.08, fx: 0.8, fy: 0.6, fz: 0.7, px: 0.2, py: 1.6, pz: 0.5 };
+      }
+
+      if (cfg) anims.push({ bone: obj, initQ, ...cfg });
+    });
+
+    return { clone: c, scale: s, boneAnims: anims };
   }, [scene]);
 
+  // 내장 애니메이션 있으면 재생 (없으면 procedural 사용)
   const { actions, names } = useAnimations(animations, groupRef);
+  const hasAnimation = names.length > 0;
   useEffect(() => {
-    if (!names.length) return;
+    if (!hasAnimation) return;
     const idleName = names.find((n) => /idle/i.test(n)) ?? names[0];
     actions[idleName]?.reset().fadeIn(0.4).play();
     return () => { actions[idleName]?.fadeOut(0.3); };
-  }, [actions, names]);
+  }, [actions, names, hasAnimation]);
 
   // 말풍선
   const [greeting, setGreeting] = useState(() => pickRandom(GREETINGS));
@@ -98,23 +153,37 @@ function CatHero() {
   useEffect(() => {
     const iv = setInterval(() => {
       setFade(false);
-      setTimeout(() => {
-        setGreeting(pickRandom(GREETINGS));
-        setFade(true);
-      }, 300);
+      setTimeout(() => { setGreeting(pickRandom(GREETINGS)); setFade(true); }, 300);
     }, 3500);
     return () => clearInterval(iv);
   }, []);
 
-  // 천천히 Y 회전 + 둥실
+  const euler = useMemo(() => new THREE.Euler(), []);
+  const qDelta = useMemo(() => new THREE.Quaternion(), []);
+
   useFrame(({ clock }) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y = clock.elapsedTime * 0.35;
-      groupRef.current.position.y = Math.sin(clock.elapsedTime * 1.1) * 0.06;
+    if (!groupRef.current) return;
+    const t = clock.elapsedTime;
+
+    // 그룹 전체: 천천히 Y 회전 + 둥실
+    groupRef.current.rotation.y = t * 0.3;
+    groupRef.current.position.y = Math.sin(t * 1.0) * 0.05;
+
+    // 내장 애니메이션 없을 때 → procedural bone animation
+    if (!hasAnimation) {
+      for (const a of boneAnims) {
+        euler.set(
+          Math.sin(t * a.fx + a.px) * a.rx,
+          Math.sin(t * a.fy + a.py) * a.ry,
+          Math.sin(t * a.fz + a.pz) * a.rz,
+        );
+        qDelta.setFromEuler(euler);
+        a.bone.quaternion.copy(a.initQ).multiply(qDelta);
+      }
     }
   });
 
-  const halfH = TARGET_HEIGHT * 0.5;
+  const halfH = TARGET_SIZE * 0.5;
 
   return (
     <group ref={groupRef}>
@@ -123,7 +192,7 @@ function CatHero() {
       </group>
 
       {/* 말풍선 */}
-      <Html position={[0, halfH + 0.4, 0]} center zIndexRange={[100, 0]}>
+      <Html position={[0, halfH + 0.3, 0]} center zIndexRange={[100, 0]}>
         <div style={{
           opacity: fade ? 1 : 0,
           transition: 'opacity 0.3s ease',
@@ -202,7 +271,7 @@ function Lights() {
 export default function AnimalHero3D() {
   return (
     <Canvas
-      camera={{ position: [0, 0, 4.5], fov: 55 }}
+      camera={{ position: [0, 0, 3.2], fov: 60 }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 1.5]}
       style={{ width: '100%', height: '100%' }}
