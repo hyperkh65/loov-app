@@ -176,17 +176,22 @@ function FoxCharacter({
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
   const { s, cx, cy, cz } = useMemo(() => {
-    // UV맵이 달라 GLB 재질 이식 불가 → 단색 재질로 직접 칠하기
-    const bodyMat = new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.75, metalness: 0.05 });
-    const suitMat = new THREE.MeshStandardMaterial({ color: '#2d3a5c', roughness: 0.65, metalness: 0.1  });
-
-    const meshes: THREE.Mesh[] = [];
-    fbx.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
-
-    meshes.forEach((m, i) => {
-      // 첫 번째 메시(몸통/피부)는 밝은 회색, 나머지(옷 등)는 네이비
-      m.material = i === 0 ? bodyMat : suitMat;
+    // FBX 메시마다 material 슬롯 수에 맞게 단색 재질 적용
+    const colors = ['#7c8694', '#2d3a5c', '#c8a97a', '#1e293b'];
+    let meshIdx = 0;
+    fbx.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const slots = Array.isArray(m.material) ? m.material.length : 1;
+      const mats = Array.from({ length: slots }, (_, si) =>
+        new THREE.MeshStandardMaterial({
+          color: colors[(meshIdx + si) % colors.length],
+          roughness: 0.72, metalness: 0.06,
+        })
+      );
+      m.material = mats.length === 1 ? mats[0] : mats;
       m.castShadow = true;
+      meshIdx++;
     });
 
     const box = new THREE.Box3().setFromObject(fbx);
