@@ -1,36 +1,27 @@
 'use client';
 
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Html, useGLTF } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import { SkeletonUtils } from 'three-stdlib';
-import { Suspense, useRef, useState, useEffect, useMemo } from 'react';
+import { Suspense, useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 
-// ── 캐릭터 데이터 ────────────────────────────────────
+// ── 캐릭터 목록 (나중에 여기만 추가하면 됨) ──────────
 const CHARACTERS = [
-  { path: '/models/cat-new.glb',   label: 'AI 마케터',   role: '마케팅·SNS·콘텐츠' },
-  { path: '/models/tiger-new.glb', label: 'AI 영업팀장', role: '영업·전략·CRM'     },
-  { path: '/models/fox-new.glb',   label: 'AI 개발자',   role: '개발·자동화·API'   },
-  { path: '/models/dog-new.glb',   label: 'AI 회계팀장', role: '회계·세무·정산'    },
+  { path: '/models/cat-new.glb',   label: 'AI 마케터',   role: '마케팅·SNS·콘텐츠', color: '#6366f1' },
+  { path: '/models/tiger-new.glb', label: 'AI 영업팀장', role: '영업·전략·CRM',     color: '#f59e0b' },
+  { path: '/models/fox-new.glb',   label: 'AI 개발자',   role: '개발·자동화·API',   color: '#10b981' },
+  { path: '/models/dog-new.glb',   label: 'AI 회계팀장', role: '회계·세무·정산',    color: '#3b82f6' },
 ];
-
-const GREETINGS = [
-  '안녕하세요! 오늘도 파이팅! 💪', '좋은 아침이에요, 대표님!', '오늘 업무 준비 완료! 🎯',
-  '뭘 도와드릴까요? 😊', '보고서 다 써놨어요! 📋', '신규 리드 발굴했어요! 🎉',
-  '계약 성사됐습니다! 🎊', '정산 완료했어요 💰', '캠페인 성과가 좋아요! 🚀',
-  '화이팅입니다 대표님! 💪', '오늘도 대박 나요! 💫', '수익이 늘고 있어요! 📈',
-];
-const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 
 CHARACTERS.forEach(c => useGLTF.preload(c.path));
 
-// ── A포즈 쿼터니언 ──────────────────────────────────
+// ── A포즈 ───────────────────────────────────────────
 const AQL = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI / 4));
 const AQR = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0,  Math.PI / 4));
 
 interface BD {
-  bone: THREE.Bone;
-  iq: THREE.Quaternion;
+  bone: THREE.Bone; iq: THREE.Quaternion;
   ax: number; ay: number; az: number;
   fx: number; fy: number; fz: number;
   px: number; py: number; pz: number;
@@ -52,13 +43,8 @@ function amp(n: string): [number, number, number] {
   return [0.02, 0.02, 0.02];
 }
 
-// ── 단일 캐릭터 (회전 링 위) ─────────────────────────
-function Character({
-  path, label, role, angle, ringRadius, active, phase,
-}: {
-  path: string; label: string; role: string;
-  angle: number; ringRadius: number; active: boolean; phase: number;
-}) {
+// ── 3D 캐릭터 (크게, 중앙) ──────────────────────────
+function BigCharacter({ path }: { path: string }) {
   const ref = useRef<THREE.Group>(null!);
   const { scene } = useGLTF(path);
 
@@ -67,7 +53,7 @@ function Character({
     const box = new THREE.Box3().setFromObject(c);
     const cen = new THREE.Vector3(), sz = new THREE.Vector3();
     box.getCenter(cen); box.getSize(sz);
-    const scale = 2.2 / (Math.max(sz.x, sz.y, sz.z) || 1);
+    const scale = 3.6 / (Math.max(sz.x, sz.y, sz.z) || 1);
     c.position.set(-cen.x * scale, -cen.y * scale, -cen.z * scale);
 
     const bd: BD[] = [];
@@ -91,34 +77,13 @@ function Character({
     return { clone: c, s: scale, bones: bd };
   }, [scene]);
 
-  // 말풍선 (active일 때만)
-  const [txt, setTxt] = useState(() => pick(GREETINGS));
-  const [fade, setFade] = useState(true);
-  useEffect(() => {
-    if (!active) return;
-    const iv = setInterval(() => {
-      setFade(false);
-      setTimeout(() => { setTxt(pick(GREETINGS)); setFade(true); }, 280);
-    }, 3200);
-    return () => clearInterval(iv);
-  }, [active]);
-
   const te = useRef(new THREE.Euler());
   const tq = useRef(new THREE.Quaternion());
 
   useFrame(({ clock }) => {
     if (!ref.current) return;
     const t = clock.elapsedTime;
-
-    // 링 위 위치 (angle은 외부에서 조절)
-    const x = Math.sin(angle) * ringRadius;
-    const z = Math.cos(angle) * ringRadius;
-    ref.current.position.set(x, Math.sin(t * 0.8 + phase) * 0.06, z);
-
-    // 항상 카메라 쪽을 바라봄
-    ref.current.rotation.y = angle;
-
-    // 본 애니메이션
+    ref.current.position.y = Math.sin(t * 0.7) * 0.07;
     for (const b of bones) {
       te.current.set(
         Math.sin(t * b.fx + b.px) * b.ax,
@@ -135,107 +100,120 @@ function Character({
       <group scale={s}>
         <primitive object={clone} />
       </group>
-
-      {/* 말풍선 — active(앞쪽) 캐릭터만 */}
-      {active && (
-        <Html position={[0, 2.8 / s * s, 0]} center zIndexRange={[100, 0]}>
-          <div style={{
-            opacity: fade ? 1 : 0, transition: 'opacity 0.28s',
-            background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(8px)',
-            borderRadius: '14px', padding: '8px 16px', fontSize: '13px', fontWeight: 700,
-            color: '#0f172a', whiteSpace: 'nowrap', boxShadow: '0 4px 24px rgba(0,0,0,0.2)',
-            fontFamily: '-apple-system,sans-serif', position: 'relative', textAlign: 'center',
-          }}>
-            {txt}
-            <div style={{
-              position: 'absolute', bottom: -7, left: '50%', transform: 'translateX(-50%)',
-              borderLeft: '7px solid transparent', borderRight: '7px solid transparent',
-              borderTop: '7px solid rgba(255,255,255,0.97)',
-            }} />
-          </div>
-        </Html>
-      )}
-
-      {/* 이름 태그 — 항상 표시 */}
-      <Html position={[0, -2.0, 0]} center zIndexRange={[50, 0]}>
-        <div style={{
-          background: active ? 'rgba(99,102,241,0.95)' : 'rgba(10,14,35,0.75)',
-          border: `1px solid ${active ? 'rgba(129,140,248,0.8)' : 'rgba(99,102,241,0.3)'}`,
-          borderRadius: '10px', padding: '5px 14px', textAlign: 'center',
-          fontFamily: '-apple-system,sans-serif', whiteSpace: 'nowrap',
-          transition: 'all 0.4s',
-          transform: active ? 'scale(1.1)' : 'scale(0.85)',
-        }}>
-          <div style={{ fontSize: '13px', fontWeight: 800, color: '#fff' }}>{label}</div>
-          <div style={{ fontSize: '10px', color: active ? '#c7d2fe' : '#818cf8', marginTop: 1 }}>{role}</div>
-        </div>
-      </Html>
     </group>
   );
 }
 
-function Spinner() {
-  const r = useRef<THREE.Mesh>(null!);
-  useFrame(({ clock }) => { if (r.current) r.current.rotation.y = clock.elapsedTime * 2; });
-  return <mesh ref={r}><octahedronGeometry args={[0.5, 0]} /><meshStandardMaterial color="#4f46e5" wireframe /></mesh>;
-}
-
-// ── 회전 링 씬 ──────────────────────────────────────
-function RotatingRing() {
-  const ringAngle = useRef(0);
-  const [angles, setAngles] = useState(
-    CHARACTERS.map((_, i) => (i / CHARACTERS.length) * Math.PI * 2)
-  );
-  const SPEED = 0.18; // 회전 속도 (rad/s)
-  const RADIUS = 3.2;
-
-  useFrame((_, delta) => {
-    ringAngle.current += delta * SPEED;
-    setAngles(CHARACTERS.map((_, i) =>
-      (i / CHARACTERS.length) * Math.PI * 2 + ringAngle.current
-    ));
-  });
-
-  // 가장 앞쪽(z가 가장 큰) 캐릭터를 active로
-  const activeIdx = angles.reduce((best, a, i) =>
-    Math.cos(a) > Math.cos(angles[best]) ? i : best, 0
-  );
-
-  return (
-    <>
-      {CHARACTERS.map((c, i) => (
-        <Suspense key={c.path} fallback={<Spinner />}>
-          <Character
-            path={c.path}
-            label={c.label}
-            role={c.role}
-            angle={angles[i]}
-            ringRadius={RADIUS}
-            active={i === activeIdx}
-            phase={i * 1.57}
-          />
-        </Suspense>
-      ))}
-    </>
-  );
-}
-
+// ── 메인 슬라이더 ────────────────────────────────────
 export default function AnimalHero3D() {
-  return (
-    <Canvas
-      camera={{ position: [0, 1.5, 9], fov: 55 }}
-      gl={{ antialias: true, alpha: true }}
-      dpr={[1, 1.5]}
-      style={{ width: '100%', height: '100%' }}
-    >
-      <ambientLight intensity={2.5} />
-      <directionalLight position={[4, 8, 6]} intensity={2.2} />
-      <directionalLight position={[-4, 3, -3]} intensity={0.7} color="#ffe4cc" />
-      <pointLight position={[0, 3, 5]} intensity={1.0} color="#818cf8" />
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+  const autoRef = useRef<ReturnType<typeof setInterval>>();
 
-      <Suspense fallback={<Spinner />}>
-        <RotatingRing />
-      </Suspense>
-    </Canvas>
+  const goTo = useCallback((next: number) => {
+    setVisible(false);
+    setTimeout(() => {
+      setIdx(next);
+      setVisible(true);
+    }, 320);
+  }, []);
+
+  const advance = useCallback((dir: number) => {
+    goTo((idx + dir + CHARACTERS.length) % CHARACTERS.length);
+  }, [idx, goTo]);
+
+  // 자동 슬라이드 (3.5초)
+  useEffect(() => {
+    autoRef.current = setInterval(() => advance(1), 3500);
+    return () => clearInterval(autoRef.current);
+  }, [advance]);
+
+  const char = CHARACTERS[idx];
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+
+      {/* 3D 캔버스 */}
+      <div style={{ width: '100%', height: '100%', opacity: visible ? 1 : 0, transition: 'opacity 0.32s ease' }}>
+        <Canvas
+          camera={{ position: [0, 0.5, 5.5], fov: 52 }}
+          gl={{ antialias: true, alpha: true }}
+          dpr={[1, 1.5]}
+          style={{ width: '100%', height: '100%' }}
+        >
+          <ambientLight intensity={2.5} />
+          <directionalLight position={[4, 8, 6]} intensity={2.2} />
+          <directionalLight position={[-4, 3, -3]} intensity={0.7} color="#ffe4cc" />
+          <pointLight position={[0, 2, 4]} intensity={0.9} color="#818cf8" />
+          <Suspense fallback={null}>
+            <BigCharacter key={char.path} path={char.path} />
+          </Suspense>
+        </Canvas>
+      </div>
+
+      {/* 이름 태그 */}
+      <div style={{
+        position: 'absolute', bottom: 52, left: '50%', transform: 'translateX(-50%)',
+        opacity: visible ? 1 : 0, transition: 'opacity 0.32s ease',
+        background: `${char.color}dd`, borderRadius: 14,
+        padding: '9px 26px', textAlign: 'center', backdropFilter: 'blur(8px)',
+        whiteSpace: 'nowrap',
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', fontFamily: '-apple-system,sans-serif' }}>
+          {char.label}
+        </div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.82)', marginTop: 2, fontFamily: '-apple-system,sans-serif' }}>
+          {char.role}
+        </div>
+      </div>
+
+      {/* 왼쪽 화살표 */}
+      <button
+        onClick={() => { clearInterval(autoRef.current); advance(-1); }}
+        style={{
+          position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+          background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
+          borderRadius: '50%', width: 40, height: 40, cursor: 'pointer',
+          color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(6px)', transition: 'background 0.2s',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.22)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+      >‹</button>
+
+      {/* 오른쪽 화살표 */}
+      <button
+        onClick={() => { clearInterval(autoRef.current); advance(1); }}
+        style={{
+          position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+          background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
+          borderRadius: '50%', width: 40, height: 40, cursor: 'pointer',
+          color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(6px)', transition: 'background 0.2s',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.22)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+      >›</button>
+
+      {/* 점 인디케이터 */}
+      <div style={{
+        position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+        display: 'flex', gap: 6, alignItems: 'center',
+      }}>
+        {CHARACTERS.map((c, i) => (
+          <button
+            key={i}
+            onClick={() => { clearInterval(autoRef.current); goTo(i); }}
+            style={{
+              width: i === idx ? 22 : 7, height: 7,
+              borderRadius: 4, border: 'none', cursor: 'pointer',
+              background: i === idx ? char.color : 'rgba(255,255,255,0.28)',
+              transition: 'all 0.3s ease', padding: 0,
+            }}
+          />
+        ))}
+      </div>
+
+    </div>
   );
 }
