@@ -65,7 +65,7 @@ function pickRandom(arr: string[]) {
 
 useGLTF.preload('/models/cat-hero.glb');
 
-const TARGET_HEIGHT = 3.2; // 크게
+const TARGET_HEIGHT = 2.0; // 전체 바운딩박스 기준 높이
 
 function CatHero() {
   const groupRef = useRef<THREE.Group>(null!);
@@ -78,8 +78,9 @@ function CatHero() {
     const size = new THREE.Vector3();
     box.getCenter(center);
     box.getSize(size);
-    c.position.set(-center.x, -box.min.y, -center.z);
-    const s = TARGET_HEIGHT / (size.y || 1);
+    // 바운딩박스 전체를 원점 기준으로 정렬 (발 아닌 중심 기준)
+    c.position.set(-center.x, -center.y, -center.z);
+    const s = TARGET_HEIGHT / (Math.max(size.y, size.x, size.z) || 1);
     return { clone: c, scale: s };
   }, [scene]);
 
@@ -109,9 +110,11 @@ function CatHero() {
   useFrame(({ clock }) => {
     if (groupRef.current) {
       groupRef.current.rotation.y = clock.elapsedTime * 0.35;
-      groupRef.current.position.y = Math.sin(clock.elapsedTime * 1.1) * 0.08;
+      groupRef.current.position.y = Math.sin(clock.elapsedTime * 1.1) * 0.06;
     }
   });
+
+  const halfH = TARGET_HEIGHT * 0.5;
 
   return (
     <group ref={groupRef}>
@@ -120,7 +123,7 @@ function CatHero() {
       </group>
 
       {/* 말풍선 */}
-      <Html position={[0, TARGET_HEIGHT + 0.5, 0]} center zIndexRange={[100, 0]}>
+      <Html position={[0, halfH + 0.4, 0]} center zIndexRange={[100, 0]}>
         <div style={{
           opacity: fade ? 1 : 0,
           transition: 'opacity 0.3s ease',
@@ -154,7 +157,7 @@ function CatHero() {
       </Html>
 
       {/* 이름표 */}
-      <Html position={[0, -0.25, 0]} center zIndexRange={[50, 0]}>
+      <Html position={[0, -halfH - 0.25, 0]} center zIndexRange={[50, 0]}>
         <div style={{
           background: 'rgba(10,14,35,0.90)',
           border: '1px solid rgba(99,102,241,0.5)',
@@ -199,7 +202,7 @@ function Lights() {
 export default function AnimalHero3D() {
   return (
     <Canvas
-      camera={{ position: [0, 1.2, 5.5], fov: 48 }}
+      camera={{ position: [0, 0, 4.5], fov: 55 }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 1.5]}
       style={{ width: '100%', height: '100%' }}
