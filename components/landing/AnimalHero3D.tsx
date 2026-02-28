@@ -1,7 +1,7 @@
 'use client';
 
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Html, useGLTF } from '@react-three/drei';
+import { Html, useGLTF, useFBX } from '@react-three/drei';
 import { SkeletonUtils } from 'three-stdlib';
 import { Suspense, useRef, useState, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
@@ -22,6 +22,7 @@ const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 useGLTF.preload('/models/cat-hero.glb');
 useGLTF.preload('/models/tiger-hero.glb');
 useGLTF.preload('/models/fox-hero.glb');
+useFBX.preload('/models/fox-dance.fbx');
 
 // ── A포즈 쿼터니언 ──────────────────────────────────
 const AQL = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI / 4));
@@ -166,6 +167,98 @@ function Character({
   );
 }
 
+// ── 여우 캐릭터 (FBX 애니메이션) ────────────────────
+function FoxCharacter({
+  posX, label, role, fp = 0,
+}: { posX: number; label: string; role: string; fp?: number }) {
+  const ref = useRef<THREE.Group>(null!);
+  const { scene } = useGLTF('/models/fox-hero.glb');
+  const fbx = useFBX('/models/fox-dance.fbx');
+
+  const clone = useMemo(() => {
+    const c = SkeletonUtils.clone(scene) as THREE.Group;
+    const box = new THREE.Box3().setFromObject(c);
+    const cen = new THREE.Vector3(), sz = new THREE.Vector3();
+    box.getCenter(cen); box.getSize(sz);
+    const scale = 1.4 / (Math.max(sz.x, sz.y, sz.z) || 1);
+    c.position.set(-cen.x, -cen.y, -cen.z);
+    (c as any).__scale = scale;
+    return c;
+  }, [scene]);
+
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+
+  useEffect(() => {
+    if (!fbx.animations?.length) return;
+    const mixer = new THREE.AnimationMixer(clone);
+    mixerRef.current = mixer;
+    // FBX 클립의 트랙 이름에서 "mixamorig:" 접두사 제거 (GLB 본 이름과 매칭)
+    const clip = fbx.animations[0].clone();
+    clip.tracks.forEach((track) => {
+      track.name = track.name.replace(/^mixamorig:/i, '');
+    });
+    const action = mixer.clipAction(clip);
+    action.play();
+    return () => { mixer.stopAllAction(); mixer.uncacheRoot(clone); };
+  }, [clone, fbx]);
+
+  // 말풍선
+  const [txt, setTxt] = useState(() => pick(GREETINGS));
+  const [fade, setFade] = useState(true);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setFade(false);
+      setTimeout(() => { setTxt(pick(GREETINGS)); setFade(true); }, 280);
+    }, 3400 + fp * 700);
+    return () => clearInterval(iv);
+  }, [fp]);
+
+  useFrame((_, delta) => {
+    mixerRef.current?.update(delta);
+    if (ref.current) {
+      ref.current.position.y = Math.sin(Date.now() * 0.001 * 0.75 + fp) * 0.05;
+    }
+  });
+
+  const s = (clone as any).__scale ?? 1;
+
+  return (
+    <group ref={ref} position={[posX, 0, 0]}>
+      <group scale={s} rotation={[0, -Math.PI / 2, 0]}>
+        <primitive object={clone} />
+      </group>
+
+      <Html position={[0, 0.85, 0]} center zIndexRange={[100, 0]}>
+        <div style={{
+          opacity: fade ? 1 : 0, transition: 'opacity 0.28s',
+          background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(8px)',
+          borderRadius: '12px', padding: '6px 13px', fontSize: '11px', fontWeight: 700,
+          color: '#0f172a', whiteSpace: 'nowrap', boxShadow: '0 4px 18px rgba(0,0,0,0.18)',
+          fontFamily: '-apple-system,sans-serif', position: 'relative', textAlign: 'center',
+        }}>
+          {txt}
+          <div style={{
+            position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)',
+            borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+            borderTop: '6px solid rgba(255,255,255,0.97)',
+          }} />
+        </div>
+      </Html>
+
+      <Html position={[0, -0.85, 0]} center zIndexRange={[50, 0]}>
+        <div style={{
+          background: 'rgba(10,14,35,0.9)', border: '1px solid rgba(99,102,241,0.45)',
+          borderRadius: '8px', padding: '4px 11px', textAlign: 'center',
+          fontFamily: '-apple-system,sans-serif', whiteSpace: 'nowrap',
+        }}>
+          <div style={{ fontSize: '11px', fontWeight: 800, color: '#fff' }}>{label}</div>
+          <div style={{ fontSize: '9px', color: '#818cf8', marginTop: 1 }}>{role}</div>
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 function Spinner() {
   const r = useRef<THREE.Mesh>(null!);
   useFrame(({ clock }) => { if (r.current) r.current.rotation.y = clock.elapsedTime * 2; });
@@ -187,7 +280,7 @@ export default function AnimalHero3D() {
         <Character path="/models/tiger-hero.glb" posX={0}    label="AI 영업팀장" role="영업·전략·CRM"     fp={1.5} />
       </Suspense>
       <Suspense fallback={<Spinner />}>
-        <Character path="/models/fox-hero.glb"   posX={2.2}  label="AI 개발자"   role="개발·자동화·API"   fp={3.0} />
+        <FoxCharacter posX={2.2} label="AI 개발자" role="개발·자동화·API" fp={3.0} />
       </Suspense>
     </Canvas>
   );
