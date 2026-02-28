@@ -167,40 +167,34 @@ function Character({
   );
 }
 
-// ── 여우 캐릭터 (FBX 애니메이션) ────────────────────
+// ── 여우 캐릭터 (FBX 직접 사용) ─────────────────────
 function FoxCharacter({
   posX, label, role, fp = 0,
 }: { posX: number; label: string; role: string; fp?: number }) {
   const ref = useRef<THREE.Group>(null!);
-  const { scene } = useGLTF('/models/fox-hero.glb');
+  // FBX 자체 스켈레톤+애니메이션을 그대로 사용 (retargeting 없음)
   const fbx = useFBX('/models/fox-dance.fbx');
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
-  const clone = useMemo(() => {
-    const c = SkeletonUtils.clone(scene) as THREE.Group;
-    const box = new THREE.Box3().setFromObject(c);
+  const { s, cx, cy, cz } = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(fbx);
     const cen = new THREE.Vector3(), sz = new THREE.Vector3();
     box.getCenter(cen); box.getSize(sz);
-    const scale = 1.4 / (Math.max(sz.x, sz.y, sz.z) || 1);
-    c.position.set(-cen.x, -cen.y, -cen.z);
-    (c as any).__scale = scale;
-    return c;
-  }, [scene]);
-
-  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+    return {
+      s: 1.4 / (Math.max(sz.x, sz.y, sz.z) || 1),
+      cx: cen.x, cy: cen.y, cz: cen.z,
+    };
+  }, [fbx]);
 
   useEffect(() => {
     if (!fbx.animations?.length) return;
-    const mixer = new THREE.AnimationMixer(clone);
+    // fbx 객체 자체에 mixer 연결 — 스켈레톤이 이미 맞음
+    const mixer = new THREE.AnimationMixer(fbx);
     mixerRef.current = mixer;
-    // FBX 클립의 트랙 이름에서 "mixamorig:" 접두사 제거 (GLB 본 이름과 매칭)
-    const clip = fbx.animations[0].clone();
-    clip.tracks.forEach((track) => {
-      track.name = track.name.replace(/^mixamorig:/i, '');
-    });
-    const action = mixer.clipAction(clip);
+    const action = mixer.clipAction(fbx.animations[0]);
     action.play();
-    return () => { mixer.stopAllAction(); mixer.uncacheRoot(clone); };
-  }, [clone, fbx]);
+    return () => { mixer.stopAllAction(); };
+  }, [fbx]);
 
   // 말풍선
   const [txt, setTxt] = useState(() => pick(GREETINGS));
@@ -220,12 +214,10 @@ function FoxCharacter({
     }
   });
 
-  const s = (clone as any).__scale ?? 1;
-
   return (
     <group ref={ref} position={[posX, 0, 0]}>
-      <group scale={s} rotation={[0, -Math.PI / 2, 0]}>
-        <primitive object={clone} />
+      <group scale={s} rotation={[0, -Math.PI / 2, 0]} position={[-cx, -cy, -cz]}>
+        <primitive object={fbx} />
       </group>
 
       <Html position={[0, 0.85, 0]} center zIndexRange={[100, 0]}>
