@@ -1,12 +1,39 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { AIProvider, AI_PROVIDER_INFO, SUBSCRIPTION_PLANS, SubscriptionTier, ANIMAL_EMOJI } from '@/lib/types';
 
+const PLATFORM_INFO: Record<string, { label: string; icon: string; color: string }> = {
+  twitter:  { label: '트위터/X',  icon: '🐦', color: 'from-blue-400 to-blue-600' },
+  threads:  { label: '스레드',    icon: '🧵', color: 'from-gray-700 to-black' },
+  facebook: { label: '페이스북',  icon: '📘', color: 'from-blue-500 to-blue-700' },
+};
+
+interface SNSConnection {
+  platform: string;
+  platform_username: string;
+  platform_display_name: string;
+  platform_avatar: string | null;
+  is_active: boolean;
+}
+
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns'>('ai');
+  const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
+
+  useEffect(() => {
+    if (activeTab === 'sns') {
+      fetch('/api/sns/connections').then((r) => r.ok ? r.json() : []).then(setSnsConnections);
+    }
+  }, [activeTab]);
+
+  const disconnectSNS = async (platform: string) => {
+    if (!confirm(`${PLATFORM_INFO[platform]?.label} 연결을 해제하시겠습니까?`)) return;
+    await fetch('/api/sns/connections', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform }) });
+    setSnsConnections((prev) => prev.filter((c) => c.platform !== platform));
+  };
   const [saved, setSaved] = useState(false);
 
   // 글로벌 AI 설정 폼
@@ -78,7 +105,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -359,6 +386,58 @@ export default function SettingsPage() {
               <p className="text-xs text-gray-400 mt-2">
                 마크다운 형식으로 내보낸 후 Obsidian Vault 폴더에 넣으면 됩니다.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* SNS 연결 탭 */}
+        {activeTab === 'sns' && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">소셜 미디어 계정을 연결하면 LOOV에서 직접 게시글을 발행할 수 있습니다.</p>
+            <div className="grid md:grid-cols-3 gap-4">
+              {Object.entries(PLATFORM_INFO).map(([platform, info]) => {
+                const conn = snsConnections.find((c) => c.platform === platform);
+                return (
+                  <div key={platform} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                    <div className={`h-1.5 bg-gradient-to-r ${info.color}`} />
+                    <div className="p-5">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${info.color} flex items-center justify-center text-xl`}>
+                          {info.icon}
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-800 text-sm">{info.label}</div>
+                          <div className="flex items-center gap-1">
+                            <div className={`w-1.5 h-1.5 rounded-full ${conn?.is_active ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                            <span className="text-xs text-gray-400">{conn?.is_active ? '연결됨' : '미연결'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {conn?.is_active ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
+                            {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-8 h-8 rounded-full" />}
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-gray-700 truncate">{conn.platform_display_name}</div>
+                              <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>
+                            </div>
+                          </div>
+                          <button onClick={() => disconnectSNS(platform)} className="w-full text-xs text-red-500 border border-red-100 hover:border-red-200 rounded-xl py-2 transition-colors">
+                            연결 해제
+                          </button>
+                        </div>
+                      ) : (
+                        <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition-opacity`}>
+                          연결하기
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-700">
+              연결 후 <a href="/dashboard/sns" className="font-bold underline">SNS 관리 페이지</a>에서 게시글 템플릿 작성 및 즉시 발행이 가능합니다.
             </div>
           </div>
         )}
