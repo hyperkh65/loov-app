@@ -164,7 +164,8 @@ function CatHero() {
 
   return (
     <group ref={groupRef}>
-      <group scale={[scale, scale, scale]}>
+      {/* rotation-y로 정면 보정 (모델이 -X 방향 향할 때 -π/2 보정) */}
+      <group scale={[scale, scale, scale]} rotation={[0, -Math.PI / 2, 0]}>
         <primitive object={scene} position={[-cx, -cy, -cz]} />
       </group>
 
