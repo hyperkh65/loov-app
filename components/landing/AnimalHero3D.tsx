@@ -70,68 +70,75 @@ const TARGET_SIZE = 2.0;
 
 interface BoneAnim {
   bone: THREE.Bone;
-  ix: number; iy: number; iz: number; // 초기 Euler 각도
-  ax: number; ay: number; az: number; // 진폭
-  fx: number; fy: number; fz: number; // 주파수
-  px: number; py: number; pz: number; // 위상
+  initQ: THREE.Quaternion; // A포즈 기준 초기 quaternion
+  ax: number; ay: number; az: number;
+  fx: number; fy: number; fz: number;
+  px: number; py: number; pz: number;
 }
 
 function CatHero() {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene } = useGLTF('/models/cat-hero.glb');
 
-  // scene을 직접 사용 (clone 없음) — SkinnedMesh.skeleton.bones로 bone 접근
-  const { scale, cx, cy, cz, bones } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(scene);
+  const { clone, scale, cx, cy, cz, boneAnims } = useMemo(() => {
+    const c = scene.clone(true);
+    const box = new THREE.Box3().setFromObject(c);
     const center = new THREE.Vector3();
     const size = new THREE.Vector3();
     box.getCenter(center);
     box.getSize(size);
+    c.position.set(-center.x, -center.y, -center.z);
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
     const s = TARGET_SIZE / maxDim;
 
-    const boneList: BoneAnim[] = [];
-    const seen = new Set<string>();
+    const anims: BoneAnim[] = [];
 
-    scene.traverse((obj) => {
-      const sm = obj as THREE.SkinnedMesh;
-      if (!sm.isSkinnedMesh || !sm.skeleton) return;
-      sm.skeleton.bones.forEach((bone) => {
-        if (seen.has(bone.uuid)) return;
-        seen.add(bone.uuid);
+    c.traverse((obj) => {
+      if (obj.type !== 'Bone') return;
+      const bone = obj as THREE.Bone;
+      const n = bone.name.toLowerCase();
+      const h = n.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
 
-        const n = bone.name.toLowerCase();
-        const h = n.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+      // ── A포즈 오프셋 (T포즈에서 팔을 약 45° 내리기) ──
+      const isLeft  = /left|[._\s]l[._\s\b]|_l$|\.l$/.test(n);
+      const isRight = /right|[._\s]r[._\s\b]|_r$|\.r$/.test(n);
+      if (/shoulder|upper.?arm|arm.?upper|clavicle/.test(n)) {
+        // Z축 회전으로 팔 내리기 (left: -45°, right: +45°)
+        if (isLeft)  bone.rotation.z -= Math.PI / 4;
+        if (isRight) bone.rotation.z += Math.PI / 4;
+        bone.updateMatrix();
+      }
 
-        let ax = 0.02, ay = 0.02, az = 0.02;
-        if (/head/.test(n))                                    { ax = 0.12; ay = 0.16; az = 0.08; }
-        else if (/neck/.test(n))                               { ax = 0.07; ay = 0.09; az = 0.05; }
-        else if (/spine|chest|torso/.test(n))                  { ax = 0.05; ay = 0.04; az = 0.04; }
-        else if (/shoulder|upper.?arm|arm.?upper/.test(n))     { ax = 0.18; ay = 0.12; az = 0.20; }
-        else if (/forearm|lower.?arm|arm.?lower|elbow/.test(n)){ ax = 0.12; ay = 0.07; az = 0.14; }
-        else if (/hand|wrist/.test(n))                         { ax = 0.14; ay = 0.16; az = 0.12; }
-        else if (/finger|thumb|index|middle|ring|pinky/.test(n)){ ax = 0.10; ay = 0.05; az = 0.08; }
-        else if (/thigh|upleg|upper.?leg/.test(n))             { ax = 0.05; ay = 0.03; az = 0.04; }
-        else if (/shin|calf|lower.?leg|knee/.test(n))          { ax = 0.04; ay = 0.02; az = 0.02; }
-        else if (/foot|ankle/.test(n))                         { ax = 0.07; ay = 0.05; az = 0.06; }
-        else if (/tail/.test(n))                               { ax = 0.22; ay = 0.30; az = 0.16; }
-        else if (/ear/.test(n))                                { ax = 0.10; ay = 0.07; az = 0.12; }
+      // A포즈 기준 initQ 캡처
+      const initQ = bone.quaternion.clone();
 
-        boneList.push({
-          bone,
-          ix: bone.rotation.x, iy: bone.rotation.y, iz: bone.rotation.z,
-          ax, ay, az,
-          fx: 0.25 + (h % 8) * 0.055,
-          fy: 0.20 + (h % 6) * 0.065,
-          fz: 0.30 + (h % 7) * 0.050,
-          px: (h % 13) * 0.48,
-          py: ((h + 3) % 11) * 0.57,
-          pz: ((h + 7) % 9)  * 0.70,
-        });
+      // ── 부위별 진폭 (크게 설정해야 눈에 보임) ──
+      let ax = 0.03, ay = 0.03, az = 0.03;
+      if (/head/.test(n))                                      { ax = 0.15; ay = 0.25; az = 0.10; }
+      else if (/neck/.test(n))                                 { ax = 0.08; ay = 0.12; az = 0.06; }
+      else if (/spine|chest|torso/.test(n))                    { ax = 0.06; ay = 0.05; az = 0.05; }
+      else if (/shoulder|upper.?arm|arm.?upper|clavicle/.test(n)) { ax = 0.35; ay = 0.15; az = 0.40; }
+      else if (/forearm|lower.?arm|arm.?lower|elbow/.test(n))  { ax = 0.25; ay = 0.10; az = 0.30; }
+      else if (/hand|wrist/.test(n))                           { ax = 0.20; ay = 0.25; az = 0.18; }
+      else if (/finger|thumb|index|middle|ring|pinky/.test(n)) { ax = 0.15; ay = 0.08; az = 0.12; }
+      else if (/thigh|upleg|upper.?leg/.test(n))               { ax = 0.08; ay = 0.04; az = 0.06; }
+      else if (/shin|calf|lower.?leg|knee/.test(n))            { ax = 0.05; ay = 0.03; az = 0.03; }
+      else if (/foot|ankle/.test(n))                           { ax = 0.10; ay = 0.07; az = 0.08; }
+      else if (/tail/.test(n))                                 { ax = 0.30; ay = 0.45; az = 0.25; }
+      else if (/ear/.test(n))                                  { ax = 0.15; ay = 0.10; az = 0.18; }
+
+      anims.push({
+        bone, initQ, ax, ay, az,
+        fx: 0.22 + (h % 8) * 0.05,
+        fy: 0.18 + (h % 6) * 0.06,
+        fz: 0.26 + (h % 7) * 0.04,
+        px: (h % 13) * 0.48,
+        py: ((h + 3) % 11) * 0.57,
+        pz: ((h + 7) % 9)  * 0.70,
       });
     });
 
-    return { scale: s, cx: center.x, cy: center.y, cz: center.z, bones: boneList };
+    return { clone: c, scale: s, cx: center.x, cy: center.y, cz: center.z, boneAnims: anims };
   }, [scene]);
 
   // 말풍선
@@ -145,18 +152,25 @@ function CatHero() {
     return () => clearInterval(iv);
   }, []);
 
+  const tmpEuler = useMemo(() => new THREE.Euler(), []);
+  const tmpQ     = useMemo(() => new THREE.Quaternion(), []);
+
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
     const t = clock.elapsedTime;
 
-    // Y 회전 없음 — 제자리에서 둥실만
+    // Y 회전 없음 — 제자리 둥실
     groupRef.current.position.y = Math.sin(t * 0.8) * 0.04;
 
-    // 모든 bone에 sine wave 회전 직접 적용
-    for (const b of bones) {
-      b.bone.rotation.x = b.ix + Math.sin(t * b.fx + b.px) * b.ax;
-      b.bone.rotation.y = b.iy + Math.sin(t * b.fy + b.py) * b.ay;
-      b.bone.rotation.z = b.iz + Math.sin(t * b.fz + b.pz) * b.az;
+    // 모든 bone: A포즈 initQ 기준으로 sine wave 오프셋
+    for (const a of boneAnims) {
+      tmpEuler.set(
+        Math.sin(t * a.fx + a.px) * a.ax,
+        Math.sin(t * a.fy + a.py) * a.ay,
+        Math.sin(t * a.fz + a.pz) * a.az,
+      );
+      tmpQ.setFromEuler(tmpEuler);
+      a.bone.quaternion.copy(a.initQ).multiply(tmpQ);
     }
   });
 
@@ -164,9 +178,9 @@ function CatHero() {
 
   return (
     <group ref={groupRef}>
-      {/* rotation-y로 정면 보정 (모델이 -X 방향 향할 때 -π/2 보정) */}
+      {/* 정면 보정 + 클론 렌더 */}
       <group scale={[scale, scale, scale]} rotation={[0, -Math.PI / 2, 0]}>
-        <primitive object={scene} position={[-cx, -cy, -cz]} />
+        <primitive object={clone} />
       </group>
 
       {/* 말풍선 */}
