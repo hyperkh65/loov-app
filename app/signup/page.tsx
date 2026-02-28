@@ -57,11 +57,19 @@ export default function SignupPage() {
         <div className="text-center max-w-sm">
           <div className="text-5xl mb-4">📧</div>
           <h2 className="text-2xl font-black text-white mb-2">이메일을 확인하세요</h2>
-          <p className="text-gray-400 mb-6">
+          <p className="text-gray-400 mb-4">
             <strong className="text-white">{email}</strong>로 확인 링크를 보냈습니다.<br />
             링크를 클릭하면 대시보드로 이동합니다.
           </p>
-          <Link href="/login" className="text-indigo-400 hover:text-indigo-300">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-amber-300 text-sm mb-6 text-left">
+            <p className="font-semibold mb-1">메일이 안 보이시나요?</p>
+            <ul className="space-y-1 text-amber-400/80 text-xs">
+              <li>• 스팸/정크 메일함을 확인해 주세요</li>
+              <li>• Supabase 무료 플랜은 발송에 수 분이 걸릴 수 있습니다</li>
+              <li>• 관리자에게 문의하면 즉시 계정을 활성화할 수 있습니다</li>
+            </ul>
+          </div>
+          <Link href="/login" className="text-indigo-400 hover:text-indigo-300 text-sm">
             로그인 페이지로 →
           </Link>
         </div>
