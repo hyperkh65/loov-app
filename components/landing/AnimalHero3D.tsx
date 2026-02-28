@@ -172,11 +172,27 @@ function FoxCharacter({
   posX, label, role, fp = 0,
 }: { posX: number; label: string; role: string; fp?: number }) {
   const ref = useRef<THREE.Group>(null!);
-  // FBX 자체 스켈레톤+애니메이션을 그대로 사용 (retargeting 없음)
   const fbx = useFBX('/models/fox-dance.fbx');
+  const { scene: foxScene } = useGLTF('/models/fox-hero.glb');
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
   const { s, cx, cy, cz } = useMemo(() => {
+    // fox-hero.glb 재질을 FBX 메시에 이식
+    const foxMats: THREE.Material[] = [];
+    foxScene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      if (Array.isArray(m.material)) foxMats.push(...m.material);
+      else foxMats.push(m.material);
+    });
+
+    let i = 0;
+    fbx.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      if (foxMats[i]) { m.material = foxMats[i++]; }
+    });
+
     const box = new THREE.Box3().setFromObject(fbx);
     const cen = new THREE.Vector3(), sz = new THREE.Vector3();
     box.getCenter(cen); box.getSize(sz);
@@ -184,11 +200,10 @@ function FoxCharacter({
       s: 1.4 / (Math.max(sz.x, sz.y, sz.z) || 1),
       cx: cen.x, cy: cen.y, cz: cen.z,
     };
-  }, [fbx]);
+  }, [fbx, foxScene]);
 
   useEffect(() => {
     if (!fbx.animations?.length) return;
-    // fbx 객체 자체에 mixer 연결 — 스켈레톤이 이미 맞음
     const mixer = new THREE.AnimationMixer(fbx);
     mixerRef.current = mixer;
     const action = mixer.clipAction(fbx.animations[0]);
