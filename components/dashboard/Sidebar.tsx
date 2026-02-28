@@ -38,6 +38,14 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: '성장',
+    items: [
+      { href: '/dashboard/insights',  icon: '🧠', label: 'AI 인사이트' },
+      { href: '/dashboard/courses',   icon: '🎓', label: '강의' },
+      { href: '/dashboard/community', icon: '🤝', label: '커뮤니티' },
+    ],
+  },
+  {
     label: '설정',
     items: [
       { href: '/dashboard/settings', icon: '⚙️', label: 'AI 설정' },
