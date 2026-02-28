@@ -62,12 +62,21 @@ function ShowcaseCharacter({ path }: { path: string }) {
 
   const { clone, s, bones } = useMemo(() => {
     const c = SkeletonUtils.clone(scene) as THREE.Group;
-    const box = new THREE.Box3().setFromObject(c);
-    const cen = new THREE.Vector3(), sz = new THREE.Vector3();
-    box.getCenter(cen); box.getSize(sz);
+
+    // 1. 모델 공간에서 최대 크기 측정
+    const box0 = new THREE.Box3().setFromObject(c);
+    const sz = new THREE.Vector3();
+    box0.getSize(sz);
     const scale = 8.5 / (Math.max(sz.x, sz.y, sz.z) || 1);
-    // 중심 정렬 (카메라가 원점 바라보므로 캐릭터를 원점 중앙에)
-    c.position.set(-cen.x * scale, -cen.y * scale, -cen.z * scale);
+
+    // 2. scale을 clone에 직접 적용 (부모 group 이중 스케일 오류 방지)
+    c.scale.set(scale, scale, scale);
+
+    // 3. 스케일된 상태에서 bbox 재계산 → 정확한 월드 중앙 정렬
+    const box1 = new THREE.Box3().setFromObject(c);
+    const cen = new THREE.Vector3();
+    box1.getCenter(cen);
+    c.position.set(-cen.x, -cen.y, -cen.z);
 
     const bd: BD[] = [];
     c.traverse((o) => {
@@ -87,14 +96,14 @@ function ShowcaseCharacter({ path }: { path: string }) {
         px: (h % 13) * 0.48, py: ((h + 3) % 11) * 0.57, pz: ((h + 7) % 9) * 0.70,
       });
     });
-    return { clone: c, s: scale, bones: bd };
+    return { clone: c, s: 1, bones: bd };  // scale은 clone에 이미 적용
   }, [scene]);
 
   useFrame(({ clock }) => {
     if (!ref.current) return;
     const t = clock.elapsedTime;
-    // 정면 유지하며 좌우 약간 흔들기 (±20°)
-    ref.current.rotation.y = FACE_FIX + Math.sin(t * 0.55) * 0.35;
+    // 천천히 360° 회전 → 모델 방향에 무관하게 항상 정면이 보임
+    ref.current.rotation.y = FACE_FIX + t * 0.4;
     ref.current.position.y = Math.sin(t * 0.7) * 0.12;
 
     for (const b of bones) {
@@ -110,7 +119,7 @@ function ShowcaseCharacter({ path }: { path: string }) {
 
   return (
     <group ref={ref}>
-      <group scale={s}><primitive object={clone} /></group>
+      <primitive object={clone} />  {/* scale은 clone에 직접 적용됨 */}
     </group>
   );
 }
