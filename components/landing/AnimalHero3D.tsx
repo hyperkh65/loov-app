@@ -173,7 +173,7 @@ function FoxCharacter({
 }: { posX: number; label: string; role: string; fp?: number }) {
   const ref = useRef<THREE.Group>(null!);
   const fbx = useFBX('/models/fox-dance.fbx');
-  const { scene: foxScene } = useGLTF('/models/fox-hero.glb');
+  const { scene: foxScene } = useGLTF('/models/cat-hero.glb');
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
   const { s, cx, cy, cz } = useMemo(() => {
