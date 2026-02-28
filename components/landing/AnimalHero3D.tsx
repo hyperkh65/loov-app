@@ -56,7 +56,8 @@ function buildModel(scene: THREE.Group, targetSize: number) {
   const cen = new THREE.Vector3(), sz = new THREE.Vector3();
   box.getCenter(cen); box.getSize(sz);
   const scale = targetSize / (Math.max(sz.x, sz.y, sz.z) || 1);
-  c.position.set(-cen.x * scale, -cen.y * scale, -cen.z * scale);
+  // 발(bbox 최솟값)이 로컬 Y=0에 오도록 → 모든 캐릭터 같은 높이로 서게 됨
+  c.position.set(-cen.x * scale, -box.min.y * scale, -cen.z * scale);
 
   const bd: BD[] = [];
   c.traverse((o) => {
