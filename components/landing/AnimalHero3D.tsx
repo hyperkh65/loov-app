@@ -1,8 +1,8 @@
 'use client';
 
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
-import { useRef, useState, useEffect } from 'react';
+import { Html, useGLTF, useAnimations } from '@react-three/drei';
+import { Suspense, useRef, useState, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 
 // ── 50가지 인사말 풀 ──────────────────────────────────────────
@@ -63,159 +63,97 @@ function pickRandom(arr: string[]) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ── 동물 모델들 ──────────────────────────────────────────────
-
-function FoxModel() {
-  const c = '#E8733A';
-  const light = '#F5C4A0';
-  return (
-    <group>
-      <mesh position={[0, -0.15, 0]}><sphereGeometry args={[0.4, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0, 0.6, 0]}><sphereGeometry args={[0.28, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[-0.17, 0.95, 0]} rotation={[0, 0, -0.35]}><coneGeometry args={[0.09, 0.22, 4]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0.17, 0.95, 0]} rotation={[0, 0, 0.35]}><coneGeometry args={[0.09, 0.22, 4]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0, 0.53, 0.24]}><sphereGeometry args={[0.11, 8, 8]} /><meshToonMaterial color={light} /></mesh>
-      <mesh position={[-0.1, 0.65, 0.24]}><sphereGeometry args={[0.033, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[0.1, 0.65, 0.24]}><sphereGeometry args={[0.033, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[0, 0.1, 0.33]}><sphereGeometry args={[0.17, 8, 8]} /><meshToonMaterial color={light} /></mesh>
-      <mesh position={[0.1, -0.32, -0.36]} rotation={[0.5, 0.2, 0]}><sphereGeometry args={[0.17, 8, 8]} /><meshToonMaterial color={light} /></mesh>
-    </group>
-  );
-}
-
-function BearModel() {
-  const c = '#8B6355';
-  const light = '#B89080';
-  return (
-    <group>
-      <mesh position={[0, -0.15, 0]}><sphereGeometry args={[0.44, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0, 0.63, 0]}><sphereGeometry args={[0.31, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[-0.24, 0.93, 0]}><sphereGeometry args={[0.1, 8, 8]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0.24, 0.93, 0]}><sphereGeometry args={[0.1, 8, 8]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0, 0.54, 0.27]}><sphereGeometry args={[0.13, 8, 8]} /><meshToonMaterial color={light} /></mesh>
-      <mesh position={[-0.12, 0.68, 0.26]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[0.12, 0.68, 0.26]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[0, 0.61, 0.4]}><sphereGeometry args={[0.038, 5, 5]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[0, -0.1, 0.38]}><sphereGeometry args={[0.21, 8, 8]} /><meshToonMaterial color={light} /></mesh>
-    </group>
-  );
-}
-
-function RabbitModel() {
-  const c = '#F2F2F2';
-  const pink = '#F4A0B8';
-  return (
-    <group>
-      <mesh position={[0, -0.15, 0]}><sphereGeometry args={[0.38, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0, 0.57, 0]}><sphereGeometry args={[0.27, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[-0.13, 1.18, 0]}><capsuleGeometry args={[0.07, 0.38, 4, 8]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0.13, 1.18, 0]}><capsuleGeometry args={[0.07, 0.38, 4, 8]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[-0.13, 1.18, 0.05]}><capsuleGeometry args={[0.03, 0.26, 4, 8]} /><meshToonMaterial color={pink} /></mesh>
-      <mesh position={[0.13, 1.18, 0.05]}><capsuleGeometry args={[0.03, 0.26, 4, 8]} /><meshToonMaterial color={pink} /></mesh>
-      <mesh position={[0, 0.55, 0.25]}><sphereGeometry args={[0.038, 5, 5]} /><meshToonMaterial color={pink} /></mesh>
-      <mesh position={[-0.1, 0.63, 0.23]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[0.1, 0.63, 0.23]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[-0.16, 0.54, 0.2]}><sphereGeometry args={[0.055, 6, 6]} /><meshToonMaterial color={pink} transparent opacity={0.45} /></mesh>
-      <mesh position={[0.16, 0.54, 0.2]}><sphereGeometry args={[0.055, 6, 6]} /><meshToonMaterial color={pink} transparent opacity={0.45} /></mesh>
-      <mesh position={[0, -0.22, -0.35]}><sphereGeometry args={[0.09, 8, 8]} /><meshToonMaterial color={c} /></mesh>
-    </group>
-  );
-}
-
-function LionModel() {
-  const c = '#F4A827';
-  const mane = '#C17D16';
-  const light = '#E09020';
-  return (
-    <group>
-      <mesh position={[0, -0.15, 0]}><sphereGeometry args={[0.43, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0, 0.59, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.36, 0.13, 8, 16]} /><meshToonMaterial color={mane} /></mesh>
-      <mesh position={[0, 0.61, 0]}><sphereGeometry args={[0.28, 14, 14]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[-0.2, 0.87, 0]}><sphereGeometry args={[0.08, 6, 6]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0.2, 0.87, 0]}><sphereGeometry args={[0.08, 6, 6]} /><meshToonMaterial color={c} /></mesh>
-      <mesh position={[0, 0.52, 0.25]}><sphereGeometry args={[0.12, 8, 8]} /><meshToonMaterial color={light} /></mesh>
-      <mesh position={[0, 0.6, 0.38]}><sphereGeometry args={[0.038, 5, 5]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[-0.11, 0.68, 0.23]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-      <mesh position={[0.11, 0.68, 0.23]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color="#111" /></mesh>
-    </group>
-  );
-}
-
-function PandaModel() {
-  const white = '#F4F4F4';
-  const black = '#1a1a1a';
-  return (
-    <group>
-      <mesh position={[0, -0.15, 0]}><sphereGeometry args={[0.44, 14, 14]} /><meshToonMaterial color={white} /></mesh>
-      <mesh position={[0, 0.64, 0]}><sphereGeometry args={[0.31, 14, 14]} /><meshToonMaterial color={white} /></mesh>
-      <mesh position={[-0.22, 0.95, 0]}><sphereGeometry args={[0.1, 8, 8]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[0.22, 0.95, 0]}><sphereGeometry args={[0.1, 8, 8]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[-0.12, 0.7, 0.21]}><sphereGeometry args={[0.08, 8, 8]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[0.12, 0.7, 0.21]}><sphereGeometry args={[0.08, 8, 8]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[-0.12, 0.7, 0.27]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color={white} /></mesh>
-      <mesh position={[0.12, 0.7, 0.27]}><sphereGeometry args={[0.038, 6, 6]} /><meshToonMaterial color={white} /></mesh>
-      <mesh position={[-0.12, 0.7, 0.31]}><sphereGeometry args={[0.018, 5, 5]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[0.12, 0.7, 0.31]}><sphereGeometry args={[0.018, 5, 5]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[0, 0.57, 0.3]}><sphereGeometry args={[0.038, 5, 5]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[-0.42, -0.05, 0]} rotation={[0, 0, 0.5]}><capsuleGeometry args={[0.08, 0.22, 4, 8]} /><meshToonMaterial color={black} /></mesh>
-      <mesh position={[0.42, -0.05, 0]} rotation={[0, 0, -0.5]}><capsuleGeometry args={[0.08, 0.22, 4, 8]} /><meshToonMaterial color={black} /></mesh>
-    </group>
-  );
-}
-
-// ── 동물 메타데이터 ──────────────────────────────────────────
-
+// ── 동물 데이터 ───────────────────────────────────────────────
 const ANIMAL_DATA = [
-  { type: 'fox',    name: 'Fox',    role: '영업팀장', accent: '#FF8C42', Model: FoxModel    },
-  { type: 'bear',   name: 'Bear',   role: '회계팀장', accent: '#A07060', Model: BearModel   },
-  { type: 'rabbit', name: 'Rabbit', role: '마케터',   accent: '#FF6B9D', Model: RabbitModel },
-  { type: 'lion',   name: 'Lion',   role: '개발자',   accent: '#F4A827', Model: LionModel   },
-  { type: 'panda',  name: 'Panda',  role: 'HR팀장',  accent: '#7C6CD0', Model: PandaModel  },
+  { file: '/models/fox.glb',    name: 'Fox',    role: '영업팀장', accent: '#FF8C42' },
+  { file: '/models/cat.glb',    name: 'Cat',    role: '회계팀장', accent: '#A0C4FF' },
+  { file: '/models/rabbit.glb', name: 'Rabbit', role: '마케터',   accent: '#FF6B9D' },
+  { file: '/models/deer.glb',   name: 'Deer',   role: '개발자',   accent: '#7FD87F' },
+  { file: '/models/otter.glb',  name: 'Otter',  role: 'HR팀장',  accent: '#C9A87C' },
 ];
 
-// ── 단일 동물 + 말풍선 ────────────────────────────────────────
+// 모델 미리 로드
+useGLTF.preload('/models/fox.glb');
+useGLTF.preload('/models/cat.glb');
+useGLTF.preload('/models/rabbit.glb');
+useGLTF.preload('/models/deer.glb');
+useGLTF.preload('/models/otter.glb');
 
-interface AnimalProps {
-  animal: typeof ANIMAL_DATA[0];
+// ── 동물 카드 (GLB 모델 + 말풍선) ────────────────────────────
+
+const TARGET_HEIGHT = 1.5; // 정규화 목표 높이 (world units)
+
+interface AnimalCardProps {
+  file: string;
+  name: string;
+  role: string;
+  accent: string;
   index: number;
 }
 
-function AnimalCard({ animal, index }: AnimalProps) {
-  const groupRef = useRef<THREE.Group>(null);
+function AnimalCard({ file, name, role, accent, index }: AnimalCardProps) {
   const floatPhase = (index / ANIMAL_DATA.length) * Math.PI * 2;
+  const groupRef = useRef<THREE.Group>(null!);
 
+  const { scene, animations } = useGLTF(file);
+
+  // 클론 + 원점 정렬 + 스케일 계산
+  const { clone, scale } = useMemo(() => {
+    const c = scene.clone(true);
+    const box = new THREE.Box3().setFromObject(c);
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    // 발이 y=0에 위치하도록 이동
+    c.position.set(-center.x, -box.min.y, -center.z);
+    const s = TARGET_HEIGHT / (size.y || 1);
+    return { clone: c, scale: s };
+  }, [scene]);
+
+  // 스켈레탈 애니메이션 (있으면 자동 재생)
+  const { actions, names } = useAnimations(animations, groupRef);
+  useEffect(() => {
+    if (!names.length) return;
+    const idleName = names.find((n) => /idle/i.test(n)) ?? names[0];
+    actions[idleName]?.reset().fadeIn(0.4).play();
+    return () => { actions[idleName]?.fadeOut(0.3); };
+  }, [actions, names]);
+
+  // 말풍선 상태
   const [greeting, setGreeting] = useState(() => pickRandom(GREETINGS));
   const [fade, setFade] = useState(true);
 
   useEffect(() => {
-    const delay = index * 900;
-    const id = setTimeout(() => {
+    const delay = setTimeout(() => {
       const iv = setInterval(() => {
         setFade(false);
         setTimeout(() => {
           setGreeting(pickRandom(GREETINGS));
           setFade(true);
         }, 280);
-      }, 3800 + index * 300);
+      }, 3800 + index * 400);
       return () => clearInterval(iv);
-    }, delay);
-    return () => clearTimeout(id);
+    }, index * 900);
+    return () => clearTimeout(delay);
   }, [index]);
 
+  // 둥실둥실 애니메이션
   useFrame(({ clock }) => {
     if (groupRef.current) {
-      groupRef.current.position.y = Math.sin(clock.elapsedTime * 1.3 + floatPhase) * 0.1;
+      groupRef.current.position.y = Math.sin(clock.elapsedTime * 1.2 + floatPhase) * 0.1;
     }
   });
 
-  const { Model } = animal;
-
   return (
     <group ref={groupRef}>
-      <Model />
+      {/* GLB 모델 (스케일 적용) */}
+      <group scale={[scale, scale, scale]}>
+        <primitive object={clone} />
+      </group>
 
       {/* 말풍선 */}
-      <Html position={[0, 1.55, 0]} center zIndexRange={[100, 0]}>
+      <Html position={[0, TARGET_HEIGHT + 0.45, 0]} center zIndexRange={[100, 0]}>
         <div style={{
           opacity: fade ? 1 : 0,
           transition: 'opacity 0.28s ease',
@@ -227,7 +165,7 @@ function AnimalCard({ animal, index }: AnimalProps) {
           fontWeight: 700,
           color: '#0f172a',
           whiteSpace: 'nowrap',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.25)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
           fontFamily: '-apple-system, sans-serif',
           position: 'relative',
           maxWidth: '168px',
@@ -249,21 +187,35 @@ function AnimalCard({ animal, index }: AnimalProps) {
       </Html>
 
       {/* 이름표 */}
-      <Html position={[0, -0.9, 0]} center zIndexRange={[50, 0]}>
+      <Html position={[0, -0.2, 0]} center zIndexRange={[50, 0]}>
         <div style={{
-          background: 'rgba(10, 14, 35, 0.88)',
-          border: `1px solid ${animal.accent}55`,
+          background: 'rgba(10,14,35,0.88)',
+          border: `1px solid ${accent}55`,
           borderRadius: '8px',
           padding: '4px 10px',
           textAlign: 'center',
           fontFamily: '-apple-system, sans-serif',
           whiteSpace: 'nowrap',
         }}>
-          <div style={{ fontSize: '12px', fontWeight: 800, color: '#fff' }}>{animal.name}</div>
-          <div style={{ fontSize: '10px', color: animal.accent, marginTop: 1 }}>{animal.role}</div>
+          <div style={{ fontSize: '12px', fontWeight: 800, color: '#fff' }}>{name}</div>
+          <div style={{ fontSize: '10px', color: accent, marginTop: 1 }}>{role}</div>
         </div>
       </Html>
     </group>
+  );
+}
+
+// 로딩 중 와이어프레임 placeholder
+function LoadingFallback() {
+  const ref = useRef<THREE.Mesh>(null!);
+  useFrame(({ clock }) => {
+    if (ref.current) ref.current.rotation.y = clock.elapsedTime * 1.5;
+  });
+  return (
+    <mesh ref={ref} position={[0, 0.75, 0]}>
+      <octahedronGeometry args={[0.5, 0]} />
+      <meshStandardMaterial color="#4f46e5" wireframe />
+    </mesh>
   );
 }
 
@@ -272,7 +224,7 @@ function AnimalCard({ animal, index }: AnimalProps) {
 const RADIUS = 2.55;
 
 function Carousel() {
-  const groupRef = useRef<THREE.Group>(null);
+  const groupRef = useRef<THREE.Group>(null!);
 
   useFrame(({ clock }) => {
     if (groupRef.current) {
@@ -287,8 +239,10 @@ function Carousel() {
         const x = Math.sin(angle) * RADIUS;
         const z = Math.cos(angle) * RADIUS;
         return (
-          <group key={animal.type} position={[x, 0, z]} rotation={[0, angle, 0]}>
-            <AnimalCard animal={animal} index={i} />
+          <group key={animal.file} position={[x, 0, z]} rotation={[0, angle, 0]}>
+            <Suspense fallback={<LoadingFallback />}>
+              <AnimalCard {...animal} index={i} />
+            </Suspense>
           </group>
         );
       })}
@@ -296,16 +250,15 @@ function Carousel() {
   );
 }
 
-// ── 씬 내부 조명 ─────────────────────────────────────────────
+// ── 씬 조명 (Character3DViewer 와 동일한 웜 스튜디오 설정) ───
 
 function Lights() {
   return (
     <>
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[5, 8, 5]} intensity={1.3} color="#ffffff" castShadow />
-      <directionalLight position={[-4, 3, -4]} intensity={0.35} color="#818cf8" />
-      <pointLight position={[0, 6, 0]} intensity={0.5} color="#a78bfa" />
-      <pointLight position={[0, -2, 3]} intensity={0.3} color="#60a5fa" />
+      <ambientLight intensity={1.8} />
+      <directionalLight position={[3, 6, 4]} intensity={1.8} />
+      <directionalLight position={[-3, 2, -2]} intensity={0.5} color="#ffe4cc" />
+      <pointLight position={[0, 2, 3]} intensity={0.5} color="#818cf8" />
     </>
   );
 }
@@ -315,7 +268,7 @@ function Lights() {
 export default function AnimalHero3D() {
   return (
     <Canvas
-      camera={{ position: [0, 1.5, 7.5], fov: 48 }}
+      camera={{ position: [0, 0.8, 7.5], fov: 50 }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 1.5]}
       style={{ width: '100%', height: '100%' }}
