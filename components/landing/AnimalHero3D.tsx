@@ -173,24 +173,20 @@ function FoxCharacter({
 }: { posX: number; label: string; role: string; fp?: number }) {
   const ref = useRef<THREE.Group>(null!);
   const fbx = useFBX('/models/fox-dance.fbx');
-  const { scene: foxScene } = useGLTF('/models/cat-hero.glb');
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
   const { s, cx, cy, cz } = useMemo(() => {
-    // fox-hero.glb 재질을 FBX 메시에 이식
-    const foxMats: THREE.Material[] = [];
-    foxScene.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      if (Array.isArray(m.material)) foxMats.push(...m.material);
-      else foxMats.push(m.material);
-    });
+    // UV맵이 달라 GLB 재질 이식 불가 → 단색 재질로 직접 칠하기
+    const bodyMat = new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.75, metalness: 0.05 });
+    const suitMat = new THREE.MeshStandardMaterial({ color: '#2d3a5c', roughness: 0.65, metalness: 0.1  });
 
-    let i = 0;
-    fbx.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      if (foxMats[i]) { m.material = foxMats[i++]; }
+    const meshes: THREE.Mesh[] = [];
+    fbx.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
+
+    meshes.forEach((m, i) => {
+      // 첫 번째 메시(몸통/피부)는 밝은 회색, 나머지(옷 등)는 네이비
+      m.material = i === 0 ? bodyMat : suitMat;
+      m.castShadow = true;
     });
 
     const box = new THREE.Box3().setFromObject(fbx);
@@ -200,7 +196,7 @@ function FoxCharacter({
       s: 1.4 / (Math.max(sz.x, sz.y, sz.z) || 1),
       cx: cen.x, cy: cen.y, cz: cen.z,
     };
-  }, [fbx, foxScene]);
+  }, [fbx]);
 
   useEffect(() => {
     if (!fbx.animations?.length) return;
