@@ -63,41 +63,14 @@ function pickRandom(arr: string[]) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ── 동물 데이터 ───────────────────────────────────────────────
-const ANIMAL_DATA = [
-  { file: '/models/fox.glb',    name: 'Fox',    role: '영업팀장', accent: '#FF8C42' },
-  { file: '/models/cat.glb',    name: 'Cat',    role: '회계팀장', accent: '#A0C4FF' },
-  { file: '/models/rabbit.glb', name: 'Rabbit', role: '마케터',   accent: '#FF6B9D' },
-  { file: '/models/deer.glb',   name: 'Deer',   role: '개발자',   accent: '#7FD87F' },
-  { file: '/models/otter.glb',  name: 'Otter',  role: 'HR팀장',  accent: '#C9A87C' },
-];
+useGLTF.preload('/models/cat-hero.glb');
 
-// 모델 미리 로드
-useGLTF.preload('/models/fox.glb');
-useGLTF.preload('/models/cat.glb');
-useGLTF.preload('/models/rabbit.glb');
-useGLTF.preload('/models/deer.glb');
-useGLTF.preload('/models/otter.glb');
+const TARGET_HEIGHT = 3.2; // 크게
 
-// ── 동물 카드 (GLB 모델 + 말풍선) ────────────────────────────
-
-const TARGET_HEIGHT = 1.5; // 정규화 목표 높이 (world units)
-
-interface AnimalCardProps {
-  file: string;
-  name: string;
-  role: string;
-  accent: string;
-  index: number;
-}
-
-function AnimalCard({ file, name, role, accent, index }: AnimalCardProps) {
-  const floatPhase = (index / ANIMAL_DATA.length) * Math.PI * 2;
+function CatHero() {
   const groupRef = useRef<THREE.Group>(null!);
+  const { scene, animations } = useGLTF('/models/cat-hero.glb');
 
-  const { scene, animations } = useGLTF(file);
-
-  // 클론 + 원점 정렬 + 스케일 계산
   const { clone, scale } = useMemo(() => {
     const c = scene.clone(true);
     const box = new THREE.Box3().setFromObject(c);
@@ -105,13 +78,11 @@ function AnimalCard({ file, name, role, accent, index }: AnimalCardProps) {
     const size = new THREE.Vector3();
     box.getCenter(center);
     box.getSize(size);
-    // 발이 y=0에 위치하도록 이동
     c.position.set(-center.x, -box.min.y, -center.z);
     const s = TARGET_HEIGHT / (size.y || 1);
     return { clone: c, scale: s };
   }, [scene]);
 
-  // 스켈레탈 애니메이션 (있으면 자동 재생)
   const { actions, names } = useAnimations(animations, groupRef);
   useEffect(() => {
     if (!names.length) return;
@@ -120,161 +91,123 @@ function AnimalCard({ file, name, role, accent, index }: AnimalCardProps) {
     return () => { actions[idleName]?.fadeOut(0.3); };
   }, [actions, names]);
 
-  // 말풍선 상태
+  // 말풍선
   const [greeting, setGreeting] = useState(() => pickRandom(GREETINGS));
   const [fade, setFade] = useState(true);
-
   useEffect(() => {
-    const delay = setTimeout(() => {
-      const iv = setInterval(() => {
-        setFade(false);
-        setTimeout(() => {
-          setGreeting(pickRandom(GREETINGS));
-          setFade(true);
-        }, 280);
-      }, 3800 + index * 400);
-      return () => clearInterval(iv);
-    }, index * 900);
-    return () => clearTimeout(delay);
-  }, [index]);
+    const iv = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setGreeting(pickRandom(GREETINGS));
+        setFade(true);
+      }, 300);
+    }, 3500);
+    return () => clearInterval(iv);
+  }, []);
 
-  // 둥실둥실 애니메이션
+  // 천천히 Y 회전 + 둥실
   useFrame(({ clock }) => {
     if (groupRef.current) {
-      groupRef.current.position.y = Math.sin(clock.elapsedTime * 1.2 + floatPhase) * 0.1;
+      groupRef.current.rotation.y = clock.elapsedTime * 0.35;
+      groupRef.current.position.y = Math.sin(clock.elapsedTime * 1.1) * 0.08;
     }
   });
 
   return (
     <group ref={groupRef}>
-      {/* GLB 모델 (스케일 적용) */}
       <group scale={[scale, scale, scale]}>
         <primitive object={clone} />
       </group>
 
       {/* 말풍선 */}
-      <Html position={[0, TARGET_HEIGHT + 0.45, 0]} center zIndexRange={[100, 0]}>
+      <Html position={[0, TARGET_HEIGHT + 0.5, 0]} center zIndexRange={[100, 0]}>
         <div style={{
           opacity: fade ? 1 : 0,
-          transition: 'opacity 0.28s ease',
-          background: 'rgba(255,255,255,0.96)',
-          backdropFilter: 'blur(8px)',
-          borderRadius: '12px',
-          padding: '6px 12px',
-          fontSize: '11px',
+          transition: 'opacity 0.3s ease',
+          background: 'rgba(255,255,255,0.97)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: '14px',
+          padding: '8px 16px',
+          fontSize: '13px',
           fontWeight: 700,
           color: '#0f172a',
           whiteSpace: 'nowrap',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+          boxShadow: '0 6px 30px rgba(0,0,0,0.25)',
           fontFamily: '-apple-system, sans-serif',
           position: 'relative',
-          maxWidth: '168px',
+          maxWidth: '200px',
           textAlign: 'center',
         }}>
           {greeting}
           <div style={{
             position: 'absolute',
-            bottom: -6,
+            bottom: -7,
             left: '50%',
             transform: 'translateX(-50%)',
             width: 0,
             height: 0,
-            borderLeft: '6px solid transparent',
-            borderRight: '6px solid transparent',
-            borderTop: '6px solid rgba(255,255,255,0.96)',
+            borderLeft: '7px solid transparent',
+            borderRight: '7px solid transparent',
+            borderTop: '7px solid rgba(255,255,255,0.97)',
           }} />
         </div>
       </Html>
 
       {/* 이름표 */}
-      <Html position={[0, -0.2, 0]} center zIndexRange={[50, 0]}>
+      <Html position={[0, -0.25, 0]} center zIndexRange={[50, 0]}>
         <div style={{
-          background: 'rgba(10,14,35,0.88)',
-          border: `1px solid ${accent}55`,
-          borderRadius: '8px',
-          padding: '4px 10px',
+          background: 'rgba(10,14,35,0.90)',
+          border: '1px solid rgba(99,102,241,0.5)',
+          borderRadius: '10px',
+          padding: '5px 14px',
           textAlign: 'center',
           fontFamily: '-apple-system, sans-serif',
           whiteSpace: 'nowrap',
         }}>
-          <div style={{ fontSize: '12px', fontWeight: 800, color: '#fff' }}>{name}</div>
-          <div style={{ fontSize: '10px', color: accent, marginTop: 1 }}>{role}</div>
+          <div style={{ fontSize: '13px', fontWeight: 800, color: '#fff' }}>AI 직원</div>
+          <div style={{ fontSize: '11px', color: '#818cf8', marginTop: 2 }}>당신의 첫 번째 AI 팀원</div>
         </div>
       </Html>
     </group>
   );
 }
 
-// 로딩 중 와이어프레임 placeholder
 function LoadingFallback() {
   const ref = useRef<THREE.Mesh>(null!);
   useFrame(({ clock }) => {
     if (ref.current) ref.current.rotation.y = clock.elapsedTime * 1.5;
   });
   return (
-    <mesh ref={ref} position={[0, 0.75, 0]}>
-      <octahedronGeometry args={[0.5, 0]} />
+    <mesh ref={ref} position={[0, 1.2, 0]}>
+      <octahedronGeometry args={[0.7, 0]} />
       <meshStandardMaterial color="#4f46e5" wireframe />
     </mesh>
   );
 }
 
-// ── 회전 캐러셀 ──────────────────────────────────────────────
-
-const RADIUS = 2.55;
-
-function Carousel() {
-  const groupRef = useRef<THREE.Group>(null!);
-
-  useFrame(({ clock }) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y = clock.elapsedTime * 0.22;
-    }
-  });
-
-  return (
-    <group ref={groupRef}>
-      {ANIMAL_DATA.map((animal, i) => {
-        const angle = (i / ANIMAL_DATA.length) * Math.PI * 2;
-        const x = Math.sin(angle) * RADIUS;
-        const z = Math.cos(angle) * RADIUS;
-        return (
-          <group key={animal.file} position={[x, 0, z]} rotation={[0, angle, 0]}>
-            <Suspense fallback={<LoadingFallback />}>
-              <AnimalCard {...animal} index={i} />
-            </Suspense>
-          </group>
-        );
-      })}
-    </group>
-  );
-}
-
-// ── 씬 조명 (Character3DViewer 와 동일한 웜 스튜디오 설정) ───
-
 function Lights() {
   return (
     <>
-      <ambientLight intensity={1.8} />
-      <directionalLight position={[3, 6, 4]} intensity={1.8} />
-      <directionalLight position={[-3, 2, -2]} intensity={0.5} color="#ffe4cc" />
-      <pointLight position={[0, 2, 3]} intensity={0.5} color="#818cf8" />
+      <ambientLight intensity={2.0} />
+      <directionalLight position={[3, 6, 4]} intensity={2.0} />
+      <directionalLight position={[-3, 2, -2]} intensity={0.6} color="#ffe4cc" />
+      <pointLight position={[0, 3, 4]} intensity={0.8} color="#818cf8" />
     </>
   );
 }
 
-// ── 내보내기 ─────────────────────────────────────────────────
-
 export default function AnimalHero3D() {
   return (
     <Canvas
-      camera={{ position: [0, 0.8, 7.5], fov: 50 }}
+      camera={{ position: [0, 1.2, 5.5], fov: 48 }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 1.5]}
       style={{ width: '100%', height: '100%' }}
     >
       <Lights />
-      <Carousel />
+      <Suspense fallback={<LoadingFallback />}>
+        <CatHero />
+      </Suspense>
     </Canvas>
   );
 }
