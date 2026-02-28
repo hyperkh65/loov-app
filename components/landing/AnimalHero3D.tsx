@@ -6,34 +6,24 @@ import { SkeletonUtils } from 'three-stdlib';
 import { Suspense, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 
-// ── 10명 캐릭터 ─────────────────────────────────────
-// 2줄 × 5열 배치
+// ── 직원 캐릭터 10명 ─────────────────────────────────
 const CHARACTERS = [
-  // 윗줄 (row 0)
-  { path: '/models/cat-new.glb',      label: 'AI 마케터',   role: '마케팅·SNS·콘텐츠' },
-  { path: '/models/tiger-new.glb',    label: 'AI 영업팀장', role: '영업·전략·CRM'     },
-  { path: '/models/fox-new.glb',      label: 'AI 개발자',   role: '개발·자동화·API'   },
-  { path: '/models/dog-new.glb',      label: 'AI 회계팀장', role: '회계·세무·정산'    },
-  { path: '/models/wolf-new.glb',     label: 'AI 전략가',   role: '전략·기획·분석'    },
-  // 아랫줄 (row 1)
-  { path: '/models/penguin-new.glb',  label: 'AI HR매니저', role: '인사·채용·교육'    },
-  { path: '/models/bunny-new.glb',    label: 'AI 디자이너', role: '디자인·브랜딩·UI'  },
-  { path: '/models/elephant-new.glb', label: 'AI 고객지원', role: 'CS·상담·피드백'    },
-  { path: '/models/owl-new.glb',      label: 'AI 법무팀장', role: '법무·계약·규정'    },
-  { path: '/models/otter-new.glb',    label: 'AI 홍보팀장', role: '홍보·PR·커뮤니티'  },
+  { path: '/models/cat-new.glb',      label: 'AI 마케터'   },
+  { path: '/models/tiger-new.glb',    label: 'AI 영업팀장' },
+  { path: '/models/fox-new.glb',      label: 'AI 개발자'   },
+  { path: '/models/dog-new.glb',      label: 'AI 회계팀장' },
+  { path: '/models/wolf-new.glb',     label: 'AI 전략가'   },
+  { path: '/models/penguin-new.glb',  label: 'AI HR매니저' },
+  { path: '/models/bunny-new.glb',    label: 'AI 디자이너' },
+  { path: '/models/elephant-new.glb', label: 'AI 고객지원' },
+  { path: '/models/owl-new.glb',      label: 'AI 법무팀장' },
+  { path: '/models/otter-new.glb',    label: 'AI 홍보팀장' },
 ];
 
+useGLTF.preload('/models/haechi.glb');
 CHARACTERS.forEach(c => useGLTF.preload(c.path));
 
-// ── 그리드 파라미터 ──────────────────────────────────
-const COLS    = 5;
-const X_GAP   = 3.0;   // 열 간격
-const Y_GAP   = 3.6;   // 행 간격
-const X_START = -((COLS - 1) / 2) * X_GAP;   // -6
-const Y_TOP   =  Y_GAP / 2;                   // 상단 행 y
-const Y_BOT   = -Y_GAP / 2;                   // 하단 행 y
-
-// ── A포즈 ────────────────────────────────────────────
+// ── A포즈 쿼터니언 ────────────────────────────────────
 const AQL = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -Math.PI / 4));
 const AQR = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0,  Math.PI / 4));
 
@@ -62,9 +52,10 @@ function ampFor(n: string): [number, number, number] {
 
 // ── 단일 캐릭터 ──────────────────────────────────────
 function Character({
-  path, posX, posY, phase,
+  path, posX, posY, phase, targetSize = 2.6, rotY = 0,
 }: {
   path: string; posX: number; posY: number; phase: number;
+  targetSize?: number; rotY?: number;
 }) {
   const ref = useRef<THREE.Group>(null!);
   const { scene } = useGLTF(path);
@@ -74,7 +65,7 @@ function Character({
     const box = new THREE.Box3().setFromObject(c);
     const cen = new THREE.Vector3(), sz = new THREE.Vector3();
     box.getCenter(cen); box.getSize(sz);
-    const scale = 2.6 / (Math.max(sz.x, sz.y, sz.z) || 1);
+    const scale = targetSize / (Math.max(sz.x, sz.y, sz.z) || 1);
     c.position.set(-cen.x * scale, -cen.y * scale, -cen.z * scale);
 
     const bd: BD[] = [];
@@ -96,7 +87,7 @@ function Character({
       });
     });
     return { clone: c, s: scale, bones: bd };
-  }, [scene]);
+  }, [scene, targetSize]);
 
   const te = useRef(new THREE.Euler());
   const tq = useRef(new THREE.Quaternion());
@@ -104,7 +95,7 @@ function Character({
   useFrame(({ clock }) => {
     if (!ref.current) return;
     const t = clock.elapsedTime;
-    ref.current.position.y = posY + Math.sin(t * 0.65 + phase) * 0.055;
+    ref.current.position.y = posY + Math.sin(t * 0.65 + phase) * 0.06;
     for (const b of bones) {
       te.current.set(
         Math.sin(t * b.fx + b.px) * b.ax,
@@ -117,7 +108,7 @@ function Character({
   });
 
   return (
-    <group ref={ref} position={[posX, posY, 0]}>
+    <group ref={ref} position={[posX, posY, 0]} rotation={[0, rotY, 0]}>
       <group scale={s}>
         <primitive object={clone} />
       </group>
@@ -131,33 +122,81 @@ function Spinner() {
   return <mesh ref={r}><octahedronGeometry args={[0.3, 0]} /><meshStandardMaterial color="#4f46e5" wireframe /></mesh>;
 }
 
+// ── 원형 배치 파라미터 ────────────────────────────────
+const RING_RADIUS = 5.4;
+const RING_POSITIONS = CHARACTERS.map((_, i) => {
+  // 12시 방향부터 시계 방향으로
+  const angle = -Math.PI / 2 + (2 * Math.PI * i) / CHARACTERS.length;
+  return {
+    x: RING_RADIUS * Math.cos(angle),
+    y: RING_RADIUS * Math.sin(angle),
+  };
+});
+
+// ── 원형 링 장식 ──────────────────────────────────────
+function RingDecoration() {
+  const r = useRef<THREE.Mesh>(null!);
+  useFrame(({ clock }) => {
+    if (!r.current) return;
+    r.current.rotation.z = clock.elapsedTime * 0.08;
+  });
+  return (
+    <mesh ref={r} position={[0, 0, -0.5]}>
+      <torusGeometry args={[RING_RADIUS, 0.04, 8, 80]} />
+      <meshStandardMaterial
+        color="#6366f1"
+        emissive="#4f46e5"
+        emissiveIntensity={0.6}
+        transparent
+        opacity={0.5}
+      />
+    </mesh>
+  );
+}
+
 // ── 메인 ────────────────────────────────────────────
 export default function AnimalHero3D() {
   return (
     <Canvas
-      camera={{ position: [0, 0, 13.5], fov: 68 }}
+      camera={{ position: [0, 0, 17.5], fov: 64 }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 1.5]}
       style={{ width: '100%', height: '100%' }}
     >
-      <ambientLight intensity={2.6} />
+      <ambientLight intensity={2.4} />
       <directionalLight position={[5, 10, 7]}  intensity={2.0} />
       <directionalLight position={[-5, 3, -3]} intensity={0.6} color="#ffe4cc" />
-      <pointLight position={[0, 3, 6]}  intensity={0.8} color="#818cf8" />
+      <pointLight position={[0, 3, 6]}  intensity={0.9} color="#818cf8" />
       <pointLight position={[0, -1, 4]} intensity={0.4} color="#fbbf24" />
+      {/* 해치 전용 스포트라이트 */}
+      <pointLight position={[0, 4, 5]} intensity={2.0} color="#ffffff" />
+      <pointLight position={[0, -3, 4]} intensity={0.8} color="#c7d2fe" />
 
+      {/* 원형 링 장식 */}
+      <RingDecoration />
+
+      {/* 해치 — 중앙 보스 */}
+      <Suspense fallback={<group position={[0, 0, 0]}><Spinner /></group>}>
+        <Character
+          path="/models/haechi.glb"
+          posX={0}
+          posY={0}
+          phase={0}
+          targetSize={4.0}
+        />
+      </Suspense>
+
+      {/* 직원 캐릭터 — 원형 배치, 모두 정면 */}
       {CHARACTERS.map((c, i) => {
-        const col = i % COLS;
-        const row = Math.floor(i / COLS);
-        const posX = X_START + col * X_GAP;
-        const posY = row === 0 ? Y_TOP : Y_BOT;
+        const { x, y } = RING_POSITIONS[i];
         return (
-          <Suspense key={c.path} fallback={<group position={[posX, posY, 0]}><Spinner /></group>}>
+          <Suspense key={c.path} fallback={<group position={[x, y, 0]}><Spinner /></group>}>
             <Character
               path={c.path}
-              posX={posX}
-              posY={posY}
+              posX={x}
+              posY={y}
               phase={i * 0.63}
+              targetSize={2.2}
             />
           </Suspense>
         );
