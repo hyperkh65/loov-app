@@ -177,16 +177,55 @@ export default function SettingsPage() {
 
                 <div>
                   <label className="text-sm font-semibold text-gray-700 mb-1 block">API 키</label>
+
+                  {/* 현재 저장된 키 미리보기 */}
+                  {companySettings.globalAIConfig?.apiKey && (
+                    <div className={`mb-2 px-3 py-2 rounded-xl text-xs font-mono flex items-center justify-between ${
+                      companySettings.globalAIConfig.apiKey.startsWith('http')
+                        ? 'bg-red-50 border border-red-200 text-red-700'
+                        : 'bg-gray-50 border border-gray-200 text-gray-600'
+                    }`}>
+                      <span>
+                        {companySettings.globalAIConfig.apiKey.startsWith('http')
+                          ? '⚠️ 저장된 값이 URL입니다 — 올바른 API 키를 다시 입력하세요'
+                          : `현재 저장: ${companySettings.globalAIConfig.apiKey.slice(0, 6)}${'•'.repeat(8)}${companySettings.globalAIConfig.apiKey.slice(-4)}`
+                        }
+                      </span>
+                      <button
+                        onClick={() => {
+                          updateCompanySettings({ globalAIConfig: { ...companySettings.globalAIConfig!, apiKey: '' } });
+                          setGlobalAI({ ...globalAI, apiKey: '' });
+                        }}
+                        className="ml-2 text-gray-400 hover:text-red-500 transition-colors"
+                        title="저장된 키 초기화"
+                      >✕</button>
+                    </div>
+                  )}
+
                   <input
-                    type="password"
+                    type="text"
                     value={globalAI.apiKey}
-                    onChange={(e) => setGlobalAI({ ...globalAI, apiKey: e.target.value })}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 font-mono"
+                    onChange={(e) => setGlobalAI({ ...globalAI, apiKey: e.target.value.trim() })}
+                    className={`w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none font-mono ${
+                      globalAI.apiKey.startsWith('http')
+                        ? 'border-red-300 bg-red-50 focus:border-red-400'
+                        : 'border-gray-200 focus:border-indigo-400'
+                    }`}
                     placeholder={AI_PROVIDER_INFO[globalAI.provider].placeholder}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                   />
-                  <p className="text-xs text-gray-400 mt-1">
-                    API 키는 로컬에만 저장되며 외부로 전송되지 않습니다.
-                  </p>
+                  {globalAI.apiKey.startsWith('http') && (
+                    <p className="text-xs text-red-600 mt-1 font-medium">
+                      ⚠️ URL이 아닌 API 키를 입력하세요 ({AI_PROVIDER_INFO[globalAI.provider].placeholder} 형식)
+                    </p>
+                  )}
+                  {!globalAI.apiKey.startsWith('http') && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      API 키는 로컬에만 저장되며 외부로 전송되지 않습니다.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex gap-3">
