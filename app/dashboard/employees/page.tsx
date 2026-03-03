@@ -42,30 +42,41 @@ function EmployeeAIConfig({ emp }: { emp: Employee }) {
     setEditing(false);
   };
 
-  const hasIndividual = !!emp.aiConfig?.apiKey;
+  const storedKey = emp.aiConfig?.apiKey || '';
+  const hasIndividual = !!storedKey;
+  const isUrlKey = storedKey.startsWith('http');
 
   if (!editing) {
     return (
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${hasIndividual ? 'bg-emerald-400' : 'bg-gray-200'}`} />
-          {hasIndividual ? (
-            <span className="text-gray-600">
-              {AI_PROVIDER_INFO[emp.aiConfig!.provider].label.split(' ')[0]}
-              {emp.aiConfig!.model && (
-                <span className="text-gray-400 ml-1">· {emp.aiConfig!.model}</span>
-              )}
-            </span>
-          ) : (
-            <span className="text-gray-400">글로벌 설정 사용</span>
-          )}
+      <div className="space-y-1.5">
+        {/* URL 키 경고 */}
+        {isUrlKey && (
+          <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+            <span className="text-red-500 text-xs flex-1">⚠️ 잘못된 키(URL) 저장됨 — 초기화 필요</span>
+            <button onClick={handleClear} className="text-xs text-red-500 font-bold border border-red-300 px-2 py-0.5 rounded-lg hover:bg-red-100">초기화</button>
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${hasIndividual && !isUrlKey ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+            {hasIndividual && !isUrlKey ? (
+              <span className="text-gray-600">
+                {AI_PROVIDER_INFO[emp.aiConfig!.provider].label.split(' ')[0]}
+                <span className="text-gray-400 ml-1">
+                  {storedKey.slice(0, 6)}...{storedKey.slice(-3)}
+                </span>
+              </span>
+            ) : (
+              <span className="text-gray-400">{isUrlKey ? '잘못된 키' : '글로벌 설정 사용'}</span>
+            )}
+          </div>
+          <button
+            onClick={openEdit}
+            className="text-xs text-indigo-600 hover:text-indigo-500 border border-indigo-200 hover:border-indigo-300 px-2 py-0.5 rounded-lg transition-colors"
+          >
+            {hasIndividual ? '수정' : '설정'}
+          </button>
         </div>
-        <button
-          onClick={openEdit}
-          className="text-xs text-indigo-600 hover:text-indigo-500 border border-indigo-200 hover:border-indigo-300 px-2 py-0.5 rounded-lg transition-colors"
-        >
-          {hasIndividual ? '수정' : '설정'}
-        </button>
       </div>
     );
   }

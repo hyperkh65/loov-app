@@ -32,8 +32,9 @@ function ToolsPanel({ employeeId, onToolResult }: { employeeId: string; onToolRe
   }, [fetchTools]);
 
   const runTool = async (tool: Tool) => {
-    const hasEmpKey = !!employee?.aiConfig?.apiKey;
-    const apiKey = hasEmpKey ? employee!.aiConfig!.apiKey : companySettings.globalAIConfig?.apiKey;
+    const empKey = employee?.aiConfig?.apiKey;
+    const hasEmpKey = !!empKey && !empKey.startsWith('http');
+    const apiKey = hasEmpKey ? empKey : companySettings.globalAIConfig?.apiKey;
     const provider = hasEmpKey ? employee!.aiConfig!.provider : (companySettings.globalAIConfig?.provider || 'gemini');
 
     if (!apiKey) {
@@ -162,11 +163,14 @@ function ChatPanel({ employeeId, onBack }: { employeeId: string; onBack?: () => 
           history: chat.messages.slice(-10),
           companyName: companySettings.companyName,
           ceoName: companySettings.ceoName,
-          // 직원 개별 키가 있을 때만 직원 설정 사용, 없으면 글로벌 전체 사용
-          ...(employee.aiConfig?.apiKey
-            ? { apiKey: employee.aiConfig.apiKey, provider: employee.aiConfig.provider, model: employee.aiConfig.model }
-            : { apiKey: companySettings.globalAIConfig?.apiKey, provider: companySettings.globalAIConfig?.provider || 'gemini', model: companySettings.globalAIConfig?.model }
-          ),
+          // URL이 아닌 유효한 키가 있을 때만 직원 개별 설정 사용
+          ...(() => {
+            const empKey = employee.aiConfig?.apiKey;
+            const isValidEmpKey = !!empKey && !empKey.startsWith('http');
+            return isValidEmpKey
+              ? { apiKey: empKey, provider: employee.aiConfig!.provider, model: employee.aiConfig!.model }
+              : { apiKey: companySettings.globalAIConfig?.apiKey, provider: companySettings.globalAIConfig?.provider || 'gemini', model: companySettings.globalAIConfig?.model };
+          })(),
           // 커스터마이징 설정
           customInstructions: employee.customInstructions,
           companyBio: companySettings.companyBio,
