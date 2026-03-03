@@ -35,6 +35,12 @@ export async function POST(req: NextRequest) {
       companyName,
       ceoName,
       apiKey,
+      // 커스터마이징
+      customInstructions,
+      companyBio,
+      responseLanguage,
+      responseLength,
+      globalCustomInstructions,
       // 기존 형식
       employee,
       userMessage,
@@ -48,7 +54,18 @@ export async function POST(req: NextRequest) {
     const msgs = history || chatHistory || [];
     const company = companyName || 'My Company';
     const ceo = ceoName || '대표님';
+    const provider: string = body.provider || 'gemini';
+    const model: string = body.model || '';
     const roleCtx = ROLE_CONTEXT[role] || `${role} 담당 직원.`;
+
+    // 서버 환경변수를 fallback으로 사용 (클라이언트 키 없거나 빈 값일 때)
+    // provider가 gemini가 아닌데 키가 없으면, gemini로 전환해서 서버 키 사용
+    let resolvedApiKey = apiKey;
+    let resolvedProvider = provider;
+    if (!resolvedApiKey) {
+      resolvedApiKey = process.env.GEMINI_API_KEY;
+      resolvedProvider = 'gemini';
+    }
 
     const historyText = msgs
       .slice(-12)
@@ -57,25 +74,43 @@ export async function POST(req: NextRequest) {
       )
       .join('\n');
 
-    const systemPrompt = `당신은 "${company}"에서 일하는 AI 직원 "${name}"입니다.
-직책: ${role} — ${roleCtx}
-${personality ? `성격: ${personality}` : ''}
-대표자: ${ceo}
+    // 응답 언어 지시
+    const langMap: Record<string, string> = {
+      ko:   '반드시 한국어로 답변하세요.',
+      en:   'Always respond in English.',
+      auto: '사용자 메시지와 동일한 언어로 답변하세요.',
+    };
+    const langInstruction = langMap[responseLanguage || 'ko'];
 
-지시사항:
-- 위 직책에 맞는 전문 지식과 관점으로 답변하세요
-- 한국어로 간결하게 (2-4문장) 답변하세요
-- 당신이 AI라는 것을 드러내지 마세요
-- 대표님의 지시에 적극적으로 협력하세요
-- 업무 관련 조언, 분석, 문서 작성 등을 수행하세요`;
+    // 응답 길이 지시
+    const lengthMap: Record<string, string> = {
+      concise:  '간결하게 2~4문장으로 핵심만 답변하세요.',
+      normal:   '적절한 길이로 명확하게 답변하세요.',
+      detailed: '충분한 설명과 예시를 포함하여 상세하게 답변하세요.',
+    };
+    const lengthInstruction = lengthMap[responseLength || 'concise'];
+
+    const systemPrompt = [
+      `당신은 "${company}"에서 일하는 AI 직원 "${name}"입니다.`,
+      `직책: ${role} — ${roleCtx}`,
+      personality ? `성격: ${personality}` : '',
+      `대표자: ${ceo}`,
+      companyBio ? `\n[회사 소개]\n${companyBio}` : '',
+      `\n[기본 지시사항]`,
+      `- 위 직책에 맞는 전문 지식과 관점으로 답변하세요`,
+      `- ${langInstruction}`,
+      `- ${lengthInstruction}`,
+      `- 당신이 AI라는 것을 드러내지 마세요`,
+      `- 대표님의 지시에 적극적으로 협력하세요`,
+      `- 업무 관련 조언, 분석, 문서 작성 등을 수행하세요`,
+      globalCustomInstructions ? `\n[전체 공통 지시]\n${globalCustomInstructions}` : '',
+      customInstructions ? `\n[${name} 개인 지시]\n${customInstructions}` : '',
+    ].filter(Boolean).join('\n');
 
     const prompt = `${historyText ? `[이전 대화]\n${historyText}\n\n` : ''}${ceo}: ${userMsg}
 ${name}:`;
 
-    // API 키가 있으면 해당 공급자 사용, 없으면 환경변수
-    const geminiKey = apiKey || process.env.GEMINI_API_KEY;
-
-    if (!geminiKey) {
+    if (!resolvedApiKey) {
       // API 키 없을 때 기본 응답
       const defaults: Record<string, string[]> = {
         '영업팀장': ['네, 바로 영업 전략을 수립하겠습니다!', '리드 발굴을 시작하겠습니다. 타겟 고객층을 알려주시면 더 정확한 접근이 가능합니다.'],
@@ -88,19 +123,64 @@ ${name}:`;
       });
     }
 
-    // Gemini API 호출
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const result = await model.generateContent(systemPrompt + '\n\n' + prompt);
-    const reply = result.response.text().trim();
+    let reply = '';
+
+    // OpenAI 계열 (gpt4o, gpt4, gpt35)
+    if (resolvedProvider === 'gpt4o' || resolvedProvider === 'gpt4' || resolvedProvider === 'gpt35') {
+      const selectedModel = model || (provider === 'gpt4o' ? 'gpt-4o' : provider === 'gpt4' ? 'gpt-4-turbo' : 'gpt-3.5-turbo');
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${resolvedApiKey}` },
+        body: JSON.stringify({
+          model: selectedModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 500,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'OpenAI API 오류');
+      reply = data.choices?.[0]?.message?.content?.trim() || '';
+
+    // Claude (Anthropic)
+    } else if (resolvedProvider === 'claude') {
+      const selectedModel = model || 'claude-sonnet-4-6';
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': resolvedApiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+          max_tokens: 500,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Anthropic API 오류');
+      reply = data.content?.[0]?.text?.trim() || '';
+
+    // Gemini (Google)
+    } else {
+      const selectedModel = model || 'gemini-2.0-flash';
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(resolvedApiKey);
+      const geminiModel = genAI.getGenerativeModel({ model: selectedModel });
+      const result = await geminiModel.generateContent(systemPrompt + '\n\n' + prompt);
+      reply = result.response.text().trim();
+    }
 
     return NextResponse.json({ reply });
   } catch (error) {
-    console.error('Chat error:', error);
-    // 폴백 응답
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('Chat error:', errMsg);
     return NextResponse.json({
-      reply: '죄송합니다. 현재 일시적인 오류가 발생했습니다. AI 설정에서 API 키를 확인해주세요.',
+      reply: `죄송합니다. 오류가 발생했습니다: ${errMsg}`,
     });
   }
 }

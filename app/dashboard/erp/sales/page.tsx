@@ -34,7 +34,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold">새 영업 리드 추가</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
@@ -114,6 +114,44 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── 모바일 카드 뷰 ────────────────────────────────────
+import type { Employee } from '@/lib/types';
+
+function MobileLeadCard({ lead, onUpdate, onDelete, employees }: {
+  lead: SalesLead;
+  onUpdate: (id: string, data: Partial<SalesLead>) => void;
+  onDelete: (id: string) => void;
+  employees: Employee[];
+}) {
+  const emp = employees.find((e) => e.id === lead.assignedEmployeeId);
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-sm text-gray-800 truncate">{lead.companyName}</div>
+          {lead.contactName && <div className="text-xs text-gray-400">{lead.contactName} {lead.phone && `· ${lead.phone}`}</div>}
+        </div>
+        <button onClick={() => onDelete(lead.id)} className="text-red-300 hover:text-red-500 text-lg ml-2 flex-shrink-0">×</button>
+      </div>
+      <div className="flex items-center gap-2 mb-3">
+        {lead.value > 0 && (
+          <span className="text-xs font-bold text-emerald-600">{fmtMoney(lead.value)}</span>
+        )}
+        {emp && (
+          <span className="text-xs text-gray-400">{ANIMAL_EMOJI[emp.animal]} {emp.name}</span>
+        )}
+      </div>
+      <select
+        value={lead.status}
+        onChange={(e) => onUpdate(lead.id, { status: e.target.value as LeadStatus })}
+        className={`w-full text-xs border rounded-xl px-3 py-2 font-bold focus:outline-none ${LEAD_STATUS_COLOR[lead.status]}`}
+      >
+        {STATUSES.map((s) => <option key={s} value={s}>{LEAD_STATUS_LABEL[s]}</option>)}
+      </select>
+    </div>
+  );
+}
+
 export default function SalesERPPage() {
   const { salesLeads, updateSalesLead, removeSalesLead, employees } = useStore();
   const [showAdd, setShowAdd] = useState(false);
@@ -128,28 +166,29 @@ export default function SalesERPPage() {
   return (
     <div className="min-h-full">
       {/* 헤더 */}
-      <header className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
+      <header className="bg-white border-b border-gray-100 px-4 md:px-6 py-4 sticky top-0 z-20">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-black text-gray-900">📊 영업 ERP</h1>
-            <p className="text-sm text-gray-400">영업 파이프라인 및 리드 관리</p>
+            <p className="text-sm text-gray-400 hidden sm:block">영업 파이프라인 및 리드 관리</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2">
+            {/* 데스크탑 뷰 토글 */}
+            <div className="hidden sm:flex items-center border border-gray-200 rounded-xl overflow-hidden">
               <button onClick={() => setViewMode('kanban')} className={`px-3 py-1.5 text-sm transition-colors ${viewMode === 'kanban' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>칸반</button>
               <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 text-sm transition-colors ${viewMode === 'list' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>목록</button>
             </div>
             <button onClick={() => setShowAdd(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold text-sm transition-colors">
+              className="bg-blue-600 hover:bg-blue-500 text-white px-3 md:px-4 py-2 rounded-xl font-bold text-sm transition-colors">
               + 리드 추가
             </button>
           </div>
         </div>
       </header>
 
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         {/* 통계 */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           {[
             { label: '전체 리드', value: salesLeads.length, color: 'text-gray-900' },
             { label: '진행 중', value: salesLeads.filter((l) => !['won', 'lost'].includes(l.status)).length, color: 'text-blue-600' },
@@ -157,134 +196,164 @@ export default function SalesERPPage() {
             { label: '파이프라인', value: pipelineValue > 0 ? fmtMoney(pipelineValue) : '₩0', color: 'text-indigo-600' },
           ].map((s) => (
             <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4">
-              <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
-              <div className="text-sm text-gray-500">{s.label}</div>
+              <div className={`text-xl md:text-2xl font-black ${s.color}`}>{s.value}</div>
+              <div className="text-xs text-gray-500">{s.label}</div>
             </div>
           ))}
         </div>
 
+        {/* 모바일 상태 필터 */}
+        <div className="md:hidden flex gap-1.5 mb-4 overflow-x-auto pb-1">
+          {(['all', ...STATUSES] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                filterStatus === s
+                  ? 'bg-gray-900 text-white'
+                  : s === 'all' ? 'bg-gray-100 text-gray-600' : `${LEAD_STATUS_COLOR[s as LeadStatus]} border`
+              }`}
+            >
+              {s === 'all' ? '전체' : LEAD_STATUS_LABEL[s as LeadStatus]}
+            </button>
+          ))}
+        </div>
+
         {salesLeads.length === 0 ? (
-          <div className="text-center py-24 bg-white rounded-2xl border border-gray-100">
+          <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
             <div className="text-6xl mb-4">📊</div>
             <h2 className="text-xl font-bold text-gray-700 mb-2">첫 영업 리드를 추가하세요</h2>
-            <p className="text-gray-400 mb-6">잠재 고객 정보를 등록하고 AI 영업팀장이 관리하도록 지시하세요.</p>
+            <p className="text-gray-400 mb-6 text-sm px-4">잠재 고객 정보를 등록하고 AI 영업팀장이 관리하도록 지시하세요.</p>
             <button onClick={() => setShowAdd(true)} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">
               + 리드 추가하기
             </button>
           </div>
-        ) : viewMode === 'kanban' ? (
-          /* 칸반 뷰 */
-          <div className="grid grid-cols-6 gap-3 overflow-x-auto">
-            {STATUSES.map((status) => {
-              const leads = salesLeads.filter((l) => l.status === status);
-              const columnValue = leads.reduce((s, l) => s + l.value, 0);
-              return (
-                <div key={status} className="min-w-[180px]">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className={`text-xs font-bold px-2 py-1 rounded-lg ${LEAD_STATUS_COLOR[status]}`}>
-                      {LEAD_STATUS_LABEL[status]}
-                    </span>
-                    <span className="text-xs text-gray-400">{leads.length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {leads.map((lead) => {
-                      const emp = employees.find((e) => e.id === lead.assignedEmployeeId);
-                      return (
-                        <div key={lead.id} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm hover:shadow-md transition-shadow">
-                          <div className="font-semibold text-sm text-gray-800 mb-1 truncate">{lead.companyName}</div>
-                          {lead.contactName && <div className="text-xs text-gray-400 mb-1">{lead.contactName}</div>}
-                          {lead.value > 0 && (
-                            <div className="text-xs font-bold text-emerald-600 mb-2">{fmtMoney(lead.value)}</div>
-                          )}
-                          {emp && (
-                            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-2">
-                              <span>{ANIMAL_EMOJI[emp.animal]}</span>
-                              <span>{emp.name}</span>
-                            </div>
-                          )}
-                          <select
-                            value={lead.status}
-                            onChange={(e) => updateSalesLead(lead.id, { status: e.target.value as LeadStatus })}
-                            className="w-full text-[10px] border border-gray-100 rounded-lg px-1.5 py-1 text-gray-500 focus:outline-none">
-                            {STATUSES.map((s) => <option key={s} value={s}>{LEAD_STATUS_LABEL[s]}</option>)}
-                          </select>
-                        </div>
-                      );
-                    })}
-                    {leads.length === 0 && (
-                      <div className="text-center py-4 text-xs text-gray-300 border-2 border-dashed border-gray-100 rounded-xl">
-                        없음
-                      </div>
-                    )}
-                  </div>
-                  {columnValue > 0 && (
-                    <div className="mt-2 text-xs text-center text-gray-400 font-medium">
-                      합계 {fmtMoney(columnValue)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         ) : (
-          /* 목록 뷰 */
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">회사명</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">담당자</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">현황</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">금액</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">담당직원</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map((lead) => {
-                  const emp = employees.find((e) => e.id === lead.assignedEmployeeId);
-                  return (
-                    <tr key={lead.id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="font-semibold text-gray-800">{lead.companyName}</div>
-                        {lead.contactEmail && <div className="text-xs text-gray-400">{lead.contactEmail}</div>}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div className="text-gray-700">{lead.contactName || '-'}</div>
-                        {lead.phone && <div className="text-xs text-gray-400">{lead.phone}</div>}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <select
-                          value={lead.status}
-                          onChange={(e) => updateSalesLead(lead.id, { status: e.target.value as LeadStatus })}
-                          className={`text-xs font-bold px-2 py-1 rounded-lg border focus:outline-none ${LEAD_STATUS_COLOR[lead.status]}`}>
-                          {STATUSES.map((s) => <option key={s} value={s}>{LEAD_STATUS_LABEL[s]}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="font-semibold text-emerald-600">
-                          {lead.value > 0 ? fmtMoney(lead.value) : '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        {emp ? (
-                          <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                            <span>{ANIMAL_EMOJI[emp.animal]}</span>
-                            <span>{emp.name}</span>
-                          </div>
-                        ) : <span className="text-xs text-gray-300">미배정</span>}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <button onClick={() => removeSalesLead(lead.id)} className="text-red-400 hover:text-red-600 text-xs transition-colors">
-                          삭제
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* 모바일: 카드 뷰 */}
+            <div className="md:hidden space-y-3">
+              {filtered.map((lead) => (
+                <MobileLeadCard
+                  key={lead.id}
+                  lead={lead}
+                  onUpdate={updateSalesLead}
+                  onDelete={removeSalesLead}
+                  employees={employees}
+                />
+              ))}
+              {filtered.length === 0 && (
+                <div className="text-center py-12 text-gray-400 text-sm">해당 상태의 리드가 없습니다</div>
+              )}
+            </div>
+
+            {/* 데스크탑: 칸반 / 목록 뷰 */}
+            <div className="hidden md:block">
+              {viewMode === 'kanban' ? (
+                <div className="grid grid-cols-6 gap-3 overflow-x-auto">
+                  {STATUSES.map((status) => {
+                    const leads = salesLeads.filter((l) => l.status === status);
+                    const columnValue = leads.reduce((s, l) => s + l.value, 0);
+                    return (
+                      <div key={status} className="min-w-[180px]">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className={`text-xs font-bold px-2 py-1 rounded-lg ${LEAD_STATUS_COLOR[status]}`}>
+                            {LEAD_STATUS_LABEL[status]}
+                          </span>
+                          <span className="text-xs text-gray-400">{leads.length}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {leads.map((lead) => {
+                            const emp = employees.find((e) => e.id === lead.assignedEmployeeId);
+                            return (
+                              <div key={lead.id} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm hover:shadow-md transition-shadow">
+                                <div className="font-semibold text-sm text-gray-800 mb-1 truncate">{lead.companyName}</div>
+                                {lead.contactName && <div className="text-xs text-gray-400 mb-1">{lead.contactName}</div>}
+                                {lead.value > 0 && (
+                                  <div className="text-xs font-bold text-emerald-600 mb-2">{fmtMoney(lead.value)}</div>
+                                )}
+                                {emp && (
+                                  <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-2">
+                                    <span>{ANIMAL_EMOJI[emp.animal]}</span>
+                                    <span>{emp.name}</span>
+                                  </div>
+                                )}
+                                <select
+                                  value={lead.status}
+                                  onChange={(e) => updateSalesLead(lead.id, { status: e.target.value as LeadStatus })}
+                                  className="w-full text-[10px] border border-gray-100 rounded-lg px-1.5 py-1 text-gray-500 focus:outline-none">
+                                  {STATUSES.map((s) => <option key={s} value={s}>{LEAD_STATUS_LABEL[s]}</option>)}
+                                </select>
+                              </div>
+                            );
+                          })}
+                          {leads.length === 0 && (
+                            <div className="text-center py-4 text-xs text-gray-300 border-2 border-dashed border-gray-100 rounded-xl">없음</div>
+                          )}
+                        </div>
+                        {columnValue > 0 && (
+                          <div className="mt-2 text-xs text-center text-gray-400 font-medium">합계 {fmtMoney(columnValue)}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">회사명</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">담당자</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">현황</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">금액</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">담당직원</th>
+                        <th className="px-4 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {filtered.map((lead) => {
+                        const emp = employees.find((e) => e.id === lead.assignedEmployeeId);
+                        return (
+                          <tr key={lead.id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-5 py-3.5">
+                              <div className="font-semibold text-gray-800">{lead.companyName}</div>
+                              {lead.contactEmail && <div className="text-xs text-gray-400">{lead.contactEmail}</div>}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="text-gray-700">{lead.contactName || '-'}</div>
+                              {lead.phone && <div className="text-xs text-gray-400">{lead.phone}</div>}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <select
+                                value={lead.status}
+                                onChange={(e) => updateSalesLead(lead.id, { status: e.target.value as LeadStatus })}
+                                className={`text-xs font-bold px-2 py-1 rounded-lg border focus:outline-none ${LEAD_STATUS_COLOR[lead.status]}`}>
+                                {STATUSES.map((s) => <option key={s} value={s}>{LEAD_STATUS_LABEL[s]}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className="font-semibold text-emerald-600">{lead.value > 0 ? fmtMoney(lead.value) : '-'}</span>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              {emp ? (
+                                <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                                  <span>{ANIMAL_EMOJI[emp.animal]}</span>
+                                  <span>{emp.name}</span>
+                                </div>
+                              ) : <span className="text-xs text-gray-300">미배정</span>}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <button onClick={() => removeSalesLead(lead.id)} className="text-red-400 hover:text-red-600 text-xs transition-colors">삭제</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 

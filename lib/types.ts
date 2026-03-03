@@ -84,6 +84,7 @@ export interface Employee {
   taskCount: number;
   completedTaskCount: number;
   status: 'active' | 'busy' | 'offline';
+  customInstructions?: string;  // 직원별 개인 지시사항
 }
 
 export type Department = '영업' | '회계' | '마케팅' | '개발' | 'HR' | '고객지원' | '전략' | '경영';
@@ -332,6 +333,11 @@ export interface CompanySettings {
   // AI 글로벌 설정
   globalAIConfig?: AIProviderConfig;
   subscriptionTier: SubscriptionTier;
+  // AI 동작 커스터마이징
+  companyBio?: string;               // 회사 소개 (AI 프롬프트에 주입)
+  responseLanguage?: 'ko' | 'en' | 'auto';  // 응답 언어
+  responseLength?: 'concise' | 'normal' | 'detailed';  // 응답 길이
+  globalCustomInstructions?: string; // 전체 직원 공통 추가 지시
 }
 
 export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
@@ -357,6 +363,10 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   adBudget: '',
   globalAIConfig: undefined,
   subscriptionTier: 'free',
+  companyBio: '',
+  responseLanguage: 'ko',
+  responseLength: 'concise',
+  globalCustomInstructions: '',
 };
 
 // ── 동물 모델 / 이모지 / 성격 ─────────────────────────

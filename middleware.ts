@@ -1,40 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const PUBLIC_PATHS = ['/', '/login', '/signup', '/api'];
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const hostname = request.headers.get('host') || '';
+  const url = request.nextUrl;
 
-  // 공개 경로는 통과
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
-    return NextResponse.next();
-  }
+  // ── 서브도메인 감지: *.loov.co.kr 또는 *.localhost ──
+  // 예: company.loov.co.kr → slug = 'company'
+  // 예: company.localhost:3000 → slug = 'company' (로컬 개발용)
+  const mainDomain = process.env.NEXT_PUBLIC_MAIN_DOMAIN || 'loov.co.kr';
+  const isSubdomain =
+    hostname.endsWith(`.${mainDomain}`) ||
+    (process.env.NODE_ENV !== 'production' && hostname.match(/^[^.]+\.localhost/));
 
-  // /dashboard 이하 보호
-  if (pathname.startsWith('/dashboard')) {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  if (isSubdomain) {
+    const slug = hostname.split('.')[0];
 
-    // 쿠키에서 세션 토큰 확인
-    const accessToken = request.cookies.get('sb-access-token')?.value
-      || request.cookies.get(`sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`)?.value;
-
-    // 토큰이 없으면 로그인 페이지로
-    if (!accessToken) {
-      // 세션 쿠키가 있는지 좀 더 넓게 확인
-      const hasCookie = [...request.cookies.getAll()].some(
-        (c) => c.name.includes('auth-token') || c.name.startsWith('sb-')
-      );
-      if (!hasCookie) {
-        return NextResponse.redirect(new URL('/login', request.url));
-      }
+    // /api, /_next, /favicon 등은 그대로 통과
+    if (
+      url.pathname.startsWith('/api') ||
+      url.pathname.startsWith('/_next') ||
+      url.pathname.startsWith('/favicon')
+    ) {
+      return NextResponse.next();
     }
+
+    // 서브도메인 → /site/[slug]로 내부 라우트 rewrite
+    const rewriteUrl = new URL(`/site/${slug}${url.pathname}${url.search}`, url.origin);
+    return NextResponse.rewrite(rewriteUrl);
   }
 
+  // Auth 체크는 DashboardLayout(client-side)에서 supabase.auth.getSession()으로 처리
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: [
+    '/dashboard/:path*',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
 };

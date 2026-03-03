@@ -1,98 +1,266 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useStore } from '@/lib/store';
 
-const POSTS = [
-  {
-    id: 1,
-    category: '성공사례',
-    icon: '🏆',
-    author: '김서윤',
-    avatar: '👩‍💼',
-    title: 'AI 마케터 고용 후 인스타 팔로워 5천→3만 달성!',
-    content: '처음엔 반신반의했는데, AI 마케터한테 매일 3개 포스팅 지시했더니 2달 만에 팔로워 6배 성장했어요. 콘텐츠 기획부터 해시태그까지 다 알아서 해줘서 저는 사업에만 집중할 수 있었어요.',
-    likes: 142,
-    comments: 38,
-    date: '2시간 전',
-    tags: ['마케팅', 'SNS', '성공사례'],
-  },
-  {
-    id: 2,
-    category: '질문',
-    icon: '❓',
-    author: '박민준',
-    avatar: '👨‍💻',
-    title: 'AI 영업팀장 프롬프트 어떻게 쓰세요?',
-    content: 'B2B 영업 중인데 잠재 고객 발굴이랑 초기 연락 메일 작성에 AI 영업팀장 쓰고 싶은데, 좋은 지시사항 예시 공유해주실 분 계신가요?',
-    likes: 67,
-    comments: 22,
-    date: '5시간 전',
-    tags: ['영업', '프롬프트', '질문'],
-  },
-  {
-    id: 3,
-    category: '팁',
-    icon: '💡',
-    author: '이지현',
-    avatar: '👩‍🎨',
-    title: '회계 AI 활용 꿀팁: 세금계산서 자동화',
-    content: '세금계산서 발행할 때마다 번거로웠는데, AI 회계팀장한테 매월 말일에 자동으로 발행 목록 정리해달라고 했더니 완전 자동화됐어요. 스케줄 기능이랑 같이 쓰면 진짜 편해요.',
-    likes: 89,
-    comments: 15,
-    date: '1일 전',
-    tags: ['회계', '자동화', '팁'],
-  },
-  {
-    id: 4,
-    category: '소개',
-    icon: '👋',
-    author: '최동욱',
-    avatar: '👨‍🍳',
-    title: '식품 브랜드 운영 중인 LOOV 신입입니다!',
-    content: '수제 잼 브랜드 운영하는 1인 사업자예요. 마케팅이랑 고객 응대에 너무 시간이 많이 걸려서 LOOV 시작했는데 첫인상이 너무 좋아요. 잘 부탁드립니다!',
-    likes: 45,
-    comments: 12,
-    date: '2일 전',
-    tags: ['자기소개', '식품', '신입'],
-  },
-  {
-    id: 5,
-    category: '토론',
-    icon: '💬',
-    author: '정하은',
-    avatar: '👩‍🔬',
-    title: 'AI 직원한테 어느 수준까지 위임하시나요?',
-    content: '저는 처음엔 단순 업무만 맡겼는데 이제 계약서 초안 작성, 협상 준비까지 맡기고 있어요. 여러분은 어느 선에서 관리감독 하시나요? 다양한 의견 궁금해요.',
-    likes: 103,
-    comments: 47,
-    date: '3일 전',
-    tags: ['토론', '위임', '관리'],
-  },
-];
+interface Post {
+  id: string;
+  user_id: string;
+  author_name: string;
+  author_avatar: string;
+  title: string;
+  content: string;
+  category: string;
+  tags: string[];
+  likes: number;
+  comments_count: number;
+  created_at: string;
+}
+
+interface Comment {
+  id: string;
+  author_name: string;
+  content: string;
+  created_at: string;
+}
 
 const CATEGORIES = ['전체', '성공사례', '팁', '질문', '토론', '소개'];
 
-export default function CommunityPage() {
-  const [activeCategory, setActiveCategory] = useState('전체');
-  const [newPost, setNewPost] = useState(false);
+const CATEGORY_STYLE: Record<string, string> = {
+  '성공사례': 'bg-amber-100 text-amber-700',
+  '팁': 'bg-green-100 text-green-700',
+  '질문': 'bg-blue-100 text-blue-700',
+  '토론': 'bg-purple-100 text-purple-700',
+  '소개': 'bg-gray-100 text-gray-600',
+};
 
-  const filtered = POSTS.filter((p) => activeCategory === '전체' || p.category === activeCategory);
+const CATEGORY_ICON: Record<string, string> = {
+  '성공사례': '🏆', '팁': '💡', '질문': '❓', '토론': '💬', '소개': '👋',
+};
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}분 전`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  return `${days}일 전`;
+}
+
+// ── 댓글 섹션 ──────────────────────────────────────
+function CommentsSection({ postId }: { postId: string }) {
+  const { companySettings } = useStore();
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/community/posts/${postId}/comments`)
+      .then((r) => r.json())
+      .then((d) => { setComments(d.comments || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [postId]);
+
+  const handleComment = async () => {
+    if (!newComment.trim() || posting) return;
+    setPosting(true);
+    try {
+      const res = await fetch(`/api/community/posts/${postId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: newComment.trim(),
+          authorName: companySettings.ceoName || '익명',
+        }),
+      });
+      const data = await res.json();
+      if (data.comment) {
+        setComments((prev) => [...prev, data.comment]);
+        setNewComment('');
+      }
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      {loading ? (
+        <div className="text-xs text-gray-400">댓글 불러오는 중...</div>
+      ) : (
+        <>
+          <div className="space-y-2 mb-3">
+            {comments.map((c) => (
+              <div key={c.id} className="flex gap-2 text-xs">
+                <span className="font-bold text-gray-700 flex-shrink-0">{c.author_name}</span>
+                <span className="text-gray-500">{c.content}</span>
+              </div>
+            ))}
+            {comments.length === 0 && <p className="text-xs text-gray-400">첫 댓글을 달아보세요</p>}
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleComment())}
+              placeholder="댓글 달기..."
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-400"
+              disabled={posting}
+            />
+            <button
+              onClick={handleComment}
+              disabled={!newComment.trim() || posting}
+              className="bg-indigo-600 disabled:opacity-40 text-white text-xs px-3 py-1.5 rounded-xl font-bold"
+            >
+              댓글
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── 게시글 카드 ─────────────────────────────────────
+function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }) {
+  const [showComments, setShowComments] = useState(false);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-sm transition-shadow">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
+          {post.author_avatar || '👤'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-xs font-bold text-gray-700">{post.author_name}</span>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${CATEGORY_STYLE[post.category] || 'bg-gray-100 text-gray-600'}`}>
+              {CATEGORY_ICON[post.category] || '📝'} {post.category}
+            </span>
+            <span className="text-[10px] text-gray-400 ml-auto">{timeAgo(post.created_at)}</span>
+          </div>
+          <h3 className="font-bold text-gray-900 text-sm mb-1.5">{post.title}</h3>
+          <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{post.content}</p>
+
+          <div className="flex items-center gap-3 mt-3">
+            <button
+              onClick={() => onLike(post.id)}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-400 transition-colors"
+            >
+              <span>❤️</span><span>{post.likes}</span>
+            </button>
+            <button
+              onClick={() => setShowComments((v) => !v)}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-400 transition-colors"
+            >
+              <span>💬</span><span>{post.comments_count}</span>
+            </button>
+            <div className="flex flex-wrap gap-1 ml-auto">
+              {(post.tags || []).map((tag) => (
+                <span key={tag} className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium">#{tag}</span>
+              ))}
+            </div>
+          </div>
+
+          {showComments && <CommentsSection postId={post.id} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function CommunityPage() {
+  const { companySettings } = useStore();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [activeCategory, setActiveCategory] = useState('전체');
+  const [showNewPost, setShowNewPost] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
+  const [form, setForm] = useState({ category: '토론', title: '', content: '', tags: '' });
+
+  const fetchPosts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: '30' });
+      if (activeCategory !== '전체') params.set('category', activeCategory);
+      const res = await fetch(`/api/community/posts?${params}`);
+      const data = await res.json();
+      setPosts(data.posts || []);
+    } catch {
+      setPosts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeCategory]);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
+
+  const handlePost = async () => {
+    if (!form.title.trim() || !form.content.trim() || posting) return;
+    setPosting(true);
+    try {
+      const res = await fetch('/api/community/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          content: form.content.trim(),
+          category: form.category,
+          tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
+          authorName: companySettings.ceoName || '익명',
+          authorAvatar: '👤',
+        }),
+      });
+      const data = await res.json();
+      if (data.post) {
+        setPosts((prev) => [data.post, ...prev]);
+        setForm({ category: '토론', title: '', content: '', tags: '' });
+        setShowNewPost(false);
+      }
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleLike = async (postId: string) => {
+    try {
+      const res = await fetch(`/api/community/posts/${postId}/like`, { method: 'POST' });
+      const data = await res.json();
+      if (data.likes !== undefined) {
+        setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, likes: data.likes } : p));
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // 통계
+  const stats = [
+    { label: '게시글', value: posts.length.toLocaleString(), icon: '📝' },
+    { label: '성공사례', value: posts.filter((p) => p.category === '성공사례').length.toString(), icon: '🏆' },
+    { label: '팁 공유', value: posts.filter((p) => p.category === '팁').length.toString(), icon: '💡' },
+    { label: '토론', value: posts.filter((p) => p.category === '토론').length.toString(), icon: '💬' },
+  ];
 
   return (
     <div className="min-h-full">
-      <header className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
+      <header className="bg-white border-b border-gray-100 px-4 md:px-6 py-4 sticky top-0 z-20">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-black text-gray-900">🤝 커뮤니티</h1>
-            <p className="text-sm text-gray-400">1인 기업가들의 AI 활용 경험 공유</p>
+            <p className="text-sm text-gray-400 hidden sm:block">1인 기업가들의 AI 활용 경험 공유</p>
           </div>
           <button
-            onClick={() => setNewPost(true)}
+            onClick={() => setShowNewPost(true)}
             className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors">
             + 글쓰기
           </button>
         </div>
-        <div className="flex gap-1.5 mt-3">
+        <div className="flex gap-1.5 mt-3 flex-wrap">
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
@@ -108,94 +276,98 @@ export default function CommunityPage() {
         </div>
       </header>
 
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         {/* 커뮤니티 통계 */}
-        <div className="grid grid-cols-4 gap-3 mb-6">
-          {[
-            { label: '회원', value: '2,847', icon: '👥' },
-            { label: '게시글', value: '12,493', icon: '📝' },
-            { label: '오늘 활동', value: '342', icon: '🔥' },
-            { label: '성공사례', value: '891', icon: '🏆' },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
-              <div className="text-xl mb-0.5">{stat.icon}</div>
-              <div className="font-black text-lg text-gray-900">{stat.value}</div>
-              <div className="text-[10px] text-gray-400">{stat.label}</div>
+        <div className="grid grid-cols-4 gap-2 md:gap-3 mb-6">
+          {stats.map((stat) => (
+            <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 p-2 md:p-3 text-center">
+              <div className="text-lg md:text-xl mb-0.5">{stat.icon}</div>
+              <div className="font-black text-base md:text-lg text-gray-900">{stat.value}</div>
+              <div className="text-[9px] md:text-[10px] text-gray-400">{stat.label}</div>
             </div>
           ))}
         </div>
 
         {/* 글쓰기 모달 */}
-        {newPost && (
+        {showNewPost && (
           <div className="bg-white rounded-2xl border border-indigo-200 p-5 mb-6 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">새 글 작성</h3>
-            <select className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 mb-3">
-              {CATEGORIES.filter((c) => c !== '전체').map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            <input
-              placeholder="제목을 입력하세요"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 mb-3"
-            />
-            <textarea
-              placeholder="내용을 입력하세요. LOOV 활용 경험, 팁, 질문 모두 환영합니다!"
-              rows={5}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 resize-none mb-3"
-            />
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setNewPost(false)} className="text-sm text-gray-500 px-4 py-2 rounded-xl hover:bg-gray-100">취소</button>
-              <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-5 py-2 rounded-xl transition-colors">게시</button>
+            <div className="space-y-3">
+              <select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+              >
+                {CATEGORIES.filter((c) => c !== '전체').map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <input
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="제목을 입력하세요"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+              />
+              <textarea
+                value={form.content}
+                onChange={(e) => setForm({ ...form, content: e.target.value })}
+                placeholder="내용을 입력하세요. LOOV 활용 경험, 팁, 질문 모두 환영합니다!"
+                rows={5}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 resize-none"
+              />
+              <input
+                value={form.tags}
+                onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                placeholder="태그 (쉼표로 구분): AI, 마케팅, 전략"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+              />
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <button
+                onClick={() => setShowNewPost(false)}
+                className="text-sm text-gray-500 px-4 py-2 rounded-xl hover:bg-gray-100"
+              >
+                취소
+              </button>
+              <button
+                onClick={handlePost}
+                disabled={!form.title.trim() || !form.content.trim() || posting}
+                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold px-5 py-2 rounded-xl transition-colors"
+              >
+                {posting ? '게시 중...' : '게시'}
+              </button>
             </div>
           </div>
         )}
 
         {/* 게시글 목록 */}
-        <div className="space-y-3">
-          {filtered.map((post) => (
-            <div key={post.id} className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-sm transition-shadow cursor-pointer">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
-                  {post.avatar}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-bold text-gray-700">{post.author}</span>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                      post.category === '성공사례' ? 'bg-amber-100 text-amber-700' :
-                      post.category === '팁' ? 'bg-green-100 text-green-700' :
-                      post.category === '질문' ? 'bg-blue-100 text-blue-700' :
-                      post.category === '토론' ? 'bg-purple-100 text-purple-700' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      {post.icon} {post.category}
-                    </span>
-                    <span className="text-[10px] text-gray-400 ml-auto">{post.date}</span>
-                  </div>
-                  <h3 className="font-bold text-gray-900 text-sm mb-1.5">{post.title}</h3>
-                  <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{post.content}</p>
-
-                  <div className="flex items-center gap-4 mt-3">
-                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-400 transition-colors">
-                      <span>❤️</span><span>{post.likes}</span>
-                    </button>
-                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-400 transition-colors">
-                      <span>💬</span><span>{post.comments}</span>
-                    </button>
-                    <div className="flex flex-wrap gap-1 ml-auto">
-                      {post.tags.map((tag) => (
-                        <span key={tag} className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium">#{tag}</span>
-                      ))}
-                    </div>
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 animate-pulse">
+                <div className="flex gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gray-200" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-gray-100 rounded w-1/3" />
+                    <div className="h-5 bg-gray-100 rounded w-4/5" />
+                    <div className="h-8 bg-gray-100 rounded" />
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-
-        {filtered.length === 0 && (
-          <div className="text-center py-16 text-gray-400 text-sm">게시글이 없습니다</div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} onLike={handleLike} />
+            ))}
+            {posts.length === 0 && (
+              <div className="text-center py-16 text-gray-400">
+                <div className="text-4xl mb-3">🤝</div>
+                <p className="text-sm">첫 번째 게시글을 작성해보세요!</p>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

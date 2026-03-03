@@ -43,6 +43,7 @@ export default function SNSPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   // 즉시 발행 상태
   const [postTemplateId, setPostTemplateId] = useState('');
@@ -73,7 +74,9 @@ export default function SNSPage() {
     // URL 파라미터로 연결 결과 확인
     const params = new URLSearchParams(window.location.search);
     const connected = params.get('connected');
-    if (connected) {
+    const err = params.get('error');
+    if (connected || err) {
+      if (err) setUrlError(decodeURIComponent(err));
       window.history.replaceState({}, '', '/dashboard/sns');
     }
   }, []);
@@ -167,6 +170,17 @@ export default function SNSPage() {
       </header>
 
       <div className="p-6">
+        {urlError && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-700">연결 실패</p>
+              <p className="text-xs text-red-600 mt-0.5">{urlError}</p>
+            </div>
+            <button onClick={() => setUrlError(null)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+          </div>
+        )}
+
         {loading && (
           <div className="flex items-center justify-center py-12 text-gray-400 text-sm">불러오는 중...</div>
         )}
@@ -174,10 +188,6 @@ export default function SNSPage() {
         {/* 연결 관리 탭 */}
         {!loading && tab === 'connections' && (
           <div className="space-y-4">
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-700">
-              <strong>환경 변수 필요:</strong> Vercel에 <code className="bg-amber-100 px-1 rounded text-xs">TWITTER_CLIENT_ID</code>, <code className="bg-amber-100 px-1 rounded text-xs">TWITTER_CLIENT_SECRET</code>, <code className="bg-amber-100 px-1 rounded text-xs">THREADS_APP_ID</code>, <code className="bg-amber-100 px-1 rounded text-xs">THREADS_APP_SECRET</code>, <code className="bg-amber-100 px-1 rounded text-xs">FACEBOOK_APP_ID</code>, <code className="bg-amber-100 px-1 rounded text-xs">FACEBOOK_APP_SECRET</code>, <code className="bg-amber-100 px-1 rounded text-xs">NEXT_PUBLIC_SITE_URL</code>, <code className="bg-amber-100 px-1 rounded text-xs">SUPABASE_SERVICE_ROLE_KEY</code> 설정 필요
-            </div>
-
             <div className="grid md:grid-cols-3 gap-4">
               {(Object.keys(PLATFORMS) as Platform[]).map((platform) => {
                 const conn = getConnection(platform);

@@ -48,13 +48,12 @@ function AddEntryModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold">회계 항목 추가</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
         </div>
 
-        {/* 수입/지출 탭 */}
         <div className="flex rounded-xl overflow-hidden border border-gray-200 mb-4">
           <button onClick={() => setForm({ ...form, type: 'income', category: '' })}
             className={`flex-1 py-2.5 text-sm font-bold transition-colors ${form.type === 'income' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
@@ -112,8 +111,7 @@ function AddEntryModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.isRecurring} onChange={(e) => setForm({ ...form, isRecurring: e.target.checked })}
-              className="rounded" />
+            <input type="checkbox" checked={form.isRecurring} onChange={(e) => setForm({ ...form, isRecurring: e.target.checked })} className="rounded" />
             <span className="text-sm text-gray-600">반복 항목 (매월)</span>
           </label>
         </div>
@@ -140,12 +138,12 @@ export default function AccountingERPPage() {
 
   const monthEntries = accountingEntries.filter((e) => e.date.startsWith(filterMonth));
   const filtered = filterType === 'all' ? monthEntries : monthEntries.filter((e) => e.type === filterType);
+  const sortedFiltered = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
 
   const income = monthEntries.filter((e) => e.type === 'income').reduce((s, e) => s + e.amount, 0);
   const expense = monthEntries.filter((e) => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
   const profit = income - expense;
 
-  // 카테고리별 집계
   const categoryMap: Record<string, { income: number; expense: number }> = {};
   monthEntries.forEach((e) => {
     if (!categoryMap[e.category]) categoryMap[e.category] = { income: 0, expense: 0 };
@@ -157,46 +155,42 @@ export default function AccountingERPPage() {
 
   return (
     <div className="min-h-full">
-      <header className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
-        <div className="flex items-center justify-between">
+      <header className="bg-white border-b border-gray-100 px-4 md:px-6 py-4 sticky top-0 z-20">
+        <div className="flex items-center justify-between gap-2">
           <div>
             <h1 className="text-lg font-black text-gray-900">💰 회계 ERP</h1>
-            <p className="text-sm text-gray-400">수입/지출 관리 및 재무 보고</p>
+            <p className="text-sm text-gray-400 hidden sm:block">수입/지출 관리 및 재무 보고</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
-              className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
+              className="border border-gray-200 rounded-xl px-2 md:px-3 py-2 text-xs md:text-sm focus:outline-none focus:border-indigo-400" />
             <button onClick={() => setShowAdd(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold text-sm">
-              + 항목 추가
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 md:px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap">
+              + 추가
             </button>
           </div>
         </div>
       </header>
 
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         {/* 월간 요약 */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-2xl border border-emerald-100 p-5">
-            <div className="text-sm text-gray-500 mb-1">총 수입</div>
-            <div className="text-2xl font-black text-emerald-600">{fmtMoney(income)}</div>
-            <div className="text-xs text-gray-400 mt-1">
-              {monthEntries.filter((e) => e.type === 'income').length}건
-            </div>
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-white rounded-2xl border border-emerald-100 p-4">
+            <div className="text-xs text-gray-500 mb-1">총 수입</div>
+            <div className="text-lg md:text-2xl font-black text-emerald-600">{fmtMoney(income)}</div>
+            <div className="text-[10px] text-gray-400 mt-1">{monthEntries.filter((e) => e.type === 'income').length}건</div>
           </div>
-          <div className="bg-white rounded-2xl border border-red-100 p-5">
-            <div className="text-sm text-gray-500 mb-1">총 지출</div>
-            <div className="text-2xl font-black text-red-500">{fmtMoney(expense)}</div>
-            <div className="text-xs text-gray-400 mt-1">
-              {monthEntries.filter((e) => e.type === 'expense').length}건
-            </div>
+          <div className="bg-white rounded-2xl border border-red-100 p-4">
+            <div className="text-xs text-gray-500 mb-1">총 지출</div>
+            <div className="text-lg md:text-2xl font-black text-red-500">{fmtMoney(expense)}</div>
+            <div className="text-[10px] text-gray-400 mt-1">{monthEntries.filter((e) => e.type === 'expense').length}건</div>
           </div>
-          <div className={`bg-white rounded-2xl border p-5 ${profit >= 0 ? 'border-blue-100' : 'border-orange-100'}`}>
-            <div className="text-sm text-gray-500 mb-1">순이익</div>
-            <div className={`text-2xl font-black ${profit >= 0 ? 'text-blue-600' : 'text-orange-500'}`}>
+          <div className={`bg-white rounded-2xl border p-4 ${profit >= 0 ? 'border-blue-100' : 'border-orange-100'}`}>
+            <div className="text-xs text-gray-500 mb-1">순이익</div>
+            <div className={`text-lg md:text-2xl font-black ${profit >= 0 ? 'text-blue-600' : 'text-orange-500'}`}>
               {profit >= 0 ? '' : '-'}{fmtMoney(Math.abs(profit))}
             </div>
-            <div className="text-xs text-gray-400 mt-1">
+            <div className="text-[10px] text-gray-400 mt-1">
               {income > 0 ? `마진율 ${Math.round((profit / income) * 100)}%` : '수입 없음'}
             </div>
           </div>
@@ -205,71 +199,104 @@ export default function AccountingERPPage() {
         <div className="grid lg:grid-cols-3 gap-6">
           {/* 거래 내역 */}
           <div className="lg:col-span-2">
-            {/* 필터 탭 */}
             <div className="flex gap-2 mb-4">
               {[['all', '전체'], ['income', '수입'], ['expense', '지출']].map(([v, l]) => (
                 <button key={v} onClick={() => setFilterType(v as typeof filterType)}
-                  className={`px-4 py-1.5 rounded-xl text-sm font-medium transition-colors ${
+                  className={`px-3 md:px-4 py-1.5 rounded-xl text-sm font-medium transition-colors ${
                     filterType === v ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                   }`}>{l}</button>
               ))}
             </div>
 
-            {filtered.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-100 py-24 text-center">
+            {sortedFiltered.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center">
                 <div className="text-5xl mb-4">💰</div>
-                <h2 className="text-xl font-bold text-gray-700 mb-2">이번달 거래 내역이 없습니다</h2>
+                <h2 className="text-lg font-bold text-gray-700 mb-2">이번달 거래 내역이 없습니다</h2>
                 <button onClick={() => setShowAdd(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm mt-2">
                   + 항목 추가
                 </button>
               </div>
             ) : (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">날짜</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">카테고리</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">내용</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">금액</th>
-                      <th className="px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {filtered.sort((a, b) => b.date.localeCompare(a.date)).map((entry) => {
-                      const emp = employees.find((e) => e.id === entry.assignedEmployeeId);
-                      return (
-                        <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="px-5 py-3 text-gray-500 text-xs">{fmtDate(entry.date)}</td>
-                          <td className="px-4 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-lg font-medium ${
-                              entry.type === 'income' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                            }`}>{entry.category}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-gray-800 font-medium">{entry.description}</div>
-                            {emp && <div className="text-xs text-gray-400 flex items-center gap-1">{ANIMAL_EMOJI[emp.animal]} {emp.name}</div>}
+              <>
+                {/* 모바일: 카드 뷰 */}
+                <div className="md:hidden space-y-2">
+                  {sortedFiltered.map((entry) => {
+                    const emp = employees.find((e) => e.id === entry.assignedEmployeeId);
+                    return (
+                      <div key={entry.id} className="bg-white rounded-2xl border border-gray-100 p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-lg font-bold ${
+                                entry.type === 'income' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                              }`}>{entry.category}</span>
+                              <span className="text-[10px] text-gray-400">{fmtDate(entry.date)}</span>
+                              {entry.isRecurring && <span className="text-[10px] text-gray-400">반복</span>}
+                            </div>
+                            <div className="font-semibold text-sm text-gray-800 truncate">{entry.description}</div>
+                            {emp && <div className="text-xs text-gray-400 mt-0.5">{ANIMAL_EMOJI[emp.animal]} {emp.name}</div>}
                             {entry.invoiceNumber && <div className="text-xs text-gray-400">#{entry.invoiceNumber}</div>}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={`font-bold ${entry.type === 'income' ? 'text-emerald-600' : 'text-red-500'}`}>
+                          </div>
+                          <div className="text-right ml-3 flex-shrink-0">
+                            <div className={`font-bold text-sm ${entry.type === 'income' ? 'text-emerald-600' : 'text-red-500'}`}>
                               {entry.type === 'income' ? '+' : '-'}{fmtMoney(entry.amount)}
-                            </span>
-                            {entry.isRecurring && <div className="text-[10px] text-gray-400">반복</div>}
-                          </td>
-                          <td className="px-4 py-3">
-                            <button onClick={() => removeAccountingEntry(entry.id)} className="text-red-400 hover:text-red-600 text-xs">삭제</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </div>
+                            <button onClick={() => removeAccountingEntry(entry.id)} className="text-red-300 hover:text-red-500 text-xs mt-1">삭제</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 데스크탑: 테이블 뷰 */}
+                <div className="hidden md:block bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">날짜</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">카테고리</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">내용</th>
+                        <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">금액</th>
+                        <th className="px-4 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {sortedFiltered.map((entry) => {
+                        const emp = employees.find((e) => e.id === entry.assignedEmployeeId);
+                        return (
+                          <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-5 py-3 text-gray-500 text-xs">{fmtDate(entry.date)}</td>
+                            <td className="px-4 py-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-lg font-medium ${
+                                entry.type === 'income' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                              }`}>{entry.category}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="text-gray-800 font-medium">{entry.description}</div>
+                              {emp && <div className="text-xs text-gray-400 flex items-center gap-1">{ANIMAL_EMOJI[emp.animal]} {emp.name}</div>}
+                              {entry.invoiceNumber && <div className="text-xs text-gray-400">#{entry.invoiceNumber}</div>}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={`font-bold ${entry.type === 'income' ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {entry.type === 'income' ? '+' : '-'}{fmtMoney(entry.amount)}
+                              </span>
+                              {entry.isRecurring && <div className="text-[10px] text-gray-400">반복</div>}
+                            </td>
+                            <td className="px-4 py-3">
+                              <button onClick={() => removeAccountingEntry(entry.id)} className="text-red-400 hover:text-red-600 text-xs">삭제</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
 
-          {/* 카테고리 분석 */}
+          {/* 카테고리 분석 + 세금 일정 */}
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <h3 className="font-bold text-gray-900 mb-4">카테고리별 집계</h3>
@@ -298,7 +325,6 @@ export default function AccountingERPPage() {
               )}
             </div>
 
-            {/* 세금 알림 */}
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
               <h3 className="font-bold text-amber-800 mb-3">📋 세금 일정 안내</h3>
               <div className="space-y-2 text-sm">

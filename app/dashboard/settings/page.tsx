@@ -38,9 +38,16 @@ export default function SettingsPage() {
 
   // 글로벌 AI 설정 폼
   const [globalAI, setGlobalAI] = useState({
-    provider: (companySettings.globalAIConfig?.provider || 'claude') as AIProvider,
+    provider: (companySettings.globalAIConfig?.provider || 'gemini') as AIProvider,
     apiKey: companySettings.globalAIConfig?.apiKey || '',
-    model: companySettings.globalAIConfig?.model || 'claude-sonnet-4-6',
+    model: companySettings.globalAIConfig?.model || 'gemini-2.0-flash',
+  });
+
+  // AI 동작 커스터마이징 폼
+  const [aiCustom, setAiCustom] = useState({
+    responseLanguage: companySettings.responseLanguage || 'ko',
+    responseLength: companySettings.responseLength || 'concise',
+    globalCustomInstructions: companySettings.globalCustomInstructions || '',
   });
 
   // 회사 설정 폼
@@ -52,6 +59,7 @@ export default function SettingsPage() {
     brandTone: companySettings.brandTone,
     targetAudience: companySettings.targetAudience,
     hashtags: companySettings.hashtags,
+    companyBio: companySettings.companyBio || '',
   });
 
   const handleSaveGlobalAI = () => {
@@ -61,6 +69,16 @@ export default function SettingsPage() {
         apiKey: globalAI.apiKey,
         model: globalAI.model,
       },
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleSaveAICustom = () => {
+    updateCompanySettings({
+      responseLanguage: aiCustom.responseLanguage as 'ko' | 'en' | 'auto',
+      responseLength: aiCustom.responseLength as 'concise' | 'normal' | 'detailed',
+      globalCustomInstructions: aiCustom.globalCustomInstructions,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -86,7 +104,7 @@ export default function SettingsPage() {
   };
 
   const handleSaveCompany = () => {
-    updateCompanySettings(companyForm);
+    updateCompanySettings({ ...companyForm });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -232,6 +250,87 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* AI 동작 커스터마이징 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-5">
+                <span className="text-xl">🎛️</span>
+                <div>
+                  <h2 className="font-bold text-gray-900">AI 동작 설정</h2>
+                  <p className="text-xs text-gray-400">모든 직원의 응답 방식을 커스터마이징</p>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                {/* 응답 언어 */}
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-2 block">응답 언어</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { v: 'ko' as const, label: '한국어', desc: '항상 한국어로' },
+                      { v: 'en' as const, label: 'English', desc: 'Always in English' },
+                      { v: 'auto' as const, label: '자동', desc: '입력 언어에 맞춰' },
+                    ].map(({ v, label, desc }) => (
+                      <button key={v}
+                        onClick={() => setAiCustom({ ...aiCustom, responseLanguage: v })}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          aiCustom.responseLanguage === v
+                            ? 'border-indigo-400 bg-indigo-50'
+                            : 'border-gray-100 hover:border-gray-200 bg-gray-50'
+                        }`}>
+                        <div className="text-sm font-bold text-gray-800">{label}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 응답 길이 */}
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-2 block">응답 길이</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { v: 'concise' as const, label: '간결', desc: '2~4문장 핵심만' },
+                      { v: 'normal' as const, label: '보통', desc: '적절한 분량' },
+                      { v: 'detailed' as const, label: '상세', desc: '예시·설명 포함' },
+                    ].map(({ v, label, desc }) => (
+                      <button key={v}
+                        onClick={() => setAiCustom({ ...aiCustom, responseLength: v })}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          aiCustom.responseLength === v
+                            ? 'border-indigo-400 bg-indigo-50'
+                            : 'border-gray-100 hover:border-gray-200 bg-gray-50'
+                        }`}>
+                        <div className="text-sm font-bold text-gray-800">{label}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 전체 공통 지시사항 */}
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-1 block">
+                    전체 직원 공통 지시사항
+                    <span className="text-xs font-normal text-gray-400 ml-2">모든 AI 직원에게 적용</span>
+                  </label>
+                  <textarea
+                    value={aiCustom.globalCustomInstructions}
+                    onChange={(e) => setAiCustom({ ...aiCustom, globalCustomInstructions: e.target.value })}
+                    rows={3}
+                    placeholder={'예:\n- 답변 끝에 항상 다음 행동 제안 포함\n- 수치나 통계가 있으면 반드시 언급\n- 이모지 사용 금지'}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 resize-none"
+                  />
+                </div>
+
+                <button onClick={handleSaveAICustom}
+                  className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all ${
+                    saved ? 'bg-emerald-500 text-white' : 'bg-gray-900 hover:bg-gray-700 text-white'
+                  }`}>
+                  {saved ? '✓ 저장됨' : '동작 설정 저장'}
+                </button>
+              </div>
+            </div>
+
             {/* AI 가이드 */}
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-5">
               <h3 className="font-bold text-gray-900 mb-3">💡 AI 키 발급 방법</h3>
@@ -299,6 +398,22 @@ export default function SettingsPage() {
                 <input value={companyForm.hashtags} onChange={(e) => setCompanyForm({ ...companyForm, hashtags: e.target.value })}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none"
                   placeholder="#1인기업 #AI직원 #생산성..." />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                  회사 소개
+                  <span className="font-normal text-gray-400 ml-1">— AI 직원이 참고하는 비즈니스 컨텍스트</span>
+                </label>
+                <textarea
+                  value={companyForm.companyBio}
+                  onChange={(e) => setCompanyForm({ ...companyForm, companyBio: e.target.value })}
+                  rows={4}
+                  placeholder={'예:\n우리 회사는 소상공인을 위한 AI 솔루션을 제공합니다.\n주요 제품: LOOV 대시보드 (월 구독형)\n주요 고객: 1인 사업자, 소규모 팀\n현재 베타 서비스 중이며 유료 전환 예정'}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 resize-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  여기 입력한 내용이 모든 AI 직원의 시스템 프롬프트에 자동으로 포함됩니다.
+                </p>
               </div>
               <button onClick={handleSaveCompany}
                 className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${

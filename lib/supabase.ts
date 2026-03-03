@@ -1,10 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
-// 빌드/prerender 시 env가 없어도 throw하지 않도록 fallback 처리
+// createBrowserClient: 세션을 쿠키에 저장 → 서버 API routes도 인증 가능
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-key';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 
 // ── 테이블 이름 (bossai_ 접두어) ─────────────────────────────
 export const TABLES = {

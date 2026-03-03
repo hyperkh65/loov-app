@@ -2,12 +2,10 @@
  * SNS 플랫폼 설정 및 OAuth 헬퍼
  */
 
-export type Platform = 'twitter' | 'threads' | 'facebook';
+export type Platform = 'twitter' | 'threads' | 'facebook' | 'instagram' | 'linkedin';
 
 export const PLATFORMS: Record<Platform, {
   name: string;
-  icon: string;
-  color: string;
   authUrl: string;
   tokenUrl: string;
   scopes: string[];
@@ -15,8 +13,6 @@ export const PLATFORMS: Record<Platform, {
 }> = {
   twitter: {
     name: 'X (Twitter)',
-    icon: '𝕏',
-    color: '#000000',
     authUrl: 'https://twitter.com/i/oauth2/authorize',
     tokenUrl: 'https://api.twitter.com/2/oauth2/token',
     scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
@@ -24,8 +20,6 @@ export const PLATFORMS: Record<Platform, {
   },
   threads: {
     name: 'Threads',
-    icon: '@',
-    color: '#000000',
     authUrl: 'https://threads.net/oauth/authorize',
     tokenUrl: 'https://graph.threads.net/oauth/access_token',
     scopes: ['threads_basic', 'threads_content_publish'],
@@ -33,12 +27,24 @@ export const PLATFORMS: Record<Platform, {
   },
   facebook: {
     name: 'Facebook',
-    icon: 'f',
-    color: '#1877F2',
     authUrl: 'https://www.facebook.com/v18.0/dialog/oauth',
     tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token',
     scopes: ['pages_show_list', 'pages_manage_posts'],
     charLimit: 63206,
+  },
+  instagram: {
+    name: 'Instagram',
+    authUrl: 'https://www.facebook.com/v18.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token',
+    scopes: ['instagram_basic', 'instagram_content_publish', 'pages_show_list'],
+    charLimit: 2200,
+  },
+  linkedin: {
+    name: 'LinkedIn',
+    authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+    tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+    scopes: ['openid', 'profile', 'w_member_social'],
+    charLimit: 3000,
   },
 };
 
@@ -119,12 +125,45 @@ export async function postToFacebook(accessToken: string, content: string): Prom
   return { id: (await res.json()).id };
 }
 
+export async function postToInstagram(accessToken: string, content: string): Promise<{ id: string }> {
+  // Instagram은 이미지/영상 없는 텍스트 단독 포스팅을 지원하지 않음
+  // Threads로 텍스트 전용 포스팅 권장
+  throw new Error('Instagram은 이미지가 필요합니다. 텍스트 전용 포스팅은 Threads를 이용해 주세요.');
+}
+
+export async function postToLinkedIn(accessToken: string, platformUserId: string, content: string): Promise<{ id: string }> {
+  const res = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'X-Restli-Protocol-Version': '2.0.0',
+    },
+    body: JSON.stringify({
+      author: `urn:li:person:${platformUserId}`,
+      lifecycleState: 'PUBLISHED',
+      specificContent: {
+        'com.linkedin.ugc.ShareContent': {
+          shareCommentary: { text: content.substring(0, 3000) },
+          shareMediaCategory: 'NONE',
+        },
+      },
+      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
+    }),
+  });
+  if (!res.ok) throw new Error(`LinkedIn 포스팅 실패: ${await res.text()}`);
+  const id = res.headers.get('x-restli-id') || (await res.json()).id || 'unknown';
+  return { id };
+}
+
 export async function postToPlatform(
   platform: Platform, accessToken: string, platformUserId: string, content: string
 ): Promise<{ id: string }> {
   switch (platform) {
-    case 'twitter': return postToTwitter(accessToken, content);
-    case 'threads': return postToThreads(accessToken, platformUserId, content);
-    case 'facebook': return postToFacebook(accessToken, content);
+    case 'twitter':   return postToTwitter(accessToken, content);
+    case 'threads':   return postToThreads(accessToken, platformUserId, content);
+    case 'facebook':  return postToFacebook(accessToken, content);
+    case 'instagram': return postToInstagram(accessToken, content);
+    case 'linkedin':  return postToLinkedIn(accessToken, platformUserId, content);
   }
 }

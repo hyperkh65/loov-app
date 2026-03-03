@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
 import { PLATFORMS, Platform, generateState, generateCodeVerifier, generateCodeChallenge } from '@/lib/sns/platforms';
 
 export async function GET(
@@ -13,14 +13,17 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.redirect(`${siteUrl}/login`);
 
-  const config = PLATFORMS[platform as Platform];
-  if (!config) return NextResponse.json({ error: '지원하지 않는 플랫폼' }, { status: 400 });
+  if (!PLATFORMS[platform as Platform]) {
+    return NextResponse.json({ error: '지원하지 않는 플랫폼' }, { status: 400 });
+  }
 
-  // 환경변수 미설정 시 안내
+  // 환경변수 확인
   const missingEnv: Record<string, boolean> = {
-    twitter:  !process.env.TWITTER_CLIENT_ID  || !process.env.TWITTER_CLIENT_SECRET,
-    threads:  !process.env.THREADS_APP_ID     || !process.env.THREADS_APP_SECRET,
-    facebook: !process.env.FACEBOOK_APP_ID    || !process.env.FACEBOOK_APP_SECRET,
+    twitter:   !process.env.TWITTER_CLIENT_ID   || !process.env.TWITTER_CLIENT_SECRET,
+    threads:   !process.env.THREADS_APP_ID      || !process.env.THREADS_APP_SECRET,
+    facebook:  !process.env.FACEBOOK_APP_ID     || !process.env.FACEBOOK_APP_SECRET,
+    instagram: !process.env.FACEBOOK_APP_ID     || !process.env.FACEBOOK_APP_SECRET,
+    linkedin:  !process.env.LINKEDIN_CLIENT_ID  || !process.env.LINKEDIN_CLIENT_SECRET,
   };
   if (missingEnv[platform]) {
     return NextResponse.redirect(
@@ -32,8 +35,14 @@ export async function GET(
   let codeVerifier: string | null = null;
   if (platform === 'twitter') codeVerifier = generateCodeVerifier();
 
-  const admin = createAdminClient();
-  await admin.from('sns_oauth_state').insert({ user_id: user.id, platform, state, code_verifier: codeVerifier });
+  const { error: insertErr } = await supabase.from('sns_oauth_state').insert({
+    user_id: user.id, platform, state, code_verifier: codeVerifier,
+  });
+  if (insertErr) {
+    return NextResponse.redirect(
+      `${siteUrl}/dashboard/sns?error=${encodeURIComponent('OAuth 상태 저장 실패: ' + insertErr.message)}`
+    );
+  }
 
   const redirectUri = `${siteUrl}/api/sns/callback/${platform}`;
   let authUrl: URL;
@@ -41,30 +50,47 @@ export async function GET(
   switch (platform) {
     case 'twitter': {
       const challenge = await generateCodeChallenge(codeVerifier!);
-      authUrl = new URL(config.authUrl);
+      authUrl = new URL('https://twitter.com/i/oauth2/authorize');
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('client_id', process.env.TWITTER_CLIENT_ID!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('scope', config.scopes.join(' '));
+      authUrl.searchParams.set('scope', PLATFORMS.twitter.scopes.join(' '));
       authUrl.searchParams.set('state', state);
       authUrl.searchParams.set('code_challenge', challenge);
       authUrl.searchParams.set('code_challenge_method', 'S256');
       break;
     }
     case 'threads': {
-      authUrl = new URL(config.authUrl);
+      authUrl = new URL('https://threads.net/oauth/authorize');
       authUrl.searchParams.set('client_id', process.env.THREADS_APP_ID!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('scope', config.scopes.join(','));
+      authUrl.searchParams.set('scope', PLATFORMS.threads.scopes.join(','));
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('state', state);
       break;
     }
     case 'facebook': {
-      authUrl = new URL(config.authUrl);
+      authUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth');
       authUrl.searchParams.set('client_id', process.env.FACEBOOK_APP_ID!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('scope', config.scopes.join(','));
+      authUrl.searchParams.set('scope', PLATFORMS.facebook.scopes.join(','));
+      authUrl.searchParams.set('state', state);
+      break;
+    }
+    case 'instagram': {
+      authUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth');
+      authUrl.searchParams.set('client_id', process.env.FACEBOOK_APP_ID!);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('scope', PLATFORMS.instagram.scopes.join(','));
+      authUrl.searchParams.set('state', state);
+      break;
+    }
+    case 'linkedin': {
+      authUrl = new URL('https://www.linkedin.com/oauth/v2/authorization');
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('client_id', process.env.LINKEDIN_CLIENT_ID!);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('scope', PLATFORMS.linkedin.scopes.join(' '));
       authUrl.searchParams.set('state', state);
       break;
     }
