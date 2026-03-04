@@ -231,7 +231,7 @@ function ChatPanel({ employeeId, onBack }: { employeeId: string; onBack?: () => 
       </div>
 
       {/* 메시지 */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
         {chat.messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="text-4xl mb-3">{ANIMAL_EMOJI[employee.animal]}</div>
@@ -242,22 +242,24 @@ function ChatPanel({ employeeId, onBack }: { employeeId: string; onBack?: () => 
             <p className="text-xs text-gray-300 mt-4">첫 메시지를 보내보세요</p>
           </div>
         ) : (
-          chat.messages.map((msg) => {
+          chat.messages.map((msg, i) => {
             const isUser = msg.from === 'user';
+            const prevMsg = chat.messages[i - 1];
+            const isSameSender = prevMsg && prevMsg.from === msg.from;
             return (
-              <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div key={msg.id} className={`flex items-end gap-2 ${isUser ? 'justify-end' : 'justify-start'} ${isSameSender ? 'mt-0.5' : 'mt-2'}`}>
                 {!isUser && (
-                  <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-base mr-2 flex-shrink-0 mt-1">
-                    {ANIMAL_EMOJI[employee.animal]}
+                  <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0">
+                    {isSameSender ? <span className="w-7" /> : ANIMAL_EMOJI[employee.animal]}
                   </div>
                 )}
-                <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+                <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
                   isUser
-                    ? 'bg-indigo-600 text-white rounded-tr-sm'
-                    : 'bg-gray-100 text-gray-800 rounded-tl-sm'
+                    ? 'bg-indigo-600 text-white rounded-br-sm'
+                    : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                 }`}>
                   {msg.content}
-                  <div className={`text-[10px] mt-1 ${isUser ? 'text-indigo-200' : 'text-gray-400'}`}>
+                  <div className={`text-[10px] mt-0.5 text-right ${isUser ? 'text-indigo-200' : 'text-gray-400'}`}>
                     {new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
@@ -385,9 +387,9 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex overflow-hidden bg-gray-50" style={{ height: 'calc(100dvh - 52px - 60px)' }}>
+    <div className="flex overflow-hidden bg-gray-50 h-full">
       {/* ── 데스크탑: 사이드바 + 채팅 ── */}
-      <div className="hidden md:flex w-full h-full" style={{ height: '100dvh' }}>
+      <div className="hidden md:flex w-full h-full">
         <div className="w-72 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col h-full">
           <EmployeeList activeId={activeEmployeeId} onSelect={setActiveEmployeeId} />
         </div>
