@@ -20,7 +20,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -28,6 +28,12 @@ export default function SettingsPage() {
   const [notionDbId, setNotionDbId] = useState('');
   const [notionSaved, setNotionSaved] = useState(false);
   const [notionStatus, setNotionStatus] = useState<{ connected: boolean; databaseName?: string; reason?: string } | null>(null);
+
+  // Google Calendar state
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleEmail, setGoogleEmail] = useState('');
+  const [googleSyncing, setGoogleSyncing] = useState(false);
+  const [googleMsg, setGoogleMsg] = useState('');
 
   useEffect(() => {
     if (activeTab === 'sns') {
@@ -39,6 +45,18 @@ export default function SettingsPage() {
       });
       fetch('/api/notion/status').then((r) => r.ok ? r.json() : null).then((d: { connected: boolean; databaseName?: string; reason?: string } | null) => {
         if (d) setNotionStatus(d);
+      });
+    }
+    if (activeTab === 'google') {
+      import('@/lib/supabase').then(({ supabase }) => {
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (!user) return;
+          supabase.from('bossai_google_tokens').select('email').eq('user_id', user.id).maybeSingle()
+            .then(({ data }) => {
+              if (data) { setGoogleConnected(true); setGoogleEmail(data.email || ''); }
+              else { setGoogleConnected(false); setGoogleEmail(''); }
+            });
+        });
       });
     }
   }, [activeTab]);
@@ -137,7 +155,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -644,6 +662,129 @@ export default function SettingsPage() {
                 <li>Notion에서 대상 데이터베이스 열기 → ⋯ 메뉴 → Connections → Integration 연결</li>
                 <li>DB URL에서 ID 복사 (32자리 hex, 하이픈 제외)</li>
                 <li>DB에 컬럼 추가: Name(제목), 카테고리(선택), 파일명(텍스트), 유형(선택), 요약(텍스트), 태그(다중선택), 날짜(날짜)</li>
+              </ol>
+            </div>
+          </div>
+        )}
+
+        {/* Google 캘린더 탭 */}
+        {activeTab === 'google' && (
+          <div className="space-y-6 max-w-2xl">
+            {/* 연결 상태 */}
+            <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm ${
+              googleConnected
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                : 'bg-gray-50 border-gray-200 text-gray-600'
+            }`}>
+              <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${googleConnected ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+              {googleConnected ? `연결됨 — ${googleEmail}` : '미연결'}
+            </div>
+
+            {googleMsg && (
+              <div className={`px-4 py-3 rounded-xl text-sm ${
+                googleMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+              }`}>{googleMsg}</div>
+            )}
+
+            {/* 연결/해제 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">📅</span>
+                <div>
+                  <h2 className="font-bold text-gray-900">Google Calendar 연동</h2>
+                  <p className="text-xs text-gray-400">LOOV 일정과 Google Calendar를 양방향 동기화</p>
+                </div>
+              </div>
+
+              {!googleConnected ? (
+                <button
+                  onClick={() => { window.location.href = '/api/google/connect'; }}
+                  className="w-full py-2.5 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                  Google 계정으로 연결
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  {/* 동기화 버튼 */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { dir: 'import' as const, label: '⬇️ 가져오기', desc: 'Google → LOOV' },
+                      { dir: 'both' as const, label: '🔄 양방향', desc: '완전 동기화' },
+                      { dir: 'export' as const, label: '⬆️ 내보내기', desc: 'LOOV → Google' },
+                    ].map(({ dir, label, desc }) => (
+                      <button
+                        key={dir}
+                        disabled={googleSyncing}
+                        onClick={async () => {
+                          setGoogleSyncing(true);
+                          setGoogleMsg('');
+                          try {
+                            const res = await fetch('/api/google/sync', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ direction: dir }),
+                            });
+                            const data: { imported?: number; exported?: number; message?: string; error?: string } = await res.json();
+                            if (res.ok) {
+                              const parts = [];
+                              if (data.imported !== undefined) parts.push(`가져옴 ${data.imported}건`);
+                              if (data.exported !== undefined) parts.push(`내보냄 ${data.exported}건`);
+                              setGoogleMsg(`✅ 동기화 완료 — ${parts.join(', ')}`);
+                            } else {
+                              setGoogleMsg(`오류: ${data.error || '동기화 실패'}`);
+                            }
+                          } finally {
+                            setGoogleSyncing(false);
+                          }
+                        }}
+                        className="p-3 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-center disabled:opacity-50 transition-all"
+                      >
+                        <div className="text-sm font-bold text-gray-800">{label}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {googleSyncing && (
+                    <div className="text-xs text-center text-blue-600 animate-pulse">동기화 중...</div>
+                  )}
+                  {/* 연결 해제 */}
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Google Calendar 연결을 해제하시겠습니까?')) return;
+                      await fetch('/api/google/disconnect', { method: 'POST' });
+                      setGoogleConnected(false);
+                      setGoogleEmail('');
+                      setGoogleMsg('Google Calendar 연결이 해제되었습니다.');
+                    }}
+                    className="w-full text-xs text-red-500 border border-red-100 hover:border-red-200 rounded-xl py-2 transition-colors"
+                  >
+                    연결 해제
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 가이드 */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5">
+              <h3 className="font-bold text-gray-900 mb-3">💡 Google Calendar 설정 방법</h3>
+              <ol className="space-y-2 text-sm text-gray-700 list-decimal list-inside">
+                <li><a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Google Cloud Console</a>에서 프로젝트 생성</li>
+                <li>OAuth 2.0 클라이언트 ID 생성 (웹 애플리케이션 유형)</li>
+                <li>승인된 리디렉션 URI 추가: <code className="bg-white px-1.5 py-0.5 rounded text-xs font-mono">{typeof window !== 'undefined' ? window.location.origin : 'https://your-domain.com'}/api/google/callback</code></li>
+                <li>환경변수에 추가:
+                  <div className="mt-1.5 bg-gray-800 text-green-300 text-xs font-mono rounded-xl px-3 py-2 space-y-0.5">
+                    <div>GOOGLE_CLIENT_ID=...</div>
+                    <div>GOOGLE_CLIENT_SECRET=...</div>
+                    <div>GOOGLE_REDIRECT_URI=https://your-domain.com/api/google/callback</div>
+                  </div>
+                </li>
+                <li>Vercel 환경변수에도 동일하게 등록 후 재배포</li>
               </ol>
             </div>
           </div>
