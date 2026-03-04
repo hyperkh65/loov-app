@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
 
-async function refreshAccessToken(userId: string, refreshToken: string): Promise<string> {
+async function refreshAccessToken(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  refreshToken: string,
+): Promise<string> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -16,7 +20,6 @@ async function refreshAccessToken(userId: string, refreshToken: string): Promise
   const data = await res.json();
   if (!res.ok) throw new Error('Token refresh failed');
 
-  const supabase = createAdminClient();
   await supabase.from('bossai_google_tokens').update({
     access_token: data.access_token,
     expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
@@ -32,16 +35,14 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Google 토큰 가져오기 (admin client로 RLS 우회)
-    const admin = createAdminClient();
-    const { data: tokenRow, error: tokenErr } = await admin
+    // Google 토큰 가져오기 (세션 클라이언트 — RLS 정책이 자신의 행 허용)
+    const { data: tokenRow, error: tokenErr } = await supabase
       .from('bossai_google_tokens')
       .select('*')
       .eq('user_id', user.id)
       .maybeSingle();
 
     if (tokenErr) {
-      console.error('Token read error:', tokenErr);
       return NextResponse.json({ error: `토큰 조회 오류: ${tokenErr.message}` }, { status: 500 });
     }
     if (!tokenRow) {
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     // 토큰 만료 확인 및 갱신
     if (new Date(tokenRow.expires_at) <= new Date()) {
-      accessToken = await refreshAccessToken(user.id, tokenRow.refresh_token);
+      accessToken = await refreshAccessToken(supabase, user.id, tokenRow.refresh_token);
     }
 
     const body = await req.json().catch(() => ({}));
@@ -77,8 +78,7 @@ export async function POST(req: NextRequest) {
           const startDate = event.start?.date || event.start?.dateTime?.slice(0, 10);
           if (!startDate) continue;
 
-          // 이미 존재하는지 확인 (google_event_id로)
-          const { data: existing } = await admin
+          const { data: existing } = await supabase
             .from('bossai_schedule_events')
             .select('id')
             .eq('user_id', user.id)
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
             .maybeSingle();
 
           if (!existing) {
-            const { error: insertErr } = await admin.from('bossai_schedule_events').insert({
+            const { error: insertErr } = await supabase.from('bossai_schedule_events').insert({
               user_id: user.id,
               id: crypto.randomUUID(),
               title: event.summary || '(제목 없음)',
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
 
     // ── LOOV → Google 내보내기 ──
     if (direction === 'both' || direction === 'export') {
-      const { data: localEvents } = await admin
+      const { data: localEvents } = await supabase
         .from('bossai_schedule_events')
         .select('*')
         .eq('user_id', user.id)
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
 
         if (createRes.ok) {
           const created = await createRes.json();
-          await admin.from('bossai_schedule_events')
+          await supabase.from('bossai_schedule_events')
             .update({ google_event_id: created.id })
             .eq('id', event.id);
           results.exported++;

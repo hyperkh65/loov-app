@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -40,12 +40,19 @@ export async function GET(req: NextRequest) {
     });
     const userInfo = await userInfoRes.json();
 
-    // DB에 저장 (admin client 사용 - RLS 우회)
-    const supabase = createAdminClient();
+    // 세션 쿠키 기반 클라이언트로 저장 (service role key 불필요)
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // state와 실제 로그인 유저가 다르면 거부
+    if (!user || user.id !== state) {
+      return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_error=auth_mismatch`);
+    }
+
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
 
     const { error: upsertError } = await supabase.from('bossai_google_tokens').upsert({
-      user_id: state,
+      user_id: user.id,
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expires_at: expiresAt,
@@ -63,6 +70,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_connected=1`);
   } catch (err) {
     console.error('Google callback error:', err);
-    return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_error=server_error`);
+    return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_error=server_error&detail=${encodeURIComponent(String(err))}`);
   }
 }
