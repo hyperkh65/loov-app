@@ -20,12 +20,26 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
+
+  // Notion settings state
+  const [notionApiKey, setNotionApiKey] = useState('');
+  const [notionDbId, setNotionDbId] = useState('');
+  const [notionSaved, setNotionSaved] = useState(false);
+  const [notionStatus, setNotionStatus] = useState<{ connected: boolean; databaseName?: string; reason?: string } | null>(null);
 
   useEffect(() => {
     if (activeTab === 'sns') {
       fetch('/api/sns/connections').then((r) => r.ok ? r.json() : []).then(setSnsConnections);
+    }
+    if (activeTab === 'notion') {
+      fetch('/api/notion/settings').then((r) => r.ok ? r.json() : {}).then((d: { databaseId?: string }) => {
+        setNotionDbId(d.databaseId ?? '');
+      });
+      fetch('/api/notion/status').then((r) => r.ok ? r.json() : null).then((d: { connected: boolean; databaseName?: string; reason?: string } | null) => {
+        if (d) setNotionStatus(d);
+      });
     }
   }, [activeTab]);
 
@@ -122,8 +136,8 @@ export default function SettingsPage() {
 
       <div className="p-6">
         {/* 탭 */}
-        <div className="flex gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결']].map(([v, l]) => (
+        <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
+          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -540,6 +554,97 @@ export default function SettingsPage() {
               <p className="text-xs text-gray-400 mt-2">
                 마크다운 형식으로 내보낸 후 Obsidian Vault 폴더에 넣으면 됩니다.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Notion 연동 탭 */}
+        {activeTab === 'notion' && (
+          <div className="space-y-6 max-w-2xl">
+            {/* Connection status */}
+            {notionStatus && (
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm ${
+                notionStatus.connected
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-600'
+              }`}>
+                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${notionStatus.connected ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+                {notionStatus.connected
+                  ? `연결됨 — ${notionStatus.databaseName}`
+                  : `미연결${notionStatus.reason ? ` (${notionStatus.reason})` : ''}`
+                }
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">📔</span>
+                <div>
+                  <h2 className="font-bold text-gray-900">Notion API 설정</h2>
+                  <p className="text-xs text-gray-400">파일 분석 결과를 저장할 Notion Integration 정보</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-1 block">Integration API 키</label>
+                <input
+                  type="password"
+                  value={notionApiKey}
+                  onChange={(e) => setNotionApiKey(e.target.value.trim())}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 font-mono"
+                  placeholder="secret_xxxxxxxxxxxx"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-gray-400 mt-1">Notion Integrations 페이지에서 발급한 Internal Integration Token</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-1 block">데이터베이스 ID</label>
+                <input
+                  type="text"
+                  value={notionDbId}
+                  onChange={(e) => setNotionDbId(e.target.value.trim())}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 font-mono"
+                  placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                />
+                <p className="text-xs text-gray-400 mt-1">Notion DB URL에서 복사: notion.so/workspace/<strong>DB_ID</strong>?v=...</p>
+              </div>
+
+              <button
+                onClick={async () => {
+                  const body: Record<string, string> = { databaseId: notionDbId };
+                  if (notionApiKey) body.apiKey = notionApiKey;
+                  await fetch('/api/notion/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                  });
+                  setNotionSaved(true);
+                  setTimeout(() => setNotionSaved(false), 2000);
+                  // Re-check status
+                  const res = await fetch('/api/notion/status');
+                  if (res.ok) {
+                    const s: { connected: boolean; databaseName?: string; reason?: string } = await res.json();
+                    setNotionStatus(s);
+                  }
+                }}
+                className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all ${
+                  notionSaved ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                }`}
+              >
+                {notionSaved ? '✓ 저장됨' : '설정 저장 및 연결 확인'}
+              </button>
+            </div>
+
+            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-5">
+              <h3 className="font-bold text-gray-900 mb-3">💡 Notion 설정 방법</h3>
+              <ol className="space-y-2 text-sm text-gray-700 list-decimal list-inside">
+                <li><a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline">notion.so/my-integrations</a>에서 새 Integration 생성</li>
+                <li>생성된 <strong>Internal Integration Token</strong>을 위 API 키 필드에 입력</li>
+                <li>Notion에서 대상 데이터베이스 열기 → ⋯ 메뉴 → Connections → Integration 연결</li>
+                <li>DB URL에서 ID 복사 (32자리 hex, 하이픈 제외)</li>
+                <li>DB에 컬럼 추가: Name(제목), 카테고리(선택), 파일명(텍스트), 유형(선택), 요약(텍스트), 태그(다중선택), 날짜(날짜)</li>
+              </ol>
             </div>
           </div>
         )}

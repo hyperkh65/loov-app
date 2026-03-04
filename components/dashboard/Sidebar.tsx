@@ -43,6 +43,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/insights',  icon: '🧠', label: 'AI 인사이트' },
       { href: '/dashboard/courses',   icon: '🎓', label: '강의' },
       { href: '/dashboard/community', icon: '🤝', label: '커뮤니티' },
+      { href: '/dashboard/notion',    icon: '📔', label: 'Notion 연동' },
     ],
   },
   {
