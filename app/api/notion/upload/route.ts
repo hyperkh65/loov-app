@@ -103,6 +103,54 @@ function safeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9가-힣._\-\s]/g, '_');
 }
 
+/** Notion File Upload API — 파일을 Notion에 직접 업로드하여 file_upload_id 반환 */
+async function uploadFileToNotion(
+  notionApiKey: string,
+  buffer: Buffer,
+  fileName: string,
+  mimeType: string,
+): Promise<string | null> {
+  try {
+    // Step 1: 업로드 초기화
+    const initRes = await fetch('https://api.notion.com/v1/file_uploads', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${notionApiKey}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ filename: fileName }),
+    });
+    if (!initRes.ok) {
+      console.error('Notion file upload init failed:', await initRes.text());
+      return null;
+    }
+    const { id: fileUploadId } = await initRes.json() as { id: string };
+
+    // Step 2: 파일 바이너리 전송
+    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType || 'application/octet-stream' });
+    const form = new FormData();
+    form.append('file', blob, fileName);
+
+    const sendRes = await fetch(`https://api.notion.com/v1/file_uploads/${fileUploadId}/send`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${notionApiKey}`,
+        'Notion-Version': '2022-06-28',
+      },
+      body: form,
+    });
+    if (!sendRes.ok) {
+      console.error('Notion file upload send failed:', await sendRes.text());
+      return null;
+    }
+    return fileUploadId;
+  } catch (e) {
+    console.error('Notion file upload error:', e);
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const admin = createAdminClient();
@@ -197,39 +245,48 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 5. Notion: append file link + original text as child blocks
+    // 5. Notion: 파일 직접 업로드 (File Upload API)
+    const notionFileUploadId = await uploadFileToNotion(
+      notionConfig.apiKey,
+      buffer,
+      file.name,
+      file.type || 'application/octet-stream',
+    );
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const childBlocks: any[] = [];
 
-    // File link block (if storage upload succeeded)
-    if (fileUrl) {
-      childBlocks.push(
-        {
-          object: 'block',
-          type: 'heading_2',
-          heading_2: { rich_text: [{ text: { content: '📎 원본 파일' } }] },
+    // 실제 파일 첨부 블록
+    childBlocks.push({
+      object: 'block',
+      type: 'heading_2',
+      heading_2: { rich_text: [{ text: { content: '📎 원본 파일' } }] },
+    });
+
+    if (notionFileUploadId) {
+      // Notion에 직접 저장된 파일 (file_upload 타입)
+      childBlocks.push({
+        object: 'block',
+        type: 'file',
+        file: {
+          type: 'file_upload',
+          file_upload: { id: notionFileUploadId },
         },
-        {
-          object: 'block',
-          type: 'paragraph',
-          paragraph: {
-            rich_text: [
-              {
-                type: 'text',
-                text: { content: file.name, link: { url: fileUrl } },
-                annotations: { bold: true, color: 'blue' },
-              },
-              {
-                type: 'text',
-                text: { content: ` (${(file.size / 1024).toFixed(1)} KB)` },
-                annotations: { color: 'gray' },
-              },
-            ],
-          },
+      });
+    } else if (fileUrl) {
+      // 폴백: Supabase Storage 외부 링크
+      childBlocks.push({
+        object: 'block',
+        type: 'file',
+        file: {
+          type: 'external',
+          external: { url: fileUrl },
+          name: file.name,
         },
-        { object: 'block', type: 'divider', divider: {} }
-      );
+      });
     }
+
+    childBlocks.push({ object: 'block', type: 'divider', divider: {} });
 
     // Original text blocks
     if (text) {
