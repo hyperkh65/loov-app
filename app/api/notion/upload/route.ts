@@ -70,25 +70,31 @@ ${truncated}
 }`;
 
   const key = apiKey || process.env.GEMINI_API_KEY || '';
-  if (key) {
-    try {
-      const genAI = new GoogleGenerativeAI(key);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const result = await model.generateContent(prompt);
-      const raw = result.response.text().trim();
-      const jsonStr = raw.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-      return JSON.parse(jsonStr);
-    } catch {
-      // fallthrough to heuristic
-    }
+  if (!key) {
+    return {
+      title: fileName.replace(/\.[^/.]+$/, '').slice(0, 30),
+      category: '기타',
+      summary: '(설정에서 AI API 키를 등록해주세요.)',
+      tags: [],
+    };
   }
 
-  return {
-    title: fileName.replace(/\.[^/.]+$/, '').slice(0, 30),
-    category: '기타',
-    summary: '(AI 키가 없어 자동 요약을 생성하지 못했습니다.)',
-    tags: [],
-  };
+  try {
+    const genAI = new GoogleGenerativeAI(key);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text().trim();
+    const jsonStr = raw.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    console.error('AI classification error:', e);
+    return {
+      title: fileName.replace(/\.[^/.]+$/, '').slice(0, 30),
+      category: '기타',
+      summary: `(AI 분류 실패: ${e instanceof Error ? e.message : String(e)})`,
+      tags: [],
+    };
+  }
 }
 
 function chunkText(text: string): string[] {
@@ -158,10 +164,10 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // Get Notion config
+  // Get Notion config + AI config (server-side)
   const { data: settingsRow } = await supabase
     .from('bossai_company_settings')
-    .select('notion_config')
+    .select('notion_config, global_ai_config')
     .eq('user_id', user.id)
     .single();
 
@@ -174,7 +180,10 @@ export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
   const provider = (formData.get('provider') as string) ?? 'gemini';
-  const aiApiKey = (formData.get('aiApiKey') as string) ?? '';
+  // 클라이언트 키 → Supabase 저장 키 → 환경변수 순서로 폴백
+  const clientApiKey = (formData.get('aiApiKey') as string) ?? '';
+  const serverAiConfig = settingsRow?.global_ai_config ?? {};
+  const aiApiKey = clientApiKey || serverAiConfig.apiKey || '';
 
   if (!file) return NextResponse.json({ error: '파일이 없습니다.' }, { status: 400 });
   if (file.size > MAX_FILE_BYTES) return NextResponse.json({ error: '파일 크기는 20MB 이하여야 합니다.' }, { status: 400 });

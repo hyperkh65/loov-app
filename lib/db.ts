@@ -48,6 +48,7 @@ export const dbCompany = {
       hashtags:       data.hashtags,
       adBudget:       data.ad_budget,
       subscriptionTier: data.subscription_tier,
+      globalAIConfig:   data.global_ai_config ?? undefined,
     };
   },
 
@@ -76,6 +77,9 @@ export const dbCompany = {
       hashtags:        settings.hashtags,
       ad_budget:       settings.adBudget,
       subscription_tier: settings.subscriptionTier,
+      ...(settings.globalAIConfig !== undefined
+        ? { global_ai_config: settings.globalAIConfig }
+        : {}),
     }, { onConflict: 'user_id' });
   },
 };
