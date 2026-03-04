@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     const supabase = createAdminClient();
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
 
-    await supabase.from('bossai_google_tokens').upsert({
+    const { error: upsertError } = await supabase.from('bossai_google_tokens').upsert({
       user_id: state,
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
@@ -52,6 +52,13 @@ export async function GET(req: NextRequest) {
       email: userInfo.email,
       updated_at: new Date().toISOString(),
     });
+
+    if (upsertError) {
+      console.error('Google token save error:', upsertError);
+      return NextResponse.redirect(
+        `${baseUrl}/dashboard/schedule?google_error=db_save_failed&detail=${encodeURIComponent(upsertError.message)}`
+      );
+    }
 
     return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_connected=1`);
   } catch (err) {

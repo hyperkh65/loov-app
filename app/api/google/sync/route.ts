@@ -32,13 +32,18 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Google 토큰 가져오기
-    const { data: tokenRow } = await supabase
+    // Google 토큰 가져오기 (admin client로 RLS 우회)
+    const admin = createAdminClient();
+    const { data: tokenRow, error: tokenErr } = await admin
       .from('bossai_google_tokens')
       .select('*')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
+    if (tokenErr) {
+      console.error('Token read error:', tokenErr);
+      return NextResponse.json({ error: `토큰 조회 오류: ${tokenErr.message}` }, { status: 500 });
+    }
     if (!tokenRow) {
       return NextResponse.json({ error: 'Google Calendar가 연결되지 않았습니다' }, { status: 400 });
     }
@@ -73,15 +78,15 @@ export async function POST(req: NextRequest) {
           if (!startDate) continue;
 
           // 이미 존재하는지 확인 (google_event_id로)
-          const { data: existing } = await supabase
+          const { data: existing } = await admin
             .from('bossai_schedule_events')
             .select('id')
             .eq('user_id', user.id)
             .eq('google_event_id', event.id)
-            .single();
+            .maybeSingle();
 
           if (!existing) {
-            await supabase.from('bossai_schedule_events').insert({
+            const { error: insertErr } = await admin.from('bossai_schedule_events').insert({
               user_id: user.id,
               id: crypto.randomUUID(),
               title: event.summary || '(제목 없음)',
@@ -95,7 +100,8 @@ export async function POST(req: NextRequest) {
               color: '',
               google_event_id: event.id,
             });
-            results.imported++;
+            if (!insertErr) results.imported++;
+            else console.error('Insert schedule error:', insertErr);
           }
         }
       }
@@ -103,7 +109,7 @@ export async function POST(req: NextRequest) {
 
     // ── LOOV → Google 내보내기 ──
     if (direction === 'both' || direction === 'export') {
-      const { data: localEvents } = await supabase
+      const { data: localEvents } = await admin
         .from('bossai_schedule_events')
         .select('*')
         .eq('user_id', user.id)
@@ -130,7 +136,7 @@ export async function POST(req: NextRequest) {
 
         if (createRes.ok) {
           const created = await createRes.json();
-          await supabase.from('bossai_schedule_events')
+          await admin.from('bossai_schedule_events')
             .update({ google_event_id: created.id })
             .eq('id', event.id);
           results.exported++;
