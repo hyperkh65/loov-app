@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
             .gte('date', today)
             .then(({ data }) => data ?? []);
 
+      const exportErrors: string[] = [];
       for (const event of eventsToExport) {
         const googleEvent = {
           summary: event.title,
@@ -144,12 +145,18 @@ export async function POST(req: NextRequest) {
 
         if (createRes.ok) {
           const created = await createRes.json();
-          // DB에 있으면 google_event_id 업데이트 (없어도 무시)
           await supabase.from('bossai_schedule_events')
             .update({ google_event_id: created.id })
             .eq('id', event.id);
           results.exported++;
+        } else {
+          const errBody = await createRes.text();
+          exportErrors.push(`[${event.title}] ${createRes.status}: ${errBody.slice(0, 100)}`);
         }
+      }
+
+      if (exportErrors.length > 0) {
+        console.error('Export errors:', exportErrors);
       }
     }
 
@@ -157,6 +164,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: `가져오기 ${results.imported}개, 내보내기 ${results.exported}개 완료`,
       ...results,
+      debug: { localEventsCount: localEvents.length },
     });
   } catch (error) {
     console.error('Google sync error:', error);

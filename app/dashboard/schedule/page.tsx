@@ -211,9 +211,9 @@ export default function SchedulePage() {
       });
       const data = await res.json();
       if (data.success) {
-        setSyncMessage(`✅ ${data.message}`);
+        const debugInfo = data.debug ? ` (전송 ${data.debug.localEventsCount}개)` : '';
+        setSyncMessage(`✅ ${data.message}${debugInfo}`);
         if (data.imported > 0) {
-          // 새로고침하여 가져온 이벤트 표시
           window.location.reload();
         }
       } else {
