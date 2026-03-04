@@ -26,20 +26,10 @@ function detectFileType(name: string, mime: string): 'PDF' | 'Word' | 'Excel' | 
 
 async function extractText(buffer: Buffer, fileType: 'PDF' | 'Word' | 'Excel'): Promise<string> {
   if (fileType === 'PDF') {
-    // pdfjs-dist(pdf-parse 내부)가 DOMMatrix를 참조 — Node.js 환경 폴리필
-    if (typeof (globalThis as Record<string, unknown>).DOMMatrix === 'undefined') {
-      (globalThis as Record<string, unknown>).DOMMatrix = class DOMMatrix {
-        m11=1;m12=0;m13=0;m14=0;
-        m21=0;m22=1;m23=0;m24=0;
-        m31=0;m32=0;m33=1;m34=0;
-        m41=0;m42=0;m43=0;m44=1;
-        is2D=true; isIdentity=true;
-      };
-    }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
-    const result = await pdfParse(buffer);
-    return result.text ?? '';
+    const { getDocumentProxy, extractText } = await import('unpdf');
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const { text } = await extractText(pdf, { mergePages: true });
+    return text ?? '';
   }
   if (fileType === 'Word') {
     const result = await mammoth.extractRawText({ buffer });
