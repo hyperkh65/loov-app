@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { Client as NotionClient } from '@notionhq/client';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import mammoth from 'mammoth';
@@ -9,6 +9,7 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
 const MAX_TEXT_CHARS = 12_000;
 const NOTION_CHUNK = 1_900;
 const NOTION_MAX_BLOCKS = 50;
+const STORAGE_BUCKET = 'notion-uploads';
 
 const CATEGORIES = [
   '계약서', '보고서', '회의록', '청구서/영수증',
@@ -65,24 +66,23 @@ ${truncated}
   "title": "문서의 핵심 제목 (30자 이내)",
   "category": "${CATEGORIES.join(' | ')} 중 하나",
   "summary": "문서 내용 3~5문장 요약",
-  "tags": ["태그1", "태그2", "태그3"] // 최대 5개
+  "tags": ["태그1", "태그2", "태그3"]
 }`;
 
   const key = apiKey || process.env.GEMINI_API_KEY || '';
-
-  // Currently supporting gemini as primary AI (matching project pattern)
-  if (provider === 'gemini' || !provider || provider === 'claude' || provider === 'gpt4o' || provider === 'gpt4' || provider === 'gpt35') {
-    if (key) {
+  if (key) {
+    try {
       const genAI = new GoogleGenerativeAI(key);
       const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       const result = await model.generateContent(prompt);
       const raw = result.response.text().trim();
       const jsonStr = raw.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
       return JSON.parse(jsonStr);
+    } catch {
+      // fallthrough to heuristic
     }
   }
 
-  // Fallback: simple heuristic
   return {
     title: fileName.replace(/\.[^/.]+$/, '').slice(0, 30),
     category: '기타',
@@ -99,8 +99,14 @@ function chunkText(text: string): string[] {
   return chunks;
 }
 
+function safeName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9가-힣._\-\s]/g, '_');
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
+  const admin = createAdminClient();
+
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -128,13 +134,14 @@ export async function POST(req: NextRequest) {
   const fileType = detectFileType(file.name, file.type);
   if (!fileType) return NextResponse.json({ error: '지원하지 않는 파일 형식입니다. PDF, Word, Excel만 가능합니다.' }, { status: 400 });
 
-  // Create upload record (pending)
+  // Create upload record
   const { data: uploadRow, error: insertError } = await supabase
     .from('bossai_notion_uploads')
     .insert({
       user_id: user.id,
       original_name: file.name,
       file_type: fileType,
+      file_size: file.size,
       status: 'processing',
     })
     .select('id')
@@ -147,15 +154,33 @@ export async function POST(req: NextRequest) {
   const uploadId = uploadRow.id;
 
   try {
-    // Extract text
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // 1. Upload file to Supabase Storage
+    const storagePath = `${user.id}/${uploadId}/${safeName(file.name)}`;
+    const { error: storageError } = await admin.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, buffer, {
+        contentType: file.type || 'application/octet-stream',
+        upsert: false,
+      });
+
+    let fileUrl = '';
+    if (!storageError) {
+      const { data: urlData } = admin.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(storagePath);
+      fileUrl = urlData.publicUrl;
+    }
+
+    // 2. Extract text
     const rawText = await extractText(buffer, fileType);
     const text = rawText.trim();
 
-    // AI classification
+    // 3. AI classification
     const aiResult = await classifyWithAI(text, file.name, provider, aiApiKey);
 
-    // Notion: create DB row
+    // 4. Notion: create DB row
     const notion = new NotionClient({ auth: notionConfig.apiKey });
     const today = new Date().toISOString().split('T')[0];
 
@@ -172,27 +197,61 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Notion: append original text as child blocks
-    if (text) {
-      const chunks = chunkText(text);
-      await notion.blocks.children.append({
-        block_id: page.id,
-        children: [
-          {
-            object: 'block',
-            type: 'heading_2',
-            heading_2: { rich_text: [{ text: { content: '원문 내용' } }] },
+    // 5. Notion: append file link + original text as child blocks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const childBlocks: any[] = [];
+
+    // File link block (if storage upload succeeded)
+    if (fileUrl) {
+      childBlocks.push(
+        {
+          object: 'block',
+          type: 'heading_2',
+          heading_2: { rich_text: [{ text: { content: '📎 원본 파일' } }] },
+        },
+        {
+          object: 'block',
+          type: 'paragraph',
+          paragraph: {
+            rich_text: [
+              {
+                type: 'text',
+                text: { content: file.name, link: { url: fileUrl } },
+                annotations: { bold: true, color: 'blue' },
+              },
+              {
+                type: 'text',
+                text: { content: ` (${(file.size / 1024).toFixed(1)} KB)` },
+                annotations: { color: 'gray' },
+              },
+            ],
           },
-          ...chunks.map((chunk) => ({
-            object: 'block' as const,
-            type: 'paragraph' as const,
-            paragraph: { rich_text: [{ text: { content: chunk } }] },
-          })),
-        ],
+        },
+        { object: 'block', type: 'divider', divider: {} }
+      );
+    }
+
+    // Original text blocks
+    if (text) {
+      childBlocks.push({
+        object: 'block',
+        type: 'heading_2',
+        heading_2: { rich_text: [{ text: { content: '📄 원문 내용' } }] },
+      });
+      chunkText(text).forEach((chunk) => {
+        childBlocks.push({
+          object: 'block',
+          type: 'paragraph',
+          paragraph: { rich_text: [{ text: { content: chunk } }] },
+        });
       });
     }
 
-    // Update upload record to done
+    if (childBlocks.length > 0) {
+      await notion.blocks.children.append({ block_id: page.id, children: childBlocks });
+    }
+
+    // 6. Update upload record
     await supabase
       .from('bossai_notion_uploads')
       .update({
@@ -202,6 +261,7 @@ export async function POST(req: NextRequest) {
         tags: aiResult.tags,
         notion_page_id: page.id,
         notion_db_row_id: page.id,
+        file_url: fileUrl,
         status: 'done',
       })
       .eq('id', uploadId);
@@ -213,6 +273,8 @@ export async function POST(req: NextRequest) {
       category: aiResult.category,
       summary: aiResult.summary,
       tags: aiResult.tags,
+      fileUrl,
+      fileType,
       notionPageId: page.id,
       notionUrl: `https://www.notion.so/${page.id.replace(/-/g, '')}`,
     });
