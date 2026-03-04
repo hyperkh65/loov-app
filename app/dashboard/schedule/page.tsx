@@ -203,10 +203,11 @@ export default function SchedulePage() {
     setSyncing(true);
     setSyncMessage('');
     try {
+      // Zustand 이벤트를 직접 전달 (DB에 없는 경우 대비)
       const res = await fetch('/api/google/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction }),
+        body: JSON.stringify({ direction, localEvents: scheduleEvents }),
       });
       const data = await res.json();
       if (data.success) {

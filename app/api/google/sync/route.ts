@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { direction = 'both' } = body;
+    const { direction = 'both', localEvents = [] } = body;
 
     const results: { imported: number; exported: number } = { imported: 0, exported: 0 };
 
@@ -109,23 +109,31 @@ export async function POST(req: NextRequest) {
 
     // ── LOOV → Google 내보내기 ──
     if (direction === 'both' || direction === 'export') {
-      const { data: localEvents } = await supabase
-        .from('bossai_schedule_events')
-        .select('*')
-        .eq('user_id', user.id)
-        .is('google_event_id', null)
-        .gte('date', new Date().toISOString().slice(0, 10));
+      const today = new Date().toISOString().slice(0, 10);
 
-      for (const event of (localEvents || [])) {
+      // 클라이언트에서 전달한 Zustand 이벤트 우선 사용 (DB에 없는 경우 대비)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      type LocalEvent = { id: string; title: string; description?: string; date: string; time?: string; endTime?: string; isAllDay?: boolean; googleEventId?: string };
+      const eventsToExport: LocalEvent[] = localEvents.length > 0
+        ? (localEvents as LocalEvent[]).filter((e: LocalEvent) => !e.googleEventId && e.date >= today)
+        : await supabase
+            .from('bossai_schedule_events')
+            .select('*')
+            .eq('user_id', user.id)
+            .is('google_event_id', null)
+            .gte('date', today)
+            .then(({ data }) => data ?? []);
+
+      for (const event of eventsToExport) {
         const googleEvent = {
           summary: event.title,
           description: event.description || '',
-          start: event.is_all_day
+          start: event.isAllDay
             ? { date: event.date }
             : { dateTime: `${event.date}T${event.time || '09:00'}:00`, timeZone: 'Asia/Seoul' },
-          end: event.is_all_day
+          end: event.isAllDay
             ? { date: event.date }
-            : { dateTime: `${event.date}T${event.end_time || event.time || '10:00'}:00`, timeZone: 'Asia/Seoul' },
+            : { dateTime: `${event.date}T${event.endTime || event.time || '10:00'}:00`, timeZone: 'Asia/Seoul' },
         };
 
         const createRes = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
@@ -136,6 +144,7 @@ export async function POST(req: NextRequest) {
 
         if (createRes.ok) {
           const created = await createRes.json();
+          // DB에 있으면 google_event_id 업데이트 (없어도 무시)
           await supabase.from('bossai_schedule_events')
             .update({ google_event_id: created.id })
             .eq('id', event.id);
