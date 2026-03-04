@@ -180,8 +180,9 @@ export default function SchedulePage() {
         });
     }
     if (error) {
-      setSyncMessage(`❌ 연결 실패: ${error}`);
-      setTimeout(() => setSyncMessage(''), 4000);
+      const detail = searchParams.get('detail') ?? '';
+      setSyncMessage(`❌ 연결 실패: ${error}${detail ? ` — ${detail}` : ''}`);
+      // 에러는 자동으로 사라지지 않도록 (사용자가 읽을 수 있게)
       router.replace('/dashboard/schedule');
     }
   }, [searchParams, router]);
