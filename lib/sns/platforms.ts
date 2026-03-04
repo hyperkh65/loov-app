@@ -48,24 +48,35 @@ export const PLATFORMS: Record<Platform, {
   },
 };
 
+// Base64url 인코딩 (Buffer 없이 Web API만 사용)
+function toBase64url(bytes: Uint8Array | ArrayBuffer): string {
+  const arr = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes;
+  const binary = Array.from(arr).map((b) => String.fromCharCode(b)).join('');
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function toHex(arr: Uint8Array): string {
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 // PKCE 코드 생성 (X용)
 export function generateCodeVerifier(): string {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
-  return Buffer.from(array).toString('base64url');
+  return toBase64url(array);
 }
 
 export async function generateCodeChallenge(verifier: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(verifier);
   const hash = await crypto.subtle.digest('SHA-256', data);
-  return Buffer.from(hash).toString('base64url');
+  return toBase64url(hash);
 }
 
 export function generateState(): string {
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);
-  return Buffer.from(array).toString('hex');
+  return toHex(array);
 }
 
 // ── 플랫폼별 포스팅 함수 ─────────────────────────────────────
