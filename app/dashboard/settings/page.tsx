@@ -32,6 +32,7 @@ export default function SettingsPage() {
   // Google Calendar state
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleEmail, setGoogleEmail] = useState('');
+  const [googleOauthConfigured, setGoogleOauthConfigured] = useState(true);
   const [googleSyncing, setGoogleSyncing] = useState(false);
   const [googleMsg, setGoogleMsg] = useState('');
 
@@ -48,16 +49,13 @@ export default function SettingsPage() {
       });
     }
     if (activeTab === 'google') {
-      import('@/lib/supabase').then(({ supabase }) => {
-        supabase.auth.getUser().then(({ data: { user } }) => {
-          if (!user) return;
-          supabase.from('bossai_google_tokens').select('email').eq('user_id', user.id).maybeSingle()
-            .then(({ data }) => {
-              if (data) { setGoogleConnected(true); setGoogleEmail(data.email || ''); }
-              else { setGoogleConnected(false); setGoogleEmail(''); }
-            });
+      fetch('/api/google/status')
+        .then((r) => r.ok ? r.json() : { connected: false })
+        .then((d: { connected: boolean; email?: string; oauthConfigured?: boolean }) => {
+          setGoogleConnected(d.connected);
+          setGoogleEmail(d.email ?? '');
+          setGoogleOauthConfigured(d.oauthConfigured ?? true);
         });
-      });
     }
   }, [activeTab]);
 
@@ -670,6 +668,19 @@ export default function SettingsPage() {
         {/* Google 캘린더 탭 */}
         {activeTab === 'google' && (
           <div className="space-y-6 max-w-2xl">
+            {/* OAuth 미설정 경고 */}
+            {!googleOauthConfigured && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                <div className="font-bold mb-1">⚠️ Google OAuth 환경변수가 설정되지 않았습니다</div>
+                <div className="text-xs">Vercel 대시보드 → Settings → Environment Variables에서 아래 3개를 추가하세요:</div>
+                <div className="mt-2 bg-amber-100 rounded-lg px-3 py-2 font-mono text-xs space-y-0.5">
+                  <div>GOOGLE_CLIENT_ID</div>
+                  <div>GOOGLE_CLIENT_SECRET</div>
+                  <div>GOOGLE_REDIRECT_URI = https://loov.co.kr/api/google/callback</div>
+                </div>
+              </div>
+            )}
+
             {/* 연결 상태 */}
             <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm ${
               googleConnected
