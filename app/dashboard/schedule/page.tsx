@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { ScheduleEvent, EventType, EVENT_TYPE_LABEL, EVENT_TYPE_COLOR, ANIMAL_EMOJI } from '@/lib/types';
-import { supabase } from '@/lib/supabase';
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -138,14 +137,47 @@ export default function SchedulePage() {
   const calDays = getCalendarDays(viewYear, viewMonth);
   const today = `${viewYear}-${pad(viewMonth + 1)}-${pad(now.getDate())}`;
 
-  // URL 파라미터로 Google 연결 상태 확인
+  // Google 연결 상태 확인 (서버 API 사용 — RLS 우회)
+  useEffect(() => {
+    fetch('/api/google/status')
+      .then((r) => r.ok ? r.json() : { connected: false })
+      .then((d: { connected: boolean; email?: string }) => {
+        if (d.connected) {
+          setGoogleConnected(true);
+          setGoogleEmail(d.email ?? '');
+        }
+      });
+  }, []);
+
+  // URL 파라미터로 Google 연결 완료 감지 → 자동 동기화
   useEffect(() => {
     const connected = searchParams.get('google_connected');
     const error = searchParams.get('google_error');
     if (connected) {
-      setSyncMessage('✅ Google Calendar가 연결되었습니다!');
-      setTimeout(() => setSyncMessage(''), 4000);
+      setGoogleConnected(true);
       router.replace('/dashboard/schedule');
+      // 연결 직후 자동으로 Google 일정 가져오기
+      setSyncing(true);
+      setSyncMessage('🔄 Google Calendar 일정을 가져오는 중...');
+      fetch('/api/google/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction: 'import' }),
+      })
+        .then((r) => r.json())
+        .then((data: { success?: boolean; message?: string; imported?: number; error?: string }) => {
+          if (data.success) {
+            setSyncMessage(`✅ Google Calendar 연결 완료! ${data.imported ?? 0}개 일정을 가져왔습니다.`);
+            if ((data.imported ?? 0) > 0) setTimeout(() => window.location.reload(), 1000);
+          } else {
+            setSyncMessage(`✅ Google Calendar 연결됨 (동기화: ${data.error ?? '오류'})`);
+          }
+        })
+        .catch(() => setSyncMessage('✅ Google Calendar 연결되었습니다.'))
+        .finally(() => {
+          setSyncing(false);
+          setTimeout(() => setSyncMessage(''), 5000);
+        });
     }
     if (error) {
       setSyncMessage(`❌ 연결 실패: ${error}`);
@@ -153,26 +185,6 @@ export default function SchedulePage() {
       router.replace('/dashboard/schedule');
     }
   }, [searchParams, router]);
-
-  // Google 연결 상태 확인
-  useEffect(() => {
-    async function checkGoogleConnection() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from('bossai_google_tokens')
-        .select('email')
-        .eq('user_id', user.id)
-        .single();
-
-      if (data) {
-        setGoogleConnected(true);
-        setGoogleEmail(data.email || '');
-      }
-    }
-    checkGoogleConnection();
-  }, []);
 
   const handleGoogleConnect = () => {
     window.location.href = '/api/google/connect';
