@@ -84,9 +84,35 @@ export default function WordPressPage() {
   const [content, setContent] = useState('');
   const [categories, setCategories] = useState('');
   const [tags, setTags] = useState('');
-  const [featuredImageUrl, setFeaturedImageUrl] = useState('');
   const [publishStatus, setPublishStatus] = useState<'publish' | 'draft'>('publish');
   const [preview, setPreview] = useState(false);
+
+  // ── 이미지 ─────────────────────────────────────────────
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+
+  const handleImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setImageFiles((prev) => [...prev, ...files]);
+    setImagePreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
+  };
+
+  const removeImage = (idx: number) => {
+    URL.revokeObjectURL(imagePreviews[idx]);
+    setImageFiles((prev) => prev.filter((_, i) => i !== idx));
+    setImagePreviews((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const moveImage = (from: number, to: number) => {
+    if (to < 0 || to >= imageFiles.length) return;
+    const newFiles = [...imageFiles];
+    const newPreviews = [...imagePreviews];
+    [newFiles[from], newFiles[to]] = [newFiles[to], newFiles[from]];
+    [newPreviews[from], newPreviews[to]] = [newPreviews[to], newPreviews[from]];
+    setImageFiles(newFiles);
+    setImagePreviews(newPreviews);
+  };
 
   // ── 발행 ───────────────────────────────────────────────
   const [publishing, setPublishing] = useState(false);
@@ -217,26 +243,25 @@ export default function WordPressPage() {
     setPublishError('');
 
     try {
-      const res = await fetch('/api/wordpress/publish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          content,
-          status: publishStatus,
-          categories: categories.split(',').map((c) => c.trim()).filter(Boolean),
-          tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-          featuredImageUrl: featuredImageUrl.trim() || undefined,
-          siteIds: selectedSiteIds,
-          notionPageId: selectedArticle?.id || '',
-        }),
-      });
+      const formData = new FormData();
+      formData.append('meta', JSON.stringify({
+        title: title.trim(),
+        content,
+        status: publishStatus,
+        categories: categories.split(',').map((c) => c.trim()).filter(Boolean),
+        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+        siteIds: selectedSiteIds,
+        notionPageId: selectedArticle?.id || '',
+      }));
+      imageFiles.forEach((file) => formData.append('images', file));
+
+      const res = await fetch('/api/wordpress/publish', { method: 'POST', body: formData });
       if (!res.ok) {
-        const err = await res.json();
-        setPublishError(err.error || '발행 오류');
+        const err = await res.json().catch(() => ({}));
+        setPublishError((err as { error?: string }).error || `서버 오류 (${res.status})`);
         return;
       }
-      const data = await res.json();
+      const data = await res.json() as { results: PublishResult[] };
       setPublishResults(data.results);
       loadHistory();
     } catch (e) {
@@ -367,10 +392,41 @@ export default function WordPressPage() {
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
                   </div>
                   <div className="col-span-2">
-                    <label className="text-xs font-semibold text-gray-500 block mb-1.5">대표 이미지 URL</label>
-                    <input value={featuredImageUrl} onChange={(e) => setFeaturedImageUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 font-mono text-xs" />
+                    <label className="text-xs font-semibold text-gray-500 block mb-1.5">
+                      이미지 선택
+                      <span className="font-normal text-gray-400 ml-1">① 대표이미지, ②③… 소제목 순서대로 자동 배치</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer border-2 border-dashed border-gray-200 rounded-xl px-4 py-3 hover:border-indigo-300 transition-colors">
+                      <span className="text-sm">🖼️</span>
+                      <span className="text-sm text-gray-400">이미지 파일 선택 (여러 개 가능)</span>
+                      <input type="file" multiple accept="image/*" onChange={handleImagesChange} className="hidden" />
+                    </label>
+                    {imagePreviews.length > 0 && (
+                      <div className="flex gap-2 mt-2.5 flex-wrap">
+                        {imagePreviews.map((url, i) => (
+                          <div key={i} className="relative group">
+                            <img src={url} alt="" className="w-16 h-16 object-cover rounded-xl border border-gray-200" />
+                            <span className={`absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shadow ${
+                              i === 0 ? 'bg-orange-500 text-white' : 'bg-gray-700 text-white'
+                            }`}>
+                              {i === 0 ? '★' : i}
+                            </span>
+                            <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                              {i > 0 && (
+                                <button type="button" onClick={() => moveImage(i, i - 1)} className="text-white text-xs bg-black/50 rounded px-1">←</button>
+                              )}
+                              <button type="button" onClick={() => removeImage(i)} className="text-white text-xs bg-red-500 rounded px-1">✕</button>
+                              {i < imagePreviews.length - 1 && (
+                                <button type="button" onClick={() => moveImage(i, i + 1)} className="text-white text-xs bg-black/50 rounded px-1">→</button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {imagePreviews.length > 0 && (
+                      <p className="text-[10px] text-gray-400 mt-1">★ 대표이미지 | 숫자 = h2 소제목 순서 배치 | 호버 → 이동/삭제</p>
+                    )}
                   </div>
                 </div>
               </div>
