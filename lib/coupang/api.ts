@@ -95,228 +95,7 @@ export async function createAffiliateLinks(productUrls: string[], accessKey: str
   return data.data?.shortenUrls || (data.data?.landingUrl ? [data.data.landingUrl] : productUrls);
 }
 
-// ── 봇 탐지 우회 스크래핑 ────────────────────────────────
-
-// 실제 Chrome 버전 UA 풀 (주기적으로 최신 버전 반영)
-const UA_POOL = [
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-];
-
-function pickUA(): string {
-  return UA_POOL[Math.floor(Math.random() * UA_POOL.length)];
-}
-
-/** 실제 브라우저와 동일한 헤더 세트 생성 */
-function buildPageHeaders(ua: string, referer: string, cookies: string): Record<string, string> {
-  const isChrome = ua.includes('Chrome') && !ua.includes('Edge');
-  const isFF = ua.includes('Firefox');
-  const isWin = ua.includes('Windows');
-
-  const h: Record<string, string> = {
-    'User-Agent': ua,
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Cache-Control': 'max-age=0',
-  };
-
-  if (referer) h['Referer'] = referer;
-  if (cookies) h['Cookie'] = cookies;
-
-  // Chrome 전용 security headers
-  if (isChrome) {
-    const ver = (ua.match(/Chrome\/(\d+)/) || ['', '122'])[1];
-    h['sec-ch-ua'] = `"Google Chrome";v="${ver}", "Chromium";v="${ver}", "Not-A.Brand";v="99"`;
-    h['sec-ch-ua-mobile'] = '?0';
-    h['sec-ch-ua-platform'] = isWin ? '"Windows"' : '"macOS"';
-    h['Sec-Fetch-Dest'] = 'document';
-    h['Sec-Fetch-Mode'] = 'navigate';
-    h['Sec-Fetch-Site'] = referer.includes('coupang.com') ? 'same-origin' : 'none';
-    h['Sec-Fetch-User'] = '?1';
-  }
-  if (isFF) {
-    h['Sec-Fetch-Dest'] = 'document';
-    h['Sec-Fetch-Mode'] = 'navigate';
-    h['Sec-Fetch-Site'] = referer.includes('coupang.com') ? 'same-origin' : 'none';
-    h['Sec-Fetch-User'] = '?1';
-  }
-
-  return h;
-}
-
-/** XHR/fetch 방식의 API 요청 헤더 */
-function buildAjaxHeaders(ua: string, referer: string, cookies: string): Record<string, string> {
-  const isChrome = ua.includes('Chrome');
-  const ver = isChrome ? (ua.match(/Chrome\/(\d+)/) || ['', '122'])[1] : '';
-  const isWin = ua.includes('Windows');
-
-  const h: Record<string, string> = {
-    'User-Agent': ua,
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
-    'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Connection': 'keep-alive',
-    'Referer': referer,
-    'Origin': 'https://www.coupang.com',
-  };
-
-  if (cookies) h['Cookie'] = cookies;
-  if (isChrome && ver) {
-    h['sec-ch-ua'] = `"Google Chrome";v="${ver}", "Chromium";v="${ver}", "Not-A.Brand";v="99"`;
-    h['sec-ch-ua-mobile'] = '?0';
-    h['sec-ch-ua-platform'] = isWin ? '"Windows"' : '"macOS"';
-    h['Sec-Fetch-Dest'] = 'empty';
-    h['Sec-Fetch-Mode'] = 'cors';
-    h['Sec-Fetch-Site'] = 'same-origin';
-  }
-
-  return h;
-}
-
-/** 쿠팡 홈에서 초기 세션 쿠키 획득 */
-async function acquireCookies(ua: string): Promise<string> {
-  try {
-    const res = await fetch('https://www.coupang.com/', {
-      headers: buildPageHeaders(ua, '', ''),
-      redirect: 'follow',
-    });
-
-    // Node 18+ getSetCookie(), 하위 버전 fallback
-    const hdrs = res.headers as unknown as { getSetCookie?: () => string[] };
-    const rawCookies: string[] = typeof hdrs.getSetCookie === 'function'
-      ? hdrs.getSetCookie()
-      : (res.headers.get('set-cookie') || '').split(/,(?=[^;]+=)/).filter(Boolean);
-
-    return rawCookies
-      .map((c) => c.split(';')[0].trim())
-      .filter(Boolean)
-      .join('; ');
-  } catch {
-    return '';
-  }
-}
-
-/** HTML에서 이미지 URL 추출 */
-function extractImages(html: string): string[] {
-  const images: string[] = [];
-
-  // og:image (메인 썸네일)
-  for (const m of html.matchAll(/property="og:image"\s+content="([^"]+)"/g)) {
-    if (!images.includes(m[1])) images.push(m[1]);
-  }
-  for (const m of html.matchAll(/content="([^"]+)"\s+property="og:image"/g)) {
-    if (!images.includes(m[1])) images.push(m[1]);
-  }
-
-  // 쿠팡 CDN 이미지 패턴
-  for (const m of html.matchAll(/https?:\/\/[a-z0-9]+\.coupangcdn\.com\/[^"'\s]+\.(?:jpg|jpeg|png|webp)/g)) {
-    const url = m[0].split('?')[0];
-    if (!images.includes(url)) images.push(url);
-    if (images.length >= 6) break;
-  }
-
-  return images.slice(0, 4);
-}
-
-/** JSON-LD에서 리뷰 추출 */
-function extractJsonLdReviews(html: string): CoupangReview[] {
-  const reviews: CoupangReview[] = [];
-  for (const m of html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)) {
-    try {
-      const ld = JSON.parse(m[1]);
-      const items = Array.isArray(ld) ? ld : [ld];
-      for (const item of items) {
-        const raw = Array.isArray(item.review) ? item.review : (item.review ? [item.review] : []);
-        for (const r of raw.slice(0, 3)) {
-          if (r.reviewBody?.length > 10) {
-            reviews.push({
-              reviewer: r.author?.name || '구매자',
-              rating: Number(r.reviewRating?.ratingValue) || 5,
-              content: r.reviewBody,
-              images: [],
-              date: r.datePublished,
-            });
-          }
-        }
-      }
-    } catch { /* skip */ }
-  }
-  return reviews;
-}
-
-/** __NEXT_DATA__ 또는 window 인라인 JSON에서 리뷰 추출 */
-function extractInlineReviews(html: string): CoupangReview[] {
-  const reviews: CoupangReview[] = [];
-  // __NEXT_DATA__
-  const ndMatch = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (ndMatch) {
-    try {
-      const nd = JSON.parse(ndMatch[1]);
-      // 상품 리뷰가 props.pageProps 등에 있을 수 있음
-      const str = JSON.stringify(nd);
-      const reviewMatches = str.matchAll(/"reviewBody":"([^"]{20,500})"/g);
-      for (const m of reviewMatches) {
-        reviews.push({ reviewer: '구매자', rating: 5, content: m[1], images: [] });
-        if (reviews.length >= 3) break;
-      }
-    } catch { /* skip */ }
-  }
-  return reviews;
-}
-
-/** 리뷰 JSON API 시도 (여러 엔드포인트) */
-async function fetchReviewsApi(
-  productId: string | number,
-  ua: string,
-  cookies: string,
-): Promise<CoupangReview[]> {
-  const referer = `https://www.coupang.com/vp/products/${productId}`;
-  const endpoints = [
-    `https://www.coupang.com/vp/products/${productId}/reviews?page=0&per_page=5&sortBy=SCORE_DESC&ratings=5&q=&isOpen=Y`,
-    `https://www.coupang.com/vp/products/${productId}/reviews?page=0&per_page=5&sortBy=REVIEW_SCORE&isOpen=Y`,
-    `https://www.coupang.com/vp/products/${productId}/reviews?page=0&per_page=3&sortBy=SCORE_DESC`,
-  ];
-
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, { headers: buildAjaxHeaders(ua, referer, cookies) });
-      if (!res.ok) continue;
-      const ct = res.headers.get('content-type') || '';
-      if (!ct.includes('json')) continue;
-
-      const data = await res.json();
-      const list: Record<string, unknown>[] =
-        data.reviews || data.data?.reviews || data.reviewList || data.content || [];
-
-      const out: CoupangReview[] = [];
-      for (const r of list.slice(0, 3)) {
-        const content = (r.content || r.reviewContent || r.body || r.text || '') as string;
-        if (content.length > 10) {
-          out.push({
-            reviewer: (r.nickname || r.reviewer || r.name || r.userId || '구매자') as string,
-            rating: Number(r.rating || r.starRating || r.score || 5),
-            content,
-            images: ((r.attachedPhotoUrls || r.photoUrls || r.images || []) as string[]).slice(0, 2),
-            date: (r.reviewDate || r.createdAt || r.writeDate || '') as string,
-          });
-        }
-      }
-      if (out.length > 0) return out;
-    } catch { /* try next */ }
-  }
-  return [];
-}
-
-// 짧은 랜덤 지연 (서버리스 함수 내 사용량 최소화)
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// ── 스크래핑 ──────────────────────────────────────────
 
 export interface ScrapedProduct {
   productName: string;
@@ -333,112 +112,302 @@ export function extractProductId(url: string): string | null {
   return m ? m[1] : null;
 }
 
-/** HTML에서 상품 메타정보(이름·가격) 추출 */
-function extractProductMeta(html: string): { name: string; price: number; oldPrice: number; discount: number } {
-  let name = '';
-  let price = 0;
-  let oldPrice = 0;
-  let discount = 0;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** protocol-relative URL을 https로 변환 */
+function toAbsoluteUrl(url: string): string {
+  if (!url) return '';
+  if (url.startsWith('//')) return 'https:' + url;
+  if (url.startsWith('http')) return url;
+  return '';
+}
+
+/** Playwright + Stealth 기반 스크래핑 (봇 감지 우회) */
+async function scrapeWithBrowser(productId: string): Promise<ScrapedProduct> {
+  // playwright-extra + stealth plugin 동적 로드
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { chromium } = await import('playwright-extra');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (chromium as any).use(StealthPlugin());
+
+  // Mac이면 실제 Chrome 사용 (봇 감지 우회 효과 높음)
+  const chromePaths = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+  ];
+  const fs = await import('fs');
+  const executablePath = chromePaths.find((p) => {
+    try { fs.accessSync(p); return true; } catch { return false; }
+  }) || undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const browser = await (chromium as any).launch({
+    headless: true,
+    executablePath,
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+  });
+
+  const context = await browser.newContext({
+    locale: 'ko-KR',
+    timezoneId: 'Asia/Seoul',
+    viewport: { width: 1280, height: 900 },
+    extraHTTPHeaders: { 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8' },
+  });
+
+  const page = await context.newPage();
+
+  // 리뷰 XHR 인터셉트
+  const reviewData: CoupangReview[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  page.on('response', async (response: any) => {
+    const url = response.url();
+    if (url.includes('/reviews') && response.status() === 200) {
+      try {
+        const ct = response.headers()['content-type'] || '';
+        if (!ct.includes('json')) return;
+        const json = await response.json();
+        const list: Record<string, unknown>[] =
+          json.reviews || json.data?.reviews || json.reviewList || json.content || [];
+        for (const r of list.slice(0, 5)) {
+          const content = String(r.content || r.reviewContent || r.body || r.text || '');
+          if (content.length > 10 && reviewData.length < 3) {
+            reviewData.push({
+              reviewer: String(r.nickname || r.reviewer || r.name || '구매자'),
+              rating: Number(r.rating || r.starRating || r.score || 5),
+              content,
+              images: (
+                (r.attachedPhotoUrls || r.photoUrls || r.images || []) as string[]
+              ).slice(0, 2).map(toAbsoluteUrl).filter(Boolean),
+              date: String(r.reviewDate || r.createdAt || r.writeDate || ''),
+            });
+          }
+        }
+      } catch { /* ignore */ }
+    }
+  });
+
+  try {
+    // 홈 → 상품 페이지 순서로 자연스러운 탐색 (봇 감지 회피)
+    await page.goto('https://www.coupang.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await sleep(1000 + Math.random() * 1000);
+
+    await page.goto(`https://www.coupang.com/vp/products/${productId}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    });
+    await sleep(2000 + Math.random() * 1000);
+
+    // 자연스러운 스크롤 (리뷰 lazy load 트리거)
+    await page.evaluate(() => {
+      let pos = 0;
+      const scroll = () => {
+        pos += 300;
+        window.scrollTo(0, pos);
+      };
+      for (let i = 0; i < 10; i++) setTimeout(scroll, i * 200);
+    });
+    await sleep(3000);
+
+    const result = await page.evaluate(() => {
+      const fixUrl = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('//')) return 'https:' + url;
+        return url.startsWith('http') ? url : '';
+      };
+
+      // 상품명
+      const nameEl = document.querySelector(
+        '.prod-buy-header__title, h2.prod-name, [class*="prod-title"], .product-title h1, .product-title h2',
+      );
+      let name = nameEl?.textContent?.trim() || '';
+      if (!name) {
+        name = document.querySelector('meta[property="og:title"]')
+          ?.getAttribute('content')
+          ?.replace(/\s*[\|｜]\s*쿠팡.*$/i, '')
+          .trim() || '';
+      }
+      if (!name) name = document.title.replace(/\s*[\|｜]\s*쿠팡.*$/i, '').trim();
+
+      // 가격
+      const priceEl = document.querySelector(
+        '.total-price strong, .prod-price-value, [class*="total-price"] strong, [class*="price-value"]',
+      );
+      const price = Number((priceEl?.textContent || '').replace(/[^0-9]/g, '')) || 0;
+
+      // 원가
+      const oldPriceEl = document.querySelector(
+        '[class*="base-price"], [class*="origin-price"], del[class*="price"], [class*="before-price"], strike',
+      );
+      const oldPrice = Number((oldPriceEl?.textContent || '').replace(/[^0-9]/g, '')) || 0;
+
+      // 할인율
+      const discountEl = document.querySelector('[class*="discount-rate"], [class*="sale-rate"]');
+      const discount = Number((discountEl?.textContent || '').replace(/[^0-9]/g, '')) || 0;
+
+      // 이미지 수집
+      const ogImage = fixUrl(
+        document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '',
+      );
+      const images: string[] = ogImage ? [ogImage] : [];
+
+      // 상품 이미지 갤러리
+      const imgSelectors = [
+        '.prod-image__item img',
+        '[class*="prod-image"] img',
+        '.prod-img img',
+        '[class*="product-image"] img',
+        '[class*="swiper-slide"] img',
+      ];
+      for (const sel of imgSelectors) {
+        const els = Array.from(document.querySelectorAll(sel));
+        for (const img of els) {
+          const src = fixUrl(
+            (img as HTMLImageElement).src
+              || img.getAttribute('data-src')
+              || img.getAttribute('data-lazy')
+              || img.getAttribute('data-original')
+              || '',
+          );
+          if (src && !src.includes('.gif') && !src.includes('icon') && !src.includes('data:') && !images.includes(src)) {
+            images.push(src);
+          }
+          if (images.length >= 6) break;
+        }
+        if (images.length >= 3) break;
+      }
+
+      // CDN 이미지 직접 탐색 (fallback)
+      if (images.length < 2) {
+        Array.from(document.querySelectorAll('img')).forEach((img) => {
+          const src = fixUrl((img as HTMLImageElement).src || img.getAttribute('data-src') || '');
+          if (
+            src
+            && src.includes('coupangcdn.com')
+            && !src.includes('.gif')
+            && !src.includes('icon')
+            && !images.includes(src)
+          ) {
+            images.push(src);
+          }
+        });
+      }
+
+      return {
+        name,
+        price,
+        oldPrice,
+        discount,
+        images: images.slice(0, 4),
+        isBlocked: document.title.toLowerCase().includes('access denied') || document.body.innerText.includes('Access Denied'),
+      };
+    });
+
+    if (result.isBlocked) {
+      throw new Error('쿠팡 접근 차단 (봇 감지)');
+    }
+
+    await sleep(1500);
+
+    return {
+      productName: result.name,
+      productPrice: result.price,
+      productOldPrice: result.oldPrice,
+      discountRate: result.discount,
+      reviews: reviewData,
+      images: result.images,
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+/** fetch 기반 스크래핑 (Playwright 실패 시 폴백) */
+async function scrapeWithFetch(productId: string | number): Promise<ScrapedProduct> {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+  const productUrl = `https://www.coupang.com/vp/products/${productId}`;
+
+  let html = '';
+  try {
+    const res = await fetch(productUrl, {
+      headers: {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'sec-ch-ua': '"Google Chrome";v="123", "Chromium";v="123", "Not-A.Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control': 'max-age=0',
+      },
+      redirect: 'follow',
+    });
+    if (res.ok) html = await res.text();
+  } catch { /* ignore */ }
+
+  if (!html || html.includes('Access Denied')) {
+    return { productName: '', productPrice: 0, productOldPrice: 0, discountRate: 0, reviews: [], images: [] };
+  }
+
+  // og:image 추출
+  const images: string[] = [];
+  const ogImg = html.match(/property="og:image"\s+content="([^"]+)"/)
+    || html.match(/content="([^"]+)"\s+property="og:image"/);
+  if (ogImg) {
+    const u = toAbsoluteUrl(ogImg[1]);
+    if (u) images.push(u);
+  }
+
+  // CDN 이미지
+  for (const m of html.matchAll(/https?:\/\/[a-z0-9]+\.coupangcdn\.com\/[^"'\s<>]+\.(?:jpg|jpeg|png|webp)/gi)) {
+    const url = m[0].split('?')[0];
+    if (!images.includes(url)) images.push(url);
+    if (images.length >= 6) break;
+  }
 
   // og:title
   const titleMatch = html.match(/property="og:title"\s+content="([^"]+)"/)
     || html.match(/content="([^"]+)"\s+property="og:title"/);
-  if (titleMatch) name = titleMatch[1].replace(/\s*[\|｜]\s*쿠팡.*$/, '').trim();
+  const name = titleMatch ? titleMatch[1].replace(/\s*[\|｜]\s*쿠팡.*$/i, '').trim() : '';
 
-  // JSON-LD offers
+  // JSON-LD 가격
+  let price = 0;
+  let oldPrice = 0;
   for (const m of html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)) {
     try {
       const ld = JSON.parse(m[1]);
       const items = Array.isArray(ld) ? ld : [ld];
       for (const item of items) {
-        if (!name && item.name) name = item.name;
-        const offers = item.offers || (Array.isArray(item.offers) ? item.offers[0] : null);
-        if (offers?.price) {
-          price = Number(String(offers.price).replace(/[^0-9]/g, '')) || 0;
-        }
+        if (item.offers?.price) price = Number(String(item.offers.price).replace(/[^0-9]/g, '')) || 0;
       }
     } catch { /* skip */ }
   }
-
-  // 인라인 가격 패턴 (JSON 데이터 또는 HTML)
   if (!price) {
-    const priceMatch = html.match(/"finalPrice"\s*:\s*(\d+)/)
-      || html.match(/"salePrice"\s*:\s*(\d+)/)
-      || html.match(/"price"\s*:\s*"?(\d+)"?/);
-    if (priceMatch) price = Number(priceMatch[1]);
+    const pm = html.match(/"finalPrice"\s*:\s*(\d+)/) || html.match(/"salePrice"\s*:\s*(\d+)/);
+    if (pm) price = Number(pm[1]);
   }
   if (!oldPrice) {
-    const oldMatch = html.match(/"basePrice"\s*:\s*(\d+)/)
-      || html.match(/"originalPrice"\s*:\s*(\d+)/)
-      || html.match(/"regularPrice"\s*:\s*(\d+)/);
-    if (oldMatch) oldPrice = Number(oldMatch[1]);
+    const om = html.match(/"basePrice"\s*:\s*(\d+)/) || html.match(/"originalPrice"\s*:\s*(\d+)/);
+    if (om) oldPrice = Number(om[1]);
   }
-  if (!discount && price && oldPrice && oldPrice > price) {
-    discount = Math.round((1 - price / oldPrice) * 100);
-  }
+  const discount = price && oldPrice && oldPrice > price ? Math.round((1 - price / oldPrice) * 100) : 0;
 
-  return { name, price, oldPrice, discount };
+  return { productName: name, productPrice: price, productOldPrice: oldPrice, discountRate: discount, reviews: [], images: images.slice(0, 4) };
 }
 
+/** 상품 데이터 스크래핑 (Playwright 우선, fetch 폴백) */
 export async function scrapeProductData(productId: string | number): Promise<ScrapedProduct> {
-  let reviews: CoupangReview[] = [];
-  let images: string[] = [];
-  let productName = '';
-  let productPrice = 0;
-  let productOldPrice = 0;
-  let discountRate = 0;
-
-  // UA를 2개 준비 (실패 시 교체)
-  const ua1 = pickUA();
-  const ua2 = pickUA() !== ua1 ? pickUA() : UA_POOL[(UA_POOL.indexOf(ua1) + 1) % UA_POOL.length];
-
-  // ── Step 1: 쿠키 획득 ─────────────────────────────────
-  const cookies = await acquireCookies(ua1);
-  await sleep(200 + Math.random() * 300); // 200~500ms 지연
-
-  // ── Step 2: 상품 페이지 HTML 파싱 ─────────────────────
-  const productUrl = `https://www.coupang.com/vp/products/${productId}`;
-  let html = '';
   try {
-    const res = await fetch(productUrl, {
-      headers: buildPageHeaders(ua1, 'https://www.coupang.com/', cookies),
-      redirect: 'follow',
-    });
-    if (res.ok) {
-      html = await res.text();
-    } else if (res.status === 403 || res.status === 429) {
-      // 차단 → 다른 UA로 재시도
-      await sleep(500 + Math.random() * 500);
-      const res2 = await fetch(productUrl, {
-        headers: buildPageHeaders(ua2, 'https://www.coupang.com/', cookies),
-        redirect: 'follow',
-      });
-      if (res2.ok) html = await res2.text();
-    }
-  } catch { /* ignore */ }
-
-  if (html) {
-    images = extractImages(html);
-    reviews = extractJsonLdReviews(html);
-    if (reviews.length === 0) reviews = extractInlineReviews(html);
-    const meta = extractProductMeta(html);
-    productName = meta.name;
-    productPrice = meta.price;
-    productOldPrice = meta.oldPrice;
-    discountRate = meta.discount;
+    return await scrapeWithBrowser(String(productId));
+  } catch (err) {
+    console.warn('[coupang] browser scrape failed, falling back to fetch:', err);
+    return await scrapeWithFetch(productId);
   }
-
-  // ── Step 3: 리뷰 API 시도 (페이지에서 못 찾은 경우) ──
-  if (reviews.length === 0) {
-    await sleep(300 + Math.random() * 400);
-    reviews = await fetchReviewsApi(productId, ua1, cookies);
-  }
-
-  // ── Step 4: 다른 UA로 리뷰 재시도 ────────────────────
-  if (reviews.length === 0) {
-    await sleep(400 + Math.random() * 600);
-    reviews = await fetchReviewsApi(productId, ua2, cookies);
-  }
-
-  return { productName, productPrice, productOldPrice, discountRate, reviews, images: images.slice(0, 4) };
 }
