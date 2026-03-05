@@ -318,12 +318,75 @@ async function fetchReviewsApi(
 // 짧은 랜덤 지연 (서버리스 함수 내 사용량 최소화)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function scrapeProductData(productId: string | number): Promise<{
+export interface ScrapedProduct {
+  productName: string;
+  productPrice: number;
+  productOldPrice: number;
+  discountRate: number;
   reviews: CoupangReview[];
   images: string[];
-}> {
+}
+
+/** URL에서 상품 ID 추출 */
+export function extractProductId(url: string): string | null {
+  const m = url.match(/\/vp\/products\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+/** HTML에서 상품 메타정보(이름·가격) 추출 */
+function extractProductMeta(html: string): { name: string; price: number; oldPrice: number; discount: number } {
+  let name = '';
+  let price = 0;
+  let oldPrice = 0;
+  let discount = 0;
+
+  // og:title
+  const titleMatch = html.match(/property="og:title"\s+content="([^"]+)"/)
+    || html.match(/content="([^"]+)"\s+property="og:title"/);
+  if (titleMatch) name = titleMatch[1].replace(/\s*[\|｜]\s*쿠팡.*$/, '').trim();
+
+  // JSON-LD offers
+  for (const m of html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)) {
+    try {
+      const ld = JSON.parse(m[1]);
+      const items = Array.isArray(ld) ? ld : [ld];
+      for (const item of items) {
+        if (!name && item.name) name = item.name;
+        const offers = item.offers || (Array.isArray(item.offers) ? item.offers[0] : null);
+        if (offers?.price) {
+          price = Number(String(offers.price).replace(/[^0-9]/g, '')) || 0;
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  // 인라인 가격 패턴 (JSON 데이터 또는 HTML)
+  if (!price) {
+    const priceMatch = html.match(/"finalPrice"\s*:\s*(\d+)/)
+      || html.match(/"salePrice"\s*:\s*(\d+)/)
+      || html.match(/"price"\s*:\s*"?(\d+)"?/);
+    if (priceMatch) price = Number(priceMatch[1]);
+  }
+  if (!oldPrice) {
+    const oldMatch = html.match(/"basePrice"\s*:\s*(\d+)/)
+      || html.match(/"originalPrice"\s*:\s*(\d+)/)
+      || html.match(/"regularPrice"\s*:\s*(\d+)/);
+    if (oldMatch) oldPrice = Number(oldMatch[1]);
+  }
+  if (!discount && price && oldPrice && oldPrice > price) {
+    discount = Math.round((1 - price / oldPrice) * 100);
+  }
+
+  return { name, price, oldPrice, discount };
+}
+
+export async function scrapeProductData(productId: string | number): Promise<ScrapedProduct> {
   let reviews: CoupangReview[] = [];
   let images: string[] = [];
+  let productName = '';
+  let productPrice = 0;
+  let productOldPrice = 0;
+  let discountRate = 0;
 
   // UA를 2개 준비 (실패 시 교체)
   const ua1 = pickUA();
@@ -358,6 +421,11 @@ export async function scrapeProductData(productId: string | number): Promise<{
     images = extractImages(html);
     reviews = extractJsonLdReviews(html);
     if (reviews.length === 0) reviews = extractInlineReviews(html);
+    const meta = extractProductMeta(html);
+    productName = meta.name;
+    productPrice = meta.price;
+    productOldPrice = meta.oldPrice;
+    discountRate = meta.discount;
   }
 
   // ── Step 3: 리뷰 API 시도 (페이지에서 못 찾은 경우) ──
@@ -372,5 +440,5 @@ export async function scrapeProductData(productId: string | number): Promise<{
     reviews = await fetchReviewsApi(productId, ua2, cookies);
   }
 
-  return { reviews, images: images.slice(0, 4) };
+  return { productName, productPrice, productOldPrice, discountRate, reviews, images: images.slice(0, 4) };
 }
