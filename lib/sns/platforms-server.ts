@@ -329,6 +329,87 @@ export async function postToPlatformWithMedia(
   }
 }
 
+// ── 자기 게시물에 댓글/스레드 형식 추가 ──────────────────
+
+export async function postCommentOnOwnPost(
+  platform: Platform,
+  accessToken: string,
+  platformUserId: string,
+  postId: string,
+  content: string,
+  mediaUrls?: string[],
+): Promise<{ id: string }> {
+  switch (platform) {
+    case 'twitter':
+      // 트위터: 이전 트윗에 답글 (체인 스레드)
+      return replyToTwitterComment(accessToken, postId, content, mediaUrls);
+
+    case 'threads': {
+      // 스레드: reply_to_id로 답글
+      let containerBody: Record<string, unknown>;
+      if (mediaUrls?.length === 1) {
+        const isVideo = isVideoUrl(mediaUrls[0]);
+        containerBody = {
+          media_type: isVideo ? 'VIDEO' : 'IMAGE',
+          [isVideo ? 'video_url' : 'image_url']: mediaUrls[0],
+          text: content.substring(0, 500),
+          reply_to_id: postId,
+          access_token: accessToken,
+        };
+      } else {
+        containerBody = { media_type: 'TEXT', text: content.substring(0, 500), reply_to_id: postId, access_token: accessToken };
+      }
+      const cr = await fetch(`https://graph.threads.net/v1.0/${platformUserId}/threads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(containerBody),
+      });
+      if (!cr.ok) throw new Error(`Threads 댓글 생성 실패: ${await cr.text()}`);
+      const { id: containerId } = await cr.json();
+      const pr = await fetch(`https://graph.threads.net/v1.0/${platformUserId}/threads_publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creation_id: containerId, access_token: accessToken }),
+      });
+      if (!pr.ok) throw new Error(`Threads 댓글 게시 실패: ${await pr.text()}`);
+      return { id: (await pr.json()).id };
+    }
+
+    case 'facebook':
+      return replyToFacebookComment(accessToken, postId, content);
+
+    case 'instagram': {
+      // 인스타그램: 게시물에 직접 댓글
+      const res = await fetch(`https://graph.facebook.com/v18.0/${postId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: content.substring(0, 2200), access_token: accessToken }),
+      });
+      if (!res.ok) throw new Error(`Instagram 댓글 실패: ${await res.text()}`);
+      return { id: (await res.json()).id };
+    }
+
+    case 'linkedin': {
+      // LinkedIn: socialActions API로 댓글
+      const res = await fetch(`https://api.linkedin.com/v2/socialActions/${encodeURIComponent(postId)}/comments`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+        body: JSON.stringify({
+          actor: `urn:li:person:${platformUserId}`,
+          message: { text: content.substring(0, 1250) },
+        }),
+      });
+      if (!res.ok) throw new Error(`LinkedIn 댓글 실패: ${await res.text()}`);
+      const id = res.headers.get('x-restli-id') || (await res.json()).id || 'unknown';
+      return { id };
+    }
+  }
+}
+
 // ── 댓글 조회 ─────────────────────────────────────────
 
 export interface PlatformComment {

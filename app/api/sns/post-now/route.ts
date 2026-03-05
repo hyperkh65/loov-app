@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import type { Platform } from '@/lib/sns/platforms';
+
+interface ThreadItem {
+  content: string;
+  media_urls?: string[];
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { content: directContent, template_id, platforms, media_urls } = await req.json();
+  const { content: directContent, template_id, platforms, media_urls, thread_items } = await req.json();
 
   let content: string = directContent || '';
   const templateId: string | null = template_id || null;
@@ -55,6 +60,25 @@ export async function POST(req: NextRequest) {
         user_id: user.id, template_id: templateId, platform, status: 'success',
         platform_post_id: platformPostId, media_urls: media_urls || [],
       });
+
+      // 스레드/댓글 형식 추가 게시
+      if (thread_items?.length && platformPostId) {
+        let prevId = platformPostId; // 트위터 체인용
+        for (const item of thread_items as ThreadItem[]) {
+          if (!item.content?.trim()) continue;
+          try {
+            // 트위터는 이전 트윗에 체인, 나머지는 메인 게시물에 댓글
+            const targetId = platform === 'twitter' ? prevId : platformPostId;
+            const { id: commentId } = await postCommentOnOwnPost(
+              platform, conn.access_token, conn.platform_user_id || '',
+              targetId, item.content, item.media_urls,
+            );
+            if (platform === 'twitter') prevId = commentId;
+          } catch (e) {
+            console.warn(`[${platform}] 스레드 항목 게시 실패:`, e);
+          }
+        }
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({ platform, success: false, error: message });

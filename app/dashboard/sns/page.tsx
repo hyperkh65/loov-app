@@ -40,6 +40,13 @@ interface MediaItem {
   isVideo: boolean;
 }
 
+interface ThreadItem {
+  id: string;
+  content: string;
+  media: MediaItem[];
+  uploading: boolean;
+}
+
 interface Comment {
   id: string;
   authorName: string;
@@ -75,6 +82,7 @@ export default function SNSPage() {
   const [composePlatforms, setComposePlatforms] = useState<Platform[]>([]);
   const [composing, setComposing] = useState(false);
   const [composeResult, setComposeResult] = useState<{ platform: string; success: boolean; error?: string }[] | null>(null);
+  const [threadItems, setThreadItems] = useState<ThreadItem[]>([]);
   const [loadingTemplate, setLoadingTemplate] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -123,34 +131,56 @@ export default function SNSPage() {
   const getConnection = (platform: string) => connections.find((c) => c.platform === platform);
 
   // ── 미디어 업로드 ──────────────────────────────────────
-  const uploadFiles = async (files: FileList | null, target: 'compose' | 'reply') => {
+  const uploadMediaFiles = async (
+    files: FileList | null,
+    getCurrentCount: () => number,
+    onSuccess: (item: MediaItem) => void,
+    onUploading?: (v: boolean) => void,
+  ) => {
     if (!files?.length) return;
-    const currentCount = target === 'compose' ? composeMedia.length : replyMedia.length;
-    const remaining = 4 - currentCount;
+    const remaining = 4 - getCurrentCount();
     if (remaining <= 0) return;
-
-    if (target === 'compose') setUploadingMedia(true);
-
+    onUploading?.(true);
     for (const file of Array.from(files).slice(0, remaining)) {
       const fd = new FormData();
       fd.append('file', file);
       const res = await fetch('/api/sns/media', { method: 'POST', body: fd });
       const data = await res.json();
-      if (res.ok) {
-        const item: MediaItem = { url: data.url, type: data.type, name: data.name, isVideo: data.isVideo };
-        if (target === 'compose') setComposeMedia((prev) => [...prev, item]);
-        else setReplyMedia((prev) => [...prev, item]);
-      } else {
-        alert(data.error || '업로드 실패');
-      }
+      if (res.ok) onSuccess({ url: data.url, type: data.type, name: data.name, isVideo: data.isVideo });
+      else alert(data.error || '업로드 실패');
     }
+    onUploading?.(false);
+  };
 
-    if (target === 'compose') setUploadingMedia(false);
+  // 편의 래퍼
+  const uploadFiles = (files: FileList | null, target: 'compose' | 'reply') => {
+    if (target === 'compose') {
+      uploadMediaFiles(files, () => composeMedia.length, (item) => setComposeMedia((p) => [...p, item]), setUploadingMedia);
+    } else {
+      uploadMediaFiles(files, () => replyMedia.length, (item) => setReplyMedia((p) => [...p, item]));
+    }
+  };
+
+  const uploadThreadMedia = (files: FileList | null, idx: number) => {
+    uploadMediaFiles(
+      files,
+      () => threadItems[idx]?.media.length ?? 0,
+      (item) => setThreadItems((prev) => prev.map((t, i) => i === idx ? { ...t, media: [...t.media, item] } : t)),
+      (v) => setThreadItems((prev) => prev.map((t, i) => i === idx ? { ...t, uploading: v } : t)),
+    );
   };
 
   const removeMedia = (idx: number, target: 'compose' | 'reply') => {
     if (target === 'compose') setComposeMedia((prev) => prev.filter((_, i) => i !== idx));
     else setReplyMedia((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const addThreadItem = () => {
+    setThreadItems((prev) => [...prev, { id: Math.random().toString(36).slice(2), content: '', media: [], uploading: false }]);
+  };
+
+  const removeThreadItem = (idx: number) => {
+    setThreadItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
   // ── 게시 ────────────────────────────────────────────
@@ -165,6 +195,9 @@ export default function SNSPage() {
         content: composeContent,
         platforms: composePlatforms,
         media_urls: composeMedia.map((m) => m.url),
+        thread_items: threadItems
+          .filter((t) => t.content.trim())
+          .map((t) => ({ content: t.content, media_urls: t.media.map((m) => m.url) })),
       }),
     });
     const data = await res.json();
@@ -444,8 +477,55 @@ export default function SNSPage() {
                 )}
               </div>
 
+              {/* ── 스레드/댓글 형식 추가 ── */}
+              {threadItems.length > 0 && (
+                <div className="mt-4 space-y-0">
+                  {threadItems.map((item, idx) => (
+                    <div key={item.id} className="flex gap-3">
+                      {/* 연결선 */}
+                      <div className="flex flex-col items-center flex-shrink-0 w-6">
+                        <div className="w-px flex-1 bg-gray-200 mt-1" />
+                        <div className="w-2 h-2 rounded-full bg-gray-300 mb-1" />
+                      </div>
+                      {/* 내용 */}
+                      <div className="flex-1 border border-gray-200 rounded-xl p-3 mb-3">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <span className="text-xs font-semibold text-gray-400">💬 {idx + 1}번째 댓글</span>
+                          <button onClick={() => removeThreadItem(idx)} className="text-xs text-gray-300 hover:text-red-400 leading-none">× 삭제</button>
+                        </div>
+                        <textarea
+                          value={item.content}
+                          onChange={(e) => setThreadItems((prev) => prev.map((t, i) => i === idx ? { ...t, content: e.target.value } : t))}
+                          placeholder="추가 내용 입력..."
+                          rows={3}
+                          className="w-full text-sm resize-none focus:outline-none text-gray-700 placeholder-gray-300"
+                        />
+                        {item.media.length > 0 && (
+                          <div className="mt-2">
+                            <MediaPreview items={item.media} onRemove={(mi) => setThreadItems((prev) => prev.map((t, i) => i === idx ? { ...t, media: t.media.filter((_, mIdx) => mIdx !== mi) } : t))} />
+                          </div>
+                        )}
+                        {item.media.length < 4 && (
+                          <label className="mt-2 flex items-center gap-1 text-xs text-gray-400 cursor-pointer hover:text-indigo-500 w-fit">
+                            <input type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime" multiple className="hidden" onChange={(e) => uploadThreadMedia(e.target.files, idx)} />
+                            {item.uploading ? '업로드 중...' : '📎 미디어 첨부'}
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={addThreadItem}
+                className="w-full mt-2 mb-5 flex items-center justify-center gap-2 border border-dashed border-gray-200 rounded-xl py-2.5 text-sm text-gray-400 hover:border-indigo-300 hover:text-indigo-500 transition-colors">
+                <span className="text-lg leading-none">+</span>
+                댓글/스레드 형식으로 추가
+              </button>
+
               {/* 플랫폼 선택 */}
-              <div className="mt-5">
+              <div className="mt-0">
                 <label className="text-xs font-semibold text-gray-500 mb-2 block">발행 플랫폼</label>
                 <div className="flex flex-wrap gap-2">
                   {(Object.keys(PLATFORMS) as Platform[]).map((p) => {
