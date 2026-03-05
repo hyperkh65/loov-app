@@ -20,7 +20,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -28,6 +28,13 @@ export default function SettingsPage() {
   const [notionDbId, setNotionDbId] = useState('');
   const [notionSaved, setNotionSaved] = useState(false);
   const [notionStatus, setNotionStatus] = useState<{ connected: boolean; databaseName?: string; reason?: string } | null>(null);
+
+  // Coupang Partners state
+  const [coupangAccessKey, setCoupangAccessKey] = useState('');
+  const [coupangSecretKey, setCoupangSecretKey] = useState('');
+  const [coupangConfigured, setCoupangConfigured] = useState(false);
+  const [coupangSaving, setCoupangSaving] = useState(false);
+  const [coupangMsg, setCoupangMsg] = useState('');
 
   // Google Calendar state
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -47,6 +54,11 @@ export default function SettingsPage() {
       fetch('/api/notion/status').then((r) => r.ok ? r.json() : null).then((d: { connected: boolean; databaseName?: string; reason?: string } | null) => {
         if (d) setNotionStatus(d);
       });
+    }
+    if (activeTab === 'coupang') {
+      fetch('/api/coupang/settings')
+        .then((r) => r.ok ? r.json() : {})
+        .then((d: { configured?: boolean }) => setCoupangConfigured(!!d.configured));
     }
     if (activeTab === 'google') {
       fetch('/api/google/status')
@@ -153,7 +165,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -849,6 +861,87 @@ export default function SettingsPage() {
             </div>
             <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-700">
               연결 후 <a href="/dashboard/sns" className="font-bold underline">SNS 관리 페이지</a>에서 게시글 템플릿 작성 및 즉시 발행이 가능합니다.
+            </div>
+          </div>
+        )}
+        {/* 쿠팡파트너스 탭 */}
+        {activeTab === 'coupang' && (
+          <div className="space-y-6 max-w-2xl">
+            <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-xl">🛒</div>
+                <div>
+                  <div className="font-bold text-gray-800">쿠팡파트너스 API 키</div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <div className={`w-1.5 h-1.5 rounded-full ${coupangConfigured ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                    <span className="text-xs text-gray-400">{coupangConfigured ? '연결됨' : '미설정'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Access Key</label>
+                  <input
+                    type="text"
+                    value={coupangAccessKey}
+                    onChange={(e) => setCoupangAccessKey(e.target.value)}
+                    placeholder="쿠팡파트너스 Access Key 입력"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Secret Key</label>
+                  <input
+                    type="password"
+                    value={coupangSecretKey}
+                    onChange={(e) => setCoupangSecretKey(e.target.value)}
+                    placeholder="쿠팡파트너스 Secret Key 입력"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 font-mono"
+                  />
+                </div>
+                {coupangMsg && (
+                  <p className={`text-xs ${coupangMsg.includes('저장') ? 'text-emerald-600' : 'text-red-500'}`}>{coupangMsg}</p>
+                )}
+                <button
+                  disabled={coupangSaving || !coupangAccessKey.trim() || !coupangSecretKey.trim()}
+                  onClick={async () => {
+                    setCoupangSaving(true);
+                    setCoupangMsg('');
+                    const res = await fetch('/api/coupang/settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ accessKey: coupangAccessKey, secretKey: coupangSecretKey }),
+                    });
+                    if (res.ok) {
+                      setCoupangConfigured(true);
+                      setCoupangMsg('✓ 저장되었습니다');
+                      setCoupangAccessKey('');
+                      setCoupangSecretKey('');
+                    } else {
+                      const d = await res.json();
+                      setCoupangMsg(`오류: ${d.error}`);
+                    }
+                    setCoupangSaving(false);
+                  }}
+                  className="bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">
+                  {coupangSaving ? '저장 중...' : '저장'}
+                </button>
+              </div>
+            </div>
+
+            {/* 발급 방법 안내 */}
+            <div className="bg-orange-50 border border-orange-100 rounded-2xl p-5">
+              <h4 className="font-bold text-orange-800 mb-3 text-sm">📋 API 키 발급 방법</h4>
+              <ol className="space-y-2 text-sm text-orange-700 list-decimal list-inside">
+                <li><a href="https://partners.coupang.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">partners.coupang.com</a>에 로그인</li>
+                <li>우측 상단 프로필 클릭 → <strong>마이페이지</strong> 이동</li>
+                <li><strong>API 키 관리</strong> 메뉴에서 Access Key / Secret Key 확인</li>
+                <li>위 입력창에 붙여넣고 저장</li>
+              </ol>
+              <div className="mt-3 bg-white rounded-xl p-3 text-xs text-orange-600">
+                💡 저장 후 <a href="/dashboard/coupang" className="underline font-bold">쿠팡파트너스 페이지</a>에서 상품 검색 → 제휴링크 생성 → SNS 자동 홍보가 가능합니다
+              </div>
             </div>
           </div>
         )}
