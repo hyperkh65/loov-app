@@ -33,9 +33,10 @@ const NAV_GROUPS = [
   {
     label: '온라인',
     items: [
-      { href: '/dashboard/sns',      icon: '🌐', label: 'SNS 관리' },
-      { href: '/dashboard/coupang',  icon: '🛒', label: '쿠팡파트너스' },
-      { href: '/dashboard/website',  icon: '🏢', label: '홈페이지 관리' },
+      { href: '/dashboard/sns',        icon: '🌐', label: 'SNS 관리' },
+      { href: '/dashboard/coupang',   icon: '🛒', label: '쿠팡파트너스' },
+      { href: '/dashboard/wordpress', icon: '📝', label: 'WordPress 발행' },
+      { href: '/dashboard/website',   icon: '🏢', label: '홈페이지 관리' },
     ],
   },
   {
