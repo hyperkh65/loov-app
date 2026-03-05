@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { PLATFORMS, Platform } from '@/lib/sns/platforms';
-import { supabase } from '@/lib/supabase';
-
 type Tab = 'connections' | 'templates' | 'post' | 'logs';
 
 interface Connection {
@@ -32,9 +30,11 @@ interface Log {
 }
 
 const PLATFORM_INFO: Record<string, { label: string; icon: string; color: string }> = {
-  twitter: { label: '트위터/X', icon: '🐦', color: 'from-blue-400 to-blue-600' },
-  threads: { label: '스레드', icon: '🧵', color: 'from-gray-700 to-black' },
-  facebook: { label: '페이스북', icon: '📘', color: 'from-blue-500 to-blue-700' },
+  twitter:   { label: '트위터/X',   icon: '🐦', color: 'from-blue-400 to-blue-600' },
+  threads:   { label: '스레드',     icon: '🧵', color: 'from-gray-700 to-black' },
+  facebook:  { label: '페이스북',   icon: '📘', color: 'from-blue-500 to-blue-700' },
+  instagram: { label: '인스타그램', icon: '📸', color: 'from-pink-500 to-orange-400' },
+  linkedin:  { label: '링크드인',   icon: '💼', color: 'from-blue-600 to-blue-800' },
 };
 
 export default function SNSPage() {
