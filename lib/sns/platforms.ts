@@ -29,14 +29,14 @@ export const PLATFORMS: Record<Platform, {
     name: 'Facebook',
     authUrl: 'https://www.facebook.com/v18.0/dialog/oauth',
     tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token',
-    scopes: ['pages_show_list', 'pages_manage_posts'],
+    scopes: ['pages_show_list', 'pages_manage_posts', 'pages_read_engagement'],
     charLimit: 63206,
   },
   instagram: {
     name: 'Instagram',
     authUrl: 'https://www.facebook.com/v18.0/dialog/oauth',
     tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token',
-    scopes: ['instagram_basic', 'instagram_content_publish', 'pages_show_list'],
+    scopes: ['instagram_basic', 'instagram_content_publish', 'instagram_manage_comments', 'pages_show_list'],
     charLimit: 2200,
   },
   linkedin: {
