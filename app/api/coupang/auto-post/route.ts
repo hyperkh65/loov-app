@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
   const {
     productName, productUrl, price, discountRate, affiliateUrl,
     imageUrls, firstReview, platforms, aiApiKey,
+    generatedContent: preGenerated,  // 미리 생성된 내용이 있으면 AI 재생성 생략
   } = await req.json();
 
   if (!productName || !affiliateUrl || !platforms?.length)
@@ -93,10 +94,8 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const content = await generateHookContent(
-        productName, price || 0, discountRate || 0, firstReview || '',
-        platform, aiApiKey,
-      );
+      const content = (preGenerated as Record<string, string> | undefined)?.[platform]
+        || await generateHookContent(productName, price || 0, discountRate || 0, firstReview || '', platform, aiApiKey);
       generatedContent[platform] = content;
 
       // 메인 포스트 (첫 번째 이미지만 첨부)
