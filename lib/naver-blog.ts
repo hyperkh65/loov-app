@@ -250,21 +250,33 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
         return { error: `인증 실패 (${res.status}) - 쿠키를 새로 발급해 주세요.`, errorCode: 'AUTH' };
       }
       if (res.ok) {
-        // 최종 URL (리다이렉트 후) 에서 postId 추출
         const finalUrl = res.url || '';
+        // 1) URL에서 postId 추출
         const mu = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/]|$)/);
         if (mu?.[1]) {
           return { postId: mu[1], postUrl: `https://blog.naver.com/${blogId}/${mu[1]}` };
         }
-        // JSON body에서 postId 시도
+        // 2) 응답 body 전체 파싱 (JSON or text)
+        const bodyText = await res.text().catch(() => '');
+        // JSON에서 postId 탐색 (다양한 key 시도)
         try {
-          const data = await res.clone().json() as Record<string, unknown>;
-          const pid = String(data.logNo ?? data.postId ?? data.id ?? '');
+          const data = JSON.parse(bodyText) as Record<string, unknown>;
+          const nested = (data.result ?? data.data ?? data.post ?? data) as Record<string, unknown>;
+          const pid = String(
+            nested.logNo ?? nested.postNo ?? nested.postId ?? nested.id ??
+            data.logNo ?? data.postNo ?? data.postId ?? data.id ?? ''
+          );
           if (pid && /^\d+$/.test(pid)) {
             return { postId: pid, postUrl: `https://blog.naver.com/${blogId}/${pid}` };
           }
         } catch { /* JSON 아님 */ }
-        errors.push(`writePost ok but no postId (finalUrl: ${finalUrl.slice(0, 100)})`);
+        // text body에서 숫자 ID 패턴 탐색
+        const bm = bodyText.match(/"(?:logNo|postNo|postId|id)"\s*:\s*"?(\d{5,})"?/);
+        if (bm?.[1]) {
+          return { postId: bm[1], postUrl: `https://blog.naver.com/${blogId}/${bm[1]}` };
+        }
+        // 디버그용: 실제 body 일부 노출
+        errors.push(`writePost ok no postId | body: ${bodyText.slice(0, 150)}`);
       } else if (res.status !== 404) {
         const t = await res.text().catch(() => '');
         errors.push(`writePost ${res.status}: ${t.slice(0, 100)}`);
