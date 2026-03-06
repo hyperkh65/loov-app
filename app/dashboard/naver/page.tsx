@@ -105,6 +105,8 @@ export default function NaverPage() {
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState('');
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<string>('');
 
   // 히스토리
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -218,17 +220,41 @@ export default function NaverPage() {
     finally { setAutoGenerating(false); }
   };
 
-  // ── 발행 ─────────────────────────────────────────────────────────────────
+  // ── 발행 (GitHub Actions 우회) ────────────────────────────────────────────
+
+  const pollJobStatus = async (id: string) => {
+    const maxAttempts = 60; // 최대 2분 대기
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const res = await fetch(`/api/naver/job/${id}`);
+        if (!res.ok) continue;
+        const job = await res.json() as { status: string; post_id?: string; post_url?: string; error_message?: string };
+        setJobStatus(job.status);
+        if (job.status === 'completed') {
+          setPublishResult({ postId: job.post_id, postUrl: job.post_url });
+          loadHistory();
+          return;
+        }
+        if (job.status === 'failed') {
+          setPublishError(job.error_message || '발행 실패');
+          if (job.error_message?.includes('쿠키') || job.error_message?.includes('AUTH')) setTab('settings');
+          return;
+        }
+      } catch { }
+    }
+    setPublishError('타임아웃: GitHub Actions가 응답하지 않습니다. GitHub Actions 탭에서 로그를 확인하세요.');
+  };
 
   const handlePublish = async () => {
     if (!title.trim() || !content.trim()) { setPublishError('제목과 내용이 필요합니다'); return; }
     if (!conn?.blog_id) { setPublishError('네이버 블로그 연결 설정이 필요합니다'); return; }
     if (!conn.nid_aut || !conn.nid_ses) { setPublishError('쿠키(NID_AUT, NID_SES)를 설정 탭에서 입력해주세요'); return; }
 
-    setPublishing(true); setPublishResult(null); setPublishError('');
+    setPublishing(true); setPublishResult(null); setPublishError(''); setJobId(null); setJobStatus('');
     try {
       const parsedTags = tags.split(',').map((t) => t.trim()).filter(Boolean);
-      const res = await fetch('/api/naver/publish', {
+      const res = await fetch('/api/naver/trigger', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(), content, tags: parsedTags,
@@ -236,16 +262,23 @@ export default function NaverPage() {
           notionPageId: selectedArticle?.id || '',
         }),
       });
-      const data = await res.json() as PublishResult & { error?: string };
+      const data = await res.json() as { jobId?: string; message?: string; error?: string };
       if (!res.ok) {
-        setPublishError(data.error || `발행 실패 (${res.status})`);
-        if (data.errorCode === 'AUTH') setTab('settings');
+        setPublishError(data.error || `발행 요청 실패 (${res.status})`);
         return;
       }
-      setPublishResult(data);
-      loadHistory();
+      if (data.jobId) {
+        setJobId(data.jobId);
+        setJobStatus('pending');
+        // 백그라운드에서 완료 대기
+        pollJobStatus(data.jobId).finally(() => setPublishing(false));
+        return;
+      }
     } catch (e) { setPublishError('네트워크 오류: ' + String(e)); }
-    finally { setPublishing(false); }
+    finally {
+      // pollJobStatus가 없을 때만 해제
+      if (!jobId) setPublishing(false);
+    }
   };
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────
@@ -431,9 +464,13 @@ export default function NaverPage() {
                   className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
                 >
                   {publishing ? (
-                    <><span className="animate-spin">⏳</span> 발행 중...</>
+                    <>
+                      <span className="animate-spin">⏳</span>
+                      {jobStatus === 'pending' ? 'GitHub Actions 시작 중...' :
+                       jobStatus === 'processing' ? '네이버 발행 중...' : '발행 중...'}
+                    </>
                   ) : (
-                    <>🟢 네이버 블로그 발행</>
+                    <>🟢 네이버 블로그 발행 (GitHub Actions)</>
                   )}
                 </button>
                 <p className="text-[10px] text-gray-400 mt-2 text-center">발행 전 SEO 리라이팅을 권장합니다 (네이버 검색 최적화)</p>

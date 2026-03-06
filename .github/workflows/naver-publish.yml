@@ -1,0 +1,20 @@
+name: Naver Blog Publish
+
+on:
+  repository_dispatch:
+    types: [naver-publish]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Publish to Naver
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          JOB_ID: ${{ github.event.client_payload.job_id }}
+        run: node .github/scripts/publish-naver.js
