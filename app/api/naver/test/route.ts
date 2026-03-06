@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { getNaverBlogInfo, getNaverCategories } from '@/lib/naver-blog';
+import { getNaverCategories } from '@/lib/naver-blog';
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -12,31 +12,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '블로그 ID와 쿠키를 모두 입력해주세요' }, { status: 400 });
   }
 
-  // 블로그 정보 + 카테고리 동시 조회
-  const [infoResult, catResult] = await Promise.all([
-    getNaverBlogInfo(blog_id, nid_aut, nid_ses),
-    getNaverCategories(blog_id, nid_aut, nid_ses),
-  ]);
-
-  if (infoResult.error) {
-    return NextResponse.json({ error: infoResult.error }, { status: 400 });
-  }
-
-  // 성공 시 카테고리 DB 업데이트
+  // 카테고리 조회로 쿠키 유효성 간접 검증
+  // (Naver API는 서버 IP 차단이 있어 블로그 존재 확인은 건너뜀)
+  const catResult = await getNaverCategories(blog_id, nid_aut, nid_ses);
   const categories = catResult.categories ?? [];
+
+  // DB에 저장 (blog_name은 blog_id로 fallback)
   await supabase
     .from('naver_connections')
     .update({
-      blog_name: infoResult.info?.blogName || blog_id,
-      categories: categories,
+      blog_name: blog_id,
+      categories,
       last_tested_at: new Date().toISOString(),
     })
     .eq('user_id', user.id);
 
   return NextResponse.json({
     ok: true,
-    blogName: infoResult.info?.blogName,
+    blogName: blog_id,
     categories,
-    catError: catResult.error,
+    note: categories.length === 0
+      ? '카테고리를 불러올 수 없었습니다 (쿠키 만료 가능성). 저장 후 실제 발행으로 확인하세요.'
+      : null,
   });
 }

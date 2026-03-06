@@ -75,7 +75,7 @@ export default function NaverPage() {
   const [connMsg, setConnMsg] = useState('');
   const [connSaving, setConnSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok?: boolean; blogName?: string; categories?: NaverCategory[]; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok?: boolean; blogName?: string; categories?: NaverCategory[]; error?: string; note?: string } | null>(null);
 
   // 노션
   const [articles, setArticles] = useState<NotionArticle[]>([]);
@@ -518,10 +518,13 @@ export default function NaverPage() {
               {testResult && (
                 <div className={`p-3 rounded-xl text-xs ${(testResult as { ok?: boolean }).ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
                   {(testResult as { ok?: boolean }).ok ? (
-                    <div>
-                      <p className="font-bold">✅ 연결 성공!</p>
-                      <p>블로그: {(testResult as { blogName?: string }).blogName}</p>
+                    <div className="space-y-1">
+                      <p className="font-bold">✅ 저장 완료!</p>
+                      <p>블로그: blog.naver.com/{(testResult as { blogName?: string }).blogName}</p>
                       <p>카테고리: {((testResult as { categories?: NaverCategory[] }).categories || []).length}개 로드됨</p>
+                      {(testResult as { note?: string }).note && (
+                        <p className="text-amber-600 bg-amber-50 p-2 rounded-lg mt-1">{(testResult as { note?: string }).note}</p>
+                      )}
                     </div>
                   ) : (
                     <p>❌ {(testResult as { error?: string }).error}</p>
