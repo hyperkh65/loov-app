@@ -18,10 +18,10 @@ export async function POST(req: NextRequest) {
     .eq('user_id', user.id)
     .single();
 
-  const apiKey = conn?.openai_api_key;
+  const apiKey = conn?.openai_api_key?.trim() || process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'OpenAI API 키 없음. 노션 설정에서 입력해주세요.' },
+      { error: 'OpenAI API 키 없음. 노션 설정에서 입력하거나 환경변수를 확인하세요.' },
       { status: 400 },
     );
   }
