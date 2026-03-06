@@ -5,15 +5,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 
-interface ImageResult {
-  id: number;
-  url: string;
+export interface ImageUploadResult {
+  id?: number;
+  url?: string;
+  error?: string;
 }
 
-interface SiteUploadResult {
+export interface SiteUploadResult {
   siteId: string;
   siteName: string;
-  images: (ImageResult | null)[];
+  images: ImageUploadResult[];
   error?: string;
 }
 
@@ -40,22 +41,28 @@ export async function POST(req: NextRequest) {
 
   if (!sites?.length) return NextResponse.json({ error: '유효한 사이트 없음' }, { status: 400 });
 
+  // 파일 버퍼를 미리 읽어둠 (여러 사이트 반복 시 재사용)
+  const fileBuffers: Buffer[] = await Promise.all(
+    files.map(async (f) => Buffer.from(await f.arrayBuffer()))
+  );
+
   const results: SiteUploadResult[] = [];
 
   for (const site of sites) {
     const auth = 'Basic ' + Buffer.from(`${site.wp_username}:${site.app_password}`).toString('base64');
-    const images: (ImageResult | null)[] = [];
+    const images: ImageUploadResult[] = [];
 
     try {
-      for (const file of files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const buffer = fileBuffers[i];
         try {
-          const buffer = await file.arrayBuffer();
           const res = await fetch(`${site.site_url}/wp-json/wp/v2/media`, {
             method: 'POST',
             headers: {
               Authorization: auth,
               'Content-Type': file.type || 'image/jpeg',
-              'Content-Disposition': `attachment; filename="${encodeURIComponent(file.name)}"`,
+              'Content-Disposition': `attachment; filename="${file.name.replace(/[^\w.-]/g, '_')}"`,
             },
             body: buffer,
           });
@@ -64,17 +71,23 @@ export async function POST(req: NextRequest) {
             images.push({ id: data.id, url: data.source_url });
           } else {
             const errText = await res.text();
-            console.error(`[WP media] ${site.site_name} (${res.status}):`, errText.slice(0, 200));
-            images.push(null);
+            const errMsg = `HTTP ${res.status}: ${errText.slice(0, 120)}`;
+            console.error(`[WP media] ${site.site_name}:`, errMsg);
+            images.push({ error: errMsg });
           }
         } catch (e) {
-          console.error('[WP media] 업로드 예외:', e);
-          images.push(null);
+          const errMsg = String(e);
+          console.error('[WP media] 업로드 예외:', errMsg);
+          images.push({ error: errMsg });
         }
       }
       results.push({ siteId: site.id, siteName: site.site_name, images });
     } catch (e) {
-      results.push({ siteId: site.id, siteName: site.site_name, images: files.map(() => null), error: String(e) });
+      results.push({
+        siteId: site.id, siteName: site.site_name,
+        images: files.map(() => ({ error: String(e) })),
+        error: String(e),
+      });
     }
   }
 

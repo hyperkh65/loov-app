@@ -38,14 +38,15 @@ interface HistoryItem {
 }
 
 interface UploadedImage {
-  id: number;
-  url: string;
+  id?: number;
+  url?: string;
+  error?: string;
 }
 
 interface UploadedSiteData {
   siteId: string;
   siteName: string;
-  images: (UploadedImage | null)[];
+  images: UploadedImage[];
   error?: string;
 }
 
@@ -198,12 +199,12 @@ export default function WordPressPage() {
       setUploadedData(data.results);
 
       // 첫 번째 성공한 사이트의 본문 이미지(index 1+)를 content의 h2/h3 뒤에 자동 삽입
-      const firstSite = data.results.find((r) => !r.error && r.images.length > 1);
+      const firstSite = data.results.find((r) => !r.error && r.images.some((img) => img.url));
       if (firstSite) {
         const bodyUrls = firstSite.images
           .slice(1)
-          .filter((img): img is UploadedImage => img !== null && !!img.url)
-          .map((img) => img.url);
+          .filter((img) => !!img.url)
+          .map((img) => img.url!);
         if (bodyUrls.length > 0) {
           setContent((prev) => injectBodyImages(prev, bodyUrls));
         }
@@ -352,7 +353,7 @@ export default function WordPressPage() {
       if (uploadedData) {
         for (const siteData of uploadedData) {
           const firstImg = siteData.images?.[0];
-          if (firstImg && firstImg.id) {
+          if (firstImg?.id) {
             featuredMediaIds[siteData.siteId] = firstImg.id;
           }
         }
@@ -529,12 +530,12 @@ export default function WordPressPage() {
                             }`}>
                               {i === 0 ? '★' : i}
                             </span>
-                            {/* 업로드 완료 여부 표시 */}
+                                    {/* 업로드 완료 여부 표시 */}
                             {uploadedData && (
                               <span className={`absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center shadow ${
-                                uploadedData.every((s) => s.images[i] !== null) ? 'bg-emerald-500 text-white' : 'bg-red-400 text-white'
+                                uploadedData.every((s) => s.images[i]?.url) ? 'bg-emerald-500 text-white' : 'bg-red-400 text-white'
                               }`}>
-                                {uploadedData.every((s) => s.images[i] !== null) ? '✓' : '✗'}
+                                {uploadedData.every((s) => s.images[i]?.url) ? '✓' : '✗'}
                               </span>
                             )}
                             <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
@@ -661,24 +662,31 @@ export default function WordPressPage() {
                     )}
 
                     {uploadedData && (
-                      <div className="mt-2 space-y-1.5">
+                      <div className="mt-2 space-y-2">
                         {uploadedData.map((siteData) => {
-                          const ok = siteData.images.filter((img) => img !== null).length;
+                          const ok = siteData.images.filter((img) => img.url).length;
                           const total = siteData.images.length;
                           const allOk = ok === total && !siteData.error;
+                          // 첫 번째 실패한 이미지의 에러 메시지
+                          const firstErr = siteData.error || siteData.images.find((img) => img.error)?.error;
                           return (
-                            <div key={siteData.siteId} className="flex items-center gap-2">
-                              <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${allOk ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'}`}>
-                                {allOk ? '✓' : '!'}
-                              </span>
-                              <span className="text-xs text-gray-700 font-medium">{siteData.siteName}</span>
-                              <span className="text-[10px] text-gray-400">
-                                {siteData.error ? siteData.error.slice(0, 40) : `${ok}/${total}장 완료`}
-                              </span>
+                            <div key={siteData.siteId}>
+                              <div className="flex items-center gap-2">
+                                <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${allOk ? 'bg-emerald-500 text-white' : ok > 0 ? 'bg-amber-400 text-white' : 'bg-red-500 text-white'}`}>
+                                  {allOk ? '✓' : '!'}
+                                </span>
+                                <span className="text-xs text-gray-700 font-medium">{siteData.siteName}</span>
+                                <span className="text-[10px] text-gray-500">{ok}/{total}장 완료</span>
+                              </div>
+                              {firstErr && (
+                                <p className="text-[10px] text-red-500 mt-0.5 ml-5 break-all">{firstErr.slice(0, 150)}</p>
+                              )}
                             </div>
                           );
                         })}
-                        <p className="text-[10px] text-indigo-500 mt-1">✓ 본문 이미지가 h2 소제목 뒤에 자동 삽입되었습니다</p>
+                        {uploadedData.some((s) => s.images.some((img) => img.url)) && (
+                          <p className="text-[10px] text-indigo-500">✓ 본문 이미지가 h2 소제목 뒤에 자동 삽입되었습니다</p>
+                        )}
                       </div>
                     )}
                   </div>
