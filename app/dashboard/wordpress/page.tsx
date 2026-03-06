@@ -71,7 +71,7 @@ export default function WordPressPage() {
   const [siteMsg, setSiteMsg] = useState('');
 
   // ── 노션 ───────────────────────────────────────────────
-  const [notionForm, setNotionForm] = useState({ integration_token: '', database_id: '', status_property: 'Status' });
+  const [notionForm, setNotionForm] = useState({ integration_token: '', database_id: '', status_property: 'Status', openai_api_key: '', rewrite_prompt: '' });
   const [notionConnected, setNotionConnected] = useState(false);
   const [notionMsg, setNotionMsg] = useState('');
   const [articles, setArticles] = useState<NotionArticle[]>([]);
@@ -86,6 +86,35 @@ export default function WordPressPage() {
   const [tags, setTags] = useState('');
   const [publishStatus, setPublishStatus] = useState<'publish' | 'draft'>('publish');
   const [preview, setPreview] = useState(false);
+
+  // ── SEO 리라이팅 ───────────────────────────────────────
+  const [targetKeyword, setTargetKeyword] = useState('');
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState('');
+
+  const handleRewrite = async () => {
+    if (!content.trim()) return;
+    setRewriting(true);
+    setRewriteError('');
+    try {
+      const res = await fetch('/api/wordpress/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, targetKeyword: targetKeyword.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setRewriteError((err as { error?: string }).error || `오류 (${res.status})`);
+        return;
+      }
+      const data = await res.json() as { content: string };
+      setContent(data.content);
+    } catch (e) {
+      setRewriteError('네트워크 오류: ' + String(e));
+    } finally {
+      setRewriting(false);
+    }
+  };
 
   // ── 이미지 ─────────────────────────────────────────────
   const [imageFiles, setImageFiles] = useState<File[]>([]);
@@ -142,6 +171,8 @@ export default function WordPressPage() {
           integration_token: data.integration_token || '',
           database_id: data.database_id || '',
           status_property: data.status_property || 'Status',
+          openai_api_key: data.openai_api_key || '',
+          rewrite_prompt: data.rewrite_prompt || '',
         });
         setNotionConnected(true);
       }
@@ -223,7 +254,7 @@ export default function WordPressPage() {
     const res = await fetch('/api/wordpress/notion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'connect', ...notionForm }),
+      body: JSON.stringify({ action: 'connect', integration_token: notionForm.integration_token, database_id: notionForm.database_id, status_property: notionForm.status_property, openai_api_key: notionForm.openai_api_key, rewrite_prompt: notionForm.rewrite_prompt }),
     });
     const data = await res.json();
     if (res.ok) {
@@ -433,18 +464,33 @@ export default function WordPressPage() {
 
               {/* 본문 에디터 */}
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50 flex-wrap gap-2">
                   <span className="text-sm font-semibold text-gray-700">본문</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {contentLoading && <span className="text-xs text-gray-400 animate-pulse">노션에서 불러오는 중...</span>}
+                    {/* 대상 키워드 입력 */}
+                    <input
+                      value={targetKeyword}
+                      onChange={(e) => setTargetKeyword(e.target.value)}
+                      placeholder="대상 키워드 (선택)"
+                      className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 w-32 focus:outline-none focus:border-emerald-400"
+                    />
+                    <button onClick={handleRewrite}
+                      disabled={rewriting || !content.trim()}
+                      className="text-xs bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
+                      {rewriting ? '⏳ 리라이팅 중...' : '🤖 SEO 리라이팅'}
+                    </button>
                     <button onClick={() => setPreview((v) => !v)}
-                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
+                      className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
                         preview ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}>
                       {preview ? '편집' : '미리보기'}
                     </button>
                   </div>
                 </div>
+                {rewriteError && (
+                  <div className="px-5 py-2 bg-red-50 text-xs text-red-600 border-b border-red-100">⚠️ {rewriteError}</div>
+                )}
                 {preview ? (
                   <div
                     className="p-5 prose prose-sm max-w-none min-h-[300px] text-gray-800"
@@ -657,6 +703,39 @@ export default function WordPressPage() {
                   <p>2. Internal Integration Secret 복사</p>
                   <p>3. Notion DB 페이지 → ··· → Connections → Integration 추가</p>
                   <p><strong>Database ID:</strong> DB URL에서 추출 (마지막 32자리)</p>
+                </div>
+
+                {/* SEO 리라이팅 설정 */}
+                <div className="border-t border-gray-100 pt-4 mt-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-sm font-bold text-gray-800">🤖 SEO 리라이팅 설정</span>
+                    <span className="text-xs text-gray-400">(노션 글 → GPT-4o 자동 리라이팅)</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1.5">OpenAI API 키</label>
+                      <input value={notionForm.openai_api_key}
+                        onChange={(e) => setNotionForm((f) => ({ ...f, openai_api_key: e.target.value.trim() }))}
+                        placeholder="sk-..."
+                        type="password"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-400 font-mono text-xs" />
+                      <p className="text-[10px] text-gray-400 mt-1">platform.openai.com → API Keys에서 발급</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+                        커스텀 시스템 프롬프트
+                        <span className="font-normal text-gray-400 ml-1">(비워두면 기본 SEO 프롬프트 사용)</span>
+                      </label>
+                      <textarea value={notionForm.rewrite_prompt}
+                        onChange={(e) => setNotionForm((f) => ({ ...f, rewrite_prompt: e.target.value }))}
+                        placeholder="ChatGPT Custom GPTs의 시스템 프롬프트를 여기에 붙여넣으세요.&#10;비워두면 기본 SEO 최적화 프롬프트가 사용됩니다."
+                        rows={5}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-emerald-400 resize-y font-mono" />
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        💡 ChatGPT → 내 GPT → 편집 → 지침(Instructions)에서 복사
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {notionMsg && (

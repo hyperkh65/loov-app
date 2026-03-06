@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { action, integration_token, database_id, title_property, status_property } = await req.json();
+  const { action, integration_token, database_id, title_property, status_property, openai_api_key, rewrite_prompt } = await req.json();
 
   if (action === 'connect') {
     if (!integration_token || !database_id)
@@ -131,14 +131,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '노션에 연결할 수 없습니다' }, { status: 400 });
     }
 
-    const { error } = await supabase.from('notion_connections').upsert({
+    const upsertData: Record<string, string> = {
       user_id: user.id,
       integration_token,
       database_id,
       title_property: title_property || 'Name',
       status_property: status_property || 'Status',
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    };
+    if (openai_api_key !== undefined) upsertData.openai_api_key = openai_api_key;
+    if (rewrite_prompt !== undefined) upsertData.rewrite_prompt = rewrite_prompt;
+
+    const { error } = await supabase.from('notion_connections').upsert(upsertData, { onConflict: 'user_id' });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
