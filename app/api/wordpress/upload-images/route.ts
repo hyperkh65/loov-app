@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
   if (!sites?.length) return NextResponse.json({ error: '유효한 사이트 없음' }, { status: 400 });
 
   // 파일 버퍼를 미리 읽어둠 (여러 사이트 반복 시 재사용)
-  const fileBuffers: Buffer[] = await Promise.all(
-    files.map(async (f) => Buffer.from(await f.arrayBuffer()))
+  const fileBuffers: ArrayBuffer[] = await Promise.all(
+    files.map((f) => f.arrayBuffer())
   );
 
   const results: SiteUploadResult[] = [];
@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
         const file = files[i];
         const buffer = fileBuffers[i];
         try {
+          const blob = new Blob([buffer], { type: file.type || 'image/jpeg' });
           const res = await fetch(`${site.site_url}/wp-json/wp/v2/media`, {
             method: 'POST',
             headers: {
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
               'Content-Type': file.type || 'image/jpeg',
               'Content-Disposition': `attachment; filename="${file.name.replace(/[^\w.-]/g, '_')}"`,
             },
-            body: buffer,
+            body: blob,
           });
           if (res.ok) {
             const data = await res.json();
