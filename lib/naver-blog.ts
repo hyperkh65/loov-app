@@ -230,6 +230,7 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
         isPublish: isPublish ? 'true' : 'false',
         publishType: isPublish ? 'A' : 'B',
       });
+      // redirect:follow 로 최종 URL 확인 (Edge Runtime에서 manual 시 location 헤더 차단됨)
       const res = await fetch(baseUrl, {
         method: 'POST',
         headers: {
@@ -241,22 +242,29 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
           'X-Requested-With': 'XMLHttpRequest',
         },
         body: form.toString(),
-        redirect: 'manual',
+        redirect: 'follow',
         cache: 'no-store',
       });
 
       if (res.status === 401 || res.status === 403) {
         return { error: `인증 실패 (${res.status}) - 쿠키를 새로 발급해 주세요.`, errorCode: 'AUTH' };
       }
-      if (res.ok || res.status === 302 || res.status === 301) {
-        const loc = res.headers.get('location') || '';
-        const m = loc.match(/logNo=(\d+)/) || loc.match(/\/(\d{5,})(?:[^/]|$)/);
-        const postId = m?.[1] || '';
-        if (postId) {
-          return { postId, postUrl: `https://blog.naver.com/${blogId}/${postId}` };
+      if (res.ok) {
+        // 최종 URL (리다이렉트 후) 에서 postId 추출
+        const finalUrl = res.url || '';
+        const mu = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/]|$)/);
+        if (mu?.[1]) {
+          return { postId: mu[1], postUrl: `https://blog.naver.com/${blogId}/${mu[1]}` };
         }
-        // postId 없는 302는 실패(블로그 홈 리다이렉트) - 다음 방법 시도
-        errors.push(`writePost ${baseUrl.split('/').pop()} 302 but no postId (loc: ${loc.slice(0, 80)})`);
+        // JSON body에서 postId 시도
+        try {
+          const data = await res.clone().json() as Record<string, unknown>;
+          const pid = String(data.logNo ?? data.postId ?? data.id ?? '');
+          if (pid && /^\d+$/.test(pid)) {
+            return { postId: pid, postUrl: `https://blog.naver.com/${blogId}/${pid}` };
+          }
+        } catch { /* JSON 아님 */ }
+        errors.push(`writePost ok but no postId (finalUrl: ${finalUrl.slice(0, 100)})`);
       } else if (res.status !== 404) {
         const t = await res.text().catch(() => '');
         errors.push(`writePost ${res.status}: ${t.slice(0, 100)}`);
@@ -363,19 +371,19 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
         Referer: `https://blog.naver.com/${blogId}`,
       },
       body: form.toString(),
-      redirect: 'manual',
+      redirect: 'follow',
       cache: 'no-store',
     });
     if (res.status === 401 || res.status === 403) {
       return { error: `인증 실패 (${res.status}) - 쿠키를 새로 발급해 주세요.`, errorCode: 'AUTH' };
     }
-    if (res.ok || res.status === 302 || res.status === 301) {
-      const loc = res.headers.get('location') || '';
-      const m = loc.match(/logNo=(\d+)/) || loc.match(/\/(\d{5,})(?:[^/]|$)/);
+    if (res.ok) {
+      const finalUrl = res.url || '';
+      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/]|$)/);
       const postId = m?.[1] || '';
       if (postId) return { postId, postUrl: `https://blog.naver.com/${blogId}/${postId}` };
-      errors.push(`BlogPost.naver 302 no postId (${loc.slice(0, 80)})`);
-    } else {
+      errors.push(`BlogPost.naver ok no postId (${finalUrl.slice(0, 80)})`);
+    } else if (res.status !== 404) {
       const t = await res.text().catch(() => '');
       errors.push(`BlogPost.naver ${res.status}: ${t.slice(0, 80)}`);
     }
@@ -401,19 +409,19 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
         Referer: `https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`,
       },
       body: form.toString(),
-      redirect: 'manual',
+      redirect: 'follow',
       cache: 'no-store',
     });
     if (res.status === 401 || res.status === 403) {
       return { error: `인증 실패 (${res.status}) - 쿠키를 새로 발급해 주세요.`, errorCode: 'AUTH' };
     }
-    if (res.ok || res.status === 302 || res.status === 301) {
-      const loc = res.headers.get('location') || '';
-      const m = loc.match(/logNo=(\d+)/) || loc.match(/\/(\d{5,})(?:[^/]|$)/);
+    if (res.ok) {
+      const finalUrl = res.url || '';
+      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/]|$)/);
       const postId = m?.[1] || '';
       if (postId) return { postId, postUrl: `https://blog.naver.com/${blogId}/${postId}` };
-      errors.push(`PostWriteFormsave 302 no postId (${loc.slice(0, 80)})`);
-    } else {
+      errors.push(`PostWriteFormsave ok no postId (${finalUrl.slice(0, 80)})`);
+    } else if (res.status !== 404) {
       const t = await res.text().catch(() => '');
       errors.push(`PostWriteFormsave ${res.status}: ${t.slice(0, 80)}`);
     }
