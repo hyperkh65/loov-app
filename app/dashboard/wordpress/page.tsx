@@ -190,6 +190,7 @@ export default function WordPressPage() {
 
   // 자동화
   const [autoGenerating, setAutoGenerating] = useState(false);
+  const [snsPosting, setSnsPosting] = useState(false);
   const [autoStep, setAutoStep] = useState('');
   const [snsHook, setSnsHook] = useState('');
   const [snsResults, setSnsResults] = useState<{ platform: string; success: boolean; error?: string }[] | null>(null);
@@ -317,77 +318,24 @@ export default function WordPressPage() {
     finally { setAutoGenerating(false); }
   };
 
-  // ── 버튼2: 🚀 자동화+SNS ─────────────────────────────────────────────────
+  // ── SNS 발행 ─────────────────────────────────────────────────────────────
 
-  const handleAutoPublishSNS = async () => {
-    if (!content.trim() || !title.trim()) { setPublishError('노션 아티클을 먼저 선택하세요'); return; }
-    if (!selectedSiteIds.length) { setPublishError('발행할 사이트를 선택하세요'); return; }
-
-    setAutoGenerating(true); setPublishResults(null); setPublishError(''); setSnsResults(null);
-
+  const handlePostToSNS = async () => {
+    if (!snsHook.trim()) return;
+    setSnsPosting(true); setSnsResults(null);
     try {
-      // 1. AI 생성 + 썸네일
-      const gen = await runAutoGenerate();
-      if (!gen) throw new Error('자동 생성 실패');
-      const { genData, thumbFile, newTitle } = gen;
-
-      // 2. 이미지 업로드
-      setAutoStep('📤 WP 미디어 업로드 중...');
-      const allFiles = [thumbFile, ...imageFiles.slice(1)];
-      const uploadFd = new FormData();
-      uploadFd.append('meta', JSON.stringify({ siteIds: selectedSiteIds }));
-      allFiles.forEach((f) => uploadFd.append('images', f));
-      const uploadRes = await fetch('/api/wordpress/upload-images', { method: 'POST', body: uploadFd });
-      if (!uploadRes.ok) throw new Error('이미지 업로드 실패');
-      const uploadData = await uploadRes.json() as { results: UploadedSiteData[] };
-      setUploadedData(uploadData.results);
-
-      // 본문에 body 이미지 삽입
-      let currentContent = content;
-      const firstSite = uploadData.results.find((r) => r.images.some((img) => img.url));
-      if (firstSite) {
-        const bodyUrls = firstSite.images.filter((img) => !!img.url).map((img) => img.url!);
-        if (bodyUrls.length > 0) { currentContent = injectBodyImages(currentContent, bodyUrls); setContent(currentContent); }
-      }
-
-      // 3. WordPress 발행
-      setAutoStep('🚀 WordPress 발행 중...');
-      const featuredMediaIds: Record<string, number> = {};
-      for (const sd of uploadData.results) { if (sd.images?.[0]?.id) featuredMediaIds[sd.siteId] = sd.images[0].id!; }
-
-      const publishRes = await fetch('/api/wordpress/publish', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newTitle, content: currentContent, status: publishStatus,
-          categories: (genData.categories as string[] | undefined) || categories.split(',').map((c) => c.trim()).filter(Boolean),
-          tags: (genData.tags as string[] | undefined) || tags.split(',').map((t) => t.trim()).filter(Boolean),
-          siteIds: selectedSiteIds, notionPageId: selectedArticle?.id || '', featuredMediaIds,
-        }),
-      });
-      const publishData = await publishRes.json() as { results: PublishResult[] };
-      setPublishResults(publishData.results);
-      loadHistory();
-
-      // 4. SNS 포스팅 (투데이즈 URL 사용)
-      setAutoStep('📲 SNS 포스팅 중...');
       const todaysSite = sites.find((s) => s.site_url.includes('2days.kr') || s.site_name.toLowerCase().includes('투데이즈') || s.site_name.toLowerCase().includes('today'));
-      const todaysResult = publishData.results?.find((r) => r.siteId === todaysSite?.id && r.success) || publishData.results?.find((r) => r.success);
-      const hook = (genData.snsHook as string) || snsHook;
-
-      if (todaysResult?.postUrl && hook) {
-        const thumbSite = uploadData.results.find((r) => r.siteId === todaysSite?.id) || uploadData.results[0];
-        const thumbUrl = thumbSite?.images?.[0]?.url || '';
-        const snsRes = await fetch('/api/wordpress/post-to-sns', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: `${hook}\n\n👉 ${todaysResult.postUrl}`, imageUrl: thumbUrl }),
-        });
-        const snsData = await snsRes.json() as { results?: typeof snsResults };
-        setSnsResults(snsData.results || []);
-      }
-
-      setAutoStep('🎉 완전 자동화 완료!');
-    } catch (e) { setPublishError(String(e)); setAutoStep(''); }
-    finally { setAutoGenerating(false); }
+      const todaysResult = publishResults?.find((r) => r.siteId === todaysSite?.id && r.success) || publishResults?.find((r) => r.success);
+      const imageUrl = uploadedData?.[0]?.images?.[0]?.url || '';
+      const contentWithLink = todaysResult?.postUrl ? `${snsHook}\n\n👉 ${todaysResult.postUrl}` : snsHook;
+      const res = await fetch('/api/wordpress/post-to-sns', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: contentWithLink, imageUrl }),
+      });
+      const data = await res.json() as { results?: { platform: string; success: boolean; error?: string }[] };
+      setSnsResults(data.results || []);
+    } catch (e) { setSnsResults([{ platform: '오류', success: false, error: String(e) }]); }
+    finally { setSnsPosting(false); }
   };
 
   // ── 수동 발행 ─────────────────────────────────────────────────────────────
@@ -569,9 +517,15 @@ export default function WordPressPage() {
                 <div className="bg-indigo-50 rounded-2xl border border-indigo-100 p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold text-indigo-700">📲 SNS 후킹 요약본</span>
-                    <button onClick={() => setSnsHook('')} className="text-[10px] text-indigo-400 hover:text-indigo-600">✕</button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={handlePostToSNS} disabled={snsPosting} className="text-xs bg-rose-500 hover:bg-rose-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
+                        {snsPosting ? '⏳ 발행 중...' : '🚀 SNS 발행'}
+                      </button>
+                      <button onClick={() => setSnsHook('')} className="text-[10px] text-indigo-400 hover:text-indigo-600">✕</button>
+                    </div>
                   </div>
                   <textarea value={snsHook} onChange={(e) => setSnsHook(e.target.value)} rows={4} className="w-full text-xs text-indigo-800 bg-transparent focus:outline-none resize-none" />
+                  {!publishResults && <p className="text-[10px] text-indigo-400 mt-1">* 워드프레스 발행 후 SNS 발행 시 블로그 링크가 자동 추가됩니다</p>}
                 </div>
               )}
 
@@ -589,10 +543,6 @@ export default function WordPressPage() {
                     {/* 자동화 */}
                     <button onClick={handleAutoGenerate} disabled={autoGenerating||(!content.trim()&&!title.trim())} className="text-xs bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
                       {autoGenerating ? '⏳...' : '🔄 자동화'}
-                    </button>
-                    {/* 자동화+SNS */}
-                    <button onClick={handleAutoPublishSNS} disabled={autoGenerating||(!content.trim()&&!title.trim())||!selectedSiteIds.length} className="text-xs bg-rose-500 hover:bg-rose-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
-                      {autoGenerating ? '⏳...' : '🚀 자동화+SNS'}
                     </button>
                     <button onClick={() => setPreview((v) => !v)} className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${preview?'bg-gray-900 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                       {preview ? '편집' : '미리보기'}
