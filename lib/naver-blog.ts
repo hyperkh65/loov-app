@@ -99,54 +99,110 @@ export async function getNaverBlogInfo(
   }
 }
 
+// HTML 엔티티 디코딩
+function decodeEntities(str: string): string {
+  return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+}
+
+// XML에서 카테고리 파싱 (self-closing + element 모두 처리)
+function parseNaverCategoryXml(xml: string): NaverCategory[] {
+  const categories: NaverCategory[] = [];
+
+  // Self-closing 형식: <category categoryNo="1" name="카테고리" ... />
+  for (const m of xml.matchAll(/<category\b([^>]+?)\/>/gi)) {
+    const noM = m[1].match(/categoryNo="(\d+)"/i);
+    const nameM = m[1].match(/name="([^"]+)"/i);
+    if (noM && nameM) {
+      categories.push({ no: parseInt(noM[1]), name: decodeEntities(nameM[1]) });
+    }
+  }
+
+  // Element 형식: <category><categoryNo>1</categoryNo><name>카테고리</name></category>
+  if (categories.length === 0) {
+    for (const m of xml.matchAll(/<category\b[^>]*>([\s\S]*?)<\/category>/gi)) {
+      const noM = m[1].match(/<categoryNo>(\d+)<\/categoryNo>/i);
+      const nameM = m[1].match(/<name>([\s\S]*?)<\/name>/i);
+      if (noM && nameM) {
+        categories.push({ no: parseInt(noM[1]), name: decodeEntities(nameM[1].trim()) });
+      }
+    }
+  }
+
+  return categories;
+}
+
 // ── 카테고리 조회 ─────────────────────────────────────────────────────────────
 
 export async function getNaverCategories(
   blogId: string, nidAut: string, nidSes: string
 ): Promise<{ categories?: NaverCategory[]; error?: string }> {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+  // ── Method 1: 공개 XML API (인증 불필요, 서버에서도 동작) ──────────────────
   try {
-    // Method 1: JSON API
-    const res1 = await fetch(`https://blog.naver.com/api/blogs/${blogId}/categories`, {
+    const res = await fetch(`https://blog.naver.com/CategoryList.naver?blogId=${blogId}`, {
+      headers: { 'User-Agent': ua, Accept: 'text/xml, application/xml, */*' },
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const xml = await res.text();
+      const categories = parseNaverCategoryXml(xml);
+      if (categories.length > 0) return { categories };
+    }
+  } catch (e) {
+    console.warn('[Naver] CategoryList.naver failed:', e);
+  }
+
+  // ── Method 2: 쿠키 포함 JSON API ─────────────────────────────────────────
+  try {
+    const res = await fetch(`https://blog.naver.com/api/blogs/${blogId}/categories`, {
       headers: buildHeaders(nidAut, nidSes, blogId),
       cache: 'no-store',
     });
-    if (res1.ok) {
-      const data = await res1.json() as unknown;
+    if (res.ok) {
+      const data = await res.json() as unknown;
       const items = (Array.isArray(data) ? data : (data as Record<string, unknown>)?.categories) as Record<string, unknown>[] | undefined;
-      if (Array.isArray(items)) {
+      if (Array.isArray(items) && items.length > 0) {
         return {
           categories: items.map((c) => ({
             no: Number(c.categoryNo ?? c.no ?? 0),
-            name: String(c.categoryName ?? c.name ?? ''),
+            name: decodeEntities(String(c.categoryName ?? c.name ?? '')),
             postCount: Number(c.postCount ?? 0),
           })),
         };
       }
     }
+  } catch (e) {
+    console.warn('[Naver] categories JSON API failed:', e);
+  }
 
-    // Method 2: XML API (legacy)
-    const res2 = await fetch(`https://blog.naver.com/CategoryList.naver?blogId=${blogId}`, {
-      headers: buildHeaders(nidAut, nidSes, blogId, { Accept: 'text/xml, */*' }),
+  // ── Method 3: 블로그 메인 HTML 파싱 ──────────────────────────────────────
+  try {
+    const res = await fetch(`https://blog.naver.com/${blogId}`, {
+      headers: { 'User-Agent': ua },
       cache: 'no-store',
     });
-    if (res2.ok) {
-      const xml = await res2.text();
-      const categories: NaverCategory[] = [];
-      const matches = xml.matchAll(/<category[^>]*categoryNo="(\d+)"[^>]*>([\s\S]*?)<\/category>/gi);
-      for (const m of matches) {
-        const nameMatch = m[2].match(/<name>(.*?)<\/name>/i);
-        if (nameMatch) {
-          categories.push({ no: parseInt(m[1]), name: nameMatch[1] });
+    if (res.ok) {
+      const html = await res.text();
+      // 블로그 메인 페이지에서 카테고리 데이터 추출
+      const jsonMatch = html.match(/"categoryList"\s*:\s*(\[[\s\S]*?\])/);
+      if (jsonMatch) {
+        const items = JSON.parse(jsonMatch[1]) as Record<string, unknown>[];
+        if (Array.isArray(items) && items.length > 0) {
+          return {
+            categories: items.map((c) => ({
+              no: Number(c.categoryNo ?? c.no ?? 0),
+              name: decodeEntities(String(c.categoryName ?? c.name ?? '')),
+            })),
+          };
         }
       }
-      if (categories.length > 0) return { categories };
     }
-
-    // 실패시 빈 배열 반환 (카테고리 없이도 발행 가능)
-    return { categories: [] };
   } catch (e) {
-    return { categories: [], error: '카테고리 로드 실패: ' + String(e) };
+    console.warn('[Naver] blog main HTML parse failed:', e);
   }
+
+  return { categories: [], error: '카테고리를 불러올 수 없습니다 (비공개 블로그이거나 카테고리 없음)' };
 }
 
 // ── 블로그 포스팅 ─────────────────────────────────────────────────────────────
@@ -158,95 +214,81 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
     'X-Requested-With': 'XMLHttpRequest',
   });
 
-  const body = JSON.stringify({
-    title,
-    body: content,
-    tags: tags.slice(0, 30).join(','), // 네이버 태그 최대 30개
-    isPublish,
-    categoryNo,
-    addContents: [],
-    publishedAt: isPublish ? null : undefined,
-  });
+  // ── 시도 1: REST API (contents 필드) ────────────────────────────────────
+  const errors: string[] = [];
 
-  // ── 시도 1: 최신 내부 REST API ──────────────────────────────────────────
-  try {
-    const res = await fetch(`https://blog.naver.com/api/blogs/${blogId}/posts`, {
-      method: 'POST',
-      headers,
-      body,
-    });
+  for (const [url, origin] of [
+    [`https://blog.naver.com/api/blogs/${blogId}/posts`, 'https://blog.naver.com'],
+    [`https://m.blog.naver.com/api/blogs/${blogId}/posts`, 'https://m.blog.naver.com'],
+  ] as [string, string][]) {
+    for (const bodyVariant of [
+      // variant A: contents 필드 (SmartEditor ONE)
+      JSON.stringify({
+        title,
+        contents: content,
+        tags: tags.slice(0, 30),
+        isPublish,
+        categoryNo,
+        isOpen: true,
+        addContents: [],
+      }),
+      // variant B: body 필드 (구버전)
+      JSON.stringify({
+        title,
+        body: content,
+        tags: tags.slice(0, 30).join(','),
+        isPublish,
+        categoryNo,
+        addContents: [],
+      }),
+    ]) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { ...headers, Referer: `${origin}/${blogId}`, Origin: origin },
+          body: bodyVariant,
+        });
 
-    if (res.ok) {
-      const data = await res.json() as Record<string, unknown>;
-      const postId = String(data.logNo ?? data.postId ?? data.id ?? '');
-      return {
-        postId,
-        postUrl: postId ? `https://blog.naver.com/${blogId}/${postId}` : `https://blog.naver.com/${blogId}`,
-      };
+        if (res.ok) {
+          const data = await res.json() as Record<string, unknown>;
+          const postId = String(data.logNo ?? data.postId ?? data.id ?? '');
+          return {
+            postId,
+            postUrl: postId ? `https://blog.naver.com/${blogId}/${postId}` : `https://blog.naver.com/${blogId}`,
+          };
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          return {
+            error: `쿠키 만료 또는 인증 실패 (${res.status}). 설정 탭에서 NID_AUT, NID_SES를 새로 입력해 주세요.`,
+            errorCode: 'AUTH',
+          };
+        }
+
+        if (res.status === 429) {
+          return { error: '요청 횟수 초과 (429). 잠시 후 다시 시도해주세요.', errorCode: 'RATE_LIMIT' };
+        }
+
+        const errText = await res.text().catch(() => '');
+        const msg = `${url.includes('m.blog') ? '[mobile]' : '[pc]'} ${res.status}: ${errText.slice(0, 120)}`;
+        errors.push(msg);
+        console.warn('[Naver]', msg);
+      } catch (e) {
+        errors.push(`네트워크 오류: ${String(e).slice(0, 80)}`);
+      }
     }
-
-    if (res.status === 401 || res.status === 403) {
-      return {
-        error: `쿠키 만료 또는 인증 실패 (${res.status}). 브라우저에서 새 쿠키를 복사해 주세요.`,
-        errorCode: 'AUTH',
-      };
-    }
-
-    if (res.status === 429) {
-      return { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', errorCode: 'RATE_LIMIT' };
-    }
-
-    const errText = await res.text().catch(() => '');
-    // 다른 방법 시도
-    console.warn(`[Naver] Method1 failed (${res.status}):`, errText.slice(0, 200));
-  } catch (e) {
-    console.warn('[Naver] Method1 network error:', e);
   }
 
-  // ── 시도 2: mobile API ───────────────────────────────────────────────────
-  try {
-    const mobileHeaders = {
-      ...headers,
-      Referer: `https://m.blog.naver.com/${blogId}`,
-      Origin: 'https://m.blog.naver.com',
-    };
-    const res = await fetch(`https://m.blog.naver.com/api/blogs/${blogId}/posts`, {
-      method: 'POST',
-      headers: mobileHeaders,
-      body,
-    });
-
-    if (res.ok) {
-      const data = await res.json() as Record<string, unknown>;
-      const postId = String(data.logNo ?? data.postId ?? data.id ?? '');
-      return {
-        postId,
-        postUrl: postId ? `https://blog.naver.com/${blogId}/${postId}` : `https://blog.naver.com/${blogId}`,
-      };
-    }
-
-    if (res.status === 401 || res.status === 403) {
-      return {
-        error: `쿠키 만료 또는 인증 실패. 브라우저에서 새 쿠키를 복사해 주세요.`,
-        errorCode: 'AUTH',
-      };
-    }
-
-    const errText = await res.text().catch(() => '');
-    console.warn(`[Naver] Method2 failed (${res.status}):`, errText.slice(0, 200));
-  } catch (e) {
-    console.warn('[Naver] Method2 network error:', e);
-  }
-
-  // ── 시도 3: form-based legacy API ───────────────────────────────────────
+  // ── 시도 2: form-based legacy (PostWriteFormsave) ────────────────────────
   try {
     const formData = new URLSearchParams({
-      blog_id: blogId,
+      blogId,
       title,
       body: content,
       tag: tags.join(','),
       categoryNo: String(categoryNo),
-      publishType: isPublish ? 'publish' : 'draft',
+      isPublish: isPublish ? '1' : '0',
+      postWriteRootPath: 'BLOG',
     });
 
     const res = await fetch('https://blog.naver.com/PostWriteFormsave.naver', {
@@ -256,24 +298,26 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData.toString(),
+      redirect: 'manual',
     });
 
-    if (res.ok || res.redirected) {
-      // 폼 기반 API는 성공시 리다이렉트
-      const url = res.url || '';
-      const match = url.match(/\/(\d+)(?:\?|$)/);
+    if (res.ok || res.status === 302 || res.status === 301) {
+      const location = res.headers.get('location') || res.url || '';
+      const match = location.match(/\/(\d{5,})/);
       const postId = match?.[1] || '';
       return {
         postId,
         postUrl: postId ? `https://blog.naver.com/${blogId}/${postId}` : `https://blog.naver.com/${blogId}`,
       };
     }
+    const errText = await res.text().catch(() => '');
+    errors.push(`[form] ${res.status}: ${errText.slice(0, 120)}`);
   } catch (e) {
-    console.warn('[Naver] Method3 network error:', e);
+    errors.push(`[form] 네트워크 오류: ${String(e).slice(0, 80)}`);
   }
 
   return {
-    error: '모든 발행 방법이 실패했습니다. 쿠키를 갱신하거나 잠시 후 다시 시도해주세요.',
+    error: `발행 실패. 상세: ${errors.slice(0, 2).join(' / ')}`,
     errorCode: 'UNKNOWN',
   };
 }
