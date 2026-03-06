@@ -202,7 +202,6 @@ export default function WordPressPage() {
       const firstSite = data.results.find((r) => !r.error && r.images.some((img) => img.url));
       if (firstSite) {
         const bodyUrls = firstSite.images
-          .slice(1)
           .filter((img) => !!img.url)
           .map((img) => img.url!);
         if (bodyUrls.length > 0) {
