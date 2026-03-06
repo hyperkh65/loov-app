@@ -213,6 +213,56 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
   const cookie = `NID_AUT=${nidAut}; NID_SES=${nidSes}`;
   const errors: string[] = [];
 
+  // ── Step -1: /blog/writePost 엔드포인트 (신규 발견) ──────────────────────
+  for (const baseUrl of [
+    'https://blog.naver.com/blog/writePost',
+    'https://apis.naver.com/blog/writePost',
+    'https://blog.naver.com/BlogWritePost.naver',
+  ]) {
+    try {
+      const form = new URLSearchParams({
+        blogId,
+        title,
+        body: content,
+        contents: content,
+        tag: tags.slice(0, 30).join(','),
+        categoryNo: String(categoryNo),
+        isPublish: isPublish ? 'true' : 'false',
+        publishType: isPublish ? 'A' : 'B',
+      });
+      const res = await fetch(baseUrl, {
+        method: 'POST',
+        headers: {
+          Cookie: cookie,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': ua,
+          Referer: `https://blog.naver.com/${blogId}`,
+          Origin: 'https://blog.naver.com',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: form.toString(),
+        redirect: 'manual',
+        cache: 'no-store',
+      });
+
+      if (res.ok || res.status === 302 || res.status === 301) {
+        const loc = res.headers.get('location') || res.url || '';
+        const m = loc.match(/logNo=(\d+)/) || loc.match(/\/(\d{5,})/);
+        const postId = m?.[1] || '';
+        return { postId, postUrl: postId ? `https://blog.naver.com/${blogId}/${postId}` : `https://blog.naver.com/${blogId}` };
+      }
+      if (res.status === 401 || res.status === 403) {
+        return { error: `인증 실패 (${res.status}) - 쿠키를 새로 발급해 주세요.`, errorCode: 'AUTH' };
+      }
+      if (res.status !== 404) {
+        const t = await res.text().catch(() => '');
+        errors.push(`writePost ${res.status}: ${t.slice(0, 100)}`);
+      }
+    } catch (e) {
+      // 계속
+    }
+  }
+
   // ── Step 0: 블로그 메인 페이지에서 blogNo 추출 ────────────────────────────
   let blogNo = blogId;
   try {
