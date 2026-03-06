@@ -39,14 +39,12 @@ function injectBodyImages(html: string, urls: string[]): string {
 // ── 헬퍼: 썸네일 생성 (클라이언트 Canvas) ─────────────────────────────────────
 
 const THUMB_THEMES = [
-  { bg: ['#0a0a0f', '#1a1a2e', '#0d0d1a'], accent: '#4ecdc4' },
-  { bg: ['#0f0c1a', '#1a0533', '#0f0c1a'], accent: '#ce93d8' },
-  { bg: ['#0a1628', '#1a2d4a', '#0a1628'], accent: '#4fc3f7' },
-  { bg: ['#0f0a00', '#2d1500', '#1a0800'], accent: '#ffb74d' },
-  { bg: ['#0a1a0a', '#0f2d0f', '#0a1a0a'], accent: '#a5d6a7' },
-  { bg: ['#0a0a0a', '#1c1c1c', '#0a0a0a'], accent: '#ef9a9a' },
-  { bg: ['#1a0a1a', '#2d0d2d', '#1a0a1a'], accent: '#b39ddb' },
-  { bg: ['#00141a', '#002833', '#00141a'], accent: '#80deea' },
+  { mid: '#0d2d6b', edge: '#020b1f', accent: '#60a5fa', bar: '#3b82f6' },
+  { mid: '#0a2a5c', edge: '#010a18', accent: '#7dd3fc', bar: '#0ea5e9' },
+  { mid: '#0f3460', edge: '#03045e', accent: '#90e0ef', bar: '#0077b6' },
+  { mid: '#1a3a6b', edge: '#0a1628', accent: '#93c5fd', bar: '#2563eb' },
+  { mid: '#0c2461', edge: '#061233', accent: '#bfdbfe', bar: '#1d4ed8' },
+  { mid: '#023e8a', edge: '#03045e', accent: '#ade8f4', bar: '#0096c7' },
 ];
 
 function generateThumbnailFile(title: string): Promise<File> {
@@ -59,65 +57,69 @@ function generateThumbnailFile(title: string): Promise<File> {
 
     const theme = THUMB_THEMES[Math.floor(Math.random() * THUMB_THEMES.length)];
 
-    // 방사형 그라디언트 배경
-    const grad = ctx.createRadialGradient(W / 2, H * 0.38, 60, W / 2, H / 2, W * 0.78);
-    grad.addColorStop(0, theme.bg[1]);
-    grad.addColorStop(0.55, theme.bg[0]);
-    grad.addColorStop(1, theme.bg[2]);
-    ctx.fillStyle = grad;
+    // 방사형 배경 (진한 파란색 계열)
+    const bg = ctx.createRadialGradient(W / 2, H * 0.42, 80, W / 2, H / 2, W * 0.82);
+    bg.addColorStop(0, theme.mid);
+    bg.addColorStop(0.6, theme.edge);
+    bg.addColorStop(1, theme.edge);
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // 비네트 오버레이
-    const vignette = ctx.createRadialGradient(W / 2, H / 2, 260, W / 2, H / 2, W * 0.72);
-    vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, 'rgba(0,0,0,0.78)');
-    ctx.fillStyle = vignette;
+    // 비네트 (사방 어둡게)
+    const vig = ctx.createRadialGradient(W / 2, H / 2, 200, W / 2, H / 2, W * 0.78);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.72)');
+    ctx.fillStyle = vig;
     ctx.fillRect(0, 0, W, H);
 
-    // 중앙 액센트 글로우
-    const glow = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, 420);
-    glow.addColorStop(0, theme.accent + '22');
+    // 중앙 블루 글로우
+    const glow = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, 460);
+    glow.addColorStop(0, theme.accent + '18');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, W, H);
 
-    // 골드 상단 바
-    const goldGrad = ctx.createLinearGradient(0, 0, W, 0);
-    goldGrad.addColorStop(0, '#7d5800');
-    goldGrad.addColorStop(0.25, '#ffd700');
-    goldGrad.addColorStop(0.5, '#ffe44d');
-    goldGrad.addColorStop(0.75, '#ffd700');
-    goldGrad.addColorStop(1, '#7d5800');
-    ctx.fillStyle = goldGrad;
-    ctx.fillRect(0, 0, W, 22);
+    // 상단 바 (파란색 그라디언트)
+    const topBar = ctx.createLinearGradient(0, 0, W, 0);
+    topBar.addColorStop(0, 'rgba(0,0,0,0)');
+    topBar.addColorStop(0.2, theme.bar);
+    topBar.addColorStop(0.5, theme.accent);
+    topBar.addColorStop(0.8, theme.bar);
+    topBar.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = topBar;
+    ctx.fillRect(0, 0, W, 6);
 
-    // 골드 하단 바
-    ctx.fillStyle = goldGrad;
-    ctx.fillRect(0, H - 22, W, 22);
+    // 하단 바
+    ctx.fillStyle = topBar;
+    ctx.fillRect(0, H - 6, W, 6);
 
-    // 수평 장식선
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    // 상단 장식 박스 (반투명 흰색 테두리 라인)
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(52, 52, W - 104, H - 104);
+
+    // 내부 중앙 수평 구분선 (상/하)
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.lineWidth = 1;
-    for (const y of [220, 310, 750, 840]) {
-      ctx.beginPath(); ctx.moveTo(80, y); ctx.lineTo(W - 80, y); ctx.stroke();
-    }
+    ctx.beginPath(); ctx.moveTo(100, 280); ctx.lineTo(W - 100, 280); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(100, H - 280); ctx.lineTo(W - 100, H - 280); ctx.stroke();
 
-    // 액센트 수직 사이드 라인
-    ctx.strokeStyle = theme.accent + '55';
+    // 좌우 액센트 세로선
+    ctx.strokeStyle = theme.accent + '40';
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(60, 100); ctx.lineTo(60, H - 100); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(W - 60, 100); ctx.lineTo(W - 60, H - 100); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(80, 120); ctx.lineTo(80, H - 120); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W - 80, 120); ctx.lineTo(W - 80, H - 120); ctx.stroke();
 
-    // 제목 텍스트 설정
-    const fontSize = title.length > 14 ? 82 : 94;
-    const lineH = fontSize * 1.28;
+    // 제목 텍스트
+    const fontSize = title.length > 16 ? 78 : title.length > 10 ? 90 : 100;
+    const lineH = fontSize * 1.3;
     ctx.font = `900 ${fontSize}px "Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
     // 줄바꿈 처리
-    const maxW = 900;
+    const maxW = 880;
     const words = title.split(' ');
     const lines: string[] = [];
     let cur = '';
@@ -131,26 +133,20 @@ function generateThumbnailFile(title: string): Promise<File> {
     const totalH = lines.length * lineH;
     const startY = (H - totalH) / 2 + lineH / 2;
 
-    // 액센트 컬러 외곽선 (글로우)
-    ctx.strokeStyle = theme.accent;
-    ctx.lineWidth = 5;
+    // 파란 글로우 외곽선
+    ctx.strokeStyle = theme.accent + 'bb';
+    ctx.lineWidth = 4;
     ctx.shadowColor = theme.accent;
-    ctx.shadowBlur = 24;
+    ctx.shadowBlur = 30;
     ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
     lines.forEach((line, i) => ctx.strokeText(line, W / 2, startY + i * lineH));
 
-    // 흰색 텍스트 채우기 (드롭 섀도)
+    // 흰색 텍스트
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0,0,0,0.95)';
-    ctx.shadowBlur = 32;
-    ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 3;
+    ctx.shadowColor = 'rgba(0,10,40,0.95)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 3;
     lines.forEach((line, i) => ctx.fillText(line, W / 2, startY + i * lineH));
-
-    // 하단 사이트명 (골드)
-    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-    ctx.font = '500 28px "Apple SD Gothic Neo",sans-serif';
-    ctx.fillStyle = 'rgba(255,215,0,0.8)';
-    ctx.fillText('2days.kr', W / 2, H - 48);
 
     canvas.toBlob((blob) => {
       resolve(new File([blob!], `thumb_${Date.now()}.png`, { type: 'image/png' }));
