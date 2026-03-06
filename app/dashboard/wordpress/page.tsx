@@ -37,6 +37,18 @@ interface HistoryItem {
   created_at: string;
 }
 
+interface UploadedImage {
+  id: number;
+  url: string;
+}
+
+interface UploadedSiteData {
+  siteId: string;
+  siteName: string;
+  images: (UploadedImage | null)[];
+  error?: string;
+}
+
 // ── 탭 ────────────────────────────────────────────────────────────────────────
 
 type Tab = 'publish' | 'sites' | 'notion' | 'history';
@@ -56,6 +68,16 @@ const STATUS_COLORS: Record<string, string> = {
 function StatusBadge({ status }: { status: string }) {
   const color = STATUS_COLORS[status] || 'bg-gray-100 text-gray-600';
   return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${color}`}>{status || '—'}</span>;
+}
+
+/** 본문 이미지 URL들을 h2/h3 태그 뒤에 순서대로 삽입 */
+function injectBodyImages(html: string, urls: string[]): string {
+  const remaining = [...urls];
+  return html.replace(/<\/h[23]>/gi, (match) => {
+    if (!remaining.length) return match;
+    const url = remaining.shift()!;
+    return `${match}\n<figure><img src="${url}" alt="" /></figure>`;
+  });
 }
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
@@ -120,17 +142,26 @@ export default function WordPressPage() {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
+  // ── 이미지 WP 업로드 ────────────────────────────────────
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadedData, setUploadedData] = useState<UploadedSiteData[] | null>(null);
+
+  const resetUpload = () => setUploadedData(null);
+
   const handleImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setImageFiles((prev) => [...prev, ...files]);
     setImagePreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
+    resetUpload();
   };
 
   const removeImage = (idx: number) => {
     URL.revokeObjectURL(imagePreviews[idx]);
     setImageFiles((prev) => prev.filter((_, i) => i !== idx));
     setImagePreviews((prev) => prev.filter((_, i) => i !== idx));
+    resetUpload();
   };
 
   const moveImage = (from: number, to: number) => {
@@ -141,6 +172,47 @@ export default function WordPressPage() {
     [newPreviews[from], newPreviews[to]] = [newPreviews[to], newPreviews[from]];
     setImageFiles(newFiles);
     setImagePreviews(newPreviews);
+    resetUpload();
+  };
+
+  /** 전체 이미지를 선택한 모든 WP 사이트 미디어 라이브러리에 업로드 */
+  const handleUploadImages = async () => {
+    if (!imageFiles.length || !selectedSiteIds.length) return;
+    setUploading(true);
+    setUploadError('');
+    setUploadedData(null);
+
+    try {
+      const fd = new FormData();
+      fd.append('meta', JSON.stringify({ siteIds: selectedSiteIds }));
+      imageFiles.forEach((f) => fd.append('images', f));
+
+      const res = await fetch('/api/wordpress/upload-images', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setUploadError((err as { error?: string }).error || `업로드 실패 (${res.status})`);
+        return;
+      }
+
+      const data = await res.json() as { results: UploadedSiteData[] };
+      setUploadedData(data.results);
+
+      // 첫 번째 성공한 사이트의 본문 이미지(index 1+)를 content의 h2/h3 뒤에 자동 삽입
+      const firstSite = data.results.find((r) => !r.error && r.images.length > 1);
+      if (firstSite) {
+        const bodyUrls = firstSite.images
+          .slice(1)
+          .filter((img): img is UploadedImage => img !== null && !!img.url)
+          .map((img) => img.url);
+        if (bodyUrls.length > 0) {
+          setContent((prev) => injectBodyImages(prev, bodyUrls));
+        }
+      }
+    } catch (e) {
+      setUploadError('네트워크 오류: ' + String(e));
+    } finally {
+      setUploading(false);
+    }
   };
 
   // ── 발행 ───────────────────────────────────────────────
@@ -209,6 +281,7 @@ export default function WordPressPage() {
     setContentLoading(true);
     setPublishResults(null);
     setPublishError('');
+    resetUpload();
 
     const res = await fetch(`/api/wordpress/notion?action=content&id=${article.id}`);
     if (res.ok) {
@@ -274,19 +347,32 @@ export default function WordPressPage() {
     setPublishError('');
 
     try {
-      const formData = new FormData();
-      formData.append('meta', JSON.stringify({
-        title: title.trim(),
-        content,
-        status: publishStatus,
-        categories: categories.split(',').map((c) => c.trim()).filter(Boolean),
-        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-        siteIds: selectedSiteIds,
-        notionPageId: selectedArticle?.id || '',
-      }));
-      imageFiles.forEach((file) => formData.append('images', file));
+      // 업로드된 데이터에서 사이트별 대표이미지 ID 추출
+      const featuredMediaIds: Record<string, number> = {};
+      if (uploadedData) {
+        for (const siteData of uploadedData) {
+          const firstImg = siteData.images?.[0];
+          if (firstImg && firstImg.id) {
+            featuredMediaIds[siteData.siteId] = firstImg.id;
+          }
+        }
+      }
 
-      const res = await fetch('/api/wordpress/publish', { method: 'POST', body: formData });
+      const res = await fetch('/api/wordpress/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          content,
+          status: publishStatus,
+          categories: categories.split(',').map((c) => c.trim()).filter(Boolean),
+          tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+          siteIds: selectedSiteIds,
+          notionPageId: selectedArticle?.id || '',
+          featuredMediaIds,
+        }),
+      });
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setPublishError((err as { error?: string }).error || `서버 오류 (${res.status})`);
@@ -302,8 +388,10 @@ export default function WordPressPage() {
     }
   };
 
-  const toggleSite = (id: string) =>
+  const toggleSite = (id: string) => {
     setSelectedSiteIds((prev) => prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]);
+    resetUpload();
+  };
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────────
 
@@ -385,7 +473,6 @@ export default function WordPressPage() {
                 )}
               </div>
 
-              {/* 직접 입력 섹션 */}
               {!selectedArticle && (
                 <div className="bg-white rounded-2xl border border-gray-100 p-4">
                   <p className="text-xs text-gray-400 text-center">
@@ -442,6 +529,14 @@ export default function WordPressPage() {
                             }`}>
                               {i === 0 ? '★' : i}
                             </span>
+                            {/* 업로드 완료 여부 표시 */}
+                            {uploadedData && (
+                              <span className={`absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center shadow ${
+                                uploadedData.every((s) => s.images[i] !== null) ? 'bg-emerald-500 text-white' : 'bg-red-400 text-white'
+                              }`}>
+                                {uploadedData.every((s) => s.images[i] !== null) ? '✓' : '✗'}
+                              </span>
+                            )}
                             <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                               {i > 0 && (
                                 <button type="button" onClick={() => moveImage(i, i - 1)} className="text-white text-xs bg-black/50 rounded px-1">←</button>
@@ -468,7 +563,6 @@ export default function WordPressPage() {
                   <span className="text-sm font-semibold text-gray-700">본문</span>
                   <div className="flex items-center gap-2 flex-wrap">
                     {contentLoading && <span className="text-xs text-gray-400 animate-pulse">노션에서 불러오는 중...</span>}
-                    {/* 대상 키워드 입력 */}
                     <input
                       value={targetKeyword}
                       onChange={(e) => setTargetKeyword(e.target.value)}
@@ -507,7 +601,7 @@ export default function WordPressPage() {
                 )}
               </div>
 
-              {/* 사이트 선택 + 발행 */}
+              {/* 사이트 선택 + 이미지 업로드 + 발행 */}
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-bold text-sm text-gray-800">발행 사이트 선택</h3>
@@ -539,6 +633,54 @@ export default function WordPressPage() {
                         {site.site_name}
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {/* ── 이미지 WP 업로드 섹션 ── */}
+                {imageFiles.length > 0 && (
+                  <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-xs font-semibold text-gray-700">
+                        🖼️ WP 미디어 업로드 ({imageFiles.length}장)
+                      </span>
+                      <button
+                        onClick={handleUploadImages}
+                        disabled={uploading || !selectedSiteIds.length}
+                        className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap"
+                      >
+                        {uploading ? '⏳ 업로드 중...' : uploadedData ? '↻ 재업로드' : '📤 이미지 업로드'}
+                      </button>
+                    </div>
+
+                    {!selectedSiteIds.length && (
+                      <p className="text-[10px] text-amber-500">사이트를 먼저 선택하세요</p>
+                    )}
+
+                    {uploadError && (
+                      <p className="text-[10px] text-red-500 mt-1">⚠️ {uploadError}</p>
+                    )}
+
+                    {uploadedData && (
+                      <div className="mt-2 space-y-1.5">
+                        {uploadedData.map((siteData) => {
+                          const ok = siteData.images.filter((img) => img !== null).length;
+                          const total = siteData.images.length;
+                          const allOk = ok === total && !siteData.error;
+                          return (
+                            <div key={siteData.siteId} className="flex items-center gap-2">
+                              <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${allOk ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'}`}>
+                                {allOk ? '✓' : '!'}
+                              </span>
+                              <span className="text-xs text-gray-700 font-medium">{siteData.siteName}</span>
+                              <span className="text-[10px] text-gray-400">
+                                {siteData.error ? siteData.error.slice(0, 40) : `${ok}/${total}장 완료`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <p className="text-[10px] text-indigo-500 mt-1">✓ 본문 이미지가 h2 소제목 뒤에 자동 삽입되었습니다</p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -592,7 +734,6 @@ export default function WordPressPage() {
         ════════════════════════════════════════════════ */}
         {tab === 'sites' && (
           <div className="max-w-2xl space-y-5">
-            {/* 등록된 사이트 */}
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-50">
                 <h2 className="font-bold text-gray-800">등록된 WordPress 사이트</h2>
@@ -619,7 +760,6 @@ export default function WordPressPage() {
               )}
             </div>
 
-            {/* 사이트 추가 폼 */}
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <h2 className="font-bold text-gray-800 mb-4">사이트 추가</h2>
               <div className="space-y-3">
@@ -705,7 +845,6 @@ export default function WordPressPage() {
                   <p><strong>Database ID:</strong> DB URL에서 추출 (마지막 32자리)</p>
                 </div>
 
-                {/* SEO 리라이팅 설정 */}
                 <div className="border-t border-gray-100 pt-4 mt-2">
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-sm font-bold text-gray-800">🤖 SEO 리라이팅 설정</span>
@@ -818,7 +957,6 @@ export default function WordPressPage() {
                             {successCount}/{total} 완료
                           </span>
                         </div>
-                        {/* 사이트별 결과 */}
                         {item.results?.length > 0 && (
                           <div className="flex gap-2 mt-2 flex-wrap">
                             {item.results.map((r) => (
