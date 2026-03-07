@@ -61,33 +61,49 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
 
     // 네이버 로그인 쿠키 설정
     await context.addCookies([
-      { name: 'NID_AUT', value: nidAut, domain: '.naver.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' },
-      { name: 'NID_SES', value: nidSes, domain: '.naver.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' },
+      { name: 'NID_AUT', value: nidAut, domain: '.naver.com', path: '/' },
+      { name: 'NID_SES', value: nidSes, domain: '.naver.com', path: '/' },
     ]);
 
     const page = await context.newPage();
 
-    // 1. 네이버 글쓰기 페이지 이동
+    // 1. 네이버 메인 먼저 방문 (쿠키 적용 확인)
+    console.log(`[Playwright] Visiting naver.com to apply cookies...`);
+    await page.goto('https://www.naver.com', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    const naverTitle = await page.title();
+    console.log(`[Playwright] Naver main title: ${naverTitle}`);
+
+    // 로그인 상태 확인
+    const isLoggedIn = await page.evaluate(() => {
+      const el = document.querySelector('.MyView-module__link_login___HpHMW, .link_login, [class*="login"]');
+      const nickEl = document.querySelector('.MyView-module__text_nick___WQbe6, .nick, [class*="nick"]');
+      return { hasLoginLink: !!el, hasNick: !!nickEl, bodyText: document.body.innerText.slice(0, 200) };
+    });
+    console.log(`[Playwright] Login status:`, JSON.stringify(isLoggedIn));
+
+    // 2. 네이버 블로그 글쓰기 페이지 이동
     console.log(`[Playwright] Navigating to write form...`);
     await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`, {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
 
-    // 로그인 페이지로 리다이렉트 됐는지 확인
+    // 정확한 URL 로깅
     const currentUrl = page.url();
-    console.log(`[Playwright] Current URL: ${currentUrl}`);
-    if (currentUrl.includes('nid.naver.com') || currentUrl.includes('/login')) {
-      throw new Error('AUTH: 쿠키가 만료되었습니다. 설정 탭에서 새 쿠키를 입력해주세요.');
+    const pageTitle = await page.title();
+    console.log(`[Playwright] After navigation URL: ${currentUrl}`);
+    console.log(`[Playwright] After navigation Title: ${pageTitle}`);
+
+    if (currentUrl.includes('nid.naver.com') || currentUrl.includes('/login') || pageTitle.includes('로그인')) {
+      // 스크린샷 저장 (디버그용)
+      await page.screenshot({ path: '/tmp/naver-auth-fail.png' });
+      throw new Error(`AUTH: 쿠키가 만료되었거나 해외 IP 차단. URL=${currentUrl}`);
     }
 
     // 페이지 로딩 대기
     await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {
       console.warn('[Playwright] networkidle timeout, continuing...');
     });
-
-    const pageTitle = await page.title();
-    console.log(`[Playwright] Page title: ${pageTitle}`);
 
     // 2. 제목 입력
     const titleSelectors = [
