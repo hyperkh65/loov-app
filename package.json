@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "naver:publish": "node scripts/naver-local-agent.js",
+    "naver:publish-once": "node scripts/naver-local-agent.js --once"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

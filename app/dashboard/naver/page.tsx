@@ -245,17 +245,17 @@ export default function NaverPage() {
     finally { setAutoGenerating(false); }
   };
 
-  // ── 발행 (Vercel 서울 엣지) ───────────────────────────────────────────────
+  // ── 발행 (로컬 에이전트 방식) ────────────────────────────────────────────
 
   const handlePublish = async () => {
     if (!title.trim() || !content.trim()) { setPublishError('제목과 내용이 필요합니다'); return; }
     if (!conn?.blog_id) { setPublishError('네이버 블로그 연결 설정이 필요합니다'); return; }
     if (!conn.nid_aut || !conn.nid_ses) { setPublishError('쿠키(NID_AUT, NID_SES)를 설정 탭에서 입력해주세요'); return; }
 
-    setPublishing(true); setPublishResult(null); setPublishError(''); setJobId(null); setJobStatus('');
+    setPublishing(true); setPublishResult(null); setPublishError(''); setJobId(null); setJobStatus('대기열 등록 중...');
     try {
       const parsedTags = tags.split(',').map((t) => t.trim()).filter(Boolean);
-      const res = await fetch('/api/naver/publish', {
+      const res = await fetch('/api/naver/trigger', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(), content, tags: parsedTags,
@@ -263,16 +263,45 @@ export default function NaverPage() {
           notionPageId: selectedArticle?.id || '',
         }),
       });
-      const data = await res.json() as PublishResult & { error?: string };
+      const data = await res.json() as { jobId?: string; error?: string; message?: string };
       if (!res.ok) {
-        setPublishError(data.error || `발행 실패 (${res.status})`);
-        if (data.errorCode === 'AUTH') setTab('settings');
+        setPublishError(data.error || `오류 (${res.status})`);
+        if ((data as { errorCode?: string }).errorCode === 'AUTH') setTab('settings');
+        setJobStatus('');
         return;
       }
-      setPublishResult(data);
-      loadHistory();
-    } catch (e) { setPublishError('네트워크 오류: ' + String(e)); }
-    finally { setPublishing(false); }
+
+      const newJobId = data.jobId || null;
+      setJobId(newJobId);
+      setJobStatus('로컬 에이전트 대기 중...');
+      setPublishing(false);
+
+      // 작업 상태 폴링
+      if (newJobId) {
+        const poll = setInterval(async () => {
+          const r = await fetch(`/api/naver/job/${newJobId}`);
+          if (!r.ok) return;
+          const j = await r.json() as { status: string; post_url?: string; post_id?: string; error_message?: string };
+          if (j.status === 'processing') setJobStatus('발행 중...');
+          else if (j.status === 'completed') {
+            clearInterval(poll);
+            setJobStatus('');
+            setPublishResult({ postId: j.post_id, postUrl: j.post_url });
+            loadHistory();
+          } else if (j.status === 'failed') {
+            clearInterval(poll);
+            setJobStatus('');
+            setPublishError(j.error_message || '발행 실패');
+          }
+        }, 3000);
+        // 3분 후 폴링 자동 중단
+        setTimeout(() => clearInterval(poll), 180000);
+      }
+    } catch (e) {
+      setPublishError('네트워크 오류: ' + String(e));
+      setJobStatus('');
+      setPublishing(false);
+    }
   };
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────
@@ -452,13 +481,22 @@ export default function NaverPage() {
                   </div>
                 )}
 
+                {jobStatus && (
+                  <div className="mb-4 p-3 bg-blue-50 rounded-xl border border-blue-200">
+                    <p className="text-xs font-semibold text-blue-800 animate-pulse">⏳ {jobStatus}</p>
+                    <p className="text-[10px] text-blue-600 mt-1">로컬 에이전트가 처리 중입니다. Mac에서 <code className="bg-blue-100 px-1 rounded">npm run naver:publish</code> 실행 확인</p>
+                  </div>
+                )}
+
                 <button
                   onClick={handlePublish}
-                  disabled={publishing || !isConnected || !title.trim() || !content.trim()}
+                  disabled={publishing || !!jobStatus || !isConnected || !title.trim() || !content.trim()}
                   className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
                 >
                   {publishing ? (
-                    <><span className="animate-spin">⏳</span> 발행 중...</>
+                    <><span className="animate-spin">⏳</span> 등록 중...</>
+                  ) : jobStatus ? (
+                    <><span className="animate-spin">⏳</span> {jobStatus}</>
                   ) : (
                     <>🟢 네이버 블로그 발행</>
                   )}
