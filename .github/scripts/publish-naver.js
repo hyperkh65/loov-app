@@ -1,13 +1,16 @@
 /**
- * GitHub Actions 환경에서 실행 - Vercel 서버 IP 차단 우회
- * Node.js 20 native fetch 사용 (설치 불필요)
+ * GitHub Actions 환경에서 Playwright로 네이버 블로그 발행
+ * - 실제 브라우저 사용 → IP 차단 완전 우회
+ * - 쿠키(NID_AUT, NID_SES)로 로그인 상태 복원
  */
+
+const { chromium } = require('playwright');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const JOB_ID = process.env.JOB_ID;
 
-// ── Supabase REST API 헬퍼 ─────────────────────────────────────────────────
+// ── Supabase REST API ──────────────────────────────────────────────────────────
 
 async function sbGet(table, query) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
@@ -21,216 +24,210 @@ async function sbPatch(table, query, body) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
     method: 'PATCH',
     headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
+      apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json', Prefer: 'return=minimal',
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`sbPatch ${table}: ${res.status} ${t}`);
-  }
+  if (!res.ok) { const t = await res.text(); throw new Error(`sbPatch: ${res.status} ${t}`); }
 }
 
 async function sbInsert(table, body) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
     headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
+      apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json', Prefer: 'return=minimal',
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const t = await res.text();
-    console.warn(`sbInsert ${table} failed: ${res.status} ${t}`);
-  }
+  if (!res.ok) console.warn(`sbInsert ${table} failed: ${res.status}`);
 }
 
-// ── 네이버 블로그 발행 ────────────────────────────────────────────────────────
+// ── Playwright로 네이버 블로그 발행 ───────────────────────────────────────────
 
-// PostWriteForm에서 hidden 필드(CSRF 토큰 등) 추출
-async function getWriteFormFields(blogId, cookie, ua) {
+async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish }) {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
+
   try {
-    const res = await fetch(`https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`, {
-      headers: { Cookie: cookie, 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9' },
-      redirect: 'follow',
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      locale: 'ko-KR',
+      timezoneId: 'Asia/Seoul',
     });
-    if (!res.ok) { console.warn(`[Naver] PostWriteForm ${res.status}`); return {}; }
-    const html = await res.text();
-    const fields = {};
-    // hidden input 필드 전체 추출
-    for (const m of html.matchAll(/<input[^>]+type=["']hidden["'][^>]*>/gi)) {
-      const nameM = m[0].match(/name=["']([^"']+)["']/i);
-      const valM  = m[0].match(/value=["']([^"']*)["']/i);
-      if (nameM) fields[nameM[1]] = valM ? valM[1] : '';
+
+    // 네이버 로그인 쿠키 설정
+    await context.addCookies([
+      { name: 'NID_AUT', value: nidAut, domain: '.naver.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' },
+      { name: 'NID_SES', value: nidSes, domain: '.naver.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' },
+    ]);
+
+    const page = await context.newPage();
+
+    // 1. 네이버 글쓰기 페이지 이동
+    console.log(`[Playwright] Navigating to write form...`);
+    await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    });
+
+    // 로그인 페이지로 리다이렉트 됐는지 확인
+    const currentUrl = page.url();
+    console.log(`[Playwright] Current URL: ${currentUrl}`);
+    if (currentUrl.includes('nid.naver.com') || currentUrl.includes('/login')) {
+      throw new Error('AUTH: 쿠키가 만료되었습니다. 설정 탭에서 새 쿠키를 입력해주세요.');
     }
-    console.log(`[Naver] WriteForm hidden fields: ${Object.keys(fields).join(', ')}`);
-    return fields;
-  } catch (e) {
-    console.warn(`[Naver] getWriteFormFields error: ${e.message}`);
-    return {};
-  }
-}
 
-async function publishToNaver({ blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish }) {
-  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-  const cookie = `NID_AUT=${nidAut}; NID_SES=${nidSes}`;
-  const errors = [];
-
-  console.log(`[Naver] Publishing: "${title}" → blog.naver.com/${blogId}`);
-
-  // ── Step 1: PostWriteFormsave.naver (CSRF 토큰 포함) ─────────────────────
-  try {
-    const hiddenFields = await getWriteFormFields(blogId, cookie, ua);
-    const form = new URLSearchParams({
-      ...hiddenFields,           // CSRF 토큰 등 hidden 필드 포함
-      blogId,
-      title,
-      body: content,
-      tag: tags.slice(0, 30).join(','),
-      categoryNo: String(categoryNo),
-      isPublish: isPublish ? '1' : '0',
-      publishType: isPublish ? 'A' : 'B',
-      postWriteRootPath: 'BLOG',
-      logNo: '0',
-      postWriteFormType: 'default',
+    // 페이지 로딩 대기
+    await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {
+      console.warn('[Playwright] networkidle timeout, continuing...');
     });
-    const res = await fetch('https://blog.naver.com/PostWriteFormsave.naver', {
-      method: 'POST',
-      headers: {
-        Cookie: cookie, 'User-Agent': ua,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: `https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`,
-        Origin: 'https://blog.naver.com',
-      },
-      body: form.toString(),
-      redirect: 'follow',
-    });
-    console.log(`[Naver] PostWriteFormsave status: ${res.status}, url: ${res.url}`);
-    if (res.status === 401 || res.status === 403) {
-      return { error: `인증 실패 (${res.status}) - 쿠키 갱신 필요`, errorCode: 'AUTH' };
-    }
-    if (res.ok) {
-      const finalUrl = res.url || '';
-      const bodyText = await res.text().catch(() => '');
-      console.log(`[Naver] PostWriteFormsave response url: ${finalUrl}`);
-      console.log(`[Naver] PostWriteFormsave body (first 300): ${bodyText.slice(0, 300)}`);
-      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/?#]|$)/);
-      if (m?.[1]) {
-        console.log(`[Naver] Success via PostWriteFormsave: ${m[1]}`);
-        return { postId: m[1], postUrl: `https://blog.naver.com/${blogId}/${m[1]}` };
+
+    const pageTitle = await page.title();
+    console.log(`[Playwright] Page title: ${pageTitle}`);
+
+    // 2. 제목 입력
+    const titleSelectors = [
+      'input[name="title"]',
+      '#title',
+      '.se-title-input',
+      'input[placeholder*="제목"]',
+      '[contenteditable][class*="title"]',
+    ];
+    let titleFilled = false;
+    for (const sel of titleSelectors) {
+      const el = page.locator(sel).first();
+      if (await el.count() > 0) {
+        await el.click();
+        await el.fill(title);
+        console.log(`[Playwright] Title filled via: ${sel}`);
+        titleFilled = true;
+        break;
       }
-      // body에서 postId 탐색
-      const bm = bodyText.match(/logNo[=:]["'\s]*(\d{5,})/) ||
-                 bodyText.match(/"(?:logNo|postNo|postId)"\s*:\s*"?(\d{5,})"?/);
-      if (bm?.[1]) {
-        return { postId: bm[1], postUrl: `https://blog.naver.com/${blogId}/${bm[1]}` };
-      }
-      errors.push(`PostWriteFormsave ok | url:${finalUrl.slice(0, 100)} | body:${bodyText.slice(0, 200)}`);
-    } else {
-      const t = await res.text().catch(() => '');
-      errors.push(`PostWriteFormsave ${res.status}: ${t.slice(0, 150)}`);
     }
-  } catch (e) {
-    errors.push(`PostWriteFormsave network: ${e.message}`);
-  }
+    if (!titleFilled) {
+      // JavaScript로 직접 시도
+      await page.evaluate((t) => {
+        const el = document.querySelector('input[name="title"], #title, [name="title"]');
+        if (el) { el.value = t; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      }, title);
+      console.warn('[Playwright] Title filled via JS fallback');
+    }
 
-  // ── Step 2: REST API (JSON) ───────────────────────────────────────────────
-  const jsonHeaders = {
-    Cookie: cookie,
-    'Content-Type': 'application/json;charset=UTF-8',
-    'X-Requested-With': 'XMLHttpRequest',
-    'User-Agent': ua,
-    Accept: 'application/json, text/plain, */*',
-    'Accept-Language': 'ko-KR,ko;q=0.9',
-    Referer: `https://blog.naver.com/${blogId}`,
-    Origin: 'https://blog.naver.com',
-  };
-  const endpoints = [
-    `https://blog.naver.com/api/v1/blogs/${blogId}/posts`,
-    `https://blog.naver.com/api/v2/blogs/${blogId}/posts`,
-    `https://blog.naver.com/api/blogs/${blogId}/posts`,
-    `https://m.blog.naver.com/api/v1/blogs/${blogId}/posts`,
-  ];
-  const bodyVariants = [
-    { title, contents: content, tags: tags.slice(0, 30), isPublish, categoryNo, isOpen: true },
-    { title, body: content, tags: tags.slice(0, 30), isPublish, categoryNo },
-  ];
+    // 3. 카테고리 선택
+    if (categoryNo > 0) {
+      const catSel = page.locator('select[name="categoryNo"]').first();
+      if (await catSel.count() > 0) {
+        await catSel.selectOption(String(categoryNo));
+        console.log(`[Playwright] Category set: ${categoryNo}`);
+      }
+    }
 
-  for (const url of endpoints) {
-    for (const bodyObj of bodyVariants) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST', headers: jsonHeaders,
-          body: JSON.stringify(bodyObj),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const postId = String(data.logNo ?? data.postId ?? data.id ?? data.no ?? '');
-          console.log(`[Naver] Success via REST API: ${url}`);
-          return { postId, postUrl: postId ? `https://blog.naver.com/${blogId}/${postId}` : `https://blog.naver.com/${blogId}` };
+    // 4. 폼 정보 수집 + body/태그 설정
+    const formInfo = await page.evaluate(({ content, tags, categoryNo, isPublish }) => {
+      // 폼 찾기
+      const form = document.querySelector('form[action*="Formsave"]') ||
+                   document.querySelector('form[action*="writePost"]') ||
+                   document.querySelector('form[name*="write"]') ||
+                   document.querySelector('form[id*="write"]') ||
+                   document.forms[0];
+
+      if (!form) {
+        const allForms = Array.from(document.forms).map(f => `id:${f.id} name:${f.name} action:${f.action}`);
+        return { ok: false, error: 'form not found', allForms };
+      }
+
+      // body 설정
+      const bodyNames = ['body', 'contents', 'postContent', 'content', 'postBody'];
+      for (const name of bodyNames) {
+        const el = form.querySelector(`[name="${name}"]`) || document.querySelector(`textarea[name="${name}"], input[name="${name}"]`);
+        if (el) {
+          el.value = content;
+          break;
         }
-        if (res.status === 401 || res.status === 403) {
-          return { error: `인증 실패 (${res.status})`, errorCode: 'AUTH' };
-        }
-        if (res.status === 429) {
-          return { error: '요청 횟수 초과 (429)', errorCode: 'RATE_LIMIT' };
-        }
-        // 404 포함 모든 실패 로깅
-        const t = await res.text().catch(() => '');
-        errors.push(`REST ${res.status} ${url.split('blog.naver.com')[1] ?? url}: ${t.slice(0, 80)}`);
-      } catch (e) {
-        errors.push(`REST network ${url.split('/').pop()}: ${e.message}`);
       }
-      break; // 같은 endpoint에서 첫 번째 body variant만 시도
-    }
-  }
 
-  // ── Step 3: BlogPost.naver (구형) ─────────────────────────────────────────
-  try {
-    const form = new URLSearchParams({
-      action: 'write', blogId, title, body: content,
-      tag: tags.slice(0, 30).join(','),
-      categoryNo: String(categoryNo),
-      isPublish: isPublish ? 'Y' : 'N',
-      publishType: isPublish ? 'A' : 'B',
-      postNo: '0',
-    });
-    const res = await fetch('https://blog.naver.com/BlogPost.naver', {
-      method: 'POST',
-      headers: {
-        Cookie: cookie, 'User-Agent': ua,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: `https://blog.naver.com/${blogId}`,
-      },
-      body: form.toString(), redirect: 'follow',
-    });
-    console.log(`[Naver] BlogPost.naver status: ${res.status}, url: ${res.url}`);
-    if (res.ok) {
-      const finalUrl = res.url || '';
-      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/?#]|$)/);
-      if (m?.[1]) {
-        console.log(`[Naver] Success via BlogPost.naver: ${m[1]}`);
-        return { postId: m[1], postUrl: `https://blog.naver.com/${blogId}/${m[1]}` };
+      // 태그 설정
+      const tagEl = form.querySelector('[name="tag"]') || document.querySelector('[name="tag"]');
+      if (tagEl) tagEl.value = tags.join(',');
+
+      // 카테고리 설정
+      const catEl = form.querySelector('select[name="categoryNo"]');
+      if (catEl && categoryNo > 0) catEl.value = String(categoryNo);
+
+      // 발행 타입 설정
+      const pubEl = form.querySelector('[name="publishType"]');
+      if (pubEl) pubEl.value = isPublish ? 'A' : 'B';
+
+      return {
+        ok: true,
+        formAction: form.action,
+        formId: form.id,
+        fieldNames: Array.from(form.querySelectorAll('[name]')).map(el => el.getAttribute('name')).slice(0, 30),
+      };
+    }, { content, tags, categoryNo, isPublish });
+
+    console.log('[Playwright] Form info:', JSON.stringify(formInfo, null, 2));
+
+    if (!formInfo.ok) {
+      // 디버그용 스크린샷
+      await page.screenshot({ path: '/tmp/naver-debug.png', fullPage: true });
+      throw new Error(`폼을 찾지 못했습니다. allForms: ${JSON.stringify(formInfo.allForms)}`);
+    }
+
+    // 5. 폼 제출
+    console.log('[Playwright] Submitting form...');
+    await page.evaluate(({ isPublish }) => {
+      const form = document.querySelector('form[action*="Formsave"]') ||
+                   document.querySelector('form[action*="writePost"]') ||
+                   document.querySelector('form[name*="write"]') ||
+                   document.querySelector('form[id*="write"]') ||
+                   document.forms[0];
+      if (form) {
+        // 발행 버튼이 있으면 클릭, 없으면 submit
+        const publishBtn = form.querySelector('button[type="submit"]') ||
+                           document.querySelector('button:not([type="button"])[id*="publish"]');
+        if (publishBtn) {
+          publishBtn.click();
+        } else {
+          form.submit();
+        }
       }
-      const bodyText = await res.text().catch(() => '');
-      errors.push(`BlogPost.naver ok | url:${finalUrl.slice(0, 100)} | body:${bodyText.slice(0, 150)}`);
-    } else {
-      const t = await res.text().catch(() => '');
-      errors.push(`BlogPost.naver ${res.status}: ${t.slice(0, 100)}`);
-    }
-  } catch (e) {
-    errors.push(`BlogPost.naver network: ${e.message}`);
-  }
+    }, { isPublish });
 
-  const errSummary = errors.join(' || ');
-  console.error(`[Naver] All methods failed:\n${errors.map((e, i) => `  ${i+1}. ${e}`).join('\n')}`);
-  return { error: `발행 실패: ${errSummary}`, errorCode: 'UNKNOWN' };
+    // 6. 발행 완료 후 URL 확인
+    await page.waitForURL(
+      url => /blog\.naver\.com/.test(url.toString()) && /\d{5,}/.test(url.toString()),
+      { timeout: 20000 }
+    ).catch(async () => {
+      console.warn('[Playwright] waitForURL timeout, checking current URL...');
+    });
+
+    const finalUrl = page.url();
+    console.log(`[Playwright] Final URL: ${finalUrl}`);
+
+    const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/?#]|$)/);
+    if (m?.[1]) {
+      return { postId: m[1], postUrl: `https://blog.naver.com/${blogId}/${m[1]}` };
+    }
+
+    // body에서 postId 탐색
+    const bodyContent = await page.content().catch(() => '');
+    const bm = bodyContent.match(/logNo[=:]["'\s]*(\d{5,})/) ||
+               bodyContent.match(/"(?:logNo|postNo)"\s*:\s*"?(\d{5,})"?/);
+    if (bm?.[1]) {
+      return { postId: bm[1], postUrl: `https://blog.naver.com/${blogId}/${bm[1]}` };
+    }
+
+    // 발행은 됐을 수 있지만 postId 불명확
+    return { postId: '', postUrl: finalUrl };
+
+  } finally {
+    await browser.close();
+  }
 }
 
 // ── 메인 ──────────────────────────────────────────────────────────────────────
@@ -241,38 +238,46 @@ async function main() {
 
   console.log(`[Job] Processing: ${JOB_ID}`);
 
-  // 1. 작업 조회
   const jobs = await sbGet('naver_publish_jobs', `id=eq.${JOB_ID}&select=*`);
   const job = jobs[0];
   if (!job) { console.error('Job not found'); process.exit(1); }
 
-  // 2. processing 상태 업데이트
   await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, { status: 'processing' });
 
-  // 3. 네이버 연결 정보 (쿠키) 조회
   const conns = await sbGet('naver_connections', `user_id=eq.${job.user_id}&select=*`);
   const conn = conns[0];
   if (!conn?.nid_aut || !conn?.nid_ses) {
     await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, {
       status: 'failed', error_message: '네이버 쿠키 없음', completed_at: new Date().toISOString(),
     });
-    console.error('No Naver cookies'); process.exit(1);
+    process.exit(1);
   }
 
-  // 4. 발행 실행
-  const result = await publishToNaver({
-    blogId: conn.blog_id,
-    nidAut: conn.nid_aut,
-    nidSes: conn.nid_ses,
-    title: job.title,
-    content: job.content,
-    tags: job.tags || [],
-    categoryNo: job.category_no || 0,
-    isPublish: job.is_publish !== false,
-  });
+  let result;
+  try {
+    result = await publishWithPlaywright({
+      blogId: conn.blog_id,
+      nidAut: conn.nid_aut,
+      nidSes: conn.nid_ses,
+      title: job.title,
+      content: job.content,
+      tags: job.tags || [],
+      categoryNo: job.category_no || 0,
+      isPublish: job.is_publish !== false,
+    });
+  } catch (e) {
+    const errMsg = e.message || String(e);
+    const isAuth = errMsg.startsWith('AUTH:');
+    await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, {
+      status: 'failed',
+      error_message: errMsg,
+      completed_at: new Date().toISOString(),
+    });
+    console.error(`[Job] Failed: ${errMsg}`);
+    process.exit(1);
+  }
 
-  // 5. 결과 저장
-  const isSuccess = !result.error;
+  const isSuccess = !result.error || result.postId;
   await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, {
     status: isSuccess ? 'completed' : 'failed',
     post_id: result.postId || null,
@@ -281,7 +286,6 @@ async function main() {
     completed_at: new Date().toISOString(),
   });
 
-  // 6. 히스토리 저장 (성공 시)
   if (isSuccess) {
     await sbInsert('naver_publish_history', {
       user_id: job.user_id,
@@ -292,10 +296,11 @@ async function main() {
       notion_page_id: job.notion_page_id || '',
       status: 'publish',
     });
+    console.log(`✅ Published: ${result.postUrl}`);
+  } else {
+    console.error(`❌ Failed: ${result.error}`);
+    process.exit(1);
   }
-
-  console.log(isSuccess ? `✅ Success: ${result.postUrl}` : `❌ Failed: ${result.error}`);
-  process.exit(isSuccess ? 0 : 1);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

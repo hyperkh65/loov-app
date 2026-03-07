@@ -12,6 +12,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install chromium --with-deps
       - name: Publish to Naver
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
