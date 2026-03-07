@@ -353,3 +353,92 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
 
   return { error: `발행 실패: ${errors.join(' || ')}`, errorCode: 'UNKNOWN' };
 }
+
+// ── OAuth 기반 블로그 포스팅 ───────────────────────────────────────────────────
+
+export async function postToNaverBlogOAuth(params: {
+  accessToken: string;
+  blogId: string;
+  title: string;
+  content: string;
+  tags: string[];
+  categoryNo: number;
+  isPublish: boolean;
+}): Promise<NaverPostResult> {
+  const { accessToken, blogId, title, content, tags, categoryNo, isPublish } = params;
+
+  const form = new URLSearchParams({
+    title: title.trim(),
+    contents: content,
+    tags: tags.slice(0, 30).join(','),
+    categoryNo: String(categoryNo),
+    publishType: isPublish ? 'A' : 'B',
+  });
+
+  try {
+    const res = await fetch('https://openapi.naver.com/blog/writePost.json', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: form.toString(),
+      cache: 'no-store',
+    });
+
+    const data = await res.json() as {
+      resultcode?: string;
+      message?: string;
+      blogId?: string;
+      logNo?: string;
+      postId?: string;
+    };
+
+    console.log('[NaverOAuth] writePost response:', res.status, JSON.stringify(data));
+
+    if (!res.ok || data.resultcode !== '00') {
+      return {
+        error: `OAuth API 오류 (${res.status}): ${data.message || data.resultcode}`,
+        errorCode: (res.status === 401 || res.status === 403) ? 'AUTH' : 'UNKNOWN',
+      };
+    }
+
+    const postId = data.logNo || data.postId || '';
+    const actualBlogId = data.blogId || blogId;
+    return {
+      postId,
+      postUrl: postId
+        ? `https://blog.naver.com/${actualBlogId}/${postId}`
+        : `https://blog.naver.com/${actualBlogId}`,
+    };
+  } catch (e) {
+    return { error: `OAuth 네트워크 오류: ${String(e)}`, errorCode: 'NETWORK' };
+  }
+}
+
+// ── OAuth 토큰 갱신 ───────────────────────────────────────────────────────────
+
+export async function refreshNaverToken(
+  refreshToken: string
+): Promise<{ accessToken?: string; expiresAt?: string; error?: string }> {
+  try {
+    const res = await fetch('https://nid.naver.com/oauth2.0/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: process.env.NAVER_CLIENT_ID!,
+        client_secret: process.env.NAVER_CLIENT_SECRET!,
+        refresh_token: refreshToken,
+      }),
+    });
+    const data = await res.json() as { access_token?: string; expires_in?: number; error?: string };
+    if (!data.access_token) return { error: data.error || '토큰 갱신 실패' };
+    return {
+      accessToken: data.access_token,
+      expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000).toISOString(),
+    };
+  } catch (e) {
+    return { error: String(e) };
+  }
+}

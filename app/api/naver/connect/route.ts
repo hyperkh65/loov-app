@@ -8,11 +8,18 @@ export async function GET() {
 
   const { data } = await supabase
     .from('naver_connections')
-    .select('blog_id, blog_name, nid_aut, nid_ses, categories, last_tested_at')
+    .select('blog_id, blog_name, nid_aut, nid_ses, categories, last_tested_at, access_token, token_expires_at')
     .eq('user_id', user.id)
     .single();
 
-  return NextResponse.json(data ?? null);
+  if (!data) return NextResponse.json(null);
+
+  const oauthConnected = !!(data.access_token && data.token_expires_at &&
+    new Date(data.token_expires_at as string) > new Date());
+
+  // access_token은 클라이언트에 노출하지 않음
+  const { access_token: _, token_expires_at, ...safe } = data as typeof data & { access_token?: string; token_expires_at?: string };
+  return NextResponse.json({ ...safe, oauth_connected: oauthConnected, token_expires_at });
 }
 
 export async function POST(req: NextRequest) {

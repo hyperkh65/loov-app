@@ -11,6 +11,8 @@ interface NaverConnection {
   nid_ses: string;
   categories: NaverCategory[];
   last_tested_at: string | null;
+  oauth_connected: boolean;
+  token_expires_at: string | null;
 }
 interface NaverCategory { no: number; name: string; }
 interface NotionArticle { id: string; title: string; status: string; lastEdited: string; }
@@ -76,6 +78,7 @@ export default function NaverPage() {
   const [connSaving, setConnSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok?: boolean; blogName?: string; categories?: NaverCategory[]; error?: string; note?: string } | null>(null);
+  const [oauthMsg, setOauthMsg] = useState('');
 
   // 노션
   const [articles, setArticles] = useState<NotionArticle[]>([]);
@@ -134,7 +137,22 @@ export default function NaverPage() {
     if (r.ok) { const d = await r.json(); if (d) setNotionConnected(true); }
   }, []);
 
-  useEffect(() => { loadConn(); loadHistory(); loadNotionStatus(); }, [loadConn, loadHistory, loadNotionStatus]);
+  useEffect(() => {
+    loadConn(); loadHistory(); loadNotionStatus();
+    // OAuth 콜백 파라미터 처리
+    const params = new URLSearchParams(window.location.search);
+    const oauthParam = params.get('oauth');
+    const errorParam = params.get('error');
+    const tabParam = params.get('tab');
+    if (tabParam === 'settings') setTab('settings');
+    if (oauthParam === 'success') { setOauthMsg('✅ 네이버 OAuth 연결 완료!'); setTab('settings'); }
+    else if (errorParam) { setOauthMsg(`❌ OAuth 연결 실패: ${errorParam}`); setTab('settings'); }
+    if (oauthParam || errorParam || tabParam) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('oauth'); url.searchParams.delete('error'); url.searchParams.delete('tab');
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [loadConn, loadHistory, loadNotionStatus]); // eslint-disable-line
 
   const loadArticles = async () => {
     setArticlesLoading(true);
@@ -179,6 +197,13 @@ export default function NaverPage() {
       setConn((prev) => prev ? { ...prev, categories: (d as { categories?: NaverCategory[] }).categories || [] } : prev);
     }
     setTesting(false);
+  };
+
+  // ── OAuth 연결 해제 ───────────────────────────────────────────────────────
+
+  const handleOAuthDisconnect = async () => {
+    const r = await fetch('/api/naver/oauth/disconnect', { method: 'POST' });
+    if (r.ok) { setConn((prev) => prev ? { ...prev, oauth_connected: false, token_expires_at: null } : prev); setOauthMsg('OAuth 연결이 해제되었습니다.'); }
   };
 
   // ── SEO 리라이팅 ─────────────────────────────────────────────────────────
@@ -447,6 +472,66 @@ export default function NaverPage() {
         {/* ══ TAB: 설정 ══ */}
         {tab === 'settings' && (
           <div className="max-w-2xl mx-auto space-y-6">
+
+            {/* OAuth 연결 카드 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="font-bold text-sm text-gray-900">🔐 네이버 OAuth 연결 <span className="text-[10px] font-normal bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full ml-1">권장</span></h2>
+                  <p className="text-xs text-gray-500 mt-1">공식 OAuth API 사용 — 서버 IP 차단 없이 모든 환경에서 작동합니다</p>
+                </div>
+              </div>
+
+              {oauthMsg && (
+                <div className={`p-3 rounded-xl text-xs font-medium ${oauthMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                  {oauthMsg}
+                </div>
+              )}
+
+              {conn?.oauth_connected ? (
+                <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <div>
+                    <p className="text-xs font-bold text-emerald-800">✅ OAuth 연결됨</p>
+                    {conn.token_expires_at && (
+                      <p className="text-[10px] text-emerald-600 mt-0.5">만료: {new Date(conn.token_expires_at).toLocaleString('ko-KR')}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { window.location.href = `/api/naver/oauth/connect?blog_id=${encodeURIComponent(connForm.blog_id || conn.blog_id)}`; }}
+                      className="text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg font-semibold"
+                    >
+                      재연결
+                    </button>
+                    <button onClick={handleOAuthDisconnect} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-medium">
+                      해제
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800 space-y-1.5">
+                    <p className="font-semibold">📋 연결 전 확인사항:</p>
+                    <ol className="list-decimal pl-4 space-y-1">
+                      <li><a href="https://developers.naver.com/apps" target="_blank" rel="noopener" className="text-blue-600 underline">네이버 개발자 센터</a>에서 앱 설정 → API 설정 → <strong>블로그</strong> 체크</li>
+                      <li>Callback URL 등록: <code className="bg-blue-100 px-1 rounded">https://loov.co.kr/api/naver/oauth/callback</code></li>
+                      <li>Vercel 환경변수: <code className="bg-blue-100 px-1 rounded">NAVER_CLIENT_ID</code>, <code className="bg-blue-100 px-1 rounded">NAVER_CLIENT_SECRET</code></li>
+                    </ol>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const blogId = connForm.blog_id || conn?.blog_id || '';
+                      if (!blogId) { setOauthMsg('❌ 먼저 아래에서 블로그 ID를 입력하세요'); return; }
+                      window.location.href = `/api/naver/oauth/connect?blog_id=${encodeURIComponent(blogId)}`;
+                    }}
+                    className="w-full bg-[#03C75A] hover:bg-[#02b050] text-white py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M16.273 12.845L7.376 0H0v24h7.727V11.155L16.624 24H24V0h-7.727z"/></svg>
+                    네이버로 연결하기
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* 연결 상태 카드 */}
             {conn?.last_tested_at && (
