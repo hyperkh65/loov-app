@@ -1,4 +1,5 @@
 export const runtime = 'edge';
+export const preferredRegion = ['icn1', 'hnd1']; // 서울(icn1) 우선, 도쿄(hnd1) 폴백
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
