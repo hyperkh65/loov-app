@@ -53,6 +53,30 @@ async function sbInsert(table, body) {
 
 // ── 네이버 블로그 발행 ────────────────────────────────────────────────────────
 
+// PostWriteForm에서 hidden 필드(CSRF 토큰 등) 추출
+async function getWriteFormFields(blogId, cookie, ua) {
+  try {
+    const res = await fetch(`https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`, {
+      headers: { Cookie: cookie, 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9' },
+      redirect: 'follow',
+    });
+    if (!res.ok) { console.warn(`[Naver] PostWriteForm ${res.status}`); return {}; }
+    const html = await res.text();
+    const fields = {};
+    // hidden input 필드 전체 추출
+    for (const m of html.matchAll(/<input[^>]+type=["']hidden["'][^>]*>/gi)) {
+      const nameM = m[0].match(/name=["']([^"']+)["']/i);
+      const valM  = m[0].match(/value=["']([^"']*)["']/i);
+      if (nameM) fields[nameM[1]] = valM ? valM[1] : '';
+    }
+    console.log(`[Naver] WriteForm hidden fields: ${Object.keys(fields).join(', ')}`);
+    return fields;
+  } catch (e) {
+    console.warn(`[Naver] getWriteFormFields error: ${e.message}`);
+    return {};
+  }
+}
+
 async function publishToNaver({ blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish }) {
   const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   const cookie = `NID_AUT=${nidAut}; NID_SES=${nidSes}`;
@@ -60,68 +84,60 @@ async function publishToNaver({ blogId, nidAut, nidSes, title, content, tags, ca
 
   console.log(`[Naver] Publishing: "${title}" → blog.naver.com/${blogId}`);
 
-  // ── Step 1: writePost 엔드포인트 시도 ──────────────────────────────────────
-  for (const baseUrl of [
-    'https://blog.naver.com/blog/writePost',
-    'https://apis.naver.com/blog/writePost',
-    'https://blog.naver.com/BlogWritePost.naver',
-  ]) {
-    try {
-      const form = new URLSearchParams({
-        blogId, title, body: content, contents: content,
-        tag: tags.slice(0, 30).join(','),
-        categoryNo: String(categoryNo),
-        isPublish: isPublish ? 'true' : 'false',
-        publishType: isPublish ? 'A' : 'B',
-      });
-      const res = await fetch(baseUrl, {
-        method: 'POST',
-        headers: {
-          Cookie: cookie,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': ua,
-          Referer: `https://blog.naver.com/${blogId}`,
-          Origin: 'https://blog.naver.com',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        body: form.toString(),
-        redirect: 'follow',
-      });
-      if (res.status === 401 || res.status === 403) {
-        return { error: `인증 실패 (${res.status}) - 쿠키 갱신 필요`, errorCode: 'AUTH' };
-      }
-      if (res.ok) {
-        const finalUrl = res.url || '';
-        const mu = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/]|$)/);
-        if (mu?.[1]) {
-          console.log(`[Naver] Success via writePost: ${mu[1]}`);
-          return { postId: mu[1], postUrl: `https://blog.naver.com/${blogId}/${mu[1]}` };
-        }
-        const bodyText = await res.text().catch(() => '');
-        try {
-          const data = JSON.parse(bodyText);
-          const nested = data.result ?? data.data ?? data.post ?? data;
-          const pid = String(
-            nested.logNo ?? nested.postNo ?? nested.postId ?? nested.id ??
-            data.logNo ?? data.postNo ?? data.postId ?? data.id ?? ''
-          );
-          if (pid && /^\d+$/.test(pid)) {
-            console.log(`[Naver] Success via writePost body JSON: ${pid}`);
-            return { postId: pid, postUrl: `https://blog.naver.com/${blogId}/${pid}` };
-          }
-        } catch { }
-        const bm = bodyText.match(/"(?:logNo|postNo|postId|id)"\s*:\s*"?(\d{5,})"?/);
-        if (bm?.[1]) {
-          return { postId: bm[1], postUrl: `https://blog.naver.com/${blogId}/${bm[1]}` };
-        }
-        errors.push(`writePost(${baseUrl.split('/').pop()}) ok but no postId | ${bodyText.slice(0, 200)}`);
-      } else if (res.status !== 404) {
-        const t = await res.text().catch(() => '');
-        errors.push(`writePost ${res.status}: ${t.slice(0, 100)}`);
-      }
-    } catch (e) {
-      errors.push(`writePost network: ${e.message}`);
+  // ── Step 1: PostWriteFormsave.naver (CSRF 토큰 포함) ─────────────────────
+  try {
+    const hiddenFields = await getWriteFormFields(blogId, cookie, ua);
+    const form = new URLSearchParams({
+      ...hiddenFields,           // CSRF 토큰 등 hidden 필드 포함
+      blogId,
+      title,
+      body: content,
+      tag: tags.slice(0, 30).join(','),
+      categoryNo: String(categoryNo),
+      isPublish: isPublish ? '1' : '0',
+      publishType: isPublish ? 'A' : 'B',
+      postWriteRootPath: 'BLOG',
+      logNo: '0',
+      postWriteFormType: 'default',
+    });
+    const res = await fetch('https://blog.naver.com/PostWriteFormsave.naver', {
+      method: 'POST',
+      headers: {
+        Cookie: cookie, 'User-Agent': ua,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: `https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`,
+        Origin: 'https://blog.naver.com',
+      },
+      body: form.toString(),
+      redirect: 'follow',
+    });
+    console.log(`[Naver] PostWriteFormsave status: ${res.status}, url: ${res.url}`);
+    if (res.status === 401 || res.status === 403) {
+      return { error: `인증 실패 (${res.status}) - 쿠키 갱신 필요`, errorCode: 'AUTH' };
     }
+    if (res.ok) {
+      const finalUrl = res.url || '';
+      const bodyText = await res.text().catch(() => '');
+      console.log(`[Naver] PostWriteFormsave response url: ${finalUrl}`);
+      console.log(`[Naver] PostWriteFormsave body (first 300): ${bodyText.slice(0, 300)}`);
+      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/?#]|$)/);
+      if (m?.[1]) {
+        console.log(`[Naver] Success via PostWriteFormsave: ${m[1]}`);
+        return { postId: m[1], postUrl: `https://blog.naver.com/${blogId}/${m[1]}` };
+      }
+      // body에서 postId 탐색
+      const bm = bodyText.match(/logNo[=:]["'\s]*(\d{5,})/) ||
+                 bodyText.match(/"(?:logNo|postNo|postId)"\s*:\s*"?(\d{5,})"?/);
+      if (bm?.[1]) {
+        return { postId: bm[1], postUrl: `https://blog.naver.com/${blogId}/${bm[1]}` };
+      }
+      errors.push(`PostWriteFormsave ok | url:${finalUrl.slice(0, 100)} | body:${bodyText.slice(0, 200)}`);
+    } else {
+      const t = await res.text().catch(() => '');
+      errors.push(`PostWriteFormsave ${res.status}: ${t.slice(0, 150)}`);
+    }
+  } catch (e) {
+    errors.push(`PostWriteFormsave network: ${e.message}`);
   }
 
   // ── Step 2: REST API (JSON) ───────────────────────────────────────────────
@@ -144,7 +160,6 @@ async function publishToNaver({ blogId, nidAut, nidSes, title, content, tags, ca
   const bodyVariants = [
     { title, contents: content, tags: tags.slice(0, 30), isPublish, categoryNo, isOpen: true },
     { title, body: content, tags: tags.slice(0, 30), isPublish, categoryNo },
-    { title, content, tags: tags.slice(0, 30).join(','), isPublish, categoryNo },
   ];
 
   for (const url of endpoints) {
@@ -166,11 +181,13 @@ async function publishToNaver({ blogId, nidAut, nidSes, title, content, tags, ca
         if (res.status === 429) {
           return { error: '요청 횟수 초과 (429)', errorCode: 'RATE_LIMIT' };
         }
-        if (res.status !== 404) {
-          const t = await res.text().catch(() => '');
-          errors.push(`REST ${res.status} ${url.split('/api')[1]}: ${t.slice(0, 80)}`);
-        }
-      } catch (e) { }
+        // 404 포함 모든 실패 로깅
+        const t = await res.text().catch(() => '');
+        errors.push(`REST ${res.status} ${url.split('blog.naver.com')[1] ?? url}: ${t.slice(0, 80)}`);
+      } catch (e) {
+        errors.push(`REST network ${url.split('/').pop()}: ${e.message}`);
+      }
+      break; // 같은 endpoint에서 첫 번째 body variant만 시도
     }
   }
 
@@ -193,53 +210,26 @@ async function publishToNaver({ blogId, nidAut, nidSes, title, content, tags, ca
       },
       body: form.toString(), redirect: 'follow',
     });
+    console.log(`[Naver] BlogPost.naver status: ${res.status}, url: ${res.url}`);
     if (res.ok) {
       const finalUrl = res.url || '';
-      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/]|$)/);
+      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/?#]|$)/);
       if (m?.[1]) {
         console.log(`[Naver] Success via BlogPost.naver: ${m[1]}`);
         return { postId: m[1], postUrl: `https://blog.naver.com/${blogId}/${m[1]}` };
       }
-      errors.push(`BlogPost.naver ok no postId (${finalUrl.slice(0, 80)})`);
+      const bodyText = await res.text().catch(() => '');
+      errors.push(`BlogPost.naver ok | url:${finalUrl.slice(0, 100)} | body:${bodyText.slice(0, 150)}`);
+    } else {
+      const t = await res.text().catch(() => '');
+      errors.push(`BlogPost.naver ${res.status}: ${t.slice(0, 100)}`);
     }
   } catch (e) {
     errors.push(`BlogPost.naver network: ${e.message}`);
   }
 
-  // ── Step 4: PostWriteFormsave.naver ──────────────────────────────────────
-  try {
-    const form = new URLSearchParams({
-      blogId, title, body: content,
-      tag: tags.join(','),
-      categoryNo: String(categoryNo),
-      isPublish: isPublish ? '1' : '0',
-      postWriteRootPath: 'BLOG',
-      logNo: '0',
-    });
-    const res = await fetch('https://blog.naver.com/PostWriteFormsave.naver', {
-      method: 'POST',
-      headers: {
-        Cookie: cookie, 'User-Agent': ua,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: `https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`,
-      },
-      body: form.toString(), redirect: 'follow',
-    });
-    if (res.ok) {
-      const finalUrl = res.url || '';
-      const m = finalUrl.match(/logNo=(\d+)/) || finalUrl.match(/\/(\d{5,})(?:[^/]|$)/);
-      if (m?.[1]) {
-        console.log(`[Naver] Success via PostWriteFormsave: ${m[1]}`);
-        return { postId: m[1], postUrl: `https://blog.naver.com/${blogId}/${m[1]}` };
-      }
-      errors.push(`PostWriteFormsave ok no postId (${finalUrl.slice(0, 80)})`);
-    }
-  } catch (e) {
-    errors.push(`PostWriteFormsave network: ${e.message}`);
-  }
-
-  const errSummary = errors.length > 0 ? errors.slice(0, 3).join(' | ') : '모든 엔드포인트 차단됨';
-  console.error(`[Naver] All methods failed: ${errSummary}`);
+  const errSummary = errors.join(' || ');
+  console.error(`[Naver] All methods failed:\n${errors.map((e, i) => `  ${i+1}. ${e}`).join('\n')}`);
   return { error: `발행 실패: ${errSummary}`, errorCode: 'UNKNOWN' };
 }
 
