@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Role, AnimalType } from '@/lib/types';
+import { getSetting } from '@/lib/get-setting';
 
 const ANIMAL_KO: Record<AnimalType, string> = {
   pig: 'pig', cat: 'cat', rabbit: 'rabbit', fox: 'fox', otter: 'otter',
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
     const prompt = `A cute adorable 3D Pixar-style cartoon character: a ${animalEn} wearing a sharp professional business suit and tie. The character is ${roleDetail}. UPPER BODY PORTRAIT — close-up bust shot showing face, neck, shoulders and chest only, camera close and centered on face, slight 3/4 angle view, cheerful confident expression. PURE WHITE BACKGROUND — absolutely no shadows, no ground, no environment, no gradients, no background elements whatsoever. Character head and shoulders isolated on pure solid white (#FFFFFF). High quality 3D render, Pixar cartoon style, vibrant saturated colors, soft studio lighting. Character name: ${name}.`;
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${await getSetting('GEMINI_API_KEY')}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

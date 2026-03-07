@@ -1,12 +1,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { ANIMAL_PERSONALITY, AnimalType } from '@/lib/types';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+import { getSetting } from '@/lib/get-setting';
 
 export async function POST(req: NextRequest) {
   try {
     const { employee, topic, meetingHistory, userMessage } = await req.json();
+    const genAI = new GoogleGenerativeAI(await getSetting('GEMINI_API_KEY'));
 
     const otherNames = [...new Set(
       (meetingHistory || [])

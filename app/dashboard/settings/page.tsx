@@ -20,7 +20,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -35,6 +35,12 @@ export default function SettingsPage() {
   const [coupangConfigured, setCoupangConfigured] = useState(false);
   const [coupangSaving, setCoupangSaving] = useState(false);
   const [coupangMsg, setCoupangMsg] = useState('');
+
+  // API 키 관리 state
+  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+  const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
+  const [apiKeysSaving, setApiKeysSaving] = useState(false);
+  const [apiKeysMsg, setApiKeysMsg] = useState('');
 
   // Google Calendar state
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -59,6 +65,13 @@ export default function SettingsPage() {
       fetch('/api/coupang/settings')
         .then((r) => r.ok ? r.json() : {})
         .then((d: { configured?: boolean }) => setCoupangConfigured(!!d.configured));
+    }
+    if (activeTab === 'apikeys') {
+      fetch('/api/app-settings')
+        .then((r) => r.ok ? r.json() : {})
+        .then((d: { hasKey?: Record<string, boolean> }) => {
+          if (d.hasKey) setApiKeyStatus(d.hasKey);
+        });
     }
     if (activeTab === 'google') {
       fetch('/api/google/status')
@@ -151,6 +164,23 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleSaveApiKeys = async () => {
+    setApiKeysSaving(true); setApiKeysMsg('');
+    const r = await fetch('/api/app-settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(apiKeys),
+    });
+    if (r.ok) {
+      setApiKeysMsg('✅ 저장 완료');
+      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+      // hasKey 상태 업데이트
+      const updated: Record<string, boolean> = { ...apiKeyStatus };
+      Object.entries(apiKeys).forEach(([k, v]) => { if (v.trim()) updated[k] = true; });
+      setApiKeyStatus(updated);
+    } else setApiKeysMsg('❌ 저장 실패');
+    setApiKeysSaving(false);
+  };
+
   const currentPlan = SUBSCRIPTION_PLANS.find((p) => p.tier === companySettings.subscriptionTier);
 
   return (
@@ -165,13 +195,129 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
               }`}>{l}</button>
           ))}
         </div>
+
+        {/* API 키 관리 탭 */}
+        {activeTab === 'apikeys' && (
+          <div className="space-y-6 max-w-2xl">
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800 space-y-1.5">
+              <p className="font-bold">ℹ️ API 키 관리 안내</p>
+              <p>여기서 저장한 키는 Supabase DB에 암호화 없이 저장됩니다. 보안이 중요한 프로덕션 환경에서는 Vercel 환경변수 사용을 권장합니다.</p>
+              <p className="text-xs text-blue-600">설정한 키가 있으면 DB 키 우선 사용 → 없으면 Vercel 환경변수 폴백</p>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+              <h2 className="font-bold text-gray-900">🤖 AI API 키</h2>
+
+              {([
+                { key: 'GEMINI_API_KEY', label: 'Gemini API Key', desc: 'AI 채팅, 이미지 생성 등 메인 AI 기능', link: 'https://aistudio.google.com/app/apikey' },
+                { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', desc: 'SEO 리라이팅, 자동 태그 생성', link: 'https://platform.openai.com/api-keys' },
+              ] as const).map(({ key, label, desc, link }) => (
+                <div key={key}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-gray-700">{label}</label>
+                    <div className="flex items-center gap-2">
+                      {apiKeyStatus[key] ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">✅ 설정됨</span>
+                      ) : (
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">⚠️ 미설정</span>
+                      )}
+                      <a href={link} target="_blank" rel="noopener" className="text-[10px] text-blue-500 hover:underline">발급받기 →</a>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mb-1.5">{desc}</p>
+                  <input
+                    type="password"
+                    value={apiKeys[key as keyof typeof apiKeys]}
+                    onChange={(e) => setApiKeys(p => ({ ...p, [key]: e.target.value }))}
+                    placeholder={apiKeyStatus[key] ? '새 키를 입력하면 교체됩니다' : `${label} 입력`}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+              <h2 className="font-bold text-gray-900">⚙️ 기타 서비스 키</h2>
+
+              {([
+                { key: 'N8N_WEBHOOK_SECRET', label: 'n8n Webhook Secret', desc: 'n8n 자동화 연동 시크릿' },
+                { key: 'GOOGLE_CLIENT_ID', label: 'Google Client ID', desc: 'Google Calendar OAuth (Vercel 환경변수로도 설정 가능)' },
+                { key: 'GOOGLE_CLIENT_SECRET', label: 'Google Client Secret', desc: 'Google Calendar OAuth 시크릿' },
+              ] as const).map(({ key, label, desc }) => (
+                <div key={key}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-gray-700">{label}</label>
+                    {apiKeyStatus[key] ? (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">✅ 설정됨</span>
+                    ) : (
+                      <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-semibold">미설정</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-400 mb-1.5">{desc}</p>
+                  <input
+                    type="password"
+                    value={apiKeys[key as keyof typeof apiKeys] || ''}
+                    onChange={(e) => setApiKeys(p => ({ ...p, [key]: e.target.value }))}
+                    placeholder={apiKeyStatus[key] ? '새 키를 입력하면 교체됩니다' : `${label} 입력`}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {apiKeysMsg && (
+              <div className={`p-3 rounded-xl text-sm font-medium ${apiKeysMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                {apiKeysMsg}
+              </div>
+            )}
+
+            <button
+              onClick={handleSaveApiKeys}
+              disabled={apiKeysSaving || Object.values(apiKeys).every(v => !v.trim())}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-sm transition-colors"
+            >
+              {apiKeysSaving ? '저장 중...' : '💾 API 키 저장'}
+            </button>
+
+            {/* Vercel 필수 설정 가이드 */}
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-3">
+              <h3 className="font-bold text-sm text-amber-900">🚨 Vercel에서 반드시 설정해야 하는 환경변수</h3>
+              <p className="text-xs text-amber-700">아래 3+2개는 웹에서 설정 불가. Vercel 대시보드 → 프로젝트 → Settings → Environment Variables에서 추가하세요.</p>
+              <div className="space-y-2">
+                {[
+                  { key: 'NEXT_PUBLIC_SUPABASE_URL', desc: 'Supabase 프로젝트 URL', example: 'https://xxx.supabase.co' },
+                  { key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', desc: 'Supabase 공개 키 (anon key)', example: 'eyJ...' },
+                  { key: 'SUPABASE_SERVICE_ROLE_KEY', desc: 'Supabase 서비스 롤 키 (비공개!)', example: 'eyJ...' },
+                  { key: 'NEXT_PUBLIC_APP_URL', desc: '앱 URL', example: 'https://loov.co.kr' },
+                  { key: 'NEXT_PUBLIC_MAIN_DOMAIN', desc: '메인 도메인', example: 'loov.co.kr' },
+                ].map(({ key, desc, example }) => (
+                  <div key={key} className="bg-white rounded-xl p-3 border border-amber-100">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <code className="text-xs font-bold text-gray-900">{key}</code>
+                        <p className="text-[10px] text-gray-500 mt-0.5">{desc}</p>
+                      </div>
+                      <code className="text-[10px] text-gray-400 shrink-0">{example}</code>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="bg-white rounded-xl p-3 border border-amber-100 text-xs text-gray-600">
+                <p className="font-semibold mb-1">📁 로컬 에이전트용 (.env.local)</p>
+                <p><code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_SUPABASE_URL</code> — 위와 동일</p>
+                <p><code className="bg-gray-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> — 위와 동일</p>
+                <p className="mt-1 text-[10px] text-gray-400">네이버 로컬 에이전트 실행 시 필요</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* AI 설정 탭 */}
         {activeTab === 'ai' && (

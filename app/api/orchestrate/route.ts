@@ -1,12 +1,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { ANIMAL_PERSONALITY, AnimalType } from '@/lib/types';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+import { getSetting } from '@/lib/get-setting';
 
 export async function POST(req: NextRequest) {
   try {
     const { sanmu, employees, projects, recentMessages } = await req.json();
+    const genAI = new GoogleGenerativeAI(await getSetting('GEMINI_API_KEY'));
 
     const teamList = (employees || []).map((e: { name: string; role: string }) => `- ${e.name} (${e.role})`).join('\n');
     const projectList = (projects || []).map((p: { name: string; status: string; description: string }) =>

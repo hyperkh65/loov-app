@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSetting } from '@/lib/get-setting';
 
 const ROLE_CONTEXT: Record<string, string> = {
   '영업팀장': '고객 발굴, 영업 전략, 제안서 작성, CRM 관리, 계약 협상 전문가.',
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
     let resolvedApiKey = apiKey;
     let resolvedProvider = provider;
     if (!resolvedApiKey) {
-      resolvedApiKey = process.env.GEMINI_API_KEY;
+      resolvedApiKey = await getSetting('GEMINI_API_KEY');
       resolvedProvider = 'gemini';
     }
 
