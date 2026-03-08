@@ -511,66 +511,6 @@ export default function NaverPage() {
         {tab === 'settings' && (
           <div className="max-w-2xl mx-auto space-y-6">
 
-            {/* OAuth 연결 카드 */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="font-bold text-sm text-gray-900">🔐 네이버 OAuth 연결 <span className="text-[10px] font-normal bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full ml-1">권장</span></h2>
-                  <p className="text-xs text-gray-500 mt-1">공식 OAuth API 사용 — 서버 IP 차단 없이 모든 환경에서 작동합니다</p>
-                </div>
-              </div>
-
-              {oauthMsg && (
-                <div className={`p-3 rounded-xl text-xs font-medium ${oauthMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                  {oauthMsg}
-                </div>
-              )}
-
-              {conn?.oauth_connected ? (
-                <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-                  <div>
-                    <p className="text-xs font-bold text-emerald-800">✅ OAuth 연결됨</p>
-                    {conn.token_expires_at && (
-                      <p className="text-[10px] text-emerald-600 mt-0.5">만료: {new Date(conn.token_expires_at).toLocaleString('ko-KR')}</p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { window.location.href = `/api/naver/oauth/connect?blog_id=${encodeURIComponent(connForm.blog_id || conn.blog_id)}`; }}
-                      className="text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg font-semibold"
-                    >
-                      재연결
-                    </button>
-                    <button onClick={handleOAuthDisconnect} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-medium">
-                      해제
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800 space-y-1.5">
-                    <p className="font-semibold">📋 연결 전 확인사항:</p>
-                    <ol className="list-decimal pl-4 space-y-1">
-                      <li><a href="https://developers.naver.com/apps" target="_blank" rel="noopener" className="text-blue-600 underline">네이버 개발자 센터</a>에서 앱 설정 → API 설정 → <strong>블로그</strong> 체크</li>
-                      <li>Callback URL 등록: <code className="bg-blue-100 px-1 rounded">https://loov.co.kr/api/naver/oauth/callback</code></li>
-                      <li>Vercel 환경변수: <code className="bg-blue-100 px-1 rounded">NAVER_CLIENT_ID</code>, <code className="bg-blue-100 px-1 rounded">NAVER_CLIENT_SECRET</code></li>
-                    </ol>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const blogId = connForm.blog_id || conn?.blog_id || '';
-                      if (!blogId) { setOauthMsg('❌ 먼저 아래에서 블로그 ID를 입력하세요'); return; }
-                      window.location.href = `/api/naver/oauth/connect?blog_id=${encodeURIComponent(blogId)}`;
-                    }}
-                    className="w-full bg-[#03C75A] hover:bg-[#02b050] text-white py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
-                  >
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M16.273 12.845L7.376 0H0v24h7.727V11.155L16.624 24H24V0h-7.727z"/></svg>
-                    네이버로 연결하기
-                  </button>
-                </div>
-              )}
-            </div>
-
             {/* 연결 상태 카드 */}
             {conn?.last_tested_at && (
               <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3">

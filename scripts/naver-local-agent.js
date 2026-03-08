@@ -186,17 +186,17 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // 구형 에디터 textarea
         const bodyEl = document.querySelector('textarea[name="body"], textarea[name="contents"], #contents');
         if (bodyEl) {
-          (bodyEl as HTMLTextAreaElement).value = content;
+          bodyEl.value = content;
           bodyEl.dispatchEvent(new Event('input', { bubbles: true }));
         }
         // 태그
-        const tagEl = document.querySelector('[name="tag"]') as HTMLInputElement;
+        const tagEl = document.querySelector('[name="tag"]');
         if (tagEl) tagEl.value = tags.join(',');
         // 카테고리
-        const catEl = document.querySelector('select[name="categoryNo"]') as HTMLSelectElement;
+        const catEl = document.querySelector('select[name="categoryNo"]');
         if (catEl && categoryNo > 0) catEl.value = String(categoryNo);
         // 발행 타입
-        const pubEl = document.querySelector('[name="publishType"]') as HTMLInputElement;
+        const pubEl = document.querySelector('[name="publishType"]');
         if (pubEl) pubEl.value = isPublish ? 'A' : 'B';
       }, { content, tags, categoryNo, isPublish });
       console.log('  → 본문 입력 완료 (form fallback)');
@@ -236,7 +236,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     if (!published) {
       // 폼 직접 제출
       await page.evaluate(() => {
-        const form = document.querySelector('form') as HTMLFormElement;
+        const form = document.querySelector('form');
         if (form) form.submit();
       });
       console.log('  → 폼 직접 제출');
