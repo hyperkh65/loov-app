@@ -16,15 +16,15 @@ const CATEGORIES = [
   '기획서', '이력서', '매뉴얼', '데이터/통계', '기타',
 ];
 
-function detectFileType(name: string, mime: string): 'PDF' | 'Word' | 'Excel' | null {
+function detectFileType(name: string, mime: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   if (ext === 'pdf' || mime === 'application/pdf') return 'PDF';
   if (['doc', 'docx'].includes(ext) || mime.includes('word') || mime.includes('officedocument.wordprocessingml')) return 'Word';
   if (['xls', 'xlsx', 'csv'].includes(ext) || mime.includes('spreadsheet') || mime.includes('excel') || mime === 'text/csv') return 'Excel';
-  return null;
+  return ext.toUpperCase() || 'FILE';
 }
 
-async function extractText(buffer: Buffer, fileType: 'PDF' | 'Word' | 'Excel'): Promise<string> {
+async function extractText(buffer: Buffer, fileType: string): Promise<string> {
   if (fileType === 'PDF') {
     const { getDocumentProxy, extractText } = await import('unpdf');
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
@@ -189,7 +189,6 @@ export async function POST(req: NextRequest) {
   if (file.size > MAX_FILE_BYTES) return NextResponse.json({ error: '파일 크기는 20MB 이하여야 합니다.' }, { status: 400 });
 
   const fileType = detectFileType(file.name, file.type);
-  if (!fileType) return NextResponse.json({ error: '지원하지 않는 파일 형식입니다. PDF, Word, Excel만 가능합니다.' }, { status: 400 });
 
   // Create upload record
   const { data: uploadRow, error: insertError } = await supabase
