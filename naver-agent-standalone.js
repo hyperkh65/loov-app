@@ -16,8 +16,8 @@
 
 // ── 설정 (여기만 수정하면 됨) ─────────────────────────────────────────
 const CONFIG = {
-  SUPABASE_URL: 'https://zzgwizsrgjziwexuxquv.supabase.co',
-  SUPABASE_KEY: '***',
+  SUPABASE_URL: 'YOUR_SUPABASE_URL',       // 예: https://xxxx.supabase.co
+  SUPABASE_KEY: 'YOUR_SERVICE_ROLE_KEY',   // Supabase > Settings > API > service_role key
 };
 // ─────────────────────────────────────────────────────────────────────
 
