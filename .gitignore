@@ -40,6 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# 로컬 에이전트 (credentials 포함 → git 제외)
+naver-agent-standalone.js
+
 # 3D model files - 히어로에 사용하지 않는 것만 제외
 public/models/pig.glb
 public/models/monkey.glb
