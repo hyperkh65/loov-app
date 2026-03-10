@@ -863,20 +863,10 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     for (const seg of segments) {
       if (seg.type === 'text') {
         if (lastType === 'image') {
-          // 이미지 다음에 텍스트: body 영역 재포커스 후 Enter 삽입
-          for (const fn of bodyFocusStrategies) {
-            try { if (await fn()) break; } catch {}
-          }
-          await page.keyboard.press('Enter');
-          await humanWait(200, 400);
-          // 재포커스 후 가운데 정렬 재적용
-          await page.evaluate(() => {
-            const btn = Array.from(document.querySelectorAll('button, [role="button"]')).find(el => {
-              const label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('data-name') || '').toLowerCase();
-              return label.includes('가운데') || label.includes('center');
-            });
-            if (btn) btn.click();
-          });
+          // 이미지 다음 텍스트: insertImageToSE4에서 이미 Enter로 커서를 아래에 위치시켰음
+          // 클릭 재포커스 금지 → 커서가 이미지 위로 올라가는 문제 발생
+          // End 키로 현재 줄 끝 확인 후 바로 타이핑
+          await page.keyboard.press('End');
           await humanWait(100, 200);
         }
         await humanType(page, seg.text);
