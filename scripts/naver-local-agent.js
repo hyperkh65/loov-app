@@ -943,112 +943,117 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       }
     }
 
-    // 6. 발행 버튼 클릭
-    console.log('  → 발행 버튼 클릭...');
-
-    // 팝업/오버레이 닫기 (se-popup-dim이 클릭을 막을 수 있음)
+    // 6. 발행 / 임시저장 처리
+    // 팝업/오버레이 닫기
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
-    // se-popup-dim이 사라질 때까지 대기 (최대 3초)
     await page.locator('.se-popup-dim').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
 
-    // JS 직접 클릭 (오버레이 무시)
+    // ── 임시저장 모드 ─────────────────────────────────────────────────────────
+    if (!isPublish) {
+      console.log('  → 임시저장 처리...');
+      const draftsaved = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button'));
+        const btn = btns.find(b => /임시.?저장|저장/.test(b.textContent.trim()) && b.offsetParent !== null);
+        if (btn) { btn.click(); return btn.textContent.trim(); }
+        return null;
+      });
+      if (draftsaved) {
+        console.log(`  → 임시저장 클릭: "${draftsaved}"`);
+        await page.waitForTimeout(2000);
+      } else {
+        // 임시저장 버튼 못 찾으면 단축키 시도 (Ctrl+S)
+        console.warn('  ⚠️ 임시저장 버튼 못 찾음 → Ctrl+S 시도');
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(2000);
+      }
+      return { postId: '', postUrl: '' };
+    }
+
+    // ── 발행 버튼 클릭 (즉시 / 예약) ──────────────────────────────────────────
+    console.log('  → 발행 버튼 클릭...');
     let published = await page.evaluate(() => {
       const btn = document.querySelector('button.publish_btn__m9KHH') ||
         Array.from(document.querySelectorAll('button')).find(b =>
-          b.textContent.trim() === '발행' && !b.className.includes('reserve')
+          b.textContent.trim() === '발행' && b.offsetParent !== null
         );
       if (btn) { btn.click(); return true; }
       return false;
     });
-    if (published) console.log('  → 발행 버튼 클릭 (JS)');
+    if (published) console.log('  → 발행 버튼 클릭');
 
     if (published) {
-      // 발행 설정 패널 열릴 때까지 대기
       await page.waitForTimeout(1500);
 
-      // 패널 내 버튼 덤프 (디버깅)
+      // 패널 버튼 덤프 (디버깅)
       const panelBtns = await page.evaluate(() =>
         Array.from(document.querySelectorAll('button')).filter(b => b.offsetParent !== null)
           .map(b => ({ txt: b.textContent.trim().slice(0, 20), cls: b.className.slice(0, 50) }))
       );
       console.log('  [패널 버튼]:', panelBtns.map(b => `"${b.txt}"`).join(' | '));
 
-      // ── 예약 발행 처리 ──────────────────────────────────────────────────────
       if (scheduledAt) {
+        // ── 예약 발행 ──────────────────────────────────────────────────────────
         const schedDate = new Date(scheduledAt);
         console.log(`  → 예약 발행 설정: ${schedDate.toLocaleString('ko-KR')}`);
 
-        // "예약" 관련 버튼/라디오 클릭
+        // "예약" 라디오/레이블 클릭
         const schedToggled = await page.evaluate(() => {
-          const els = Array.from(document.querySelectorAll('button, label, input[type="radio"], li'));
-          const el = els.find(e => {
-            const t = (e.textContent || e.getAttribute('aria-label') || e.getAttribute('value') || '').trim();
-            return /예약/.test(t);
-          });
+          const els = Array.from(document.querySelectorAll('label, input[type="radio"]'));
+          const el = els.find(e => /예약/.test(e.textContent || e.getAttribute('value') || ''));
           if (el) { el.click(); return true; }
           return false;
         });
+        if (schedToggled) console.log('  → 예약 라디오 클릭');
+        else console.warn('  ⚠️ 예약 라디오 못 찾음');
+        await humanWait(500, 800);
 
-        if (schedToggled) {
-          console.log('  → 예약 발행 옵션 클릭');
-          await humanWait(500, 1000);
+        // 날짜/시간 입력 — SE4 패널의 숫자 입력 필드에 직접 키보드 입력
+        const yy = String(schedDate.getFullYear());
+        const mo = String(schedDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(schedDate.getDate()).padStart(2, '0');
+        const hh = String(schedDate.getHours()).padStart(2, '0');
+        const mi = String(schedDate.getMinutes()).padStart(2, '0');
 
-          // 날짜 입력 (YYYY.MM.DD 또는 YYYY-MM-DD 형식)
-          const yy = schedDate.getFullYear();
-          const mm = String(schedDate.getMonth() + 1).padStart(2, '0');
-          const dd = String(schedDate.getDate()).padStart(2, '0');
-          const hh = String(schedDate.getHours()).padStart(2, '0');
-          const min = String(schedDate.getMinutes()).padStart(2, '0');
+        // 숫자 input 목록 수집 (날짜 관련)
+        const inputCount = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('input[type="text"], input[type="number"]'))
+            .filter(i => i.offsetParent !== null).length
+        );
+        console.log(`  → 패널 input 수: ${inputCount}`);
 
-          // 날짜 input 탐색 및 입력
-          const dateSet = await page.evaluate((y, mo, d) => {
-            const inputs = Array.from(document.querySelectorAll('input'));
-            const dateInput = inputs.find(i =>
-              i.type === 'date' || i.placeholder?.includes('날짜') ||
-              i.className.includes('date') || i.name?.includes('date')
-            );
-            if (dateInput) {
-              dateInput.value = `${y}-${mo}-${d}`;
-              dateInput.dispatchEvent(new Event('input', { bubbles: true }));
-              dateInput.dispatchEvent(new Event('change', { bubbles: true }));
-              return true;
-            }
-            return false;
-          }, yy, mm, dd);
-          if (dateSet) console.log(`  → 날짜 입력: ${yy}-${mm}-${dd}`);
-
-          // 시간 input 탐색 및 입력
-          const timeSet = await page.evaluate((h, mi) => {
-            const inputs = Array.from(document.querySelectorAll('input'));
-            const timeInput = inputs.find(i =>
-              i.type === 'time' || i.placeholder?.includes('시간') ||
-              i.className.includes('time') || i.name?.includes('time')
-            );
-            if (timeInput) {
-              timeInput.value = `${h}:${mi}`;
-              timeInput.dispatchEvent(new Event('input', { bubbles: true }));
-              timeInput.dispatchEvent(new Event('change', { bubbles: true }));
-              return true;
-            }
-            return false;
-          }, hh, min);
-          if (timeSet) console.log(`  → 시간 입력: ${hh}:${min}`);
-
-          await humanWait(400, 700);
-        } else {
-          console.warn('  ⚠️ 예약 발행 옵션을 찾지 못했습니다 — 즉시 발행으로 진행합니다');
+        // 연/월/일/시/분 순서로 input 채우기
+        const dateValues = [yy, mo, dd, hh, mi];
+        for (let idx = 0; idx < dateValues.length; idx++) {
+          await page.evaluate((i) => {
+            const inputs = Array.from(document.querySelectorAll('input[type="text"], input[type="number"]'))
+              .filter(el => el.offsetParent !== null);
+            if (inputs[i]) inputs[i].click();
+          }, idx);
+          await humanWait(100, 200);
+          await page.keyboard.press('Control+a');
+          await page.keyboard.type(dateValues[idx]);
+          await page.keyboard.press('Tab');
+          await humanWait(150, 300);
         }
+        console.log(`  → 예약 날짜/시간 입력: ${yy}.${mo}.${dd} ${hh}:${mi}`);
+        await humanWait(400, 600);
+
+      } else {
+        // ── 즉시 발행 — "현재" 라디오 확인 ────────────────────────────────────
+        await page.evaluate(() => {
+          const els = Array.from(document.querySelectorAll('label, input[type="radio"]'));
+          const el = els.find(e => /현재/.test(e.textContent || e.getAttribute('value') || ''));
+          if (el) el.click();
+        });
+        console.log('  → 즉시 발행(현재) 선택');
+        await humanWait(200, 400);
       }
 
-      // 발행하기 확인 클릭 - 마지막 "발행" 버튼 (패널 내 확인 버튼)
+      // 최종 발행 확인 클릭
       const confirmed = await page.evaluate(() => {
-        const visibleBtns = Array.from(document.querySelectorAll('button'))
-          .filter(b => b.offsetParent !== null);
-        const btn = [...visibleBtns].reverse().find(b => {
-          const t = b.textContent.trim();
-          return t === '발행하기' || t === '발행' || t === '예약 발행';
-        });
+        const visibleBtns = Array.from(document.querySelectorAll('button')).filter(b => b.offsetParent !== null);
+        const btn = [...visibleBtns].reverse().find(b => /^발행$|^발행하기$/.test(b.textContent.trim()));
         if (btn) { btn.click(); return btn.textContent.trim(); }
         return null;
       });
