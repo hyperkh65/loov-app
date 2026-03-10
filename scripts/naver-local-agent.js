@@ -952,9 +952,17 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     // ── 임시저장 모드 ─────────────────────────────────────────────────────────
     if (!isPublish) {
       console.log('  → 임시저장 처리...');
+      // SE4 상단 툴바의 "저장" 버튼 클릭
+      // 버튼 텍스트가 "저장 | 3" 처럼 숫자/구분자를 포함할 수 있으므로
+      // 숫자, 공백, 구분자(|·•-) 제거 후 "저장" 또는 "임시저장"과 정확히 일치하는 버튼 탐색
       const draftsaved = await page.evaluate(() => {
         const btns = Array.from(document.querySelectorAll('button'));
-        const btn = btns.find(b => /임시.?저장|저장/.test(b.textContent.trim()) && b.offsetParent !== null);
+        const btn = btns.find(b => {
+          if (!b.offsetParent) return false;
+          // 한글만 추출해 비교 (숫자·공백·|·· 등 제거)
+          const korOnly = b.textContent.replace(/[^\uAC00-\uD7A3]/g, '').trim();
+          return korOnly === '저장' || korOnly === '임시저장';
+        });
         if (btn) { btn.click(); return btn.textContent.trim(); }
         return null;
       });
