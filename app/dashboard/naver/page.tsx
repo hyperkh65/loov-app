@@ -104,6 +104,13 @@ export default function NaverPage() {
   const [thumbnailPrompt, setThumbnailPrompt] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
   const [imageUploading, setImageUploading] = useState(false);
+  const [showImageSearch, setShowImageSearch] = useState(false);
+  const [imgQuery, setImgQuery] = useState('');
+  const [imgResults, setImgResults] = useState<{ id: number; preview: string; webformat: string; large: string; tags: string; user: string }[]>([]);
+  const [imgLoading, setImgLoading] = useState(false);
+  const [imgError, setImgError] = useState('');
+  const [imgPage, setImgPage] = useState(1);
+  const [imgTotal, setImgTotal] = useState(0);
 
   // 리라이팅/자동화
   const [rewriting, setRewriting] = useState(false);
@@ -272,6 +279,36 @@ export default function NaverPage() {
     } finally {
       setImageUploading(false);
     }
+  };
+
+  // ── 이미지 검색 (Pixabay) ────────────────────────────────────────────────
+
+  const handleImageSearch = async (page = 1) => {
+    if (!imgQuery.trim()) return;
+    setImgLoading(true); setImgError('');
+    try {
+      const res = await fetch(`/api/naver/image-search?q=${encodeURIComponent(imgQuery)}&page=${page}&per_page=20`);
+      const data = await res.json() as { total?: number; images?: typeof imgResults; error?: string };
+      if (!res.ok) throw new Error(data.error || '검색 실패');
+      if (page === 1) setImgResults(data.images || []);
+      else setImgResults(prev => [...prev, ...(data.images || [])]);
+      setImgTotal(data.total || 0);
+      setImgPage(page);
+    } catch (e) {
+      setImgError(String(e));
+    } finally {
+      setImgLoading(false);
+    }
+  };
+
+  const insertImageToContent = (url: string) => {
+    setContent(prev => prev + `\n<img src="${url}" alt="${imgQuery}" />\n`);
+    setShowImageSearch(false);
+  };
+
+  const setAsThumbnail = (url: string) => {
+    setThumbnailPrompt(url);
+    setShowImageSearch(false);
   };
 
   // ── 발행 (로컬 에이전트 방식) ────────────────────────────────────────────
@@ -531,6 +568,12 @@ export default function NaverPage() {
                   </span>
                   <div className="flex items-center gap-2 flex-wrap">
                     {contentLoading && <span className="text-xs text-gray-400 animate-pulse">노션에서 불러오는 중...</span>}
+                    <button
+                      onClick={() => setShowImageSearch(v => !v)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap ${showImageSearch ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                    >
+                      🔍 이미지 검색
+                    </button>
                     {jobType === 'draft' && (
                       <>
                         <label className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors cursor-pointer whitespace-nowrap ${imageUploading ? 'bg-gray-100 text-gray-400' : 'bg-sky-500 hover:bg-sky-400 text-white'}`}>
@@ -552,6 +595,70 @@ export default function NaverPage() {
                   </div>
                 </div>
                 {rewriteError && <div className="px-5 py-2 bg-red-50 text-xs text-red-600 border-b border-red-100">⚠️ {rewriteError}</div>}
+
+                {/* 이미지 검색 패널 */}
+                {showImageSearch && (
+                  <div className="border-b border-gray-100 bg-gray-50 p-4 space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        value={imgQuery}
+                        onChange={(e) => setImgQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleImageSearch(1)}
+                        placeholder="검색어 입력 (예: 강아지, 고양이, 펫샵)"
+                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 bg-white"
+                      />
+                      <button
+                        onClick={() => handleImageSearch(1)}
+                        disabled={imgLoading || !imgQuery.trim()}
+                        className="bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap"
+                      >
+                        {imgLoading ? '⏳' : '검색'}
+                      </button>
+                    </div>
+
+                    {imgError && <p className="text-xs text-red-500">{imgError}</p>}
+
+                    {imgResults.length > 0 && (
+                      <>
+                        <p className="text-[10px] text-gray-400">총 {imgTotal.toLocaleString()}개 · Powered by Pixabay</p>
+                        <div className="grid grid-cols-4 gap-2 max-h-72 overflow-y-auto">
+                          {imgResults.map((img) => (
+                            <div key={img.id} className="group relative rounded-lg overflow-hidden border border-gray-200 bg-white">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={img.preview} alt={img.tags} className="w-full h-20 object-cover" />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-1">
+                                <button
+                                  onClick={() => insertImageToContent(img.webformat)}
+                                  className="w-full text-[10px] bg-white text-gray-800 rounded px-1 py-1 font-semibold hover:bg-gray-100"
+                                >
+                                  본문 삽입
+                                </button>
+                                {(jobType === 'rewrite' || jobType === 'scrape') && (
+                                  <button
+                                    onClick={() => setAsThumbnail(img.large)}
+                                    className="w-full text-[10px] bg-indigo-500 text-white rounded px-1 py-1 font-semibold hover:bg-indigo-400"
+                                  >
+                                    썸네일 사용
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[9px] text-gray-400 px-1 py-0.5 truncate">{img.user}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {imgResults.length < imgTotal && (
+                          <button
+                            onClick={() => handleImageSearch(imgPage + 1)}
+                            disabled={imgLoading}
+                            className="w-full text-xs text-indigo-500 hover:text-indigo-700 disabled:opacity-40 py-1"
+                          >
+                            {imgLoading ? '로딩 중...' : '더 보기'}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
                 {autoGenerating && autoStep && <div className="px-5 py-2 bg-violet-50 text-xs text-violet-700 border-b border-violet-100 animate-pulse font-medium">{autoStep}</div>}
                 {!autoGenerating && autoStep && <div className="px-5 py-2 bg-emerald-50 text-xs text-emerald-700 border-b border-emerald-100 font-medium">{autoStep}</div>}
                 {preview ? (
