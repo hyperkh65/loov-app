@@ -617,7 +617,7 @@ export default function NaverPage() {
                           {imgResults.map((img) => (
                             <button key={img.id} onClick={() => handleSelectImage(img.webformat)} className="group relative rounded overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-all">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={img.preview} alt={img.tags} className="w-full h-16 object-cover" />
+                              <img src={img.preview} alt={img.tags} referrerPolicy="no-referrer" className="w-full h-16 object-cover" />
                               <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </button>
                           ))}
@@ -639,7 +639,7 @@ export default function NaverPage() {
                     {representativeImage ? (
                       <div className="relative rounded-xl overflow-hidden border border-gray-200">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={representativeImage} alt="대표이미지" className="w-full h-28 object-cover" />
+                        <img src={representativeImage} alt="대표이미지" referrerPolicy="no-referrer" className="w-full h-28 object-cover" />
                         <button onClick={() => setRepresentativeImage('')} className="absolute top-1 right-1 bg-black/50 text-white rounded-full w-5 h-5 text-[10px] flex items-center justify-center hover:bg-black/70">✕</button>
                       </div>
                     ) : (
@@ -662,7 +662,7 @@ export default function NaverPage() {
                           {bodyImages.map((url, i) => (
                             <div key={i} className="relative rounded overflow-hidden">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={url} alt={`본문이미지${i+1}`} className="w-full h-12 object-cover" />
+                              <img src={url} alt={`본문이미지${i+1}`} referrerPolicy="no-referrer" className="w-full h-12 object-cover" />
                               <button onClick={() => setBodyImages(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-0 right-0 bg-black/50 text-white w-4 h-4 text-[9px] flex items-center justify-center hover:bg-black/70">✕</button>
                             </div>
                           ))}
