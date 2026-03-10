@@ -306,13 +306,28 @@ export default function NaverPage() {
     }
   };
 
-  const handleSelectImage = (url: string) => {
-    if (imgSearchTarget === 'representative') {
-      setRepresentativeImage(url);
-      setImgSearchTarget(null);
-    } else if (imgSearchTarget === 'body') {
-      setBodyImages(prev => [...prev, url]);
-      // 패널 열어두기 (여러 장 선택 가능)
+  const handleSelectImage = async (webformatUrl: string) => {
+    // Pixabay webformatURL은 핫링킹 차단 → Supabase에 프록시 저장
+    setImageUploading(imgSearchTarget === 'representative' ? 'representative' : 'body');
+    try {
+      const res = await fetch('/api/naver/proxy-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: webformatUrl }),
+      });
+      const data = await res.json() as { url?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || '이미지 저장 실패');
+      const savedUrl = data.url!;
+      if (imgSearchTarget === 'representative') {
+        setRepresentativeImage(savedUrl);
+        setImgSearchTarget(null);
+      } else if (imgSearchTarget === 'body') {
+        setBodyImages(prev => [...prev, savedUrl]);
+      }
+    } catch (err) {
+      setPublishError('이미지 저장 실패: ' + String(err));
+    } finally {
+      setImageUploading(null);
     }
   };
 
@@ -615,7 +630,7 @@ export default function NaverPage() {
                         <p className="text-[10px] text-gray-400">총 {imgTotal.toLocaleString()}개 · Pixabay · 클릭하면 선택됩니다</p>
                         <div className="grid grid-cols-5 gap-1.5 max-h-52 overflow-y-auto">
                           {imgResults.map((img) => (
-                            <button key={img.id} onClick={() => handleSelectImage(img.webformat)} className="group relative rounded overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-all">
+                            <button key={img.id} onClick={() => handleSelectImage(img.webformat)} disabled={imageUploading !== null} className="group relative rounded overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-all disabled:opacity-40">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={img.preview} alt={img.tags} referrerPolicy="no-referrer" className="w-full h-16 object-cover" />
                               <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 transition-opacity" />
