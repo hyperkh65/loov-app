@@ -6,6 +6,7 @@ import { invalidateSettingsCache } from '@/lib/get-setting';
 const ALLOWED_KEYS = [
   'GEMINI_API_KEY',
   'OPENAI_API_KEY',
+  'CLAUDE_API_KEY',
   'N8N_WEBHOOK_SECRET',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',

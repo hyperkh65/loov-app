@@ -97,6 +97,14 @@ export default function NaverPage() {
   const [preview, setPreview] = useState(false);
   const [targetKeyword, setTargetKeyword] = useState('');
 
+  // 발행 모드
+  const [jobType, setJobType] = useState<'draft' | 'rewrite' | 'scrape'>('draft');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'claude' | 'gpt4o' | 'gpt4' | 'gpt35'>('gemini');
+  const [thumbnailPrompt, setThumbnailPrompt] = useState('');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
+
   // 리라이팅/자동화
   const [rewriting, setRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState('');
@@ -245,10 +253,34 @@ export default function NaverPage() {
     finally { setAutoGenerating(false); }
   };
 
+  // ── 이미지 첨부 (draft 모드) ─────────────────────────────────────────────
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImageUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/naver/upload-image', { method: 'POST', body: fd });
+      const data = await res.json() as { url?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || '업로드 실패');
+      setContent((prev) => prev + `\n<img src="${data.url}" alt="${file.name}" />\n`);
+    } catch (err) {
+      setPublishError('이미지 업로드 실패: ' + String(err));
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
   // ── 발행 (로컬 에이전트 방식) ────────────────────────────────────────────
 
   const handlePublish = async () => {
-    if (!title.trim() || !content.trim()) { setPublishError('제목과 내용이 필요합니다'); return; }
+    if (!title.trim()) { setPublishError('제목이 필요합니다'); return; }
+    if (jobType === 'draft' && !content.trim()) { setPublishError('내용이 필요합니다'); return; }
+    if (jobType === 'rewrite' && !content.trim()) { setPublishError('rewrite 모드는 초안 내용이 필요합니다'); return; }
+    if (jobType === 'scrape' && !sourceUrl.trim()) { setPublishError('스크랩 URL이 필요합니다'); return; }
     if (!conn?.blog_id) { setPublishError('네이버 블로그 연결 설정이 필요합니다'); return; }
     if (!conn.nid_aut || !conn.nid_ses) { setPublishError('쿠키(NID_AUT, NID_SES)를 설정 탭에서 입력해주세요'); return; }
 
@@ -261,6 +293,10 @@ export default function NaverPage() {
           title: title.trim(), content, tags: parsedTags,
           categoryNo, status: publishStatus,
           notionPageId: selectedArticle?.id || '',
+          jobType, sourceUrl: sourceUrl.trim() || undefined,
+          aiPrompt: aiPrompt.trim() || undefined,
+          aiProvider,
+          thumbnailPrompt: thumbnailPrompt.trim() || undefined,
         }),
       });
       const data = await res.json() as { jobId?: string; error?: string; message?: string };
@@ -375,6 +411,74 @@ export default function NaverPage() {
 
             {/* 우측: 에디터 */}
             <div className="space-y-4">
+
+              {/* 발행 모드 선택 */}
+              <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                <p className="text-xs font-semibold text-gray-500 mb-3">발행 모드</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    ['draft',   '📝', '일반 발행',    '작성한 내용 그대로 발행'],
+                    ['rewrite', '🤖', 'AI 리라이팅', '초안을 AI가 재작성 + 썸네일 자동생성'],
+                    ['scrape',  '🌐', 'URL 스크랩',   'URL 스크랩 + AI 재작성 + 이미지 배분'],
+                  ] as [typeof jobType, string, string, string][]).map(([mode, icon, label, desc]) => (
+                    <button
+                      key={mode}
+                      onClick={() => setJobType(mode)}
+                      className={`flex flex-col items-start p-3 rounded-xl border-2 text-left transition-all ${jobType === mode ? 'border-green-400 bg-green-50' : 'border-gray-100 hover:border-gray-300'}`}
+                    >
+                      <span className="text-lg mb-1">{icon}</span>
+                      <span className={`text-xs font-bold ${jobType === mode ? 'text-green-700' : 'text-gray-700'}`}>{label}</span>
+                      <span className="text-[10px] text-gray-400 mt-0.5 leading-tight">{desc}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* 모드별 추가 필드 */}
+                {jobType === 'scrape' && (
+                  <div className="mt-3 space-y-2">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">스크랩 URL <span className="text-red-400">*</span></label>
+                      <input
+                        value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)}
+                        placeholder="https://example.com/article"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-green-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {(jobType === 'rewrite' || jobType === 'scrape') && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">AI 제공자</label>
+                      <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value as typeof aiProvider)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-green-400">
+                        <option value="gemini">Gemini (기본)</option>
+                        <option value="claude">Claude</option>
+                        <option value="gpt4o">GPT-4o</option>
+                        <option value="gpt4">GPT-4</option>
+                        <option value="gpt35">GPT-3.5</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">썸네일 프롬프트 <span className="text-gray-400">(선택)</span></label>
+                      <input
+                        value={thumbnailPrompt} onChange={(e) => setThumbnailPrompt(e.target.value)}
+                        placeholder="제목 기반 자동 생성"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-green-400"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">AI 추가 지시사항 <span className="text-gray-400">(선택)</span></label>
+                      <input
+                        value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)}
+                        placeholder="예: 반려동물 관련 내용 강조, 친근한 말투 사용"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-green-400"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* 제목 */}
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
                 <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="제목 입력" className="w-full text-xl font-bold text-gray-900 placeholder-gray-300 focus:outline-none" />
@@ -420,13 +524,25 @@ export default function NaverPage() {
               {/* 본문 에디터 */}
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50 flex-wrap gap-2">
-                  <span className="text-sm font-semibold text-gray-700">본문</span>
+                  <span className="text-sm font-semibold text-gray-700">
+                    본문
+                    {jobType === 'scrape' && <span className="ml-2 text-[10px] text-gray-400 font-normal">(scrape 모드: 에이전트가 자동 채움)</span>}
+                    {jobType === 'rewrite' && <span className="ml-2 text-[10px] text-gray-400 font-normal">(AI가 리라이팅할 초안)</span>}
+                  </span>
                   <div className="flex items-center gap-2 flex-wrap">
                     {contentLoading && <span className="text-xs text-gray-400 animate-pulse">노션에서 불러오는 중...</span>}
-                    <input value={targetKeyword} onChange={(e) => setTargetKeyword(e.target.value)} placeholder="대상 키워드 (선택)" className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 w-32 focus:outline-none focus:border-green-400" />
-                    <button onClick={handleRewrite} disabled={rewriting||!content.trim()} className="text-xs bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
-                      {rewriting ? '⏳...' : '🤖 SEO 리라이팅'}
-                    </button>
+                    {jobType === 'draft' && (
+                      <>
+                        <label className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors cursor-pointer whitespace-nowrap ${imageUploading ? 'bg-gray-100 text-gray-400' : 'bg-sky-500 hover:bg-sky-400 text-white'}`}>
+                          {imageUploading ? '⏳ 업로드 중...' : '🖼️ 이미지 첨부'}
+                          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
+                        </label>
+                        <input value={targetKeyword} onChange={(e) => setTargetKeyword(e.target.value)} placeholder="대상 키워드 (선택)" className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 w-32 focus:outline-none focus:border-green-400" />
+                        <button onClick={handleRewrite} disabled={rewriting||!content.trim()} className="text-xs bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
+                          {rewriting ? '⏳...' : '🤖 SEO 리라이팅'}
+                        </button>
+                      </>
+                    )}
                     <button onClick={handleAutoGenerate} disabled={autoGenerating||(!content.trim()&&!title.trim())} className="text-xs bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
                       {autoGenerating ? '⏳...' : '🔄 자동화'}
                     </button>
@@ -441,7 +557,19 @@ export default function NaverPage() {
                 {preview ? (
                   <div className="p-5 prose prose-sm max-w-none min-h-[300px] text-gray-800" dangerouslySetInnerHTML={{ __html: content || '<p class="text-gray-400">내용을 입력하세요</p>' }} />
                 ) : (
-                  <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="HTML 본문 입력 (SEO 리라이팅 후 발행 권장)" className="w-full px-5 py-4 text-sm font-mono text-gray-800 focus:outline-none resize-none min-h-[300px]" rows={16} />
+                  <textarea
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder={
+                      jobType === 'scrape'
+                        ? '(선택) 스크랩 후 참고할 추가 내용 입력 — 에이전트가 URL을 자동 스크랩합니다'
+                        : jobType === 'rewrite'
+                        ? 'AI가 리라이팅할 초안 HTML을 입력하세요'
+                        : 'HTML 본문 입력 (SEO 리라이팅 후 발행 권장)'
+                    }
+                    className="w-full px-5 py-4 text-sm font-mono text-gray-800 focus:outline-none resize-none min-h-[300px]"
+                    rows={16}
+                  />
                 )}
               </div>
 
@@ -490,7 +618,12 @@ export default function NaverPage() {
 
                 <button
                   onClick={handlePublish}
-                  disabled={publishing || !!jobStatus || !isConnected || !title.trim() || !content.trim()}
+                  disabled={
+                    publishing || !!jobStatus || !isConnected || !title.trim() ||
+                    (jobType === 'draft' && !content.trim()) ||
+                    (jobType === 'rewrite' && !content.trim()) ||
+                    (jobType === 'scrape' && !sourceUrl.trim())
+                  }
                   className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
                 >
                   {publishing ? (

@@ -6,14 +6,31 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { title, content, tags = [], categoryNo = 0, status = 'publish', notionPageId = '' }
-    = await req.json() as {
-      title: string; content: string; tags: string[];
-      categoryNo: number; status: string; notionPageId: string;
-    };
+  const {
+    title, content, tags = [], categoryNo = 0, status = 'publish', notionPageId = '',
+    jobType = 'draft', sourceUrl, aiPrompt, aiProvider = 'gemini', thumbnailPrompt,
+  } = await req.json() as {
+    title: string; content?: string; tags?: string[];
+    categoryNo?: number; status?: string; notionPageId?: string;
+    jobType?: 'draft' | 'rewrite' | 'scrape';
+    sourceUrl?: string; aiPrompt?: string;
+    aiProvider?: 'gemini' | 'claude' | 'gpt4o' | 'gpt4' | 'gpt35';
+    thumbnailPrompt?: string;
+  };
 
   if (!title?.trim()) return NextResponse.json({ error: '제목이 필요합니다' }, { status: 400 });
-  if (!content?.trim()) return NextResponse.json({ error: '내용이 필요합니다' }, { status: 400 });
+
+  // draft/rewrite는 content 필수
+  if (jobType === 'draft' && !content?.trim()) {
+    return NextResponse.json({ error: '내용이 필요합니다' }, { status: 400 });
+  }
+  if (jobType === 'rewrite' && !content?.trim()) {
+    return NextResponse.json({ error: 'rewrite 모드는 초안(content)이 필요합니다' }, { status: 400 });
+  }
+  // scrape는 source_url 필수
+  if (jobType === 'scrape' && !sourceUrl?.trim()) {
+    return NextResponse.json({ error: 'scrape 모드는 source_url이 필요합니다' }, { status: 400 });
+  }
 
   const { data: conn } = await supabase
     .from('naver_connections')
@@ -29,12 +46,17 @@ export async function POST(req: NextRequest) {
     .insert({
       user_id: user.id,
       title: title.trim(),
-      content,
+      content: content || '',
       tags,
       category_no: categoryNo,
       is_publish: status === 'publish',
       notion_page_id: notionPageId,
       status: 'pending',
+      job_type: jobType,
+      source_url: sourceUrl || null,
+      ai_prompt: aiPrompt || null,
+      ai_provider: aiProvider,
+      thumbnail_prompt: thumbnailPrompt || null,
     })
     .select('id')
     .single();
