@@ -746,36 +746,24 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     console.log(titleFilled ? '  → 제목 입력 완료' : '  ⚠️ 제목 입력 실패');
 
     // ── 썸네일 삽입 (rewrite/scrape 모드) ────────────────────────────────────
+    let thumbnailInserted = false;
     if (thumbnailLocalPath && fs.existsSync(thumbnailLocalPath)) {
       console.log('  → 썸네일 삽입 시작...');
-      // 본문 영역 포커스 (첫 번째 삽입)
-      const bodyFocusForThumb = [
-        async () => {
-          const ces = page.locator('[contenteditable="true"]');
-          const count = await ces.count();
-          for (let i = 1; i < count; i++) {
-            try { await ces.nth(i).click({ force: true, timeout: 3000 }); return true; } catch {}
-          }
-          return false;
-        },
-        async () => {
-          for (const sel of ['.se-main-section', '.se-document', '[class*="content_body"]']) {
-            const el = page.locator(sel).first();
-            if (await el.count() > 0) {
-              await el.click({ force: true, timeout: 3000 }); return true;
-            }
-          }
-          return false;
-        },
-        async () => { await humanClick(page, vp.width / 2, 450); return true; },
-      ];
-      for (const fn of bodyFocusForThumb) {
-        try { if (await fn()) break; } catch {}
+      // 본문 영역 클릭 포커스 (썸네일이 첫 번째 삽입이므로 아직 내용 없음 → 클릭 OK)
+      let thumbFocused = false;
+      for (const sel of ['[contenteditable="true"]:nth-child(2)', '.se-main-section', '.se-document', '[class*="content_body"]']) {
+        const el = page.locator(sel).first();
+        if (await el.count() > 0) {
+          try { await el.click({ force: true, timeout: 3000 }); thumbFocused = true; break; } catch {}
+        }
       }
+      if (!thumbFocused) await humanClick(page, vp.width / 2, 450);
+      await humanWait(300, 600);
+
       try {
         await insertImageToSE4(page, thumbnailLocalPath);
+        thumbnailInserted = true;
         console.log('  → 썸네일 삽입 완료');
-        // 임시파일 삭제
         fs.unlinkSync(thumbnailLocalPath);
         console.log(`  → 썸네일 임시파일 삭제: ${thumbnailLocalPath}`);
       } catch (e) {
@@ -785,76 +773,47 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
 
     // ── 본문 입력 (세그먼트 기반: 텍스트 + 이미지) ───────────────────────────
     console.log('  → 본문 입력...');
-    await humanWait(500, 1000); // 제목 쓰고 잠깐 쉬기
+    await humanWait(300, 600);
 
     const segments = parseContentSegments(content);
     console.log(`  → 세그먼트: ${segments.map(s => s.type === 'image' ? '[IMG]' : '[TXT]').join(' ')}`);
 
     // 본문 영역 포커스
+    // ★ 썸네일 삽입 후에는 클릭 금지 (커서가 맨 위로 올라가 텍스트가 이미지 위에 써짐)
+    //   → Ctrl+End로 문서 끝에 커서 유지
     let bodyFocused = false;
-    const bodyFocusStrategies = [
-      async () => {
-        const ces = page.locator('[contenteditable="true"]');
-        const count = await ces.count();
-        for (let i = 1; i < count; i++) {
-          try {
-            await ces.nth(i).click({ force: true, timeout: 3000 });
-            await humanWait(300, 600);
-            return true;
-          } catch {}
-        }
-        return false;
-      },
-      async () => {
-        for (const sel of ['.se-main-section', '.se-document', '[class*="content_body"]', '.se-section-text']) {
-          const el = page.locator(sel).first();
-          if (await el.count() > 0) {
-            await el.click({ force: true, timeout: 3000 });
-            await humanWait(300, 600);
-            return true;
+    if (thumbnailInserted) {
+      await page.keyboard.press('Control+End');
+      await humanWait(200, 400);
+      bodyFocused = true;
+      console.log('  → 썸네일 삽입 후 Ctrl+End로 커서 유지 (재클릭 없음)');
+    } else {
+      // 썸네일 없을 때만 클릭으로 포커스
+      const bodyFocusStrategies = [
+        async () => {
+          const ces = page.locator('[contenteditable="true"]');
+          const count = await ces.count();
+          for (let i = 1; i < count; i++) {
+            try { await ces.nth(i).click({ force: true, timeout: 3000 }); await humanWait(300, 600); return true; } catch {}
           }
-        }
-        return false;
-      },
-      async () => {
-        await humanClick(page, vp.width / 2, 450);
-        await humanWait(800, 1500);
-        return true;
-      },
-    ];
-    for (const fn of bodyFocusStrategies) {
-      try { if (await fn()) { bodyFocused = true; break; } } catch {}
+          return false;
+        },
+        async () => {
+          for (const sel of ['.se-main-section', '.se-document', '[class*="content_body"]', '.se-section-text']) {
+            const el = page.locator(sel).first();
+            if (await el.count() > 0) {
+              await el.click({ force: true, timeout: 3000 }); await humanWait(300, 600); return true;
+            }
+          }
+          return false;
+        },
+        async () => { await humanClick(page, vp.width / 2, 450); await humanWait(800, 1500); return true; },
+      ];
+      for (const fn of bodyFocusStrategies) {
+        try { if (await fn()) { bodyFocused = true; break; } } catch {}
+      }
     }
     if (!bodyFocused) console.warn('  ⚠️ 본문 영역 포커스 실패');
-
-    // ── 본문 가운데 정렬 ──────────────────────────────────────────────────────
-    await humanWait(300, 500);
-    const alignSet = await page.evaluate(() => {
-      const candidates = Array.from(document.querySelectorAll('button, [role="button"]'));
-      const btn = candidates.find(el => {
-        const label = (
-          el.getAttribute('aria-label') ||
-          el.getAttribute('title') ||
-          el.getAttribute('data-name') ||
-          el.textContent || ''
-        ).toLowerCase();
-        return label.includes('가운데') || label.includes('center') || label.includes('중앙');
-      });
-      if (btn) { btn.click(); return btn.getAttribute('aria-label') || btn.getAttribute('title') || 'center'; }
-      return null;
-    });
-    if (alignSet) console.log(`  → 가운데 정렬 설정: "${alignSet}"`);
-    else console.warn('  ⚠️ 가운데 정렬 버튼 못 찾음 (SE4 구조 변경 가능성)');
-    await humanWait(200, 400);
-
-    // 전체 선택 후 가운데 정렬 단축키도 시도 (Ctrl+E)
-    if (!alignSet) {
-      await page.keyboard.press('Control+a');
-      await humanWait(100, 200);
-      await page.keyboard.press('Control+e');
-      await humanWait(200, 300);
-      console.log('  → 가운데 정렬 단축키(Ctrl+E) 시도');
-    }
 
     // 세그먼트 순회 입력
     let imgIndex = 0;
@@ -899,12 +858,9 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       console.log(`  → 태그 입력: ${tags.join(', ')}`);
       await humanWait(400, 800);
 
-      // 본문 마지막에 커서 위치 (본문 영역 재포커스)
-      for (const fn of bodyFocusStrategies) {
-        try { if (await fn()) break; } catch {}
-      }
-      // 본문 끝으로 이동
-      await page.keyboard.press('End');
+      // 본문 끝으로 커서 이동 (클릭 금지 — 커서 위치 틀어짐 방지)
+      await page.keyboard.press('Control+End');
+      await humanWait(200, 300);
       await page.keyboard.press('Enter');
       await humanWait(200, 400);
 
