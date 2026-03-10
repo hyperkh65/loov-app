@@ -8,14 +8,14 @@ export async function POST(req: NextRequest) {
 
   const {
     title, content, tags = [], categoryNo = 0, status = 'publish', notionPageId = '',
-    jobType = 'draft', sourceUrl, aiPrompt, aiProvider = 'gemini', thumbnailPrompt,
+    jobType = 'draft', sourceUrl, aiPrompt, aiProvider = 'gemini', thumbnailPrompt, scheduledAt,
   } = await req.json() as {
     title: string; content?: string; tags?: string[];
     categoryNo?: number; status?: string; notionPageId?: string;
     jobType?: 'draft' | 'rewrite' | 'scrape';
     sourceUrl?: string; aiPrompt?: string;
     aiProvider?: 'gemini' | 'claude' | 'gpt4o' | 'gpt4' | 'gpt35';
-    thumbnailPrompt?: string;
+    thumbnailPrompt?: string; scheduledAt?: string;
   };
 
   if (!title?.trim()) return NextResponse.json({ error: '제목이 필요합니다' }, { status: 400 });
@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
       ai_prompt: aiPrompt || null,
       ai_provider: aiProvider,
       thumbnail_prompt: thumbnailPrompt || null,
+      scheduled_at: scheduledAt || null,
     })
     .select('id')
     .single();

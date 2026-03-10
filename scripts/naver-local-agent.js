@@ -620,7 +620,7 @@ async function prepareContent(job) {
 
 // ── Playwright 발행 ───────────────────────────────────────────────────────────
 
-async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish, thumbnailLocalPath }) {
+async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish, thumbnailLocalPath, scheduledAt }) {
   const browser = await chromium.launch({
     headless: false,
     slowMo: rnd(30, 80), // 랜덤 slowMo
@@ -926,7 +926,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     if (published) console.log('  → 발행 버튼 클릭 (JS)');
 
     if (published) {
-      // 발행 설정 패널 열릴 때까지 대기 후 확인 클릭
+      // 발행 설정 패널 열릴 때까지 대기
       await page.waitForTimeout(1500);
 
       // 패널 내 버튼 덤프 (디버깅)
@@ -936,14 +936,80 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       );
       console.log('  [패널 버튼]:', panelBtns.map(b => `"${b.txt}"`).join(' | '));
 
+      // ── 예약 발행 처리 ──────────────────────────────────────────────────────
+      if (scheduledAt) {
+        const schedDate = new Date(scheduledAt);
+        console.log(`  → 예약 발행 설정: ${schedDate.toLocaleString('ko-KR')}`);
+
+        // "예약" 관련 버튼/라디오 클릭
+        const schedToggled = await page.evaluate(() => {
+          const els = Array.from(document.querySelectorAll('button, label, input[type="radio"], li'));
+          const el = els.find(e => {
+            const t = (e.textContent || e.getAttribute('aria-label') || e.getAttribute('value') || '').trim();
+            return /예약/.test(t);
+          });
+          if (el) { el.click(); return true; }
+          return false;
+        });
+
+        if (schedToggled) {
+          console.log('  → 예약 발행 옵션 클릭');
+          await humanWait(500, 1000);
+
+          // 날짜 입력 (YYYY.MM.DD 또는 YYYY-MM-DD 형식)
+          const yy = schedDate.getFullYear();
+          const mm = String(schedDate.getMonth() + 1).padStart(2, '0');
+          const dd = String(schedDate.getDate()).padStart(2, '0');
+          const hh = String(schedDate.getHours()).padStart(2, '0');
+          const min = String(schedDate.getMinutes()).padStart(2, '0');
+
+          // 날짜 input 탐색 및 입력
+          const dateSet = await page.evaluate((y, mo, d) => {
+            const inputs = Array.from(document.querySelectorAll('input'));
+            const dateInput = inputs.find(i =>
+              i.type === 'date' || i.placeholder?.includes('날짜') ||
+              i.className.includes('date') || i.name?.includes('date')
+            );
+            if (dateInput) {
+              dateInput.value = `${y}-${mo}-${d}`;
+              dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+              dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+            return false;
+          }, yy, mm, dd);
+          if (dateSet) console.log(`  → 날짜 입력: ${yy}-${mm}-${dd}`);
+
+          // 시간 input 탐색 및 입력
+          const timeSet = await page.evaluate((h, mi) => {
+            const inputs = Array.from(document.querySelectorAll('input'));
+            const timeInput = inputs.find(i =>
+              i.type === 'time' || i.placeholder?.includes('시간') ||
+              i.className.includes('time') || i.name?.includes('time')
+            );
+            if (timeInput) {
+              timeInput.value = `${h}:${mi}`;
+              timeInput.dispatchEvent(new Event('input', { bubbles: true }));
+              timeInput.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+            return false;
+          }, hh, min);
+          if (timeSet) console.log(`  → 시간 입력: ${hh}:${min}`);
+
+          await humanWait(400, 700);
+        } else {
+          console.warn('  ⚠️ 예약 발행 옵션을 찾지 못했습니다 — 즉시 발행으로 진행합니다');
+        }
+      }
+
       // 발행하기 확인 클릭 - 마지막 "발행" 버튼 (패널 내 확인 버튼)
       const confirmed = await page.evaluate(() => {
         const visibleBtns = Array.from(document.querySelectorAll('button'))
           .filter(b => b.offsetParent !== null);
-        // 마지막 "발행" 또는 "발행하기" 버튼 (툴바 발행 버튼이 아닌 패널 확인 버튼)
         const btn = [...visibleBtns].reverse().find(b => {
           const t = b.textContent.trim();
-          return t === '발행하기' || t === '발행';
+          return t === '발행하기' || t === '발행' || t === '예약 발행';
         });
         if (btn) { btn.click(); return btn.textContent.trim(); }
         return null;
@@ -1034,6 +1100,7 @@ async function processJob(job) {
       categoryNo: prepared.category_no || 0,
       isPublish: prepared.is_publish !== false,
       thumbnailLocalPath: prepared._thumbnailLocalPath || null,
+      scheduledAt: prepared.scheduled_at || null,
     });
   } catch (e) {
     const errMsg = e.message || String(e);

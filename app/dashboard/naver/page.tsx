@@ -93,7 +93,8 @@ export default function NaverPage() {
   const [tags, setTags] = useState('');
   const [hashtags, setHashtags] = useState('');
   const [categoryNo, setCategoryNo] = useState(0);
-  const [publishStatus, setPublishStatus] = useState<'publish' | 'draft'>('publish');
+  const [publishStatus, setPublishStatus] = useState<'publish' | 'schedule' | 'draft'>('publish');
+  const [scheduledAt, setScheduledAt] = useState(''); // datetime-local value
   const [preview, setPreview] = useState(false);
   const [targetKeyword, setTargetKeyword] = useState('');
 
@@ -322,6 +323,8 @@ export default function NaverPage() {
     if (jobType === 'draft' && !content.trim()) { setPublishError('내용이 필요합니다'); return; }
     if (jobType === 'rewrite' && !content.trim()) { setPublishError('rewrite 모드는 초안 내용이 필요합니다'); return; }
     if (jobType === 'scrape' && !sourceUrl.trim()) { setPublishError('스크랩 URL이 필요합니다'); return; }
+    if (publishStatus === 'schedule' && !scheduledAt) { setPublishError('예약 발행 시간을 선택해주세요'); return; }
+    if (publishStatus === 'schedule' && new Date(scheduledAt) <= new Date()) { setPublishError('예약 시간은 현재 시간 이후여야 합니다'); return; }
     if (!conn?.blog_id) { setPublishError('네이버 블로그 연결 설정이 필요합니다'); return; }
     if (!conn.nid_aut || !conn.nid_ses) { setPublishError('쿠키(NID_AUT, NID_SES)를 설정 탭에서 입력해주세요'); return; }
 
@@ -360,12 +363,14 @@ export default function NaverPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(), content: finalContent, tags: parsedTags,
-          categoryNo, status: publishStatus,
+          categoryNo,
+          status: publishStatus === 'schedule' ? 'publish' : publishStatus,
           notionPageId: selectedArticle?.id || '',
           jobType, sourceUrl: sourceUrl.trim() || undefined,
           aiPrompt: aiPrompt.trim() || undefined,
           aiProvider,
           thumbnailPrompt: finalThumbnailPrompt,
+          scheduledAt: publishStatus === 'schedule' ? new Date(scheduledAt).toISOString() : undefined,
         }),
       });
       const data = await res.json() as { jobId?: string; error?: string; message?: string };
@@ -741,13 +746,50 @@ export default function NaverPage() {
 
               {/* 발행 컨트롤 */}
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-sm text-gray-800">네이버 블로그 발행</h3>
-                  <select value={publishStatus} onChange={(e) => setPublishStatus(e.target.value as 'publish' | 'draft')} className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none">
-                    <option value="publish">즉시 발행</option>
-                    <option value="draft">임시저장</option>
-                  </select>
+                <h3 className="font-bold text-sm text-gray-800 mb-3">네이버 블로그 발행</h3>
+
+                {/* 발행 방식 선택 */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {([
+                    ['publish',  '🟢', '즉시 발행',  'emerald'],
+                    ['schedule', '🕐', '예약 발행',  'blue'],
+                    ['draft',    '📋', '임시저장',   'gray'],
+                  ] as [typeof publishStatus, string, string, string][]).map(([val, icon, label, color]) => (
+                    <button
+                      key={val}
+                      onClick={() => setPublishStatus(val)}
+                      className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 text-xs font-semibold transition-all ${
+                        publishStatus === val
+                          ? color === 'emerald' ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                          : color === 'blue'    ? 'border-blue-400 bg-blue-50 text-blue-700'
+                          :                       'border-gray-400 bg-gray-100 text-gray-700'
+                          : 'border-gray-100 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {icon} {label}
+                    </button>
+                  ))}
                 </div>
+
+                {/* 예약 시간 피커 */}
+                {publishStatus === 'schedule' && (
+                  <div className="mb-3 p-3 bg-blue-50 rounded-xl border border-blue-200">
+                    <label className="text-xs font-semibold text-blue-700 block mb-1.5">📅 발행 예약 시간</label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(e) => setScheduledAt(e.target.value)}
+                      min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                      className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white"
+                    />
+                    {scheduledAt && (
+                      <p className="text-[10px] text-blue-600 mt-1">
+                        {new Date(scheduledAt).toLocaleString('ko-KR', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })} 에 발행
+                      </p>
+                    )}
+                  </div>
+                )}
+
 
                 {!isConnected && (
                   <div className="mb-4 p-3 bg-amber-50 rounded-xl border border-amber-200">
@@ -796,8 +838,12 @@ export default function NaverPage() {
                     <><span className="animate-spin">⏳</span> 등록 중...</>
                   ) : jobStatus ? (
                     <><span className="animate-spin">⏳</span> {jobStatus}</>
+                  ) : publishStatus === 'schedule' ? (
+                    <>🕐 예약 발행 등록</>
+                  ) : publishStatus === 'draft' ? (
+                    <>📋 임시저장</>
                   ) : (
-                    <>🟢 네이버 블로그 발행</>
+                    <>🟢 즉시 발행</>
                   )}
                 </button>
                 <p className="text-[10px] text-gray-400 mt-2 text-center">발행 전 SEO 리라이팅을 권장합니다 (네이버 검색 최적화)</p>
