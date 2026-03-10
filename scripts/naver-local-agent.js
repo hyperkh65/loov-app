@@ -827,6 +827,35 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     }
     if (!bodyFocused) console.warn('  ⚠️ 본문 영역 포커스 실패');
 
+    // ── 본문 가운데 정렬 ──────────────────────────────────────────────────────
+    await humanWait(300, 500);
+    const alignSet = await page.evaluate(() => {
+      const candidates = Array.from(document.querySelectorAll('button, [role="button"]'));
+      const btn = candidates.find(el => {
+        const label = (
+          el.getAttribute('aria-label') ||
+          el.getAttribute('title') ||
+          el.getAttribute('data-name') ||
+          el.textContent || ''
+        ).toLowerCase();
+        return label.includes('가운데') || label.includes('center') || label.includes('중앙');
+      });
+      if (btn) { btn.click(); return btn.getAttribute('aria-label') || btn.getAttribute('title') || 'center'; }
+      return null;
+    });
+    if (alignSet) console.log(`  → 가운데 정렬 설정: "${alignSet}"`);
+    else console.warn('  ⚠️ 가운데 정렬 버튼 못 찾음 (SE4 구조 변경 가능성)');
+    await humanWait(200, 400);
+
+    // 전체 선택 후 가운데 정렬 단축키도 시도 (Ctrl+E)
+    if (!alignSet) {
+      await page.keyboard.press('Control+a');
+      await humanWait(100, 200);
+      await page.keyboard.press('Control+e');
+      await humanWait(200, 300);
+      console.log('  → 가운데 정렬 단축키(Ctrl+E) 시도');
+    }
+
     // 세그먼트 순회 입력
     let imgIndex = 0;
     let lastType = null;
@@ -840,6 +869,15 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
           }
           await page.keyboard.press('Enter');
           await humanWait(200, 400);
+          // 재포커스 후 가운데 정렬 재적용
+          await page.evaluate(() => {
+            const btn = Array.from(document.querySelectorAll('button, [role="button"]')).find(el => {
+              const label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('data-name') || '').toLowerCase();
+              return label.includes('가운데') || label.includes('center');
+            });
+            if (btn) btn.click();
+          });
+          await humanWait(100, 200);
         }
         await humanType(page, seg.text);
         bodyFilled = true;
