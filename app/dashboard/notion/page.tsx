@@ -229,7 +229,6 @@ export default function NotionPage() {
             <input
               ref={fileInputRef}
               type="file" multiple
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv"
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
             />
