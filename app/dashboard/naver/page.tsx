@@ -348,24 +348,29 @@ export default function NaverPage() {
       const parsedTags = tags.split(',').map((t) => t.trim()).filter(Boolean);
 
       // 본문 이미지를 단락 사이에 균등 배분
+      // <p> 태그 있으면 <p> 기준, 없으면 줄바꿈 기준
       let finalContent = content;
       if (bodyImages.length > 0) {
-        const paras: string[] = [];
-        const re = /(<p[^>]*>[\s\S]*?<\/p>)/gi;
-        let m; while ((m = re.exec(content)) !== null) paras.push(m[1]);
-        if (paras.length > 0) {
-          const interval = paras.length / (bodyImages.length + 1);
+        const M = bodyImages.length;
+        const pTags = content.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+        const units: string[] = pTags.length >= 2
+          ? pTags
+          : content.split('\n').filter(l => l.trim());
+
+        if (units.length >= 2) {
+          const N = units.length;
           const result: string[] = [];
-          paras.forEach((p, i) => {
-            result.push(p);
-            bodyImages.forEach((url, j) => {
-              if (i + 1 === Math.round(interval * (j + 1)))
-                result.push(`<img src="${url}" />`);
-            });
+          units.forEach((unit, i) => {
+            result.push(unit);
+            for (let j = 0; j < M; j++) {
+              if (i + 1 === Math.round(N * (j + 1) / (M + 1)))
+                result.push(`<img src="${bodyImages[j]}" />`);
+            }
           });
           finalContent = result.join('\n');
         } else {
-          finalContent = content + bodyImages.map(url => `\n<img src="${url}" />`).join('');
+          // 단락 구분 없음 → 이미지를 본문 앞에 배치
+          finalContent = bodyImages.map(url => `<img src="${url}" />`).join('\n') + '\n' + content;
         }
       }
 
