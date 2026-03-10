@@ -64,11 +64,10 @@ export async function POST(req: NextRequest) {
     if (key in body) {
       const val = body[key]?.trim();
       if (val) {
+        // 값이 있으면 저장/교체
         updated[key] = val;
-      } else if (val === '') {
-        // 빈 값이면 삭제
-        delete updated[key];
       }
+      // 빈 값이면 기존 값 유지 (삭제 안 함)
     }
   }
 

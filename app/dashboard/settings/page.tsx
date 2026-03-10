@@ -173,11 +173,13 @@ export default function SettingsPage() {
     if (r.ok) {
       setApiKeysMsg('✅ 저장 완료');
       setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
-      // hasKey 상태 업데이트
       const updated: Record<string, boolean> = { ...apiKeyStatus };
       Object.entries(apiKeys).forEach(([k, v]) => { if (v.trim()) updated[k] = true; });
       setApiKeyStatus(updated);
-    } else setApiKeysMsg('❌ 저장 실패');
+    } else {
+      const errData = await r.json().catch(() => ({})) as { error?: string };
+      setApiKeysMsg(`❌ 저장 실패: ${errData.error || r.status}`);
+    }
     setApiKeysSaving(false);
   };
 
