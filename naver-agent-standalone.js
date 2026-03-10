@@ -16,8 +16,8 @@
 
 // ── 설정 (여기만 수정하면 됨) ─────────────────────────────────────────
 const CONFIG = {
-  SUPABASE_URL: 'https://zzgwizsrgjziwexuxquv.supabase.co',
-  SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6Z3dpenNyZ2p6aXdleHV4cXV2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTU1MTEzNSwiZXhwIjoyMDg3MTI3MTM1fQ.NhxMJRIvmhELs88yKekBWTuVsykqKDTOETCErnojjFw',
+  SUPABASE_URL: 'YOUR_SUPABASE_URL',       // 예: https://xxxx.supabase.co
+  SUPABASE_KEY: 'YOUR_SERVICE_ROLE_KEY',   // Supabase > Settings > API > service_role key
 };
 // ─────────────────────────────────────────────────────────────────────
 
