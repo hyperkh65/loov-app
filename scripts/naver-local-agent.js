@@ -560,6 +560,13 @@ async function prepareContent(job) {
   const jobType = job.job_type || 'draft';
 
   if (jobType === 'draft') {
+    // 대표이미지 URL이 있으면 다운로드해서 썸네일로 사용
+    if (job.thumbnail_prompt?.startsWith('__url__:')) {
+      const imgUrl = job.thumbnail_prompt.replace('__url__:', '');
+      console.log(`  → [draft] 대표이미지 다운로드: ${imgUrl}`);
+      const thumbPath = await downloadImage(imgUrl, `thumb-${job.id}`);
+      return { ...job, _thumbnailLocalPath: thumbPath };
+    }
     return job;
   }
 

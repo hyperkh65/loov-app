@@ -103,8 +103,11 @@ export default function NaverPage() {
   const [aiProvider, setAiProvider] = useState<'gemini' | 'claude' | 'gpt4o' | 'gpt4' | 'gpt35'>('gemini');
   const [thumbnailPrompt, setThumbnailPrompt] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
-  const [imageUploading, setImageUploading] = useState(false);
-  const [showImageSearch, setShowImageSearch] = useState(false);
+  // 이미지 관리
+  const [representativeImage, setRepresentativeImage] = useState(''); // 대표이미지 URL
+  const [bodyImages, setBodyImages] = useState<string[]>([]); // 본문 이미지 URL 목록
+  const [imgSearchTarget, setImgSearchTarget] = useState<'representative' | 'body' | null>(null);
+  const [imageUploading, setImageUploading] = useState<'representative' | 'body' | null>(null);
   const [imgQuery, setImgQuery] = useState('');
   const [imgResults, setImgResults] = useState<{ id: number; preview: string; webformat: string; large: string; tags: string; user: string }[]>([]);
   const [imgLoading, setImgLoading] = useState(false);
@@ -260,24 +263,25 @@ export default function NaverPage() {
     finally { setAutoGenerating(false); }
   };
 
-  // ── 이미지 첨부 (draft 모드) ─────────────────────────────────────────────
+  // ── 이미지 관리 ──────────────────────────────────────────────────────────
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'representative' | 'body') => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    setImageUploading(true);
+    setImageUploading(target);
     try {
       const fd = new FormData();
       fd.append('file', file);
       const res = await fetch('/api/naver/upload-image', { method: 'POST', body: fd });
       const data = await res.json() as { url?: string; error?: string };
       if (!res.ok) throw new Error(data.error || '업로드 실패');
-      setContent((prev) => prev + `\n<img src="${data.url}" alt="${file.name}" />\n`);
+      if (target === 'representative') setRepresentativeImage(data.url!);
+      else setBodyImages(prev => [...prev, data.url!]);
     } catch (err) {
       setPublishError('이미지 업로드 실패: ' + String(err));
     } finally {
-      setImageUploading(false);
+      setImageUploading(null);
     }
   };
 
@@ -301,14 +305,14 @@ export default function NaverPage() {
     }
   };
 
-  const insertImageToContent = (url: string) => {
-    setContent(prev => prev + `\n<img src="${url}" alt="${imgQuery}" />\n`);
-    setShowImageSearch(false);
-  };
-
-  const setAsThumbnail = (url: string) => {
-    setThumbnailPrompt(url);
-    setShowImageSearch(false);
+  const handleSelectImage = (url: string) => {
+    if (imgSearchTarget === 'representative') {
+      setRepresentativeImage(url);
+      setImgSearchTarget(null);
+    } else if (imgSearchTarget === 'body') {
+      setBodyImages(prev => [...prev, url]);
+      // 패널 열어두기 (여러 장 선택 가능)
+    }
   };
 
   // ── 발행 (로컬 에이전트 방식) ────────────────────────────────────────────
@@ -324,16 +328,44 @@ export default function NaverPage() {
     setPublishing(true); setPublishResult(null); setPublishError(''); setJobId(null); setJobStatus('대기열 등록 중...');
     try {
       const parsedTags = tags.split(',').map((t) => t.trim()).filter(Boolean);
+
+      // 본문 이미지를 단락 사이에 균등 배분
+      let finalContent = content;
+      if (bodyImages.length > 0) {
+        const paras: string[] = [];
+        const re = /(<p[^>]*>[\s\S]*?<\/p>)/gi;
+        let m; while ((m = re.exec(content)) !== null) paras.push(m[1]);
+        if (paras.length > 0) {
+          const interval = paras.length / (bodyImages.length + 1);
+          const result: string[] = [];
+          paras.forEach((p, i) => {
+            result.push(p);
+            bodyImages.forEach((url, j) => {
+              if (i + 1 === Math.round(interval * (j + 1)))
+                result.push(`<img src="${url}" />`);
+            });
+          });
+          finalContent = result.join('\n');
+        } else {
+          finalContent = content + bodyImages.map(url => `\n<img src="${url}" />`).join('');
+        }
+      }
+
+      // 대표이미지 → thumbnail_prompt에 __url__: 접두어로 전달
+      const finalThumbnailPrompt = representativeImage
+        ? `__url__:${representativeImage}`
+        : thumbnailPrompt.trim() || undefined;
+
       const res = await fetch('/api/naver/trigger', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: title.trim(), content, tags: parsedTags,
+          title: title.trim(), content: finalContent, tags: parsedTags,
           categoryNo, status: publishStatus,
           notionPageId: selectedArticle?.id || '',
           jobType, sourceUrl: sourceUrl.trim() || undefined,
           aiPrompt: aiPrompt.trim() || undefined,
           aiProvider,
-          thumbnailPrompt: thumbnailPrompt.trim() || undefined,
+          thumbnailPrompt: finalThumbnailPrompt,
         }),
       });
       const data = await res.json() as { jobId?: string; error?: string; message?: string };
@@ -547,6 +579,106 @@ export default function NaverPage() {
                 </div>
               </div>
 
+              {/* 이미지 관리 */}
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+                <h3 className="text-sm font-bold text-gray-800">🖼️ 이미지 관리</h3>
+
+                {/* 이미지 검색 패널 (공용) */}
+                {imgSearchTarget && (
+                  <div className="bg-indigo-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-indigo-700">
+                        {imgSearchTarget === 'representative' ? '대표이미지 검색' : '본문 이미지 검색'}
+                      </span>
+                      <button onClick={() => { setImgSearchTarget(null); setImgResults([]); }} className="text-xs text-indigo-400 hover:text-indigo-600">✕ 닫기</button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={imgQuery}
+                        onChange={(e) => setImgQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleImageSearch(1)}
+                        placeholder="검색어 (예: 강아지, 고양이, 펫샵)"
+                        className="flex-1 border border-indigo-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-400 bg-white"
+                      />
+                      <button onClick={() => handleImageSearch(1)} disabled={imgLoading || !imgQuery.trim()} className="bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
+                        {imgLoading ? '⏳' : '검색'}
+                      </button>
+                    </div>
+                    {imgError && <p className="text-[10px] text-red-500">{imgError}</p>}
+                    {imgResults.length > 0 && (
+                      <>
+                        <p className="text-[10px] text-gray-400">총 {imgTotal.toLocaleString()}개 · Pixabay · 클릭하면 선택됩니다</p>
+                        <div className="grid grid-cols-5 gap-1.5 max-h-52 overflow-y-auto">
+                          {imgResults.map((img) => (
+                            <button key={img.id} onClick={() => handleSelectImage(img.webformat)} className="group relative rounded overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-all">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={img.preview} alt={img.tags} className="w-full h-16 object-cover" />
+                              <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                          ))}
+                        </div>
+                        {imgResults.length < imgTotal && (
+                          <button onClick={() => handleImageSearch(imgPage + 1)} disabled={imgLoading} className="w-full text-[10px] text-indigo-500 hover:text-indigo-700 disabled:opacity-40">
+                            {imgLoading ? '로딩 중...' : '더 보기'}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 대표이미지 */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 mb-2">대표이미지 <span className="text-gray-400 font-normal">(게시글 맨 앞)</span></p>
+                    {representativeImage ? (
+                      <div className="relative rounded-xl overflow-hidden border border-gray-200">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={representativeImage} alt="대표이미지" className="w-full h-28 object-cover" />
+                        <button onClick={() => setRepresentativeImage('')} className="absolute top-1 right-1 bg-black/50 text-white rounded-full w-5 h-5 text-[10px] flex items-center justify-center hover:bg-black/70">✕</button>
+                      </div>
+                    ) : (
+                      <div className="border-2 border-dashed border-gray-200 rounded-xl h-28 flex flex-col items-center justify-center gap-2">
+                        <button onClick={() => { setImgSearchTarget('representative'); setImgResults([]); }} className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-semibold">🔍 이미지 검색</button>
+                        <label className={`text-xs text-gray-500 hover:text-gray-700 cursor-pointer ${imageUploading === 'representative' ? 'opacity-40' : ''}`}>
+                          {imageUploading === 'representative' ? '⏳ 업로드 중...' : '📁 파일 업로드'}
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'representative')} disabled={imageUploading !== null} />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 본문 이미지 */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 mb-2">본문 이미지 <span className="text-gray-400 font-normal">(단락 사이 자동 배분)</span></p>
+                    <div className="border-2 border-dashed border-gray-200 rounded-xl p-2 min-h-28">
+                      {bodyImages.length > 0 && (
+                        <div className="grid grid-cols-3 gap-1 mb-2">
+                          {bodyImages.map((url, i) => (
+                            <div key={i} className="relative rounded overflow-hidden">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt={`본문이미지${i+1}`} className="w-full h-12 object-cover" />
+                              <button onClick={() => setBodyImages(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-0 right-0 bg-black/50 text-white w-4 h-4 text-[9px] flex items-center justify-center hover:bg-black/70">✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-1.5 justify-center">
+                        <button onClick={() => { setImgSearchTarget('body'); setImgResults([]); }} className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded-lg font-semibold">🔍 검색</button>
+                        <label className={`text-[10px] text-gray-500 hover:text-gray-700 cursor-pointer px-2 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 ${imageUploading === 'body' ? 'opacity-40' : ''}`}>
+                          {imageUploading === 'body' ? '⏳' : '📁 업로드'}
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'body')} disabled={imageUploading !== null} />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {(jobType === 'rewrite' || jobType === 'scrape') && !representativeImage && (
+                  <p className="text-[10px] text-gray-400">💡 대표이미지를 선택하지 않으면 AI가 자동 생성합니다</p>
+                )}
+              </div>
+
               {/* SNS 후킹 (자동화 후) */}
               {snsHook && (
                 <div className="bg-green-50 rounded-2xl border border-green-100 p-4">
@@ -568,18 +700,8 @@ export default function NaverPage() {
                   </span>
                   <div className="flex items-center gap-2 flex-wrap">
                     {contentLoading && <span className="text-xs text-gray-400 animate-pulse">노션에서 불러오는 중...</span>}
-                    <button
-                      onClick={() => setShowImageSearch(v => !v)}
-                      className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap ${showImageSearch ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                    >
-                      🔍 이미지 검색
-                    </button>
                     {jobType === 'draft' && (
                       <>
-                        <label className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors cursor-pointer whitespace-nowrap ${imageUploading ? 'bg-gray-100 text-gray-400' : 'bg-sky-500 hover:bg-sky-400 text-white'}`}>
-                          {imageUploading ? '⏳ 업로드 중...' : '🖼️ 이미지 첨부'}
-                          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
-                        </label>
                         <input value={targetKeyword} onChange={(e) => setTargetKeyword(e.target.value)} placeholder="대상 키워드 (선택)" className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 w-32 focus:outline-none focus:border-green-400" />
                         <button onClick={handleRewrite} disabled={rewriting||!content.trim()} className="text-xs bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap">
                           {rewriting ? '⏳...' : '🤖 SEO 리라이팅'}
@@ -596,69 +718,6 @@ export default function NaverPage() {
                 </div>
                 {rewriteError && <div className="px-5 py-2 bg-red-50 text-xs text-red-600 border-b border-red-100">⚠️ {rewriteError}</div>}
 
-                {/* 이미지 검색 패널 */}
-                {showImageSearch && (
-                  <div className="border-b border-gray-100 bg-gray-50 p-4 space-y-3">
-                    <div className="flex gap-2">
-                      <input
-                        value={imgQuery}
-                        onChange={(e) => setImgQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleImageSearch(1)}
-                        placeholder="검색어 입력 (예: 강아지, 고양이, 펫샵)"
-                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 bg-white"
-                      />
-                      <button
-                        onClick={() => handleImageSearch(1)}
-                        disabled={imgLoading || !imgQuery.trim()}
-                        className="bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap"
-                      >
-                        {imgLoading ? '⏳' : '검색'}
-                      </button>
-                    </div>
-
-                    {imgError && <p className="text-xs text-red-500">{imgError}</p>}
-
-                    {imgResults.length > 0 && (
-                      <>
-                        <p className="text-[10px] text-gray-400">총 {imgTotal.toLocaleString()}개 · Powered by Pixabay</p>
-                        <div className="grid grid-cols-4 gap-2 max-h-72 overflow-y-auto">
-                          {imgResults.map((img) => (
-                            <div key={img.id} className="group relative rounded-lg overflow-hidden border border-gray-200 bg-white">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={img.preview} alt={img.tags} className="w-full h-20 object-cover" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-1">
-                                <button
-                                  onClick={() => insertImageToContent(img.webformat)}
-                                  className="w-full text-[10px] bg-white text-gray-800 rounded px-1 py-1 font-semibold hover:bg-gray-100"
-                                >
-                                  본문 삽입
-                                </button>
-                                {(jobType === 'rewrite' || jobType === 'scrape') && (
-                                  <button
-                                    onClick={() => setAsThumbnail(img.large)}
-                                    className="w-full text-[10px] bg-indigo-500 text-white rounded px-1 py-1 font-semibold hover:bg-indigo-400"
-                                  >
-                                    썸네일 사용
-                                  </button>
-                                )}
-                              </div>
-                              <p className="text-[9px] text-gray-400 px-1 py-0.5 truncate">{img.user}</p>
-                            </div>
-                          ))}
-                        </div>
-                        {imgResults.length < imgTotal && (
-                          <button
-                            onClick={() => handleImageSearch(imgPage + 1)}
-                            disabled={imgLoading}
-                            className="w-full text-xs text-indigo-500 hover:text-indigo-700 disabled:opacity-40 py-1"
-                          >
-                            {imgLoading ? '로딩 중...' : '더 보기'}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
                 {autoGenerating && autoStep && <div className="px-5 py-2 bg-violet-50 text-xs text-violet-700 border-b border-violet-100 animate-pulse font-medium">{autoStep}</div>}
                 {!autoGenerating && autoStep && <div className="px-5 py-2 bg-emerald-50 text-xs text-emerald-700 border-b border-emerald-100 font-medium">{autoStep}</div>}
                 {preview ? (
