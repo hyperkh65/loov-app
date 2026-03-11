@@ -72,8 +72,11 @@ function EditText({ value, onChange, tag = 'div', className = '', style = {} }: 
     contentEditable: true as const,
     suppressContentEditableWarning: true,
     className: sharedClassName,
-    style,
-    onBlur: (e: React.FocusEvent<HTMLElement>) => onChange(e.currentTarget.textContent ?? ''),
+    style: { wordBreak: 'keep-all' as const, overflowWrap: 'break-word' as const, minWidth: 0, ...style },
+    onBlur: (e: React.FocusEvent<HTMLElement>) => {
+      const text = e.currentTarget.textContent ?? '';
+      onChange(text || value);
+    },
     dangerouslySetInnerHTML: { __html: value },
   };
   switch (tag) {
@@ -194,6 +197,172 @@ function HeroGallery({ images, onAddImage, onRemoveImage, accent }: {
   );
 }
 
+// ── Icon system ────────────────────────────────────────────────
+const LUCIDE_ICONS: { name: string; path: string }[] = [
+  { name: '별', path: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
+  { name: '번개', path: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z' },
+  { name: '방패', path: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' },
+  { name: '하트', path: 'M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z' },
+  { name: '체크', path: 'M20 6L9 17l-5-5' },
+  { name: '설정', path: 'M12 8a4 4 0 100 8 4 4 0 000-8zM3 12h1m8-9v1m8 8h1m-9 8v1M5.6 5.6l.7.7m12.1-.7l-.7.7m0 11.4l.7.7m-12.8 0l-.7.7' },
+  { name: '박스', path: 'M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z' },
+  { name: '엄지', path: 'M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3' },
+  { name: '지구', path: 'M2 12a10 10 0 1020 0A10 10 0 002 12z' },
+  { name: '화살표', path: 'M5 12h14M12 5l7 7-7 7' },
+  { name: '트로피', path: 'M6 9H4.5a2.5 2.5 0 010-5H6m12 5h1.5a2.5 2.5 0 000-5H18M9 21h6m-3-3v3M7 4h10l-1 9H8L7 4z' },
+  { name: '잠금', path: 'M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2zM7 11V7a5 5 0 0110 0v4' },
+  { name: '클라우드', path: 'M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z' },
+  { name: '스마트폰', path: 'M17 2H7a2 2 0 00-2 2v16a2 2 0 002 2h10a2 2 0 002-2V4a2 2 0 00-2-2zM12 18h.01' },
+  { name: '와이파이', path: 'M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01' },
+  { name: '배터리', path: 'M23 7h-1a2 2 0 00-2 2v6a2 2 0 002 2h1m-4-10H4a2 2 0 00-2 2v6a2 2 0 002 2h14M7 12h4' },
+  { name: '온도계', path: 'M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z' },
+  { name: '스피커', path: 'M11 5L6 9H2v6h4l5 4V5zm7.07-2.07A10 10 0 0121 12a10 10 0 01-2.93 7.07m-2.83-2.83A6 6 0 0017 12a6 6 0 00-1.76-4.24' },
+  { name: '카메라', path: 'M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11zM12 17a4 4 0 100-8 4 4 0 000 8z' },
+  { name: '필터', path: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z' },
+  { name: '연결', path: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71m-3.06 7.47l-1.72 1.71a5 5 0 01-7.07-7.07l3-3A5 5 0 019.46 7' },
+  { name: '재활용', path: 'M7 19H4.5A2.5 2.5 0 012 16.5V13M7 5H4.5A2.5 2.5 0 002 7.5V11m10-9l-4 4 4 4m4-8l4 4-4 4M2 11v2m20-8v2' },
+  { name: '그래프', path: 'M18 20V10m-6 10V4M6 20v-6' },
+  { name: '다운로드', path: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3' },
+  { name: '홈', path: 'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9zm6 11V12h6v8' },
+  { name: '로켓', path: 'M6.5 14.5s-1.5 1-1.5 3.5c2.5 0 3.5-1.5 3.5-1.5m8-9s1.5-1 1.5-3.5c-2.5 0-3.5 1.5-3.5 1.5M3 21l4-4m4.5-10.5L16 11l-4.5 10.5L8 17l-5-1.5L7 11z' },
+  { name: '다이아몬드', path: 'M2.7 10.3a2.4 2.4 0 000 3.4l7.6 7.6a2.4 2.4 0 003.4 0l7.6-7.6a2.4 2.4 0 000-3.4L13.7 2.7a2.4 2.4 0 00-3.4 0L2.7 10.3z' },
+  { name: '전구', path: 'M9 18h6m-5 4h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 01-1 1H9a1 1 0 01-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z' },
+  { name: '태양', path: 'M12 17a5 5 0 100-10 5 5 0 000 10zm0-15v2m0 16v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42' },
+  { name: '눈', path: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zm11 3a3 3 0 100-6 3 3 0 000 6z' },
+];
+
+// Renders icon value: emoji string / SVG string / image URL
+function IconRenderer({ value, size = 24, color = 'currentColor' }: { value: string; size?: number; color?: string }) {
+  if (!value) return null;
+  if (value.startsWith('<svg') || value.startsWith('<SVG')) {
+    const colored = value.replace(/stroke="[^"]*"/g, `stroke="${color}"`).replace(/fill="[^"]*"(?![^>]*stroke)/g, `fill="none"`);
+    return <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size }} dangerouslySetInnerHTML={{ __html: colored }} />;
+  }
+  if (value.startsWith('data:') || value.startsWith('http') || value.startsWith('/')) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={value} style={{ width: size, height: size, objectFit: 'cover', borderRadius: 8 }} alt="" />;
+  }
+  return <span style={{ fontSize: size * 0.75, lineHeight: 1 }}>{value}</span>;
+}
+
+// Icon picker: emoji / SVG icons / image
+function IconPickerButton({ value, onChange, accent, bg, size = 'md' }: {
+  value: string; onChange: (v: string) => void;
+  accent: string; bg: string; size?: 'sm' | 'md';
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'emoji' | 'icon' | 'image'>('emoji');
+  const [emojiInput, setEmojiInput] = useState('');
+  const [imgUrl, setImgUrl] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const isDarkFn = (hex: string) => { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000<128; };
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = e => { onChange(e.target?.result as string); setOpen(false); };
+    reader.readAsDataURL(file);
+  };
+
+  const btnSize = size === 'sm' ? 'w-10 h-10' : 'w-14 h-14';
+  const iconSize = size === 'sm' ? 18 : 24;
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button onClick={() => setOpen(!open)}
+        className={`${btnSize} rounded-2xl flex items-center justify-center relative border-2 border-dashed transition-all hover:border-white/40`}
+        style={{ background: `${accent}18`, borderColor: open ? accent : `${accent}30` }}
+        title="아이콘 변경 (클릭)">
+        <IconRenderer value={value} size={iconSize} color={isDarkFn(bg) ? '#fff' : '#333'} />
+        <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-gray-700 rounded-full text-[8px] flex items-center justify-center text-white shadow">✏</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-16 left-0 w-72 bg-[#1a1a1a] border border-[#3a3a3a] rounded-2xl shadow-2xl overflow-hidden">
+          <div className="flex border-b border-[#333]">
+            {[{id:'emoji',l:'이모지'},{id:'icon',l:'SVG 아이콘'},{id:'image',l:'이미지'}].map(t => (
+              <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
+                className={`flex-1 text-[11px] py-2.5 font-medium transition-colors ${tab === t.id ? 'text-white border-b-2 border-indigo-500' : 'text-gray-500 hover:text-gray-300'}`}>
+                {t.l}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'emoji' && (
+            <div className="p-3">
+              <input value={emojiInput} onChange={e => setEmojiInput(e.target.value)}
+                placeholder="이모지 입력..."
+                className="w-full bg-black/40 border border-[#444] rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 mb-2" />
+              <div className="grid grid-cols-8 gap-0.5 mb-2">
+                {['✨','⚡','🔧','🎯','💡','🚀','🔬','🎨','🛡️','📊','🌿','♻️','🏆','❤️','🔐','📱','🌐','💎','⭐','🎵','🔊','📷','🌡️','🔋','📡','🖥️','🎮','🏠','🔑','💫','🌟','🎁','🔖','📌','🔗','⚙️','🔩','🪄','🦾','🧠','⚗️','🧬','🏅','🎖️','🥇'].map(e => (
+                  <button key={e} onClick={() => { onChange(e); setOpen(false); }}
+                    className="text-lg p-1 hover:bg-white/10 rounded-lg transition-all aspect-square flex items-center justify-center">
+                    {e}
+                  </button>
+                ))}
+              </div>
+              {emojiInput && (
+                <button onClick={() => { onChange(emojiInput); setOpen(false); }}
+                  className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs text-white">
+                  적용: {emojiInput}
+                </button>
+              )}
+            </div>
+          )}
+
+          {tab === 'icon' && (
+            <div className="p-3 max-h-64 overflow-y-auto">
+              <div className="text-[10px] text-gray-500 mb-2">클릭해서 SVG 아이콘 적용</div>
+              <div className="grid grid-cols-7 gap-1">
+                {LUCIDE_ICONS.map(icon => {
+                  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${icon.path}"/></svg>`;
+                  return (
+                    <button key={icon.name} onClick={() => { onChange(svgStr); setOpen(false); }}
+                      title={icon.name}
+                      className="p-2 hover:bg-white/10 rounded-xl transition-all flex items-center justify-center text-gray-300 hover:text-white">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d={icon.path} />
+                      </svg>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {tab === 'image' && (
+            <div className="p-3 space-y-2">
+              <button onClick={() => fileRef.current?.click()}
+                className="w-full py-3 border-2 border-dashed border-[#444] hover:border-indigo-500 rounded-xl text-sm text-gray-400 hover:text-white transition-all">
+                📁 이미지 파일 업로드
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
+              <div className="flex gap-2">
+                <input value={imgUrl} onChange={e => setImgUrl(e.target.value)}
+                  placeholder="이미지 URL 붙여넣기..."
+                  className="flex-1 bg-black/40 border border-[#444] rounded-lg px-2 py-1.5 text-xs text-white placeholder-gray-600" />
+                <button onClick={() => { if(imgUrl.trim()) { onChange(imgUrl.trim()); setOpen(false); } }}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs text-white whitespace-nowrap">
+                  적용
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Commercial-grade EditableSection ──────────────────────────
 const FONT = "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', -apple-system, sans-serif";
 
@@ -202,9 +371,11 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
   sectionImage?: string; onUpdate: (data: Record<string, unknown>) => void;
   onImageChange: (url: string, name: string) => void;
 }) {
-  const accent = tpl.accent;
-  const bg = tpl.bg;
-  const primary = tpl.primary;
+  // Section-level color overrides
+  const oc = (data._sectionColors ?? {}) as Record<string, string>;
+  const accent = oc.accent ?? tpl.accent;
+  const bg = oc.bg ?? tpl.bg;
+  const primary = oc.primary ?? tpl.primary;
   const isDark = (hex: string) => { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000<128; };
   const bgIsDark = isDark(bg);
 
@@ -241,41 +412,41 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
         <div style={containerStyle}>
           {/* Top padding band */}
           <div className="px-12 pt-16 pb-0">
-            <div className="grid grid-cols-[1fr_420px] gap-16 items-start">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: 48, alignItems: 'start' }}>
               {/* Left: copy */}
-              <div className="pt-4">
+              <div className="pt-4" style={{ minWidth: 0 }}>
                 <EditText tag="div" value={d.tagline ?? ''} onChange={v => u('tagline', v)}
                   className="text-xs font-bold tracking-[0.25em] uppercase mb-6"
                   style={{ color: accent }} />
                 <EditText tag="h1" value={d.headline ?? ''}  onChange={v => u('headline', v)}
                   className="font-black leading-[1.05] tracking-tight mb-6"
-                  style={{ fontSize: 'clamp(40px,5vw,72px)', letterSpacing: '-0.03em' }} />
+                  style={{ fontSize: 'clamp(40px,5vw,72px)', letterSpacing: '-0.03em', wordBreak: 'keep-all', overflowWrap: 'break-word' }} />
                 <EditText tag="p" value={d.subheadline ?? ''} onChange={v => u('subheadline', v)}
                   className="text-lg leading-relaxed mb-10"
                   style={{ opacity: 0.65, maxWidth: 480, lineHeight: 1.7 }} />
                 {/* Key points */}
-                <div className="flex flex-wrap gap-2 mb-10">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 40 }}>
                   {(d.keyPoints ?? []).map((p, i) => (
                     <EditText key={i} tag="span" value={p} onChange={v => {
                       const pts = [...(d.keyPoints ?? [])]; pts[i] = v; u('keyPoints', pts);
                     }} className="text-sm px-5 py-2 rounded-full font-semibold"
-                      style={{ background: accent, color: isDark(accent) ? '#fff' : '#000', letterSpacing: '-0.01em' }} />
+                      style={{ background: accent, color: isDark(accent) ? '#fff' : '#000', letterSpacing: '-0.01em', whiteSpace: 'nowrap', flexShrink: 0 }} />
                   ))}
                   <button onClick={() => u('keyPoints', [...(d.keyPoints ?? []), '새 포인트'])}
                     className="text-sm px-4 py-2 rounded-full border-2 border-dashed transition-all hover:opacity-70"
                     style={{ borderColor: `${accent}50`, color: accent, opacity: 0.4 }}>+</button>
                 </div>
                 {/* CTA row */}
-                <div className="flex items-center gap-4">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <div className="px-8 py-4 rounded-2xl font-bold text-base cursor-default select-none"
-                    style={{ background: accent, color: isDark(accent) ? '#fff' : '#000', letterSpacing: '-0.01em' }}>
+                    style={{ background: accent, color: isDark(accent) ? '#fff' : '#000', letterSpacing: '-0.01em', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     지금 구매하기 →
                   </div>
                   <div className="text-sm font-medium opacity-40 cursor-default">자세히 보기 ↓</div>
                 </div>
               </div>
               {/* Right: image gallery */}
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <HeroGallery images={images} onAddImage={addImage} onRemoveImage={removeImage} accent={accent} />
               </div>
             </div>
@@ -295,8 +466,11 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
     }
 
     case 'features': {
-      const d = data as { title?: string; items?: { icon: string; title: string; desc: string }[] };
+      const d = data as { title?: string; items?: { icon: string; title: string; desc: string; image?: string }[] };
       const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      const addFeatureImage = (i: number, url: string) => {
+        const items=[...(d.items??[])]; items[i]={...items[i],image:url}; u('items',items);
+      };
       return (
         <div className="px-12 py-16" style={containerStyle}>
           <SectionLabel text="핵심 기능" />
@@ -308,18 +482,38 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
               <div key={i} className="relative group">
                 <button onClick={() => { const items=[...(d.items??[])]; items.splice(i,1); u('items',items); }}
                   className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 z-10 transition-opacity">✕</button>
-                {/* Number */}
-                <div className="text-6xl font-black mb-4 leading-none select-none"
-                  style={{ color: `${accent}20`, fontVariantNumeric: 'tabular-nums' }}>
-                  {String(i+1).padStart(2,'0')}
-                </div>
-                {/* Icon */}
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mb-4"
-                  style={{ background: `${accent}15` }}>
-                  <EditText tag="span" value={item.icon} onChange={v => {
-                    const items=[...(d.items??[])]; items[i]={...items[i],icon:v}; u('items',items);
-                  }} />
-                </div>
+                {/* Optional inline image */}
+                {item.image ? (
+                  <div className="relative group/img w-full h-36 rounded-2xl overflow-hidden mb-4">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.image} className="w-full h-full object-cover" alt="" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <button onClick={() => addFeatureImage(i, '')} className="text-white text-xs bg-red-500/80 px-2 py-1 rounded-full">삭제</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Number */}
+                    <div className="text-6xl font-black mb-4 leading-none select-none"
+                      style={{ color: `${accent}20`, fontVariantNumeric: 'tabular-nums' }}>
+                      {String(i+1).padStart(2,'0')}
+                    </div>
+                    {/* Icon with picker */}
+                    <div className="mb-4">
+                      <IconPickerButton value={item.icon} onChange={v => { const items=[...(d.items??[])]; items[i]={...items[i],icon:v}; u('items',items); }} accent={accent} bg={bg} />
+                    </div>
+                  </>
+                )}
+                {/* Add image button (shown on hover when no image) */}
+                {!item.image && (
+                  <label className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    <span className="text-[9px] bg-black/60 text-gray-300 px-1.5 py-0.5 rounded-full hover:bg-indigo-600/70">+ 사진</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={e => {
+                      const f = e.target.files?.[0]; if(!f) return;
+                      const r = new FileReader(); r.onload = ev => addFeatureImage(i, ev.target?.result as string); r.readAsDataURL(f);
+                    }} />
+                  </label>
+                )}
                 <EditText tag="div" value={item.title} onChange={v => {
                   const items=[...(d.items??[])]; items[i]={...items[i],title:v}; u('items',items);
                 }} className="font-bold text-lg mb-2" style={{ letterSpacing: '-0.02em' }} />
@@ -466,12 +660,12 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
                 style={{ background: i%2===0 ? `${accent}08` : `${primary}04`, border: `1px solid ${primary}06` }}>
                 <button onClick={() => { const items=[...(d.items??[])]; items.splice(i,1); u('items',items); }}
                   className="absolute top-3 right-3 w-6 h-6 bg-red-500 rounded-full text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
-                {/* Number */}
-                <div className="flex-shrink-0 w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-black"
-                  style={{ background: accent, color: isDark(accent) ? '#fff' : '#000' }}>
-                  <EditText tag="span" value={item.emoji} onChange={v => {
+                {/* Icon with picker */}
+                <div className="flex-shrink-0 w-16 h-16 rounded-2xl flex items-center justify-center"
+                  style={{ background: accent }}>
+                  <IconPickerButton value={item.emoji} onChange={v => {
                     const items=[...(d.items??[])]; items[i]={...items[i],emoji:v}; u('items',items);
-                  }} />
+                  }} accent={accent} bg={accent} size="sm" />
                 </div>
                 <div className="flex-1">
                   <EditText tag="div" value={item.situation} onChange={v => {
@@ -515,11 +709,10 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
                   style={{ background: bgIsDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', border: `1px solid ${primary}08` }}>
                   <button onClick={() => { const features=[...(d.features??[])]; features.splice(i,1); u('features',features); }}
                     className="absolute top-3 right-3 w-5 h-5 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0"
-                    style={{ background: `${accent}20` }}>
-                    <EditText tag="span" value={f.icon} onChange={v => {
+                  <div className="flex-shrink-0">
+                    <IconPickerButton value={f.icon} onChange={v => {
                       const features=[...(d.features??[])]; features[i]={...features[i],icon:v}; u('features',features);
-                    }} />
+                    }} accent={accent} bg={bg} size="sm" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <EditText tag="div" value={f.name} onChange={v => {
@@ -931,6 +1124,18 @@ export default function ProductDetailPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showProjects, setShowProjects] = useState(false);
 
+  // Section Presets
+  type SectionPreset = { id: string; name: string; sectionKey: string; data: Record<string, unknown>; savedAt: string };
+  const [sectionPresets, setSectionPresets] = useState<SectionPreset[]>(() => {
+    try { return JSON.parse(localStorage.getItem('loov-section-presets') ?? '[]'); } catch { return []; }
+  });
+  const [showPresets, setShowPresets] = useState(false);
+
+  // Typography / element style
+  const [selectedElStyle] = useState<{
+    fontSize: number; fontWeight: number; textAlign: 'left'|'center'|'right'; color: string;
+  } | null>(null);
+
   const showToast = useCallback((msg: string) => {
     setToast(msg); setTimeout(() => setToast(''), 3000);
   }, []);
@@ -1174,6 +1379,105 @@ ${SECTION_META.map(m => {
     URL.revokeObjectURL(url);
     showToast('HTML 내보내기 완료');
   }, [selectedTpl, productInfo, sections, showToast]);
+
+  const exportSectionPNG = useCallback(async (sectionKey?: string) => {
+    const html2canvas = (await import('html2canvas')).default;
+    const key = sectionKey ?? selectedSection;
+    const el = document.getElementById(`section-preview-${key}`);
+    if (!el) { showToast('섹션을 찾을 수 없습니다'); return; }
+    showToast('이미지 생성 중...');
+    const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = `${productInfo.productName || 'product'}-${key}.png`;
+    a.click();
+    showToast('PNG 다운로드 완료');
+  }, [selectedSection, productInfo.productName, showToast]);
+
+  const exportAllSectionsPNG = useCallback(async () => {
+    const html2canvas = (await import('html2canvas')).default;
+    showToast('전체 섹션 이미지 합성 중...');
+    const canvases: HTMLCanvasElement[] = [];
+    for (const meta of SECTION_META) {
+      if (!sections[meta.key] || Object.keys(sections[meta.key]).length === 0) continue;
+      const el = document.getElementById(`section-preview-${meta.key}`);
+      if (!el) continue;
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+      canvases.push(canvas);
+    }
+    if (canvases.length === 0) { showToast('생성된 섹션이 없습니다'); return; }
+    const totalHeight = canvases.reduce((sum, c) => sum + c.height, 0);
+    const maxWidth = Math.max(...canvases.map(c => c.width));
+    const merged = document.createElement('canvas');
+    merged.width = maxWidth;
+    merged.height = totalHeight;
+    const ctx = merged.getContext('2d')!;
+    let y = 0;
+    for (const c of canvases) {
+      ctx.drawImage(c, 0, y);
+      y += c.height;
+    }
+    const a = document.createElement('a');
+    a.href = merged.toDataURL('image/png');
+    a.download = `${productInfo.productName || 'product'}-full-page.png`;
+    a.click();
+    showToast('전체 페이지 PNG 다운로드 완료!');
+  }, [sections, productInfo.productName, showToast]);
+
+  const exportAllSectionsIndividual = useCallback(async () => {
+    const html2canvas = (await import('html2canvas')).default;
+    showToast('개별 PNG 생성 중...');
+    let count = 0;
+    for (const meta of SECTION_META) {
+      if (!sections[meta.key] || Object.keys(sections[meta.key]).length === 0) continue;
+      const el = document.getElementById(`section-preview-${meta.key}`);
+      if (!el) continue;
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `${productInfo.productName || 'product'}-${String(count + 1).padStart(2, '0')}-${meta.key}.png`;
+      a.click();
+      count++;
+      await new Promise(r => setTimeout(r, 300)); // small delay between downloads
+    }
+    showToast(`${count}개 섹션 PNG 다운로드 완료!`);
+  }, [sections, productInfo.productName, showToast]);
+
+  const saveSectionPreset = useCallback(() => {
+    const data = sections[selectedSection];
+    if (!data || Object.keys(data).length === 0) { showToast('저장할 섹션 데이터가 없습니다'); return; }
+    const name = prompt(`"${SECTION_META.find(m=>m.key===selectedSection)?.label}" 프리셋 이름:`, `${productInfo.brand} ${productInfo.productName}`);
+    if (!name) return;
+    type SectionPreset = { id: string; name: string; sectionKey: string; data: Record<string, unknown>; savedAt: string };
+    const preset: SectionPreset = {
+      id: `preset-${Date.now()}`,
+      name,
+      sectionKey: selectedSection,
+      data: JSON.parse(JSON.stringify(data)),
+      savedAt: new Date().toISOString(),
+    };
+    setSectionPresets(prev => {
+      const next = [preset, ...prev].slice(0, 50);
+      localStorage.setItem('loov-section-presets', JSON.stringify(next));
+      return next;
+    });
+    showToast(`"${name}" 프리셋 저장 완료`);
+  }, [selectedSection, sections, productInfo, showToast]);
+
+  const loadSectionPreset = useCallback((preset: { id: string; name: string; sectionKey: string; data: Record<string, unknown>; savedAt: string }) => {
+    updateSection(preset.sectionKey, preset.data);
+    setSelectedSection(preset.sectionKey);
+    setShowPresets(false);
+    showToast(`"${preset.name}" 불러오기 완료`);
+  }, [updateSection, showToast]);
+
+  const deleteSectionPreset = useCallback((id: string) => {
+    setSectionPresets(prev => {
+      const next = prev.filter(p => p.id !== id);
+      localStorage.setItem('loov-section-presets', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const loadProject = useCallback((proj: Project) => {
     setProductInfo(prev => ({ ...prev, productName: proj.product_name, productCategory: proj.product_category, brand: proj.brand }));
@@ -1500,6 +1804,8 @@ ${SECTION_META.map(m => {
           {generating ? <><span className="w-2.5 h-2.5 border border-white/30 border-t-white rounded-full animate-spin" />생성 중</> : '✨ AI 재생성'}
         </button>
         <button onClick={exportHTML} className="text-[11px] px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg ml-1">⬇ 내보내기</button>
+        <button onClick={() => exportSectionPNG()} className="text-[11px] px-2.5 py-1.5 bg-white/10 hover:bg-white/15 rounded-lg text-gray-300 ml-1">📸 섹션 PNG</button>
+        <button onClick={exportAllSectionsPNG} className="text-[11px] px-2.5 py-1.5 bg-white/10 hover:bg-white/15 rounded-lg text-gray-300 ml-1">🖼 전체 PNG</button>
       </div>
 
       {/* Main area */}
@@ -1528,6 +1834,8 @@ ${SECTION_META.map(m => {
                     <span className={`text-[12px] font-medium flex-1 ${isActive ? 'text-white' : 'text-gray-400'}`}>{m.label}</span>
                     {sectionImages[m.key] && <span className="text-[9px] text-indigo-400">🖼</span>}
                     <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasData ? 'bg-green-400' : 'bg-gray-600'}`} />
+                    {hasData && <button onClick={e => { e.stopPropagation(); exportSectionPNG(m.key); }}
+                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-500 hover:text-green-400 transition-all" title="PNG 다운로드">📸</button>}
                     <button onClick={e => { e.stopPropagation(); regenerateSection(m.key); }}
                       className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-500 hover:text-indigo-400 transition-all" title="재생성">↺</button>
                   </div>
@@ -1540,6 +1848,12 @@ ${SECTION_META.map(m => {
                 </button>
                 <button onClick={exportHTML} className="w-full text-[11px] py-2 bg-white/10 hover:bg-white/15 rounded-lg text-gray-300">
                   ⬇ HTML 내보내기
+                </button>
+                <button onClick={() => setShowPresets(true)} className="w-full text-[11px] py-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400">
+                  💾 섹션 프리셋
+                </button>
+                <button onClick={saveSectionPreset} className="w-full text-[11px] py-2 bg-indigo-600/30 hover:bg-indigo-600/50 rounded-lg text-indigo-300">
+                  + 현재 섹션 저장
                 </button>
               </div>
             </div>
@@ -1587,14 +1901,16 @@ ${SECTION_META.map(m => {
 
               <div className="min-h-64">
                 {sections[selectedSection] && Object.keys(sections[selectedSection]).length > 0 ? (
-                  <EditableSection
-                    sectionKey={selectedSection}
-                    data={sections[selectedSection]}
-                    tpl={selectedTpl}
-                    sectionImage={sectionImages[selectedSection]}
-                    onUpdate={data => updateSection(selectedSection, data)}
-                    onImageChange={addImageToSection}
-                  />
+                  <div id={`section-preview-${selectedSection}`}>
+                    <EditableSection
+                      sectionKey={selectedSection}
+                      data={sections[selectedSection]}
+                      tpl={selectedTpl}
+                      sectionImage={sectionImages[selectedSection]}
+                      onUpdate={data => updateSection(selectedSection, data)}
+                      onImageChange={addImageToSection}
+                    />
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-64 gap-4 bg-gray-50">
                     <div className="text-4xl opacity-20">✨</div>
@@ -1672,6 +1988,143 @@ ${SECTION_META.map(m => {
                     className="w-full h-32"
                     label="제품/섹션 이미지 추가"
                   />
+                </div>
+                {/* Color controls */}
+                <div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">색상</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <div className="text-[9px] text-gray-600 mb-1">배경</div>
+                      <div className="relative">
+                        <div className="w-full h-7 rounded-lg cursor-pointer overflow-hidden border border-[#444]"
+                          style={{ background: selectedTpl.bg }}
+                          onClick={() => document.getElementById('color-bg')?.click()} />
+                        <input id="color-bg" type="color" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                          value={selectedTpl.bg}
+                          onChange={e => setSelectedTpl(prev => ({ ...prev, bg: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] text-gray-600 mb-1">텍스트</div>
+                      <div className="relative">
+                        <div className="w-full h-7 rounded-lg cursor-pointer overflow-hidden border border-[#444]"
+                          style={{ background: selectedTpl.primary }}
+                          onClick={() => document.getElementById('color-primary')?.click()} />
+                        <input id="color-primary" type="color" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                          value={selectedTpl.primary}
+                          onChange={e => setSelectedTpl(prev => ({ ...prev, primary: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] text-gray-600 mb-1">포인트</div>
+                      <div className="relative">
+                        <div className="w-full h-7 rounded-lg cursor-pointer overflow-hidden border border-[#444]"
+                          style={{ background: selectedTpl.accent }}
+                          onClick={() => document.getElementById('color-accent')?.click()} />
+                        <input id="color-accent" type="color" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                          value={selectedTpl.accent}
+                          onChange={e => setSelectedTpl(prev => ({ ...prev, accent: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {/* Typography controls */}
+                <div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">요소 스타일</div>
+                  <div className="text-[10px] text-gray-500 mb-1">* 텍스트 더블클릭 후 조정</div>
+                  <div className="space-y-2">
+                    <div>
+                      <div className="text-[10px] text-gray-600 mb-1">글자 크기</div>
+                      <input type="range" min="10" max="96" value={selectedElStyle?.fontSize ?? 16}
+                        className="w-full accent-indigo-500"
+                        onChange={e => {
+                          const el = document.activeElement as HTMLElement;
+                          if (el?.contentEditable === 'true') {
+                            el.style.fontSize = e.target.value + 'px';
+                          }
+                        }} />
+                    </div>
+                    <div className="flex gap-1">
+                      {(['left','center','right'] as const).map(align => (
+                        <button key={align} onClick={() => {
+                          const el = document.activeElement as HTMLElement;
+                          if (el?.contentEditable === 'true') el.style.textAlign = align;
+                        }} className="flex-1 py-1.5 text-[10px] bg-white/5 hover:bg-white/10 rounded-lg text-gray-400">
+                          {align === 'left' ? '⬅' : align === 'center' ? '⬛' : '➡'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1">
+                      {([400,600,700,900] as const).map(w => (
+                        <button key={w} onClick={() => {
+                          const el = document.activeElement as HTMLElement;
+                          if (el?.contentEditable === 'true') el.style.fontWeight = String(w);
+                        }} className="flex-1 py-1.5 text-[10px] bg-white/5 hover:bg-white/10 rounded-lg text-gray-400"
+                          style={{fontWeight: w}}>
+                          {w === 400 ? '보통' : w === 600 ? '중' : w === 700 ? '굵' : '흑'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {/* Section-level color overrides */}
+                <div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">이 섹션 색상 오버라이드</div>
+                  <div className="text-[9px] text-gray-600 mb-2">섹션별로 독립적인 색상 설정 (템플릿과 별도)</div>
+                  {(() => {
+                    const sData = sections[selectedSection] ?? {};
+                    const oc = (sData._sectionColors ?? {}) as Record<string, string>;
+                    const setOc = (key: string, val: string) => {
+                      updateSection(selectedSection, { ...sData, _sectionColors: { ...oc, [key]: val } });
+                    };
+                    const resetOc = () => {
+                      const next = { ...sData }; delete next._sectionColors;
+                      updateSection(selectedSection, next);
+                    };
+                    return (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
+                          {[{k:'bg',l:'배경'},{k:'primary',l:'텍스트'},{k:'accent',l:'포인트'}].map(({k,l}) => (
+                            <div key={k}>
+                              <div className="text-[9px] text-gray-600 mb-1">{l}</div>
+                              <div className="relative">
+                                <div className="w-full h-7 rounded-lg cursor-pointer overflow-hidden border border-[#444] flex items-center justify-center"
+                                  style={{ background: oc[k] ?? (k==='bg'?selectedTpl.bg:k==='primary'?selectedTpl.primary:selectedTpl.accent) }}
+                                  onClick={() => document.getElementById(`color-sec-${k}`)?.click()}>
+                                  {!oc[k] && <span className="text-[8px] text-gray-500">기본</span>}
+                                </div>
+                                <input id={`color-sec-${k}`} type="color" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                                  value={oc[k] ?? (k==='bg'?selectedTpl.bg:k==='primary'?selectedTpl.primary:selectedTpl.accent)}
+                                  onChange={e => setOc(k, e.target.value)} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {Object.keys(oc).length > 0 && (
+                          <button onClick={resetOc} className="w-full text-[10px] py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg">
+                            이 섹션 색상 초기화
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">내보내기</div>
+                  <div className="space-y-1.5">
+                    <button onClick={() => exportSectionPNG()}
+                      className="w-full text-[11px] py-2 bg-white/10 hover:bg-white/15 rounded-lg text-gray-300">
+                      📸 현재 섹션 PNG
+                    </button>
+                    <button onClick={exportAllSectionsPNG}
+                      className="w-full text-[11px] py-2 bg-white/10 hover:bg-white/15 rounded-lg text-gray-300">
+                      🖼 전체 페이지 (긴 이미지)
+                    </button>
+                    <button onClick={exportAllSectionsIndividual}
+                      className="w-full text-[11px] py-2 bg-white/10 hover:bg-white/15 rounded-lg text-gray-300">
+                      📦 섹션별 개별 PNG
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">AI 재생성</div>
@@ -2082,6 +2535,35 @@ ${SECTION_META.map(m => {
                     <div className="text-xs text-gray-500">{p.product_category} · {p.brand} · {new Date(p.created_at).toLocaleDateString('ko-KR')}</div>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${p.status === 'done' ? 'bg-green-900/50 text-green-400' : 'bg-white/5 text-gray-500'}`}>{p.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section Presets modal */}
+      {showPresets && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6">
+          <div className="bg-[#222] border border-[#333] rounded-2xl w-full max-w-2xl max-h-[70vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#333]">
+              <h2 className="font-black text-white">섹션 프리셋</h2>
+              <button onClick={() => setShowPresets(false)} className="text-gray-500 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 space-y-2">
+              {sectionPresets.length === 0 && (
+                <p className="text-center text-gray-600 py-8 text-sm">저장된 프리셋이 없습니다<br /><span className="text-xs">좌측 패널에서 &quot;현재 섹션 저장&quot;을 눌러 저장하세요</span></p>
+              )}
+              {sectionPresets.map(p => (
+                <div key={p.id} className="flex items-center gap-3 p-4 bg-black/20 hover:bg-white/5 rounded-xl">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm text-white">{p.name}</div>
+                    <div className="text-xs text-gray-500">
+                      {SECTION_META.find(m=>m.key===p.sectionKey)?.icon} {SECTION_META.find(m=>m.key===p.sectionKey)?.label} · {new Date(p.savedAt).toLocaleDateString('ko-KR')}
+                    </div>
+                  </div>
+                  <button onClick={() => loadSectionPreset(p)} className="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg">불러오기</button>
+                  <button onClick={() => deleteSectionPreset(p.id)} className="text-xs px-2 py-1.5 bg-red-900/40 hover:bg-red-900/60 text-red-400 rounded-lg">삭제</button>
                 </div>
               ))}
             </div>
