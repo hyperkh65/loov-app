@@ -99,6 +99,7 @@ export default function NaverPage() {
   const [targetKeyword, setTargetKeyword] = useState('');
 
   // 발행 모드
+  const [preferredAgent, setPreferredAgent] = useState<'server1' | 'server2'>('server1');
   const [jobType, setJobType] = useState<'draft' | 'rewrite' | 'scrape'>('draft');
   const [sourceUrl, setSourceUrl] = useState('');
   const [aiProvider, setAiProvider] = useState<'gemini' | 'claude' | 'gpt4o' | 'gpt4' | 'gpt35'>('gemini');
@@ -391,6 +392,7 @@ export default function NaverPage() {
           aiProvider,
           thumbnailPrompt: finalThumbnailPrompt,
           scheduledAt: publishStatus === 'schedule' ? new Date(scheduledAt).toISOString() : undefined,
+          preferredAgent,
         }),
       });
       const data = await res.json() as { jobId?: string; error?: string; message?: string };
@@ -816,6 +818,30 @@ export default function NaverPage() {
                     <p className="text-xs text-amber-700">⚠️ 네이버 블로그가 연결되지 않았습니다. <button onClick={() => setTab('settings')} className="text-amber-800 font-bold underline">설정 탭</button>에서 먼저 연결하세요.</p>
                   </div>
                 )}
+
+                {/* 서버 선택 */}
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-gray-600 mb-2">🖥️ 실행 서버</p>
+                  <div className="flex gap-2">
+                    {([
+                      { id: 'server1', label: '서버1', desc: '오래된 맥북 (기본)' },
+                      { id: 'server2', label: '서버2', desc: '현재 맥북' },
+                    ] as const).map(({ id, label, desc }) => (
+                      <button
+                        key={id}
+                        onClick={() => setPreferredAgent(id)}
+                        className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold transition-colors ${
+                          preferredAgent === id
+                            ? 'bg-green-600 border-green-600 text-white'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-green-400'
+                        }`}
+                      >
+                        <div>{label}</div>
+                        <div className={`text-[10px] font-normal mt-0.5 ${preferredAgent === id ? 'text-green-100' : 'text-gray-400'}`}>{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {publishError && (
                   <div className="mb-4 p-3 bg-red-50 rounded-xl border border-red-200">
