@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "naver:publish": "node scripts/naver-local-agent.js",
-    "naver:publish-once": "node scripts/naver-local-agent.js --once"
+    "naver:publish-once": "node scripts/naver-local-agent.js --once",
+    "naver:publish-force": "node scripts/naver-local-agent.js --force",
+    "naver:publish-force-once": "node scripts/naver-local-agent.js --force --once"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

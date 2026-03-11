@@ -114,14 +114,8 @@ export default function NotionPage() {
   }, [search, filterType, filterStatus, loadHistory]);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
-    const allowed = Array.from(files).filter((f) => {
-      const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-      return ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv'].includes(ext);
-    });
-    if (allowed.length === 0) {
-      setError('PDF, Word(.doc/.docx), Excel(.xls/.xlsx/.csv) 파일만 지원합니다.');
-      return;
-    }
+    const allowed = Array.from(files);
+    if (allowed.length === 0) return;
     setUploading(true);
     setError('');
 
@@ -229,6 +223,7 @@ export default function NotionPage() {
             <input
               ref={fileInputRef}
               type="file" multiple
+              accept="*"
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
             />
@@ -244,7 +239,7 @@ export default function NotionPage() {
             ) : (
               <>
                 <p className="font-bold text-gray-700 text-lg">파일을 드래그하거나 클릭하여 업로드</p>
-                <p className="text-sm text-gray-400 mt-1.5">PDF · Word(.doc, .docx) · Excel(.xls, .xlsx, .csv)</p>
+                <p className="text-sm text-gray-400 mt-1.5">모든 파일 형식 지원 (PDF, Word, Excel, 이미지, 텍스트 등)</p>
                 <p className="text-xs text-gray-300 mt-1">최대 20MB · 여러 파일 동시 가능</p>
               </>
             )}
@@ -343,6 +338,9 @@ export default function NotionPage() {
               <option value="PDF">📄 PDF</option>
               <option value="Word">📝 Word</option>
               <option value="Excel">📊 Excel</option>
+              <option value="IMAGE">🖼️ 이미지</option>
+              <option value="TXT">📃 텍스트</option>
+              <option value="ZIP">📦 압축</option>
             </select>
             <select
               value={filterStatus}

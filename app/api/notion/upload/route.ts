@@ -24,7 +24,7 @@ function detectFileType(name: string, mime: string): string {
   return ext.toUpperCase() || 'FILE';
 }
 
-async function extractText(buffer: Buffer, fileType: string): Promise<string> {
+async function extractText(buffer: Buffer, fileType: string, fileName: string, mimeType: string): Promise<string> {
   if (fileType === 'PDF') {
     const { getDocumentProxy, extractText } = await import('unpdf');
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
@@ -44,6 +44,12 @@ async function extractText(buffer: Buffer, fileType: string): Promise<string> {
       lines.push(XLSX.utils.sheet_to_csv(ws));
     }
     return lines.join('\n');
+  }
+  // 텍스트 기반 파일 (txt, md, json, xml, html, csv 등)
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const isText = mimeType.startsWith('text/') || ['txt','md','markdown','json','xml','html','htm','yaml','yml','toml','ini','log','csv','tsv','js','ts','py','java','go','rs','c','cpp','h','css','sh','env'].includes(ext);
+  if (isText) {
+    return buffer.toString('utf-8');
   }
   return '';
 }
@@ -230,7 +236,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Extract text
-    const rawText = await extractText(buffer, fileType);
+    const rawText = await extractText(buffer, fileType, file.name, file.type);
     const text = rawText.trim();
 
     // 3. AI classification

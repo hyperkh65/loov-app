@@ -31,6 +31,7 @@ loadEnv();
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ONCE = process.argv.includes('--once');
+const FORCE = process.argv.includes('--force'); // server1 alive 무시, 모든 pending 처리
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('❌ .env.local에 NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY 필요');
@@ -69,6 +70,18 @@ async function sbInsert(table, body) {
     body: JSON.stringify(body),
   });
   if (!res.ok) console.warn(`sbInsert ${table} failed: ${res.status}`);
+}
+
+/** Primary(오래된 맥북) 에이전트가 살아있는지 확인 (60초 이내 heartbeat) */
+async function isPrimaryAlive() {
+  try {
+    const rows = await sbGet('naver_agent_heartbeat', 'agent_id=eq.primary&select=last_seen');
+    if (!rows.length) return false;
+    const ageMs = Date.now() - new Date(rows[0].last_seen).getTime();
+    return ageMs < 60000; // 60초 이내면 살아있음
+  } catch (_) {
+    return false; // 테이블 없거나 오류 → fallback 작동
+  }
 }
 
 // ── 사람처럼 동작하는 유틸 ────────────────────────────────────────────────────
@@ -921,7 +934,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(2000);
       }
-      return { postId: '', postUrl: '' };
+      return { postId: '__draft__', postUrl: '' };
     }
 
     // ── 발행 버튼 클릭 (즉시 / 예약) ──────────────────────────────────────────
@@ -1110,17 +1123,29 @@ async function processJob(job) {
     return;
   }
 
-  const isSuccess = !!(result.postId || result.postUrl);
+  const isDraft = result.postId === '__draft__';
+  const isSuccess = isDraft || !!(result.postId || result.postUrl);
   await sbPatch('naver_publish_jobs', `id=eq.${job.id}`, {
     status: isSuccess ? 'completed' : 'failed',
-    post_id: result.postId || null,
+    post_id: isDraft ? null : (result.postId || null),
     post_url: result.postUrl || null,
     thumbnail_url: prepared._thumbnailLocalPath ? `[local:${prepared._thumbnailLocalPath}]` : null,
     error_message: null,
     completed_at: new Date().toISOString(),
   });
 
-  if (isSuccess) {
+  if (isDraft) {
+    await sbInsert('naver_publish_history', {
+      user_id: job.user_id,
+      blog_id: conn.blog_id,
+      post_id: '',
+      post_url: '',
+      title: job.title,
+      notion_page_id: job.notion_page_id || '',
+      status: 'draft',
+    });
+    console.log(`  ✅ 임시저장 완료`);
+  } else if (isSuccess) {
     await sbInsert('naver_publish_history', {
       user_id: job.user_id,
       blog_id: conn.blog_id,
@@ -1139,28 +1164,75 @@ async function processJob(job) {
 // ── 메인 루프 ─────────────────────────────────────────────────────────────────
 
 async function run() {
-  console.log('🤖 네이버 블로그 로컬 에이전트 시작');
+  const modeLabel = FORCE ? '[PRIMARY]' : '[FALLBACK]';
+  console.log(`🤖 네이버 블로그 로컬 에이전트 시작 ${modeLabel}`);
   console.log(`   모드: ${ONCE ? '한 번만 실행' : '연속 실행 (10초마다 폴링)'}`);
+  console.log(FORCE ? '   역할: 현재 맥북 (강제 처리 - server1 체크 무시)' : '   역할: Primary(오래된 맥북) 오프라인 시 자동 인계');
   console.log('   종료: Ctrl+C\n');
+
+  // preferred_agent 컬럼 존재 여부 확인
+  let hasPreferredAgent = true;
+  try {
+    await sbGet('naver_publish_jobs', 'preferred_agent=eq.server2&limit=1&select=preferred_agent');
+  } catch (_) {
+    hasPreferredAgent = false;
+    console.log('ℹ️  preferred_agent 컬럼 없음 → Primary 오프라인 시 전체 처리 모드');
+  }
 
   let failCount = 0;
   const MAX_FAIL = 5;
 
   do {
     try {
-      const jobs = await sbGet(
-        'naver_publish_jobs',
-        'status=eq.pending&order=created_at.asc&limit=5&select=*'
-      );
-      failCount = 0; // 성공 시 초기화
+      const primaryAlive = FORCE ? false : await isPrimaryAlive();
+
+      // processing stuck 잡 복구 (5분 이상 processing 상태면 pending으로 되돌림)
+      const stuckCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      await fetch(`${SUPABASE_URL}/rest/v1/naver_publish_jobs?status=eq.processing&created_at=lt.${stuckCutoff}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'pending' }),
+      }).catch(() => {});
+
+      let jobs = [];
+      if (FORCE) {
+        // --force: 모든 pending 작업 처리 (server 구분 무시)
+        jobs = await sbGet(
+          'naver_publish_jobs',
+          'status=eq.pending&order=created_at.asc&limit=5&select=*'
+        );
+      } else if (hasPreferredAgent) {
+        // server2 전용 작업은 항상 처리
+        const server2Jobs = await sbGet(
+          'naver_publish_jobs',
+          'status=eq.pending&preferred_agent=eq.server2&order=created_at.asc&limit=5&select=*'
+        );
+        // server1 작업은 Primary 오프라인일 때만 인계
+        const server1Jobs = primaryAlive ? [] : await sbGet(
+          'naver_publish_jobs',
+          'status=eq.pending&or=(preferred_agent.eq.server1,preferred_agent.is.null)&order=created_at.asc&limit=5&select=*'
+        );
+        jobs = [...server2Jobs, ...server1Jobs];
+      } else {
+        // 컬럼 없음 → Primary 오프라인 시만 전체 처리
+        jobs = primaryAlive ? [] : await sbGet(
+          'naver_publish_jobs',
+          'status=eq.pending&order=created_at.asc&limit=5&select=*'
+        );
+      }
+      failCount = 0;
 
       if (jobs.length > 0) {
-        console.log(`📬 대기 중인 작업 ${jobs.length}개 발견`);
+        const mode = FORCE ? '🟢 [PRIMARY]'
+          : (!hasPreferredAgent || jobs.some(j => j.preferred_agent !== 'server2'))
+            ? '🟡 [FALLBACK] server1 인계' : '🟢 [SERVER2]';
+        console.log(`\n${mode} ${jobs.length}개 작업 처리`);
         for (const job of jobs) {
           await processJob(job);
         }
       } else if (!ONCE) {
-        process.stdout.write('⏳ 대기 중...\r');
+        const status = FORCE ? '🟢 PRIMARY' : primaryAlive ? '🔵 Server1 활성' : '🟡 Server1 오프라인';
+        process.stdout.write(`${status}, 작업 없음...\r`);
       }
     } catch (e) {
       failCount++;
