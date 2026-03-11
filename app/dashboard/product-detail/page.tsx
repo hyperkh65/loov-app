@@ -599,6 +599,18 @@ export default function ProductDetailPage() {
   const [figmaLoading, setFigmaLoading] = useState(false);
   const [recentFigmaKeys, setRecentFigmaKeys] = useState<{key:string;name:string}[]>([]);
 
+  // Figma 확장 상태
+  type FigmaColorToken = { name: string; hex: string; alpha: number; nodeId: string };
+  type FigmaTypography = { name: string; fontFamily: string; fontSize: number; fontWeight: number; nodeId: string };
+  type FigmaComponent = { key: string; name: string; description: string; nodeId: string; group: string; thumbnail: string | null };
+  type FigmaVersion = { id: string; createdAt: string; label: string | null; description: string | null; user: string };
+  const [figmaTab, setFigmaTab] = useState<'frames'|'components'|'colors'|'typography'|'versions'>('frames');
+  const [figmaColors, setFigmaColors] = useState<FigmaColorToken[]>([]);
+  const [figmaTypography, setFigmaTypography] = useState<FigmaTypography[]>([]);
+  const [figmaComponents, setFigmaComponents] = useState<FigmaComponent[]>([]);
+  const [figmaVersions, setFigmaVersions] = useState<FigmaVersion[]>([]);
+  const [figmaLoadingTab, setFigmaLoadingTab] = useState(false);
+
   // History
   const historyRef = useRef<Sections[]>([{}]);
   const historyIdxRef = useRef(0);
@@ -712,6 +724,67 @@ export default function ProductDetailPage() {
     const asset: ImageAsset = { id: `figma-${frame.id}`, name: frame.name, url: frame.imgUrl, source: 'figma' };
     setImageAssets(prev => [...prev.filter(a => a.id !== asset.id), asset]);
     showToast(`"${frame.name}" 가져오기 완료`);
+  }, [showToast]);
+
+  // ── Figma 스타일 (색상 + 타이포) ──────────────────────────
+  const loadFigmaStyles = useCallback(async () => {
+    if (!figmaFileKey) return;
+    setFigmaLoadingTab(true);
+    try {
+      const res = await fetch(`/api/figma/files?action=styles&fileKey=${figmaFileKey}`);
+      const d = await res.json();
+      if (d.colorPalette) {
+        setFigmaColors(d.colorPalette);
+        setFigmaTypography(d.typography ?? []);
+        showToast(`색상 ${d.colorPalette.length}개, 타이포 ${d.typography?.length ?? 0}개 로드 완료`);
+      } else showToast(d.error ?? '스타일 로드 실패');
+    } finally { setFigmaLoadingTab(false); }
+  }, [figmaFileKey, showToast]);
+
+  // ── Figma 컴포넌트 ─────────────────────────────────────────
+  const loadFigmaComponents = useCallback(async () => {
+    if (!figmaFileKey) return;
+    setFigmaLoadingTab(true);
+    try {
+      const res = await fetch(`/api/figma/files?action=components&fileKey=${figmaFileKey}`);
+      const d = await res.json();
+      if (d.components) {
+        setFigmaComponents(d.components);
+        showToast(`컴포넌트 ${d.components.length}개 로드 완료 (전체 ${d.total}개)`);
+      } else showToast(d.error ?? '컴포넌트 로드 실패');
+    } finally { setFigmaLoadingTab(false); }
+  }, [figmaFileKey, showToast]);
+
+  // ── Figma 버전 히스토리 ────────────────────────────────────
+  const loadFigmaVersions = useCallback(async () => {
+    if (!figmaFileKey) return;
+    setFigmaLoadingTab(true);
+    try {
+      const res = await fetch(`/api/figma/files?action=versions&fileKey=${figmaFileKey}`);
+      const d = await res.json();
+      if (d.versions) {
+        setFigmaVersions(d.versions);
+        showToast(`버전 ${d.versions.length}개 로드 완료`);
+      } else showToast(d.error ?? '버전 로드 실패');
+    } finally { setFigmaLoadingTab(false); }
+  }, [figmaFileKey, showToast]);
+
+  // ── Figma 색상으로 커스텀 템플릿 생성 ────────────────────
+  const applyFigmaColorToTemplate = useCallback((colors: {name:string;hex:string}[]) => {
+    if (colors.length < 1) return;
+    const sorted = [...colors];
+    const bg = sorted.find(c => ['background','bg','surface','base'].some(k => c.name.toLowerCase().includes(k)))?.hex ?? sorted[0].hex;
+    const accent = sorted.find(c => ['primary','brand','accent','cta','button'].some(k => c.name.toLowerCase().includes(k)))?.hex ?? sorted[1]?.hex ?? '#6366f1';
+    const isDark = (hex: string) => {
+      const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+      return (r*299 + g*587 + b*114) / 1000 < 128;
+    };
+    const customTpl = {
+      id: 'figma-custom', name: 'Figma Custom', bg, primary: isDark(bg) ? '#FFFFFF' : '#1A1A1A', accent,
+      desc: 'Figma에서 가져온 색상 팔레트',
+    };
+    setSelectedTpl(customTpl);
+    showToast('Figma 색상으로 테마 적용 완료!');
   }, [showToast]);
 
   const addImageToSection = useCallback((url: string, name: string) => {
@@ -1326,94 +1399,296 @@ ${SECTION_META.map(m => {
 
             {/* Figma Tab */}
             {rightTab === 'figma' && (
-              <div className="p-4 space-y-4">
+              <div className="flex flex-col h-full">
                 {!figmaConnected ? (
-                  <div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Figma 연동</div>
-                    <div className="bg-purple-900/20 border border-purple-700/30 rounded-xl p-4 mb-3">
-                      <div className="text-3xl mb-2">🎨</div>
-                      <div className="text-[12px] text-purple-300 font-semibold mb-1">Figma 디자인 연동</div>
-                      <div className="text-[10px] text-gray-500">Figma 프레임을 바로 상세페이지에 가져오세요</div>
+                  <div className="p-4">
+                    <div className="bg-purple-900/20 border border-purple-700/30 rounded-xl p-5 mb-4 text-center">
+                      <div className="text-4xl mb-3">🎨</div>
+                      <div className="text-[13px] text-purple-300 font-bold mb-1">Figma 완전 연동</div>
+                      <div className="text-[10px] text-gray-500 leading-relaxed">프레임·컴포넌트·색상 팔레트·<br />타이포그래피·버전 히스토리</div>
                     </div>
                     <input type="password"
-                      className="w-full bg-black/30 border border-[#444] rounded-lg px-3 py-2 text-[11px] text-gray-300 placeholder-gray-600 mb-2"
+                      className="w-full bg-black/30 border border-[#444] rounded-lg px-3 py-2.5 text-[11px] text-gray-300 placeholder-gray-600 mb-2"
                       placeholder="Figma Personal Access Token"
                       value={figmaToken} onChange={e => setFigmaToken(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && connectFigma()}
                     />
-                    <button onClick={connectFigma} className="w-full text-[12px] py-2 bg-purple-600 hover:bg-purple-500 rounded-lg font-semibold text-white">
-                      Figma 연결하기
+                    <button onClick={connectFigma} className="w-full text-[12px] py-2.5 bg-purple-600 hover:bg-purple-500 rounded-lg font-bold text-white transition-colors">
+                      🔗 Figma 연결하기
                     </button>
-                    <p className="text-[10px] text-gray-600 mt-2">Figma Settings → Account → Personal Access Tokens</p>
+                    <p className="text-[10px] text-gray-600 mt-3 leading-relaxed">Figma Settings → Account →<br />Personal Access Tokens에서 생성</p>
                   </div>
                 ) : (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                        <span className="text-[11px] text-green-400 font-semibold">연결됨</span>
-                        <span className="text-[11px] text-gray-500">· {figmaUser}</span>
-                      </div>
-                      <button onClick={() => { setFigmaConnected(false); setFigmaUser(''); }} className="text-[10px] text-gray-600 hover:text-red-400">연결 해제</button>
-                    </div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">파일 불러오기</div>
-                    <div className="flex gap-2 mb-2">
-                      <input
-                        className="flex-1 bg-black/30 border border-[#444] rounded-lg px-2 py-2 text-[11px] text-gray-300 placeholder-gray-600"
-                        placeholder="Figma URL 또는 파일 키"
-                        value={figmaFileKey} onChange={e => setFigmaFileKey(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && loadFigmaFile()}
-                      />
-                      <button onClick={() => loadFigmaFile()} disabled={figmaLoading}
-                        className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-[11px] font-semibold disabled:opacity-50 text-white whitespace-nowrap">
-                        {figmaLoading ? '...' : '불러오기'}
-                      </button>
-                    </div>
-                    {recentFigmaKeys.length > 0 && !figmaFrames.length && (
-                      <div className="mb-3">
-                        <div className="text-[10px] text-gray-600 mb-1">최근 파일</div>
-                        {recentFigmaKeys.map(r => (
-                          <button key={r.key} onClick={() => loadFigmaFile(r.key)}
-                            className="w-full text-left text-[11px] text-gray-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-white/5 flex items-center gap-2">
-                            <span>📄</span>
-                            <span className="truncate">{r.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {figmaFrames.length > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-[10px] text-gray-500 uppercase tracking-widest">
-                            {figmaFileName} ({figmaFrames.length}개)
-                          </div>
-                          <button onClick={() => { figmaFrames.filter(f => f.imgUrl).forEach(f => importFigmaFrame(f)); showToast('전체 가져오기 완료'); }}
-                            className="text-[10px] text-purple-400 hover:text-purple-300">전체 가져오기</button>
+                  <div className="flex flex-col h-full">
+                    {/* 연결 상태 + 파일 입력 */}
+                    <div className="p-3 border-b border-[#333]">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                          <span className="text-[11px] text-green-400 font-semibold">{figmaUser}</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {figmaFrames.map(frame => (
-                            <div key={frame.id} className="relative group rounded-xl overflow-hidden bg-black/30 border border-[#333] hover:border-purple-400 transition-all cursor-pointer aspect-video"
-                              onClick={() => importFigmaFrame(frame)}>
-                              {frame.loading ? (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <div className="w-4 h-4 border border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
-                                </div>
-                              ) : frame.imgUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={frame.imgUrl} className="w-full h-full object-cover" alt={frame.name} />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-gray-600 text-xs">미리보기 없음</div>
-                              )}
-                              <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
-                                <span className="text-white text-[10px] font-semibold">라이브러리에 추가</span>
-                                {frame.imgUrl && <span className="text-[9px] text-purple-300">클릭하여 가져오기</span>}
-                              </div>
-                              <div className="absolute bottom-0 inset-x-0 bg-black/60 px-2 py-1">
-                                <div className="text-[9px] text-gray-300 truncate">{frame.name}</div>
-                              </div>
-                            </div>
+                        <button onClick={() => { setFigmaConnected(false); setFigmaUser(''); setFigmaFrames([]); setFigmaColors([]); setFigmaComponents([]); }} className="text-[10px] text-gray-600 hover:text-red-400">해제</button>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input
+                          className="flex-1 bg-black/30 border border-[#444] rounded-lg px-2 py-1.5 text-[10px] text-gray-300 placeholder-gray-600 min-w-0"
+                          placeholder="Figma URL / 파일 키"
+                          value={figmaFileKey} onChange={e => setFigmaFileKey(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && loadFigmaFile()}
+                        />
+                        <button onClick={() => loadFigmaFile()} disabled={figmaLoading}
+                          className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-500 rounded-lg text-[10px] font-bold disabled:opacity-50 text-white whitespace-nowrap flex-shrink-0">
+                          {figmaLoading ? <span className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin inline-block" /> : '불러오기'}
+                        </button>
+                      </div>
+                      {/* 최근 파일 */}
+                      {recentFigmaKeys.length > 0 && !figmaFrames.length && (
+                        <div className="mt-2 space-y-0.5">
+                          {recentFigmaKeys.map(r => (
+                            <button key={r.key} onClick={() => loadFigmaFile(r.key)}
+                              className="w-full text-left text-[10px] text-gray-500 hover:text-white px-1.5 py-1 rounded hover:bg-white/5 flex items-center gap-1.5 truncate">
+                              <span>📄</span><span className="truncate">{r.name}</span>
+                            </button>
                           ))}
                         </div>
-                      </div>
+                      )}
+                      {figmaFileName && (
+                        <div className="mt-1.5 text-[10px] text-purple-400 truncate">📁 {figmaFileName}</div>
+                      )}
+                    </div>
+
+                    {/* Figma 서브탭 */}
+                    {figmaFileKey && (
+                      <>
+                        <div className="flex border-b border-[#333] flex-shrink-0 overflow-x-auto">
+                          {([
+                            { id:'frames', l:'프레임', count: figmaFrames.length },
+                            { id:'components', l:'컴포넌트', count: figmaComponents.length },
+                            { id:'colors', l:'색상', count: figmaColors.length },
+                            { id:'typography', l:'타이포', count: figmaTypography.length },
+                            { id:'versions', l:'버전', count: figmaVersions.length },
+                          ] as const).map(t => (
+                            <button key={t.id}
+                              onClick={() => {
+                                setFigmaTab(t.id);
+                                if (t.id === 'colors' && figmaColors.length === 0) loadFigmaStyles();
+                                if (t.id === 'typography' && figmaTypography.length === 0) loadFigmaStyles();
+                                if (t.id === 'components' && figmaComponents.length === 0) loadFigmaComponents();
+                                if (t.id === 'versions' && figmaVersions.length === 0) loadFigmaVersions();
+                              }}
+                              className={`flex-shrink-0 text-[10px] px-2.5 py-2 font-medium transition-colors whitespace-nowrap ${figmaTab === t.id ? 'text-purple-300 border-b border-purple-500' : 'text-gray-600 hover:text-gray-300'}`}>
+                              {t.l}{t.count > 0 && <span className="ml-1 text-[9px] opacity-60">{t.count}</span>}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto">
+                          {figmaLoadingTab && (
+                            <div className="flex items-center justify-center py-12">
+                              <div className="w-5 h-5 border border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+                            </div>
+                          )}
+
+                          {/* 프레임 탭 */}
+                          {figmaTab === 'frames' && !figmaLoadingTab && (
+                            <div className="p-3">
+                              {figmaFrames.length > 0 && (
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-[10px] text-gray-600">{figmaFrames.length}개 프레임</span>
+                                  <button onClick={() => { figmaFrames.filter(f => f.imgUrl).forEach(f => importFigmaFrame(f)); showToast('전체 가져오기 완료'); }}
+                                    className="text-[10px] text-purple-400 hover:text-purple-300">전체 가져오기</button>
+                                </div>
+                              )}
+                              {figmaFrames.length === 0 && (
+                                <div className="text-center py-8 text-gray-600 text-[11px]">파일을 불러오면 프레임이 표시됩니다</div>
+                              )}
+                              <div className="grid grid-cols-2 gap-2">
+                                {figmaFrames.map(frame => (
+                                  <div key={frame.id} className="relative group rounded-xl overflow-hidden bg-black/30 border border-[#333] hover:border-purple-400 transition-all cursor-pointer aspect-video"
+                                    onClick={() => importFigmaFrame(frame)}>
+                                    {frame.loading ? (
+                                      <div className="w-full h-full flex items-center justify-center">
+                                        <div className="w-3 h-3 border border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+                                      </div>
+                                    ) : frame.imgUrl ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={frame.imgUrl} className="w-full h-full object-cover" alt={frame.name} />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-gray-700 text-[9px]">No preview</div>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                      <span className="text-white text-[9px] font-bold">📥 가져오기</span>
+                                    </div>
+                                    <div className="absolute bottom-0 inset-x-0 bg-black/70 px-1.5 py-0.5">
+                                      <div className="text-[8px] text-gray-300 truncate">{frame.name}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 컴포넌트 탭 */}
+                          {figmaTab === 'components' && !figmaLoadingTab && (
+                            <div className="p-3">
+                              {figmaComponents.length === 0 ? (
+                                <button onClick={loadFigmaComponents}
+                                  className="w-full py-3 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-600/30 rounded-xl text-[11px] text-purple-300 font-semibold transition-colors">
+                                  컴포넌트 불러오기
+                                </button>
+                              ) : (
+                                <>
+                                  <div className="text-[10px] text-gray-600 mb-2">{figmaComponents.length}개 컴포넌트</div>
+                                  {/* 그룹별 정리 */}
+                                  {Array.from(new Set(figmaComponents.map(c => c.group))).map(group => (
+                                    <div key={group} className="mb-3">
+                                      <div className="text-[9px] text-gray-600 uppercase tracking-widest mb-1.5 px-1">{group}</div>
+                                      <div className="grid grid-cols-2 gap-1.5">
+                                        {figmaComponents.filter(c => c.group === group).map(comp => (
+                                          <div key={comp.key}
+                                            className="relative group rounded-lg overflow-hidden bg-black/30 border border-[#333] hover:border-purple-400 transition-all cursor-pointer"
+                                            onClick={async () => {
+                                              if (comp.thumbnail) {
+                                                const asset: ImageAsset = { id: `comp-${comp.key}`, name: comp.name, url: comp.thumbnail, source: 'figma' };
+                                                setImageAssets(prev => [...prev.filter(a => a.id !== asset.id), asset]);
+                                                showToast(`"${comp.name}" 추가됨`);
+                                              } else {
+                                                // 노드 내보내기
+                                                const res = await fetch(`/api/figma/files?action=export&fileKey=${figmaFileKey}&nodeIds=${encodeURIComponent(comp.nodeId)}&format=png&scale=1`);
+                                                const d = await res.json();
+                                                const url = d.images?.[comp.nodeId];
+                                                if (url) {
+                                                  const asset: ImageAsset = { id: `comp-${comp.key}`, name: comp.name, url, source: 'figma' };
+                                                  setImageAssets(prev => [...prev.filter(a => a.id !== asset.id), asset]);
+                                                  showToast(`"${comp.name}" 추가됨`);
+                                                }
+                                              }
+                                            }}>
+                                            <div className="aspect-square bg-white/5 flex items-center justify-center">
+                                              {comp.thumbnail ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={comp.thumbnail} className="w-full h-full object-contain p-1" alt={comp.name} />
+                                              ) : (
+                                                <span className="text-2xl opacity-20">⬚</span>
+                                              )}
+                                            </div>
+                                            <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                              <span className="text-white text-[9px] font-bold">📥 추가</span>
+                                            </div>
+                                            <div className="px-1.5 py-1 bg-black/40">
+                                              <div className="text-[8px] text-gray-400 truncate">{comp.name.split('/').pop()}</div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 색상 탭 */}
+                          {figmaTab === 'colors' && !figmaLoadingTab && (
+                            <div className="p-3">
+                              {figmaColors.length === 0 ? (
+                                <button onClick={loadFigmaStyles}
+                                  className="w-full py-3 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-600/30 rounded-xl text-[11px] text-purple-300 font-semibold transition-colors">
+                                  색상 팔레트 불러오기
+                                </button>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="text-[10px] text-gray-600">{figmaColors.length}개 색상</div>
+                                    <button
+                                      onClick={() => applyFigmaColorToTemplate(figmaColors)}
+                                      className="text-[10px] px-2.5 py-1 bg-purple-600 hover:bg-purple-500 rounded-lg text-white font-bold">
+                                      ✨ 테마로 적용
+                                    </button>
+                                  </div>
+                                  <div className="space-y-1">
+                                    {figmaColors.map((c, i) => (
+                                      <div key={i} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 group cursor-pointer"
+                                        onClick={() => { setSelectedTpl(prev => ({ ...prev, accent: c.hex })); showToast(`"${c.name}" → 포인트 색상 적용`); }}>
+                                        <div className="w-7 h-7 rounded-lg border border-white/10 flex-shrink-0 shadow-inner"
+                                          style={{ background: c.hex }} />
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-[10px] text-gray-300 truncate">{c.name}</div>
+                                          <div className="text-[9px] text-gray-600 font-mono">{c.hex}</div>
+                                        </div>
+                                        <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                                          <button onClick={e => { e.stopPropagation(); setSelectedTpl(prev => ({ ...prev, bg: c.hex })); showToast('배경색 적용'); }}
+                                            className="text-[8px] px-1.5 py-0.5 bg-white/10 rounded text-gray-400 hover:text-white">배경</button>
+                                          <button onClick={e => { e.stopPropagation(); setSelectedTpl(prev => ({ ...prev, accent: c.hex })); showToast('포인트색 적용'); }}
+                                            className="text-[8px] px-1.5 py-0.5 bg-purple-600/50 rounded text-purple-300 hover:text-white">포인트</button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 타이포그래피 탭 */}
+                          {figmaTab === 'typography' && !figmaLoadingTab && (
+                            <div className="p-3">
+                              {figmaTypography.length === 0 ? (
+                                <button onClick={loadFigmaStyles}
+                                  className="w-full py-3 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-600/30 rounded-xl text-[11px] text-purple-300 font-semibold transition-colors">
+                                  타이포그래피 불러오기
+                                </button>
+                              ) : (
+                                <div className="space-y-2">
+                                  {figmaTypography.map((t, i) => (
+                                    <div key={i} className="p-2.5 rounded-xl bg-black/30 border border-[#333] hover:border-purple-400/50 transition-all">
+                                      <div className="text-[10px] text-gray-500 mb-1">{t.name}</div>
+                                      <div className="text-gray-200 leading-tight"
+                                        style={{ fontFamily: `"${t.fontFamily}", sans-serif`, fontSize: Math.min(t.fontSize, 20), fontWeight: t.fontWeight }}>
+                                        {t.fontFamily}
+                                      </div>
+                                      <div className="flex gap-2 mt-1">
+                                        <span className="text-[9px] text-gray-600">{t.fontSize}px</span>
+                                        <span className="text-[9px] text-gray-600">w{t.fontWeight}</span>
+                                        <span className="text-[9px] text-purple-500 font-mono">{t.fontFamily}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 버전 히스토리 탭 */}
+                          {figmaTab === 'versions' && !figmaLoadingTab && (
+                            <div className="p-3">
+                              {figmaVersions.length === 0 ? (
+                                <button onClick={loadFigmaVersions}
+                                  className="w-full py-3 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-600/30 rounded-xl text-[11px] text-purple-300 font-semibold transition-colors">
+                                  버전 히스토리 불러오기
+                                </button>
+                              ) : (
+                                <div className="space-y-2">
+                                  {figmaVersions.map((v, i) => (
+                                    <div key={v.id} className={`p-2.5 rounded-xl border transition-all ${i === 0 ? 'bg-purple-900/20 border-purple-700/40' : 'bg-black/20 border-[#333]'}`}>
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                          {v.label && <div className="text-[11px] text-white font-semibold mb-0.5">{v.label}</div>}
+                                          {v.description && <div className="text-[10px] text-gray-400 mb-1 leading-relaxed">{v.description}</div>}
+                                          <div className="text-[9px] text-gray-600">
+                                            {new Date(v.createdAt).toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })} · {v.user}
+                                          </div>
+                                        </div>
+                                        {i === 0 && <span className="text-[9px] bg-purple-600/50 text-purple-300 px-1.5 py-0.5 rounded-full flex-shrink-0">최신</span>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
