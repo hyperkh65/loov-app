@@ -20,7 +20,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -35,6 +35,12 @@ export default function SettingsPage() {
   const [coupangConfigured, setCoupangConfigured] = useState(false);
   const [coupangSaving, setCoupangSaving] = useState(false);
   const [coupangMsg, setCoupangMsg] = useState('');
+
+  // Naver API state
+  const [naverKeys, setNaverKeys] = useState({ NAVER_CLIENT_ID: '', NAVER_CLIENT_SECRET: '', NAVER_AD_API_KEY: '', NAVER_AD_SECRET: '', NAVER_AD_CUSTOMER_ID: '' });
+  const [naverKeyStatus, setNaverKeyStatus] = useState<Record<string, boolean>>({});
+  const [naverSaving, setNaverSaving] = useState(false);
+  const [naverMsg, setNaverMsg] = useState('');
 
   // API 키 관리 state
   const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
@@ -71,6 +77,13 @@ export default function SettingsPage() {
         .then((r) => r.ok ? r.json() : {})
         .then((d: { hasKey?: Record<string, boolean> }) => {
           if (d.hasKey) setApiKeyStatus(d.hasKey);
+        });
+    }
+    if (activeTab === 'naver') {
+      fetch('/api/app-settings')
+        .then((r) => r.ok ? r.json() : {})
+        .then((d: { hasKey?: Record<string, boolean> }) => {
+          if (d.hasKey) setNaverKeyStatus(d.hasKey);
         });
     }
     if (activeTab === 'google') {
@@ -197,13 +210,93 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
               }`}>{l}</button>
           ))}
         </div>
+
+        {/* 네이버 API 탭 */}
+        {activeTab === 'naver' && (
+          <div className="space-y-6 max-w-2xl">
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-sm text-green-900 space-y-2">
+              <p className="font-bold">🟢 네이버 API 키 설정</p>
+              <p>키워드 도구, 블로그 판독기, 노출 체크, 가격 비교 등 마케팅 기능을 사용하려면 네이버 API 키가 필요합니다.</p>
+              <div className="text-xs text-green-700 space-y-1">
+                <p>• <strong>오픈 API (Client ID/Secret)</strong>: <a href="https://developers.naver.com/apps" target="_blank" rel="noopener" className="underline">developers.naver.com/apps</a> → 앱 등록 → 검색, 데이터랩 권한 추가</p>
+                <p>• <strong>검색광고 API</strong>: <a href="https://searchad.naver.com" target="_blank" rel="noopener" className="underline">searchad.naver.com</a> → 도구 → API 관리 (키워드 검색량 조회용)</p>
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
+              <h3 className="font-bold text-gray-800">네이버 오픈 API (검색·데이터랩·쇼핑)</h3>
+              {([
+                { key: 'NAVER_CLIENT_ID', label: 'Client ID', placeholder: '네이버 앱 Client ID' },
+                { key: 'NAVER_CLIENT_SECRET', label: 'Client Secret', placeholder: '네이버 앱 Client Secret' },
+              ] as const).map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {label}
+                    {naverKeyStatus[key] && <span className="ml-2 text-xs text-green-600 font-normal">✅ 등록됨</span>}
+                  </label>
+                  <input
+                    type="password"
+                    value={naverKeys[key]}
+                    onChange={e => setNaverKeys(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={naverKeyStatus[key] ? '••••••••••••' : placeholder}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
+              <h3 className="font-bold text-gray-800">네이버 검색광고 API (키워드 검색량)</h3>
+              <p className="text-xs text-gray-500">황금키워드 검색량 조회에 필요. searchad.naver.com에서 발급</p>
+              {([
+                { key: 'NAVER_AD_API_KEY', label: 'API 고객 ID (Access License)', placeholder: '검색광고 API 고객 ID' },
+                { key: 'NAVER_AD_SECRET', label: 'Secret Key', placeholder: '검색광고 Secret Key' },
+                { key: 'NAVER_AD_CUSTOMER_ID', label: 'Customer ID', placeholder: '검색광고 Customer ID (숫자)' },
+              ] as const).map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {label}
+                    {naverKeyStatus[key] && <span className="ml-2 text-xs text-green-600 font-normal">✅ 등록됨</span>}
+                  </label>
+                  <input
+                    type="password"
+                    value={naverKeys[key]}
+                    onChange={e => setNaverKeys(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={naverKeyStatus[key] ? '••••••••••••' : placeholder}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {naverMsg && (
+              <div className={`p-3 rounded-xl text-sm font-medium ${naverMsg.includes('완료') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {naverMsg}
+              </div>
+            )}
+            <button
+              onClick={async () => {
+                setNaverSaving(true); setNaverMsg('');
+                try {
+                  const res = await fetch('/api/app-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(naverKeys) });
+                  if (res.ok) { setNaverMsg('✅ 저장 완료'); setNaverKeys({ NAVER_CLIENT_ID: '', NAVER_CLIENT_SECRET: '', NAVER_AD_API_KEY: '', NAVER_AD_SECRET: '', NAVER_AD_CUSTOMER_ID: '' }); }
+                  else setNaverMsg('저장 실패');
+                } finally { setNaverSaving(false); }
+              }}
+              disabled={naverSaving}
+              className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-xl disabled:opacity-50"
+            >
+              {naverSaving ? '저장 중...' : '🟢 네이버 API 키 저장'}
+            </button>
+          </div>
+        )}
 
         {/* API 키 관리 탭 */}
         {activeTab === 'apikeys' && (

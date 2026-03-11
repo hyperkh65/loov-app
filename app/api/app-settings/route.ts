@@ -12,6 +12,13 @@ const ALLOWED_KEYS = [
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
   'GOOGLE_REDIRECT_URI',
+  // Naver Open API
+  'NAVER_CLIENT_ID',
+  'NAVER_CLIENT_SECRET',
+  // Naver Search Ad API (키워드 검색량)
+  'NAVER_AD_API_KEY',
+  'NAVER_AD_SECRET',
+  'NAVER_AD_CUSTOMER_ID',
 ] as const;
 
 export async function GET() {
