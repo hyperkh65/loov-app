@@ -1059,6 +1059,48 @@ ${SECTION_META.map(m => {
                 </div>
               </div>
 
+              {/* Figma 연동 */}
+              <div className="bg-[#222] rounded-2xl border border-[#333] p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-gray-300">🎨 Figma 연동 <span className="text-gray-600 font-normal">(선택사항)</span></h3>
+                  {figmaConnected && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                      <span className="text-xs text-green-400 font-semibold">{figmaUser} 연결됨</span>
+                      <button onClick={() => { setFigmaConnected(false); setFigmaUser(''); }} className="text-[10px] text-gray-600 hover:text-red-400 ml-2">해제</button>
+                    </div>
+                  )}
+                </div>
+                {!figmaConnected ? (
+                  <div className="flex gap-2">
+                    <input type="password"
+                      className="flex-1 bg-black/40 border border-[#444] rounded-xl px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                      placeholder="Figma Personal Access Token"
+                      value={figmaToken} onChange={e => setFigmaToken(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && connectFigma()}
+                    />
+                    <button onClick={connectFigma}
+                      className="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-xl font-semibold whitespace-nowrap transition-colors">
+                      연결
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 bg-black/40 border border-[#444] rounded-xl px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                      placeholder="Figma 파일 URL 또는 키 (선택)"
+                      value={figmaFileKey} onChange={e => setFigmaFileKey(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && loadFigmaFile()}
+                    />
+                    <button onClick={() => loadFigmaFile()} disabled={figmaLoading}
+                      className="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm rounded-xl font-semibold whitespace-nowrap transition-colors">
+                      {figmaLoading ? '...' : '파일 로드'}
+                    </button>
+                  </div>
+                )}
+                <p className="text-[11px] text-gray-600 mt-2">Figma Settings → Account → Personal Access Tokens에서 토큰 발급</p>
+              </div>
+
               <div className="flex items-center justify-between">
                 <button onClick={() => setSetupStep(1)} className="px-5 py-3 border border-[#444] text-gray-400 hover:text-white rounded-xl text-sm hover:bg-white/5 transition-colors">
                   ← 템플릿 다시 선택
