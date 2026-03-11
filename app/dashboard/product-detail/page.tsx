@@ -130,275 +130,506 @@ function ImageDropZone({ imageUrl, onImageDrop, label = '이미지 추가', clas
   );
 }
 
-// ── EditableSection component ──────────────────────────────────
+// ── HeroGallery component ──────────────────────────────────────
+function HeroGallery({ images, onAddImage, onRemoveImage, accent }: {
+  images: string[]; onAddImage: (url: string) => void; onRemoveImage: (i: number) => void; accent: string;
+}) {
+  const [active, setActive] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const handleFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = e => { onAddImage(e.target?.result as string); setActive(images.length); };
+    reader.readAsDataURL(file);
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Main image */}
+      <div className="relative aspect-square rounded-3xl overflow-hidden bg-black/5 group cursor-pointer"
+        onClick={() => !images[active] && inputRef.current?.click()}
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if(f) handleFile(f); }}>
+        {images[active] ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={images[active]} className="w-full h-full object-cover" alt="" />
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+              <button onClick={e => { e.stopPropagation(); onRemoveImage(active); setActive(Math.max(0, active-1)); }}
+                className="text-white text-xs bg-red-500/80 px-3 py-1.5 rounded-full hover:bg-red-500">삭제</button>
+              <button onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}
+                className="text-white text-xs bg-white/20 px-3 py-1.5 rounded-full hover:bg-white/30">교체</button>
+            </div>
+          </>
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{background:`${accent}20`}}>
+              <svg className="w-7 h-7 opacity-40" style={{color:accent}} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div className="text-sm opacity-40 font-medium">제품 이미지 추가</div>
+            <div className="text-xs opacity-25">클릭 또는 드래그</div>
+          </div>
+        )}
+        <input ref={inputRef} type="file" accept="image/*" className="hidden"
+          onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
+      </div>
+      {/* Thumbnail strip */}
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{scrollbarWidth:'none'}}>
+        {images.map((img, i) => (
+          <button key={i} onClick={() => setActive(i)}
+            className="flex-shrink-0 w-16 h-16 rounded-2xl overflow-hidden border-2 transition-all"
+            style={{ borderColor: i === active ? accent : 'transparent', opacity: i === active ? 1 : 0.5 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={img} className="w-full h-full object-cover" alt="" />
+          </button>
+        ))}
+        {/* Add more button */}
+        <button onClick={() => inputRef.current?.click()}
+          className="flex-shrink-0 w-16 h-16 rounded-2xl border-2 border-dashed flex items-center justify-center text-xl transition-all hover:scale-105"
+          style={{ borderColor: `${accent}40`, color: accent, opacity: 0.6 }}>
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Commercial-grade EditableSection ──────────────────────────
+const FONT = "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', -apple-system, sans-serif";
+
 function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImageChange }: {
-  sectionKey: string;
-  data: Record<string, unknown>;
-  tpl: Template;
-  sectionImage?: string;
-  onUpdate: (data: Record<string, unknown>) => void;
+  sectionKey: string; data: Record<string, unknown>; tpl: Template;
+  sectionImage?: string; onUpdate: (data: Record<string, unknown>) => void;
   onImageChange: (url: string, name: string) => void;
 }) {
   const accent = tpl.accent;
-  const s = { background: tpl.bg, color: tpl.primary };
+  const bg = tpl.bg;
+  const primary = tpl.primary;
+  const isDark = (hex: string) => { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000<128; };
+  const bgIsDark = isDark(bg);
+
+  // Multi-image helper
+  const getImages = () => {
+    const stored = (data._images ?? []) as string[];
+    if (stored.length === 0 && sectionImage) return [sectionImage];
+    return stored;
+  };
+  const addImage = (url: string) => {
+    const imgs = getImages();
+    onUpdate({ ...data, _images: [...imgs, url] });
+    if (imgs.length === 0) onImageChange(url, 'image');
+  };
+  const removeImage = (i: number) => {
+    const imgs = [...getImages()]; imgs.splice(i, 1);
+    onUpdate({ ...data, _images: imgs });
+  };
+
+  const containerStyle: React.CSSProperties = { background: bg, color: primary, fontFamily: FONT };
+
+  // Shared: Section label + title block
+  const SectionLabel = ({ text }: { text: string }) => (
+    <div className="text-xs font-bold tracking-[0.2em] uppercase mb-4" style={{ color: accent }}>{text}</div>
+  );
 
   switch (sectionKey) {
+
     case 'hero': {
       const d = data as { headline?: string; subheadline?: string; tagline?: string; keyPoints?: string[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      const images = getImages();
       return (
-        <div className="relative rounded-2xl overflow-hidden min-h-[300px] flex" style={s}>
-          <div className="flex-1 p-10 flex flex-col justify-center">
-            <EditText tag="div" value={d.tagline ?? ''} onChange={v => update('tagline', v)}
-              className="text-xs font-bold mb-3 opacity-60 tracking-widest uppercase" />
-            <EditText tag="h2" value={d.headline ?? ''} onChange={v => update('headline', v)}
-              className="text-4xl font-black mb-3 leading-tight" />
-            <EditText tag="p" value={d.subheadline ?? ''} onChange={v => update('subheadline', v)}
-              className="text-lg opacity-70 mb-6" />
-            <div className="flex gap-3 flex-wrap items-center">
-              {(d.keyPoints ?? []).map((p, i) => (
-                <EditText key={i} tag="span" value={p} onChange={v => {
-                  const pts = [...(d.keyPoints ?? [])]; pts[i] = v; update('keyPoints', pts);
-                }} className="text-sm px-4 py-1.5 rounded-full font-semibold" style={{ background: accent, color: '#fff' }} />
-              ))}
-              <button onClick={() => update('keyPoints', [...(d.keyPoints ?? []), '새 포인트'])}
-                className="text-sm px-3 py-1.5 rounded-full border border-dashed opacity-40 hover:opacity-80">+</button>
+        <div style={containerStyle}>
+          {/* Top padding band */}
+          <div className="px-12 pt-16 pb-0">
+            <div className="grid grid-cols-[1fr_420px] gap-16 items-start">
+              {/* Left: copy */}
+              <div className="pt-4">
+                <EditText tag="div" value={d.tagline ?? ''} onChange={v => u('tagline', v)}
+                  className="text-xs font-bold tracking-[0.25em] uppercase mb-6"
+                  style={{ color: accent }} />
+                <EditText tag="h1" value={d.headline ?? ''}  onChange={v => u('headline', v)}
+                  className="font-black leading-[1.05] tracking-tight mb-6"
+                  style={{ fontSize: 'clamp(40px,5vw,72px)', letterSpacing: '-0.03em' }} />
+                <EditText tag="p" value={d.subheadline ?? ''} onChange={v => u('subheadline', v)}
+                  className="text-lg leading-relaxed mb-10"
+                  style={{ opacity: 0.65, maxWidth: 480, lineHeight: 1.7 }} />
+                {/* Key points */}
+                <div className="flex flex-wrap gap-2 mb-10">
+                  {(d.keyPoints ?? []).map((p, i) => (
+                    <EditText key={i} tag="span" value={p} onChange={v => {
+                      const pts = [...(d.keyPoints ?? [])]; pts[i] = v; u('keyPoints', pts);
+                    }} className="text-sm px-5 py-2 rounded-full font-semibold"
+                      style={{ background: accent, color: isDark(accent) ? '#fff' : '#000', letterSpacing: '-0.01em' }} />
+                  ))}
+                  <button onClick={() => u('keyPoints', [...(d.keyPoints ?? []), '새 포인트'])}
+                    className="text-sm px-4 py-2 rounded-full border-2 border-dashed transition-all hover:opacity-70"
+                    style={{ borderColor: `${accent}50`, color: accent, opacity: 0.4 }}>+</button>
+                </div>
+                {/* CTA row */}
+                <div className="flex items-center gap-4">
+                  <div className="px-8 py-4 rounded-2xl font-bold text-base cursor-default select-none"
+                    style={{ background: accent, color: isDark(accent) ? '#fff' : '#000', letterSpacing: '-0.01em' }}>
+                    지금 구매하기 →
+                  </div>
+                  <div className="text-sm font-medium opacity-40 cursor-default">자세히 보기 ↓</div>
+                </div>
+              </div>
+              {/* Right: image gallery */}
+              <div>
+                <HeroGallery images={images} onAddImage={addImage} onRemoveImage={removeImage} accent={accent} />
+              </div>
             </div>
           </div>
-          <div className="w-64 flex-shrink-0 p-6">
-            <ImageDropZone
-              imageUrl={sectionImage}
-              onImageDrop={onImageChange}
-              className="w-full h-full min-h-[200px]"
-              label="제품 이미지"
-            />
+          {/* Bottom accent bar */}
+          <div className="mt-14 px-12 pb-12 grid grid-cols-3 gap-0 border-t"
+            style={{ borderColor: `${primary}10` }}>
+            {[['무료 배송', '5만원 이상'],['전국 A/S','2,000개 센터'],['30일 환불','무조건 보장']].map(([t,s]) => (
+              <div key={t} className="pt-8 pr-8">
+                <div className="text-sm font-bold mb-0.5">{t}</div>
+                <div className="text-xs" style={{ opacity: 0.4 }}>{s}</div>
+              </div>
+            ))}
           </div>
         </div>
       );
     }
+
     case 'features': {
       const d = data as { title?: string; items?: { icon: string; title: string; desc: string }[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)}
-            className="text-2xl font-black mb-6" />
-          <div className="grid grid-cols-3 gap-4">
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="핵심 기능" />
+          <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+            className="font-black mb-14 leading-tight"
+            style={{ fontSize: 'clamp(32px,4vw,52px)', letterSpacing: '-0.03em' }} />
+          <div className="grid grid-cols-3 gap-6">
             {(d.items ?? []).map((item, i) => (
-              <div key={i} className="relative group p-4 rounded-xl" style={{ background: `${accent}15` }}>
-                <button onClick={() => {
-                  const items = [...(d.items ?? [])]; items.splice(i, 1); update('items', items);
-                }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-red-400 text-xs w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center hover:bg-red-500/40">✕</button>
-                <EditText tag="div" value={item.icon} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], icon: v }; update('items', items);
-                }} className="text-2xl mb-2" />
+              <div key={i} className="relative group">
+                <button onClick={() => { const items=[...(d.items??[])]; items.splice(i,1); u('items',items); }}
+                  className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 z-10 transition-opacity">✕</button>
+                {/* Number */}
+                <div className="text-6xl font-black mb-4 leading-none select-none"
+                  style={{ color: `${accent}20`, fontVariantNumeric: 'tabular-nums' }}>
+                  {String(i+1).padStart(2,'0')}
+                </div>
+                {/* Icon */}
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mb-4"
+                  style={{ background: `${accent}15` }}>
+                  <EditText tag="span" value={item.icon} onChange={v => {
+                    const items=[...(d.items??[])]; items[i]={...items[i],icon:v}; u('items',items);
+                  }} />
+                </div>
                 <EditText tag="div" value={item.title} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], title: v }; update('items', items);
-                }} className="font-bold text-sm mb-1" />
+                  const items=[...(d.items??[])]; items[i]={...items[i],title:v}; u('items',items);
+                }} className="font-bold text-lg mb-2" style={{ letterSpacing: '-0.02em' }} />
                 <EditText tag="div" value={item.desc} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], desc: v }; update('items', items);
-                }} className="text-xs opacity-60 leading-relaxed" />
+                  const items=[...(d.items??[])]; items[i]={...items[i],desc:v}; u('items',items);
+                }} className="text-sm leading-relaxed" style={{ opacity: 0.55, lineHeight: 1.7 }} />
               </div>
             ))}
-            <button onClick={() => update('items', [...(d.items ?? []), { icon: '✨', title: '새 기능', desc: '기능 설명을 입력하세요' }])}
-              className="flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-black/20 hover:border-black/40 opacity-40 hover:opacity-70 text-sm transition-all">
-              + 기능 추가
-            </button>
+            <button onClick={() => u('items', [...(d.items??[]),{icon:'✨',title:'새 기능',desc:'기능 설명'}])}
+              className="flex items-center justify-center rounded-3xl border-2 border-dashed min-h-[160px] text-sm font-medium transition-all hover:opacity-60"
+              style={{ borderColor: `${accent}30`, color: accent, opacity: 0.3 }}>+ 기능 추가</button>
           </div>
         </div>
       );
     }
+
     case 'design': {
-      const d = data as { title?: string; subtitle?: string; colorways?: { name: string; color: string; desc: string }[]; highlight?: string };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const d = data as { title?: string; designStory?: string; colorways?: { name: string; hex: string; desc: string }[]; materials?: string[] };
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      const images = getImages();
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-2" />
-          <EditText tag="p" value={d.subtitle ?? ''} onChange={v => update('subtitle', v)} className="opacity-60 mb-6" />
-          <div className="flex gap-4 mb-6">
-            {(d.colorways ?? []).map((c, i) => (
-              <div key={i} className="flex flex-col items-center gap-2">
-                <div className="w-12 h-12 rounded-full border-2 border-white/20" style={{ background: c.color }} />
-                <EditText tag="div" value={c.name} onChange={v => {
-                  const cw = [...(d.colorways ?? [])]; cw[i] = { ...cw[i], name: v }; update('colorways', cw);
-                }} className="text-xs font-semibold text-center" />
+        <div style={containerStyle}>
+          {/* Full-width image banner */}
+          <div className="relative w-full h-80 overflow-hidden group cursor-pointer"
+            onClick={() => { if(!images[0]) { const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=e=>{ const f=(e.target as HTMLInputElement).files?.[0]; if(f){const r=new FileReader();r.onload=ev=>addImage(ev.target?.result as string);r.readAsDataURL(f);} }; inp.click(); } }}>
+            {images[0] ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={images[0]} className="w-full h-full object-cover" alt="" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center" style={{ background: `${accent}10` }}>
+                <div className="text-center opacity-30">
+                  <div className="text-4xl mb-2">🖼</div>
+                  <div className="text-sm">디자인 이미지 추가 (클릭)</div>
+                </div>
               </div>
-            ))}
+            )}
+            {images[0] && (
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <button onClick={e => { e.stopPropagation(); removeImage(0); }} className="text-white text-sm bg-red-500/80 px-4 py-2 rounded-full">이미지 삭제</button>
+              </div>
+            )}
           </div>
-          {sectionImage && (
-            <div className="rounded-xl overflow-hidden mb-4 h-48">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={sectionImage} className="w-full h-full object-cover" alt="" />
+          <div className="px-12 py-14">
+            <SectionLabel text="디자인" />
+            <div className="grid grid-cols-[1fr_1fr] gap-16">
+              <div>
+                <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+                  className="font-black mb-6 leading-tight"
+                  style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+                <EditText tag="p" value={d.designStory ?? ''} onChange={v => u('designStory', v)}
+                  className="text-base leading-relaxed" style={{ opacity: 0.6, lineHeight: 1.8 }} />
+              </div>
+              <div>
+                {/* Color palette */}
+                <div className="mb-8">
+                  <div className="text-xs font-bold tracking-widest uppercase mb-4" style={{ opacity: 0.4 }}>컬러웨이</div>
+                  <div className="flex gap-4">
+                    {(d.colorways ?? []).map((c, i) => (
+                      <div key={i} className="flex flex-col items-center gap-2">
+                        <div className="w-12 h-12 rounded-full shadow-lg border-2 border-white/20" style={{ background: c.hex }} />
+                        <EditText tag="div" value={c.name} onChange={v => {
+                          const cw=[...(d.colorways??[])]; cw[i]={...cw[i],name:v}; u('colorways',cw);
+                        }} className="text-xs font-medium text-center" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Materials */}
+                {(d.materials ?? []).length > 0 && (
+                  <div>
+                    <div className="text-xs font-bold tracking-widest uppercase mb-4" style={{ opacity: 0.4 }}>소재</div>
+                    <div className="flex flex-wrap gap-2">
+                      {(d.materials ?? []).map((m, i) => (
+                        <EditText key={i} tag="span" value={m} onChange={v => {
+                          const mats=[...(d.materials??[])]; mats[i]=v; u('materials',mats);
+                        }} className="text-xs px-3 py-1.5 rounded-full font-medium"
+                          style={{ background: `${primary}10`, border: `1px solid ${primary}20` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-          <EditText tag="p" value={d.highlight ?? ''} onChange={v => update('highlight', v)} className="text-sm opacity-70" />
+          </div>
         </div>
       );
     }
+
     case 'specs': {
       const d = data as { title?: string; groups?: { groupName: string; rows: { label: string; value: string }[] }[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-6" />
-          {(d.groups ?? []).map((g, gi) => (
-            <div key={gi} className="mb-4">
-              <EditText tag="div" value={g.groupName} onChange={v => {
-                const groups = [...(d.groups ?? [])]; groups[gi] = { ...groups[gi], groupName: v }; update('groups', groups);
-              }} className="text-sm font-bold mb-2 opacity-60" />
-              <div className="rounded-xl overflow-hidden border" style={{ borderColor: `${accent}30` }}>
-                {g.rows.map((row, ri) => (
-                  <div key={ri} className="flex px-4 py-2.5 text-sm" style={{ background: ri % 2 === 0 ? `${accent}08` : 'transparent' }}>
-                    <EditText tag="span" value={row.label} onChange={v => {
-                      const groups = [...(d.groups ?? [])];
-                      groups[gi] = { ...groups[gi], rows: groups[gi].rows.map((r, idx) => idx === ri ? { ...r, label: v } : r) };
-                      update('groups', groups);
-                    }} className="w-32 opacity-60" />
-                    <EditText tag="span" value={row.value} onChange={v => {
-                      const groups = [...(d.groups ?? [])];
-                      groups[gi] = { ...groups[gi], rows: groups[gi].rows.map((r, idx) => idx === ri ? { ...r, value: v } : r) };
-                      update('groups', groups);
-                    }} className="font-semibold flex-1" />
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="기술 사양" />
+          <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+            className="font-black mb-12 leading-tight"
+            style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+          <div className="space-y-8">
+            {(d.groups ?? []).map((g, gi) => (
+              <div key={gi}>
+                {/* Group header */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: accent }} />
+                  <EditText tag="div" value={g.groupName} onChange={v => {
+                    const groups=[...(d.groups??[])]; groups[gi]={...groups[gi],groupName:v}; u('groups',groups);
+                  }} className="text-sm font-bold tracking-wider uppercase" style={{ opacity: 0.5 }} />
+                </div>
+                <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${primary}10` }}>
+                  {g.rows.map((row, ri) => (
+                    <div key={ri} className="flex items-center px-6 py-4 text-sm"
+                      style={{ background: ri%2===0 ? `${primary}04` : 'transparent', borderBottom: ri<g.rows.length-1 ? `1px solid ${primary}06` : 'none' }}>
+                      <EditText tag="span" value={row.label} onChange={v => {
+                        const groups=[...(d.groups??[])];
+                        groups[gi]={...groups[gi],rows:groups[gi].rows.map((r,i)=>i===ri?{...r,label:v}:r)};
+                        u('groups',groups);
+                      }} className="w-40 flex-shrink-0 font-medium" style={{ opacity: 0.45 }} />
+                      <EditText tag="span" value={row.value} onChange={v => {
+                        const groups=[...(d.groups??[])];
+                        groups[gi]={...groups[gi],rows:groups[gi].rows.map((r,i)=>i===ri?{...r,value:v}:r)};
+                        u('groups',groups);
+                      }} className="font-semibold flex-1" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    case 'scenarios': {
+      const d = data as { title?: string; items?: { situation: string; desc: string; emoji: string }[] };
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      return (
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="사용 시나리오" />
+          <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+            className="font-black mb-14 leading-tight"
+            style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+          <div className="space-y-6">
+            {(d.items ?? []).map((item, i) => (
+              <div key={i} className="relative group flex gap-8 items-start p-8 rounded-3xl transition-all"
+                style={{ background: i%2===0 ? `${accent}08` : `${primary}04`, border: `1px solid ${primary}06` }}>
+                <button onClick={() => { const items=[...(d.items??[])]; items.splice(i,1); u('items',items); }}
+                  className="absolute top-3 right-3 w-6 h-6 bg-red-500 rounded-full text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
+                {/* Number */}
+                <div className="flex-shrink-0 w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-black"
+                  style={{ background: accent, color: isDark(accent) ? '#fff' : '#000' }}>
+                  <EditText tag="span" value={item.emoji} onChange={v => {
+                    const items=[...(d.items??[])]; items[i]={...items[i],emoji:v}; u('items',items);
+                  }} />
+                </div>
+                <div className="flex-1">
+                  <EditText tag="div" value={item.situation} onChange={v => {
+                    const items=[...(d.items??[])]; items[i]={...items[i],situation:v}; u('items',items);
+                  }} className="font-bold text-lg mb-2" style={{ letterSpacing: '-0.02em' }} />
+                  <EditText tag="div" value={item.desc} onChange={v => {
+                    const items=[...(d.items??[])]; items[i]={...items[i],desc:v}; u('items',items);
+                  }} className="text-sm leading-relaxed" style={{ opacity: 0.55 }} />
+                </div>
+              </div>
+            ))}
+            <button onClick={() => u('items', [...(d.items??[]),{situation:'새 시나리오',desc:'설명을 입력하세요',emoji:'🏠'}])}
+              className="w-full py-5 rounded-3xl border-2 border-dashed text-sm font-medium transition-all hover:opacity-60"
+              style={{ borderColor: `${accent}30`, color: accent, opacity: 0.3 }}>+ 시나리오 추가</button>
+          </div>
+        </div>
+      );
+    }
+
+    case 'smart': {
+      const d = data as { title?: string; subtitle?: string; features?: { icon: string; name: string; desc: string }[] };
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      return (
+        <div style={containerStyle}>
+          <div className="px-12 py-16">
+            <SectionLabel text="스마트 기능" />
+            <div className="grid grid-cols-[1fr_1fr] gap-16 mb-12">
+              <div>
+                <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+                  className="font-black leading-tight"
+                  style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+              </div>
+              <div className="flex items-end">
+                <EditText tag="p" value={d.subtitle ?? ''} onChange={v => u('subtitle', v)}
+                  className="text-base leading-relaxed" style={{ opacity: 0.55 }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {(d.features ?? []).map((f, i) => (
+                <div key={i} className="relative group flex gap-5 items-start p-6 rounded-3xl"
+                  style={{ background: bgIsDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', border: `1px solid ${primary}08` }}>
+                  <button onClick={() => { const features=[...(d.features??[])]; features.splice(i,1); u('features',features); }}
+                    className="absolute top-3 right-3 w-5 h-5 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0"
+                    style={{ background: `${accent}20` }}>
+                    <EditText tag="span" value={f.icon} onChange={v => {
+                      const features=[...(d.features??[])]; features[i]={...features[i],icon:v}; u('features',features);
+                    }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <EditText tag="div" value={f.name} onChange={v => {
+                      const features=[...(d.features??[])]; features[i]={...features[i],name:v}; u('features',features);
+                    }} className="font-bold mb-1.5" style={{ letterSpacing: '-0.02em' }} />
+                    <EditText tag="div" value={f.desc} onChange={v => {
+                      const features=[...(d.features??[])]; features[i]={...features[i],desc:v}; u('features',features);
+                    }} className="text-sm leading-relaxed" style={{ opacity: 0.5 }} />
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => u('features', [...(d.features??[]),{icon:'⚡',name:'새 기능',desc:'설명'}])}
+                className="flex items-center justify-center rounded-3xl border-2 border-dashed min-h-[100px] text-sm font-medium transition-all hover:opacity-60"
+                style={{ borderColor: `${accent}30`, color: accent, opacity: 0.3 }}>+</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    case 'energy': {
+      const d = data as { title?: string; grade?: string; annualCost?: string; comparisonNote?: string; badges?: { label: string; icon: string }[] };
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      return (
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="에너지 효율" />
+          <div className="grid grid-cols-[1fr_auto] gap-12 items-start">
+            <div>
+              <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+                className="font-black mb-10 leading-tight"
+                style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+              {/* Badges */}
+              <div className="flex flex-wrap gap-3 mb-8">
+                {(d.badges ?? []).map((b, i) => (
+                  <div key={i} className="flex items-center gap-2 px-5 py-3 rounded-2xl"
+                    style={{ background: `${accent}15`, border: `1px solid ${accent}30` }}>
+                    <EditText tag="span" value={b.icon} onChange={v => {
+                      const badges=[...(d.badges??[])]; badges[i]={...badges[i],icon:v}; u('badges',badges);
+                    }} className="text-xl" />
+                    <EditText tag="span" value={b.label} onChange={v => {
+                      const badges=[...(d.badges??[])]; badges[i]={...badges[i],label:v}; u('badges',badges);
+                    }} className="text-sm font-semibold" />
                   </div>
                 ))}
               </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    case 'scenarios': {
-      const d = data as { title?: string; items?: { icon: string; title: string; desc: string }[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
-      return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-6" />
-          <div className="space-y-4">
-            {(d.items ?? []).map((item, i) => (
-              <div key={i} className="relative group flex items-start gap-4 p-4 rounded-xl" style={{ background: `${accent}10` }}>
-                <button onClick={() => {
-                  const items = [...(d.items ?? [])]; items.splice(i, 1); update('items', items);
-                }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-red-400 text-xs w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">✕</button>
-                <EditText tag="div" value={item.icon} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], icon: v }; update('items', items);
-                }} className="text-3xl flex-shrink-0" />
-                <div className="flex-1">
-                  <EditText tag="div" value={item.title} onChange={v => {
-                    const items = [...(d.items ?? [])]; items[i] = { ...items[i], title: v }; update('items', items);
-                  }} className="font-bold mb-1" />
-                  <EditText tag="div" value={item.desc} onChange={v => {
-                    const items = [...(d.items ?? [])]; items[i] = { ...items[i], desc: v }; update('items', items);
-                  }} className="text-sm opacity-60" />
-                </div>
-              </div>
-            ))}
-            <button onClick={() => update('items', [...(d.items ?? []), { icon: '🏠', title: '새 시나리오', desc: '시나리오 설명을 입력하세요' }])}
-              className="w-full p-3 rounded-xl border-2 border-dashed border-black/20 hover:border-black/40 opacity-40 hover:opacity-70 text-sm transition-all">
-              + 시나리오 추가
-            </button>
-          </div>
-        </div>
-      );
-    }
-    case 'smart': {
-      const d = data as { title?: string; subtitle?: string; features?: { icon: string; title: string; desc: string }[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
-      return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-2" />
-          <EditText tag="p" value={d.subtitle ?? ''} onChange={v => update('subtitle', v)} className="opacity-60 mb-6" />
-          <div className="grid grid-cols-2 gap-4">
-            {(d.features ?? []).map((f, i) => (
-              <div key={i} className="relative group p-4 rounded-xl flex gap-3 items-start" style={{ background: `${accent}15` }}>
-                <button onClick={() => {
-                  const features = [...(d.features ?? [])]; features.splice(i, 1); update('features', features);
-                }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-red-400 text-xs w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">✕</button>
-                <EditText tag="div" value={f.icon} onChange={v => {
-                  const features = [...(d.features ?? [])]; features[i] = { ...features[i], icon: v }; update('features', features);
-                }} className="text-2xl flex-shrink-0" />
+              <div className="flex gap-8">
                 <div>
-                  <EditText tag="div" value={f.title} onChange={v => {
-                    const features = [...(d.features ?? [])]; features[i] = { ...features[i], title: v }; update('features', features);
-                  }} className="font-bold text-sm mb-1" />
-                  <EditText tag="div" value={f.desc} onChange={v => {
-                    const features = [...(d.features ?? [])]; features[i] = { ...features[i], desc: v }; update('features', features);
-                  }} className="text-xs opacity-60" />
+                  <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ opacity: 0.4 }}>연간 전기요금</div>
+                  <EditText tag="div" value={d.annualCost ?? ''} onChange={v => u('annualCost', v)}
+                    className="text-2xl font-black" style={{ color: accent }} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold tracking-widest uppercase mb-1" style={{ opacity: 0.4 }}>절감 비교</div>
+                  <EditText tag="div" value={d.comparisonNote ?? ''} onChange={v => u('comparisonNote', v)}
+                    className="text-2xl font-black" />
                 </div>
               </div>
-            ))}
+            </div>
+            {/* Grade badge */}
+            <div className="flex flex-col items-center justify-center w-40 h-40 rounded-3xl"
+              style={{ background: accent }}>
+              <div className="text-xs font-bold tracking-widest text-white/70 uppercase mb-1">에너지</div>
+              <EditText tag="div" value={d.grade ?? ''} onChange={v => u('grade', v)}
+                className="font-black text-white leading-none"
+                style={{ fontSize: 56 }} />
+              <div className="text-xs text-white/70 mt-1">등급</div>
+            </div>
           </div>
         </div>
       );
     }
-    case 'energy': {
-      const d = data as { title?: string; grade?: string; annualCost?: string; co2?: string; highlights?: string[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
-      return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-6" />
-          <div className="flex gap-6 items-center mb-6">
-            <div className="text-center">
-              <div className="text-xs opacity-50 mb-1">에너지 등급</div>
-              <EditText tag="div" value={d.grade ?? ''} onChange={v => update('grade', v)}
-                className="text-5xl font-black" style={{ color: accent }} />
-            </div>
-            <div className="flex-1 space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="opacity-60">연간 전기요금</span>
-                <EditText tag="span" value={d.annualCost ?? ''} onChange={v => update('annualCost', v)} className="font-bold" />
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="opacity-60">CO₂ 절감</span>
-                <EditText tag="span" value={d.co2 ?? ''} onChange={v => update('co2', v)} className="font-bold" />
-              </div>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {(d.highlights ?? []).map((h, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm">
-                <span style={{ color: accent }}>✓</span>
-                <EditText tag="span" value={h} onChange={v => {
-                  const hl = [...(d.highlights ?? [])]; hl[i] = v; update('highlights', hl);
-                }} className="flex-1" />
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
+
     case 'comparison': {
       const d = data as { title?: string; headers?: string[]; rows?: { feature: string; values: string[] }[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-6" />
-          <div className="overflow-auto rounded-xl border" style={{ borderColor: `${accent}30` }}>
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="비교" />
+          <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+            className="font-black mb-10 leading-tight"
+            style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+          <div className="rounded-3xl overflow-hidden" style={{ border: `1px solid ${primary}10` }}>
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ background: accent }}>
                   {(d.headers ?? []).map((h, i) => (
-                    <th key={i} className="px-4 py-3 text-left font-bold text-white">
+                    <th key={i} className={`px-6 py-5 text-left font-bold ${i===0 ? 'w-44' : ''}`}
+                      style={{ color: isDark(accent) ? '#fff' : '#000' }}>
                       <EditText tag="span" value={h} onChange={v => {
-                        const headers = [...(d.headers ?? [])]; headers[i] = v; update('headers', headers);
-                      }} className="text-white" />
+                        const headers=[...(d.headers??[])]; headers[i]=v; u('headers',headers);
+                      }} style={{ color: isDark(accent) ? '#fff' : '#000' }} />
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {(d.rows ?? []).slice(0, 5).map((row, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? `${accent}08` : 'transparent' }}>
-                    <td className="px-4 py-2.5 font-medium">
+                {(d.rows ?? []).map((row, i) => (
+                  <tr key={i} style={{ background: i%2===0 ? `${primary}03` : 'transparent', borderBottom: `1px solid ${primary}06` }}>
+                    <td className="px-6 py-4 font-medium" style={{ opacity: 0.6 }}>
                       <EditText tag="span" value={row.feature} onChange={v => {
-                        const rows = [...(d.rows ?? [])]; rows[i] = { ...rows[i], feature: v }; update('rows', rows);
+                        const rows=[...(d.rows??[])]; rows[i]={...rows[i],feature:v}; u('rows',rows);
                       }} />
                     </td>
                     {(row.values ?? []).map((v, j) => (
-                      <td key={j} className={`px-4 py-2.5 ${j === 0 ? 'font-bold' : 'opacity-60'}`}>
+                      <td key={j} className={`px-6 py-4 ${j===0 ? 'font-bold' : ''}`}
+                        style={{ color: j===0 ? accent : undefined, opacity: j>0 ? 0.45 : 1 }}>
                         <EditText tag="span" value={v} onChange={val => {
-                          const rows = [...(d.rows ?? [])];
-                          rows[i] = { ...rows[i], values: rows[i].values.map((rv, ri) => ri === j ? val : rv) };
-                          update('rows', rows);
+                          const rows=[...(d.rows??[])];
+                          rows[i]={...rows[i],values:rows[i].values.map((rv,ri)=>ri===j?val:rv)};
+                          u('rows',rows);
                         }} />
                       </td>
                     ))}
@@ -410,131 +641,200 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
         </div>
       );
     }
+
     case 'inbox': {
-      const d = data as { title?: string; items?: { name: string; qty: string; icon: string }[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const d = data as { title?: string; items?: { name: string; qty: string; icon?: string }[] };
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-6" />
-          <div className="grid grid-cols-4 gap-4">
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="구성품" />
+          <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+            className="font-black mb-10"
+            style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+          <div className="grid grid-cols-5 gap-4">
             {(d.items ?? []).map((item, i) => (
-              <div key={i} className="relative group p-4 rounded-xl text-center" style={{ background: `${accent}10` }}>
-                <button onClick={() => {
-                  const items = [...(d.items ?? [])]; items.splice(i, 1); update('items', items);
-                }} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-red-400 text-[10px] w-4 h-4 bg-red-500/20 rounded-full flex items-center justify-center">✕</button>
-                <EditText tag="div" value={item.icon} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], icon: v }; update('items', items);
-                }} className="text-3xl mb-2" />
+              <div key={i} className="relative group flex flex-col items-center gap-3 p-5 rounded-3xl text-center"
+                style={{ background: `${primary}05`, border: `1px solid ${primary}08` }}>
+                <button onClick={() => { const items=[...(d.items??[])]; items.splice(i,1); u('items',items); }}
+                  className="absolute top-2 right-2 w-5 h-5 bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
+                  style={{ background: `${accent}15` }}>
+                  <EditText tag="span" value={item.icon ?? '📦'} onChange={v => {
+                    const items=[...(d.items??[])]; items[i]={...items[i],icon:v}; u('items',items);
+                  }} />
+                </div>
                 <EditText tag="div" value={item.name} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], name: v }; update('items', items);
-                }} className="text-xs font-semibold mb-1" />
+                  const items=[...(d.items??[])]; items[i]={...items[i],name:v}; u('items',items);
+                }} className="text-sm font-semibold leading-tight" />
                 <EditText tag="div" value={item.qty} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], qty: v }; update('items', items);
-                }} className="text-xs opacity-50" />
+                  const items=[...(d.items??[])]; items[i]={...items[i],qty:v}; u('items',items);
+                }} className="text-xs rounded-full px-2 py-0.5 font-medium"
+                  style={{ background: `${accent}20`, color: accent }} />
               </div>
             ))}
-            <button onClick={() => update('items', [...(d.items ?? []), { icon: '📦', name: '새 구성품', qty: '1개' }])}
-              className="p-4 rounded-xl border-2 border-dashed border-black/20 hover:border-black/40 opacity-40 hover:opacity-70 text-sm transition-all flex items-center justify-center">
-              +
-            </button>
+            <button onClick={() => u('items', [...(d.items??[]),{icon:'📦',name:'새 구성품',qty:'1개'}])}
+              className="flex flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed min-h-[120px] text-sm font-medium transition-all hover:opacity-60"
+              style={{ borderColor: `${accent}30`, color: accent, opacity: 0.3 }}>+</button>
           </div>
         </div>
       );
     }
+
     case 'reviews': {
       const d = data as { title?: string; rating?: string; summary?: string; items?: { author: string; rating: number; body: string; tag?: string }[] };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      const stars = (n: number, color: string) => Array.from({length:5}).map((_,i) => (
+        <span key={i} style={{ color: i<n ? color : `${color}30`, fontSize: 14 }}>★</span>
+      ));
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <div className="flex items-center gap-4 mb-6">
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="고객 리뷰" />
+          <div className="flex items-end gap-6 mb-12">
             <div>
-              <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black" />
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-3xl font-black" style={{ color: accent }}>{d.rating}</span>
-                <div className="flex">{[1,2,3,4,5].map(i => <span key={i} style={{ color: accent }}>★</span>)}</div>
+              <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+                className="font-black leading-tight"
+                style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+            </div>
+            <div className="flex items-center gap-3 pb-1">
+              <div className="text-5xl font-black" style={{ color: accent }}>{d.rating}</div>
+              <div>
+                <div className="flex">{stars(Math.round(parseFloat(d.rating??'5')), accent)}</div>
+                <div className="text-xs mt-0.5" style={{ opacity: 0.4 }}>/ 5.0</div>
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             {(d.items ?? []).map((r, i) => (
-              <div key={i} className="relative group p-4 rounded-xl" style={{ background: `${accent}10` }}>
-                <button onClick={() => {
-                  const items = [...(d.items ?? [])]; items.splice(i, 1); update('items', items);
-                }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-red-400 text-[10px] w-4 h-4 bg-red-500/20 rounded-full flex items-center justify-center">✕</button>
-                <div className="flex items-center gap-2 mb-2">
-                  <EditText tag="span" value={r.author} onChange={v => {
-                    const items = [...(d.items ?? [])]; items[i] = { ...items[i], author: v }; update('items', items);
-                  }} className="text-sm font-bold" />
-                  {r.tag && <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: accent, color: '#fff' }}>{r.tag}</span>}
+              <div key={i} className="relative group p-6 rounded-3xl"
+                style={{ background: `${primary}04`, border: `1px solid ${primary}08` }}>
+                <button onClick={() => { const items=[...(d.items??[])]; items.splice(i,1); u('items',items); }}
+                  className="absolute top-3 right-3 w-5 h-5 bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black"
+                    style={{ background: accent, color: isDark(accent) ? '#fff' : '#000' }}>
+                    {r.author.charAt(0)}
+                  </div>
+                  <div>
+                    <EditText tag="div" value={r.author} onChange={v => {
+                      const items=[...(d.items??[])]; items[i]={...items[i],author:v}; u('items',items);
+                    }} className="text-sm font-bold" />
+                    <div className="flex mt-0.5">{stars(r.rating, accent)}</div>
+                  </div>
+                  {r.tag && (
+                    <span className="ml-auto text-xs px-2.5 py-1 rounded-full font-semibold"
+                      style={{ background: `${accent}20`, color: accent }}>{r.tag}</span>
+                  )}
                 </div>
-                <div className="flex mb-1">{Array.from({length: r.rating}).map((_,ri) => <span key={ri} style={{color:accent}}>★</span>)}</div>
                 <EditText tag="p" value={r.body} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], body: v }; update('items', items);
-                }} className="text-xs opacity-70 leading-relaxed" />
+                  const items=[...(d.items??[])]; items[i]={...items[i],body:v}; u('items',items);
+                }} className="text-sm leading-relaxed" style={{ opacity: 0.6, lineHeight: 1.7 }} />
               </div>
             ))}
           </div>
         </div>
       );
     }
+
     case 'warranty': {
-      const d = data as { title?: string; items?: { icon: string; title: string; desc: string }[]; note?: string };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const d = data as { title?: string; warrantyPeriod?: string; coverageItems?: string[]; serviceCenters?: string; note?: string };
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <EditText tag="h2" value={d.title ?? ''} onChange={v => update('title', v)} className="text-2xl font-black mb-6" />
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            {(d.items ?? []).map((item, i) => (
-              <div key={i} className="relative group p-4 rounded-xl text-center" style={{ background: `${accent}10` }}>
-                <button onClick={() => {
-                  const items = [...(d.items ?? [])]; items.splice(i, 1); update('items', items);
-                }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-red-400 text-[10px] w-4 h-4 bg-red-500/20 rounded-full flex items-center justify-center">✕</button>
-                <EditText tag="div" value={item.icon} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], icon: v }; update('items', items);
-                }} className="text-3xl mb-2" />
-                <EditText tag="div" value={item.title} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], title: v }; update('items', items);
-                }} className="font-bold text-sm mb-1" />
-                <EditText tag="div" value={item.desc} onChange={v => {
-                  const items = [...(d.items ?? [])]; items[i] = { ...items[i], desc: v }; update('items', items);
-                }} className="text-xs opacity-60" />
+        <div className="px-12 py-16" style={containerStyle}>
+          <SectionLabel text="A/S 보증" />
+          <div className="grid grid-cols-[1fr_1fr] gap-16 items-start">
+            <div>
+              <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+                className="font-black mb-8 leading-tight"
+                style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+              <div className="space-y-3">
+                {(d.coverageItems ?? []).map((item, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ background: accent }}>
+                      <span style={{ color: isDark(accent)?'#fff':'#000', fontSize: 10 }}>✓</span>
+                    </div>
+                    <EditText tag="span" value={item} onChange={v => {
+                      const items=[...(d.coverageItems??[])]; items[i]=v; u('coverageItems',items);
+                    }} className="text-sm font-medium" />
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            <div className="space-y-5">
+              <div className="p-6 rounded-3xl" style={{ background: `${accent}10`, border: `1px solid ${accent}20` }}>
+                <div className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: accent }}>보증기간</div>
+                <EditText tag="div" value={d.warrantyPeriod ?? ''} onChange={v => u('warrantyPeriod', v)}
+                  className="text-xl font-black" />
+              </div>
+              <div className="p-6 rounded-3xl" style={{ background: `${primary}05` }}>
+                <div className="text-xs font-bold tracking-widest uppercase mb-2" style={{ opacity: 0.4 }}>서비스센터</div>
+                <EditText tag="div" value={d.serviceCenters ?? ''} onChange={v => u('serviceCenters', v)}
+                  className="text-xl font-black" />
+              </div>
+              {d.note && (
+                <EditText tag="p" value={d.note} onChange={v => u('note', v)}
+                  className="text-xs leading-relaxed" style={{ opacity: 0.4 }} />
+              )}
+            </div>
           </div>
-          <EditText tag="p" value={d.note ?? ''} onChange={v => update('note', v)} className="text-xs opacity-50 text-center" />
         </div>
       );
     }
+
     case 'cta': {
       const d = data as { headline?: string; subtext?: string; price?: string; originalPrice?: string; badge?: string; btnText?: string; installNote?: string };
-      const update = (field: string, val: unknown) => onUpdate({ ...d, [field]: val });
+      const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
+      const ctaBg = bgIsDark ? `linear-gradient(135deg, ${accent}22 0%, ${bg} 100%)` : `linear-gradient(135deg, ${bg} 0%, ${accent}15 100%)`;
       return (
-        <div className="rounded-2xl overflow-hidden p-12 text-center" style={{ background: accent, color: '#fff' }}>
-          {d.badge && <div className="inline-block bg-white/20 px-3 py-1 rounded-full text-sm font-bold mb-4">{d.badge}</div>}
-          <EditText tag="h2" value={d.headline ?? ''} onChange={v => update('headline', v)} className="text-3xl font-black mb-2 text-white" />
-          <EditText tag="p" value={d.subtext ?? ''} onChange={v => update('subtext', v)} className="opacity-80 mb-6 text-white" />
-          <div className="flex items-center justify-center gap-3 mb-6">
-            {d.originalPrice && <EditText tag="span" value={d.originalPrice} onChange={v => update('originalPrice', v)} className="text-lg line-through opacity-50 text-white" />}
-            <EditText tag="span" value={d.price ?? ''} onChange={v => update('price', v)} className="text-4xl font-black text-white" />
+        <div style={{ ...containerStyle, background: ctaBg }}>
+          <div className="px-12 py-20 text-center">
+            {d.badge && (
+              <div className="inline-flex items-center gap-2 mb-8 px-5 py-2.5 rounded-full text-sm font-bold"
+                style={{ background: accent, color: isDark(accent)?'#fff':'#000' }}>
+                <EditText tag="span" value={d.badge} onChange={v => u('badge', v)} />
+              </div>
+            )}
+            <EditText tag="h2" value={d.headline ?? ''} onChange={v => u('headline', v)}
+              className="font-black mb-4 leading-tight mx-auto"
+              style={{ fontSize: 'clamp(36px,5vw,64px)', letterSpacing: '-0.04em', maxWidth: 700 }} />
+            <EditText tag="p" value={d.subtext ?? ''} onChange={v => u('subtext', v)}
+              className="text-lg mb-10 mx-auto" style={{ opacity: 0.55, maxWidth: 500, lineHeight: 1.7 }} />
+            {/* Price */}
+            <div className="flex items-center justify-center gap-4 mb-10">
+              {d.originalPrice && (
+                <EditText tag="span" value={d.originalPrice} onChange={v => u('originalPrice', v)}
+                  className="text-xl line-through" style={{ opacity: 0.35 }} />
+              )}
+              <EditText tag="span" value={d.price ?? ''} onChange={v => u('price', v)}
+                className="font-black" style={{ fontSize: 56, color: accent, letterSpacing: '-0.04em' }} />
+            </div>
+            {/* Button */}
+            <div className="inline-flex items-center gap-3 px-12 py-5 rounded-2xl font-black text-lg cursor-default"
+              style={{ background: accent, color: isDark(accent)?'#fff':'#000', letterSpacing: '-0.02em', fontSize: 18 }}>
+              <EditText tag="span" value={d.btnText ?? '지금 구매하기'} onChange={v => u('btnText', v)}
+                style={{ color: isDark(accent)?'#fff':'#000' }} />
+              <span style={{ color: isDark(accent)?'#fff':'#000' }}>→</span>
+            </div>
+            {d.installNote && (
+              <EditText tag="p" value={d.installNote} onChange={v => u('installNote', v)}
+                className="text-sm mt-5" style={{ opacity: 0.35 }} />
+            )}
           </div>
-          <button className="px-10 py-4 rounded-full font-black text-lg bg-white" style={{ color: accent }}>
-            {d.btnText ?? '지금 구매하기'}
-          </button>
-          {d.installNote && <EditText tag="p" value={d.installNote} onChange={v => update('installNote', v)} className="mt-3 text-sm opacity-70 text-white" />}
         </div>
       );
     }
+
     default: {
       return (
-        <div className="rounded-2xl overflow-hidden p-8" style={s}>
-          <h3 className="text-xl font-black mb-4">
+        <div className="px-12 py-16" style={containerStyle}>
+          <h3 className="font-black mb-6" style={{ fontSize: 32, letterSpacing: '-0.03em', fontFamily: FONT }}>
             {(data.title as string) ?? SECTION_META.find(m => m.key === sectionKey)?.label}
           </h3>
           <div className="space-y-2">
-            {Object.entries(data).filter(([k]) => k !== 'title').slice(0, 6).map(([k, v]) => (
-              <div key={k} className="flex gap-3 text-sm">
-                <span className="opacity-50 w-28 flex-shrink-0">{k}</span>
-                <span className="opacity-80 truncate">{typeof v === 'string' ? v : JSON.stringify(v).slice(0, 80)}</span>
+            {Object.entries(data).filter(([k]) => k !== 'title' && !k.startsWith('_')).slice(0,8).map(([k,v]) => (
+              <div key={k} className="flex gap-4 text-sm py-2 border-b" style={{ borderColor: `${primary}08`, opacity: 0.7 }}>
+                <span className="w-32 flex-shrink-0" style={{ opacity: 0.4 }}>{k}</span>
+                <span className="truncate">{typeof v==='string' ? v : JSON.stringify(v).slice(0,80)}</span>
               </div>
             ))}
           </div>
@@ -900,6 +1200,16 @@ ${SECTION_META.map(m => {
       if (d.connected) { setFigmaConnected(true); setFigmaUser(d.figma_name ?? ''); }
     }).catch(() => {});
     fetch('/api/product-detail/projects').then(r => r.json()).then(d => setProjects(d.projects ?? [])).catch(() => {});
+  }, []);
+
+  // Load Pretendard font
+  useEffect(() => {
+    if (document.getElementById('pretendard-font')) return;
+    const link = document.createElement('link');
+    link.id = 'pretendard-font';
+    link.rel = 'stylesheet';
+    link.href = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css';
+    document.head.appendChild(link);
   }, []);
 
   // ── SETUP MODE ─────────────────────────────────────────────
