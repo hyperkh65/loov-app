@@ -44,7 +44,7 @@ const TEMPLATES = [
   { id:'deep-purple',    name:'Deep Purple',     bg:'#1A0533', primary:'#FFFFFF', accent:'#A855F7',  desc:'AI/스마트 가전 · 퍼플' },
 ];
 
-const CATEGORIES = ['에어컨','냉장고','세탁기','건조기','공기청정기','로봇청소기','식기세척기','오븐/레인지','정수기','TV','노트북','스마트폰','블루투스스피커','헤드폰','기타'];
+const CATEGORIES = ['에어컨','냉장고','세탁기','건조기','공기청정기','로봇청소기','식기세척기','오븐/레인지','정수기','TV','노트북','스마트폰','블루투스스피커','헤드폰','LED조명','기타'];
 
 const SECTION_META = [
   { key:'hero',       icon:'🎯', label:'히어로' },
