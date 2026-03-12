@@ -224,9 +224,15 @@ export default function SettingsPage() {
             <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-sm text-green-900 space-y-2">
               <p className="font-bold">🟢 네이버 API 키 설정</p>
               <p>키워드 도구, 블로그 판독기, 노출 체크, 가격 비교 등 마케팅 기능을 사용하려면 네이버 API 키가 필요합니다.</p>
-              <div className="text-xs text-green-700 space-y-1">
-                <p>• <strong>오픈 API (Client ID/Secret)</strong>: <a href="https://developers.naver.com/apps" target="_blank" rel="noopener" className="underline">developers.naver.com/apps</a> → 앱 등록 → 검색, 데이터랩 권한 추가</p>
-                <p>• <strong>검색광고 API</strong>: <a href="https://searchad.naver.com" target="_blank" rel="noopener" className="underline">searchad.naver.com</a> → 도구 → API 관리 (키워드 검색량 조회용)</p>
+              <div className="text-xs text-green-700 space-y-1.5">
+                <div className="flex gap-2 items-start">
+                  <span className="mt-0.5 flex-shrink-0">①</span>
+                  <span><strong>오픈 API (Client ID/Secret)</strong>: <a href="https://developers.naver.com/apps" target="_blank" rel="noopener" className="underline">developers.naver.com/apps</a> → 앱 등록 → 검색·데이터랩·쇼핑 권한 추가</span>
+                </div>
+                <div className="flex gap-2 items-start">
+                  <span className="mt-0.5 flex-shrink-0">②</span>
+                  <span><strong>검색광고 API</strong>: <a href="https://searchad.naver.com" target="_blank" rel="noopener" className="underline">searchad.naver.com</a> → 도구 → API 관리 (키워드 검색량 조회용)</span>
+                </div>
               </div>
             </div>
 
