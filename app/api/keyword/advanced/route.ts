@@ -12,8 +12,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
-import crypto from 'crypto';
-
 export const runtime = 'edge';
 export const preferredRegion = ['icn1', 'hnd1'];
 
@@ -58,9 +56,13 @@ function calcMoneyScore(p: {
 }
 
 // ── 네이버 검색광고 API ─────────────────────────────────────────────────────
-function naverAdSign(timestamp: number, method: string, path: string, secret: string) {
+async function naverAdSign(timestamp: number, method: string, path: string, secret: string) {
   const msg = `${timestamp}.${method}.${path}`;
-  return crypto.createHmac('sha256', secret).update(msg).digest('base64');
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
 }
 
 async function fetchNaverAd(keywords: string[]): Promise<Array<{
@@ -74,7 +76,7 @@ async function fetchNaverAd(keywords: string[]): Promise<Array<{
 
   const timestamp = Date.now();
   const path = '/keywordstool';
-  const sig = naverAdSign(timestamp, 'GET', path, secret);
+  const sig = await naverAdSign(timestamp, 'GET', path, secret);
   const qs = keywords.map(k => `hintKeywords=${encodeURIComponent(k)}`).join('&') + '&showDetail=1';
   try {
     const res = await fetch(`https://api.searchad.naver.com${path}?${qs}`, {
