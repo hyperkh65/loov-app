@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Tab = 'golden' | 'batch' | 'trend' | 'price' | 'blog' | 'exposure';
+type Tab = 'golden' | 'batch' | 'trend' | 'price' | 'blog' | 'exposure' | 'ranking';
 
 interface KeywordResult {
   keyword: string;
@@ -55,6 +55,11 @@ interface ExposureResult {
   myPosts: Array<{ rank: number; title: string; date: string; url: string }>;
   totalResults: number;
 }
+
+interface RankingNewsItem { title: string; url: string; desc: string; date: string; }
+interface RankingBlogItem { title: string; url: string; author: string; date: string; }
+interface RankingShopItem { title: string; url: string; price: number; image: string; mall: string; brand: string; category: string; }
+interface RankingData { news: RankingNewsItem[]; blog: RankingBlogItem[]; shopping: RankingShopItem[]; fetchedAt?: string; }
 
 // ── Grade config ───────────────────────────────────────────────────────────────
 const GRADE_CONFIG = {
@@ -133,6 +138,14 @@ export default function KeywordPage() {
   const [expLoading, setExpLoading] = useState(false);
   const [expResult, setExpResult] = useState<ExposureResult | null>(null);
   const [expError, setExpError] = useState('');
+
+  // Ranking
+  const [rankPeriod, setRankPeriod] = useState<'recommended' | '24h' | '1h'>('recommended');
+  const [rankLoading, setRankLoading] = useState(false);
+  const [rankData, setRankData] = useState<RankingData | null>(null);
+  const [rankError, setRankError] = useState('');
+  const [rankShowAll, setRankShowAll] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -239,6 +252,24 @@ export default function KeywordPage() {
     }
   }, [blogUrl]);
 
+  const fetchRanking = useCallback(async (period: 'recommended' | '24h' | '1h') => {
+    setRankLoading(true); setRankError(''); setRankShowAll(false);
+    try {
+      const res = await fetch(`/api/keyword/ranking?period=${period}`);
+      const data = await res.json() as RankingData & { error?: string };
+      if (data.error) { setRankError(data.error); return; }
+      setRankData(data);
+    } catch (e) { setRankError(String(e)); }
+    finally { setRankLoading(false); }
+  }, []);
+
+  const copyToClipboard = useCallback((text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(key);
+      setTimeout(() => setCopiedIdx(null), 1500);
+    });
+  }, []);
+
   const runExposure = useCallback(async () => {
     if (!expKeyword.trim() || !expBlog.trim()) return;
     setExpLoading(true); setExpError(''); setExpResult(null);
@@ -257,8 +288,9 @@ export default function KeywordPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const TABS: { id: Tab; icon: string; label: string; desc: string }[] = [
+    { id: 'ranking',  icon: '📊', label: '실시간 랭킹',  desc: '뉴스·블로그·쇼핑 랭킹' },
     { id: 'golden',   icon: '💎', label: '황금키워드',   desc: '기회 높은 키워드 발굴' },
-    { id: 'batch',    icon: '📊', label: '키워드 분석',  desc: '여러 키워드 일괄 분석' },
+    { id: 'batch',    icon: '📋', label: '키워드 분석',  desc: '여러 키워드 일괄 분석' },
     { id: 'trend',    icon: '📈', label: '트렌드',        desc: '네이버 검색 트렌드' },
     { id: 'price',    icon: '💰', label: '최저가 비교',  desc: '네이버·쿠팡 가격 비교' },
     { id: 'blog',     icon: '🩺', label: '블로그 판독기', desc: '블로그 건강 상태 진단' },
@@ -290,6 +322,177 @@ export default function KeywordPage() {
             </button>
           ))}
         </div>
+
+        {/* ── 실시간 랭킹 ── */}
+        {tab === 'ranking' && (
+          <div className="space-y-5">
+            {/* 헤더 */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-black text-lg flex items-center gap-2">
+                    <span className="text-xl">📊</span> 실시간 랭킹
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">24시간: 인기도순 · 1시간: 최신순 · [수집] 클릭 → 키워드 복사 · 제목 클릭 → 해당 페이지 이동</p>
+                </div>
+                <button
+                  onClick={() => fetchRanking(rankPeriod)}
+                  disabled={rankLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl disabled:opacity-50 transition-colors"
+                >
+                  <svg className={`w-4 h-4 ${rankLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  새로고침
+                </button>
+              </div>
+
+              {/* 기간 탭 */}
+              <div className="flex gap-2">
+                {([['recommended','⭐ 추천'],['24h','🏆 24시간'],['1h','⚡ 1시간']] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => { setRankPeriod(id); fetchRanking(id); }}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                      rankPeriod === id
+                        ? id === 'recommended' ? 'bg-yellow-400 text-white' : id === '24h' ? 'bg-orange-500 text-white' : 'bg-red-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {rankError && <p className="mt-3 text-sm text-red-600 bg-red-50 p-3 rounded-xl">{rankError}</p>}
+            </div>
+
+            {/* 로딩 */}
+            {rankLoading && (
+              <div className="flex items-center justify-center py-20 gap-3">
+                <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-gray-500 font-medium">랭킹 불러오는 중...</span>
+              </div>
+            )}
+
+            {/* 결과 */}
+            {!rankLoading && rankData && (
+              <>
+                {rankData.fetchedAt && (
+                  <p className="text-xs text-gray-400 text-right -mb-2">
+                    업데이트: {new Date(rankData.fetchedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </p>
+                )}
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  {/* 뉴스 랭킹 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
+                      <span className="text-base">📰</span>
+                      <span className="font-black text-sm text-gray-800">뉴스 랭킹</span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {(rankShowAll ? rankData.news : rankData.news.slice(0, 5)).map((item, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 group">
+                          <span className={`text-xs font-black w-5 text-center flex-shrink-0 ${
+                            i === 0 ? 'text-red-500' : i === 1 ? 'text-orange-500' : i === 2 ? 'text-yellow-600' : 'text-gray-400'
+                          }`}>{i + 1}</span>
+                          <a href={item.url} target="_blank" rel="noopener"
+                            className="flex-1 min-w-0 text-xs text-gray-800 hover:text-indigo-600 leading-snug line-clamp-2 cursor-pointer">
+                            {item.title}
+                          </a>
+                          <button
+                            onClick={() => copyToClipboard(item.title, `news-${i}`)}
+                            className={`flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${
+                              copiedIdx === `news-${i}` ? 'bg-green-500 text-white' : 'bg-orange-500 hover:bg-orange-400 text-white'
+                            }`}>
+                            {copiedIdx === `news-${i}` ? '복사됨' : '수집'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 블로그 랭킹 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
+                      <span className="text-base">✍️</span>
+                      <span className="font-black text-sm text-gray-800">블로그 랭킹</span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {(rankShowAll ? rankData.blog : rankData.blog.slice(0, 5)).map((item, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 group">
+                          <span className={`text-xs font-black w-5 text-center flex-shrink-0 ${
+                            i === 0 ? 'text-red-500' : i === 1 ? 'text-orange-500' : i === 2 ? 'text-yellow-600' : 'text-gray-400'
+                          }`}>{i + 1}</span>
+                          <a href={item.url} target="_blank" rel="noopener"
+                            className="flex-1 min-w-0 text-xs text-gray-800 hover:text-indigo-600 leading-snug line-clamp-2 cursor-pointer">
+                            {item.title}
+                          </a>
+                          <button
+                            onClick={() => copyToClipboard(item.title, `blog-${i}`)}
+                            className={`flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${
+                              copiedIdx === `blog-${i}` ? 'bg-green-500 text-white' : 'bg-orange-500 hover:bg-orange-400 text-white'
+                            }`}>
+                            {copiedIdx === `blog-${i}` ? '복사됨' : '수집'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 쇼핑 랭킹 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
+                      <span className="text-base">🛒</span>
+                      <span className="font-black text-sm text-gray-800">쇼핑 랭킹</span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {(rankShowAll ? rankData.shopping : rankData.shopping.slice(0, 5)).map((item, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50">
+                          <span className={`text-xs font-black w-5 text-center flex-shrink-0 ${
+                            i === 0 ? 'text-red-500' : i === 1 ? 'text-orange-500' : i === 2 ? 'text-yellow-600' : 'text-gray-400'
+                          }`}>{i + 1}</span>
+                          <a href={item.url} target="_blank" rel="noopener"
+                            className="flex-1 min-w-0">
+                            <div className="text-xs text-gray-800 hover:text-indigo-600 leading-snug line-clamp-1">{item.title}</div>
+                            <div className="text-[10px] font-black text-red-600 mt-0.5">{item.price.toLocaleString()}원</div>
+                          </a>
+                          <button
+                            onClick={() => copyToClipboard(item.title, `shop-${i}`)}
+                            className={`flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${
+                              copiedIdx === `shop-${i}` ? 'bg-green-500 text-white' : 'bg-violet-600 hover:bg-violet-500 text-white'
+                            }`}>
+                            {copiedIdx === `shop-${i}` ? '복사됨' : '복사'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6~10위 토글 */}
+                {(rankData.news.length > 5 || rankData.blog.length > 5 || rankData.shopping.length > 5) && (
+                  <button
+                    onClick={() => setRankShowAll(v => !v)}
+                    className="w-full py-3 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-2xl text-sm font-bold text-yellow-800 transition-colors">
+                    {rankShowAll ? '▲ 6~10위 접기' : '▼ 6~10위 펼치기'}
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* 빈 상태 */}
+            {!rankLoading && !rankData && !rankError && (
+              <div className="text-center py-20">
+                <div className="text-5xl mb-4">📊</div>
+                <div className="font-bold text-gray-600 mb-2">랭킹을 불러오세요</div>
+                <p className="text-sm text-gray-400 mb-5">네이버 뉴스·블로그·쇼핑 실시간 인기 순위를 확인할 수 있습니다.</p>
+                <button onClick={() => fetchRanking('recommended')}
+                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm">
+                  지금 불러오기
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Golden Keyword ── */}
         {tab === 'golden' && (
