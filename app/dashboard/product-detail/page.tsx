@@ -929,45 +929,71 @@ function EditableSection({ sectionKey, data, tpl, sectionImage, onUpdate, onImag
     }
 
     case 'warranty': {
-      const d = data as { title?: string; warrantyPeriod?: string; coverageItems?: string[]; serviceCenters?: string; note?: string };
+      const d = data as { title?: string; subtitle?: string; warrantyPeriod?: string; coverageItems?: string[]; serviceCenters?: string; serviceDesc?: string; note?: string };
       const u = (f: string, v: unknown) => onUpdate({ ...d, [f]: v });
       return (
         <div className="px-12 py-16" style={containerStyle}>
           <SectionLabel text="A/S 보증" />
-          <div className="grid grid-cols-[1fr_1fr] gap-16 items-start">
-            <div>
-              <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
-                className="font-black mb-8 leading-tight"
-                style={{ fontSize: 'clamp(28px,3.5vw,44px)', letterSpacing: '-0.03em' }} />
+          {/* Headline row */}
+          <div className="mb-12">
+            <EditText tag="h2" value={d.title ?? ''} onChange={v => u('title', v)}
+              className="font-black leading-tight mb-3"
+              style={{ fontSize: 'clamp(32px,4vw,52px)', letterSpacing: '-0.03em' }} />
+            {d.subtitle !== undefined && (
+              <EditText tag="p" value={d.subtitle ?? ''} onChange={v => u('subtitle', v)}
+                className="text-base leading-relaxed" style={{ opacity: 0.55, maxWidth: 540 }} />
+            )}
+          </div>
+          {/* 3-column layout: checklist | period card | service center */}
+          <div className="grid grid-cols-3 gap-6 items-stretch">
+            {/* Col 1: Coverage checklist */}
+            <div className="p-7 rounded-3xl" style={{ background: `${primary}04`, border: `1px solid ${primary}08` }}>
+              <div className="text-xs font-bold tracking-widest uppercase mb-5" style={{ color: accent }}>보증 항목</div>
               <div className="space-y-3">
                 {(d.coverageItems ?? []).map((item, i) => (
-                  <div key={i} className="flex items-center gap-3">
+                  <div key={i} className="group flex items-center gap-3">
                     <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
                       style={{ background: accent }}>
-                      <span style={{ color: isDark(accent)?'#fff':'#000', fontSize: 10 }}>✓</span>
+                      <span style={{ color: isDark(accent)?'#fff':'#000', fontSize: 10, lineHeight: 1 }}>✓</span>
                     </div>
                     <EditText tag="span" value={item} onChange={v => {
                       const items=[...(d.coverageItems??[])]; items[i]=v; u('coverageItems',items);
-                    }} className="text-sm font-medium" />
+                    }} className="text-sm font-medium flex-1" />
+                    <button onClick={() => {
+                      const items=[...(d.coverageItems??[])]; items.splice(i,1); u('coverageItems',items);
+                    }} className="opacity-0 group-hover:opacity-100 text-red-400 text-xs transition-opacity">✕</button>
                   </div>
                 ))}
+                <button onClick={() => u('coverageItems', [...(d.coverageItems??[]), '새 항목'])}
+                  className="text-xs mt-2 px-3 py-1.5 rounded-full border-2 border-dashed transition-all hover:opacity-60"
+                  style={{ borderColor: `${accent}40`, color: accent, opacity: 0.4 }}>+ 항목 추가</button>
               </div>
             </div>
-            <div className="space-y-5">
-              <div className="p-6 rounded-3xl" style={{ background: `${accent}10`, border: `1px solid ${accent}20` }}>
-                <div className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: accent }}>보증기간</div>
+            {/* Col 2: Warranty period */}
+            <div className="p-7 rounded-3xl flex flex-col justify-between" style={{ background: `${accent}12`, border: `1px solid ${accent}25` }}>
+              <div>
+                <div className="text-xs font-bold tracking-widest uppercase mb-4" style={{ color: accent }}>보증기간</div>
                 <EditText tag="div" value={d.warrantyPeriod ?? ''} onChange={v => u('warrantyPeriod', v)}
-                  className="text-xl font-black" />
+                  className="font-black leading-none mb-4"
+                  style={{ fontSize: 'clamp(40px,5vw,64px)', color: accent, letterSpacing: '-0.04em' }} />
               </div>
-              <div className="p-6 rounded-3xl" style={{ background: `${primary}05` }}>
-                <div className="text-xs font-bold tracking-widest uppercase mb-2" style={{ opacity: 0.4 }}>서비스센터</div>
-                <EditText tag="div" value={d.serviceCenters ?? ''} onChange={v => u('serviceCenters', v)}
-                  className="text-xl font-black" />
-              </div>
-              {d.note && (
-                <EditText tag="p" value={d.note} onChange={v => u('note', v)}
-                  className="text-xs leading-relaxed" style={{ opacity: 0.4 }} />
+              {d.note !== undefined && (
+                <EditText tag="p" value={d.note ?? ''} onChange={v => u('note', v)}
+                  className="text-xs leading-relaxed" style={{ opacity: 0.5 }} />
               )}
+            </div>
+            {/* Col 3: Service centers */}
+            <div className="p-7 rounded-3xl flex flex-col justify-between" style={{ background: `${primary}04`, border: `1px solid ${primary}08` }}>
+              <div>
+                <div className="text-xs font-bold tracking-widest uppercase mb-4" style={{ opacity: 0.4 }}>서비스센터</div>
+                <EditText tag="div" value={d.serviceCenters ?? ''} onChange={v => u('serviceCenters', v)}
+                  className="font-black leading-tight mb-3"
+                  style={{ fontSize: 'clamp(28px,3vw,40px)', letterSpacing: '-0.03em' }} />
+                {d.serviceDesc !== undefined && (
+                  <EditText tag="p" value={d.serviceDesc ?? ''} onChange={v => u('serviceDesc', v)}
+                    className="text-sm leading-relaxed" style={{ opacity: 0.5 }} />
+                )}
+              </div>
             </div>
           </div>
         </div>
