@@ -8,7 +8,7 @@ const AnimalHero3D = dynamic(() => import('@/components/landing/AnimalHero3D'), 
   ssr: false,
   loading: () => (
     <div className="w-full h-full flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
     </div>
   ),
 });
@@ -54,39 +54,53 @@ function Reveal({ children, delay = 0, className = '' }: { children: React.React
   return (
     <div ref={ref} className={className} style={{
       opacity: visible ? 1 : 0,
-      transform: visible ? 'translateY(0)' : 'translateY(24px)',
-      transition: `opacity 0.6s ease ${delay}ms, transform 0.6s ease ${delay}ms`,
+      transform: visible ? 'translateY(0)' : 'translateY(28px)',
+      transition: `opacity 0.65s ease ${delay}ms, transform 0.65s ease ${delay}ms`,
     }}>
       {children}
     </div>
   );
 }
 
+// ── 마우스 패럴랙스 훅 ──────────────────────────────────────────────────────
+function useMouseParallax() {
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+      setPos({ x: (e.clientX - cx) / cx, y: (e.clientY - cy) / cy });
+    };
+    window.addEventListener('mousemove', fn);
+    return () => window.removeEventListener('mousemove', fn);
+  }, []);
+  return pos;
+}
+
 const EMPLOYEES = [
-  { icon: '📊', dept: '영업팀', color: '#0066FF', tasks: ['리드 발굴', '제안서 작성', 'CRM 관리', '계약 협상', '영업 분석'] },
-  { icon: '💰', dept: '회계팀', color: '#00C07F', tasks: ['매출 정리', '세무 신고 준비', '인보이스 발행', '손익 분석', '예산 관리'] },
-  { icon: '📣', dept: '마케팅', color: '#FF6B35', tasks: ['SNS 콘텐츠', '블로그 포스팅', '광고 기획', '캠페인 분석', '뉴스레터'] },
+  { icon: '📊', dept: '영업팀', color: '#6366F1', tasks: ['리드 발굴', '제안서 작성', 'CRM 관리', '계약 협상', '영업 분석'] },
+  { icon: '💰', dept: '회계팀', color: '#10B981', tasks: ['매출 정리', '세무 신고 준비', '인보이스 발행', '손익 분석', '예산 관리'] },
+  { icon: '📣', dept: '마케팅', color: '#F59E0B', tasks: ['SNS 콘텐츠', '블로그 포스팅', '광고 기획', '캠페인 분석', '뉴스레터'] },
   { icon: '💻', dept: '개발팀', color: '#8B5CF6', tasks: ['코드 리뷰', 'API 설계', '자동화 구축', '기술 문서', 'UI 제작'] },
   { icon: '🎨', dept: '디자인', color: '#EC4899', tasks: ['홍보물 기획', 'UI/UX 가이드', '브랜드 전략', '제품 시각화', '영상 기획'] },
-  { icon: '🤝', dept: 'HR팀', color: '#F59E0B', tasks: ['채용 공고', '성과 평가', '조직 문화', '온보딩', '급여 명세'] },
+  { icon: '🤝', dept: 'HR팀', color: '#F97316', tasks: ['채용 공고', '성과 평가', '조직 문화', '온보딩', '급여 명세'] },
 ];
 
 const INTEGRATIONS = [
-  { icon: '📝', name: '네이버 블로그', desc: 'SEO 최적화 자동 발행', color: '#03C75A' },
-  { icon: '📸', name: 'Instagram', desc: '피드·릴스·스토리 자동화', color: '#E1306C' },
-  { icon: '▶', name: 'YouTube', desc: '쇼츠·설명 자동 생성', color: '#FF0000' },
-  { icon: '🌐', name: 'WordPress', desc: 'AI 블로그 완전 자동화', color: '#21759B' },
-  { icon: '📅', name: 'Google Calendar', desc: '일정 양방향 동기화', color: '#4285F4' },
-  { icon: '📓', name: 'Notion', desc: '문서·데이터베이스 연동', color: '#000000' },
-  { icon: '🛒', name: 'Coupang', desc: '제휴 상품 자동 포스팅', color: '#FF6B35' },
-  { icon: '⚙️', name: 'n8n', desc: '워크플로우 자동화', color: '#EA4B71' },
+  { icon: '📝', name: '네이버 블로그', desc: 'SEO 최적화 자동 발행', color: '#03C75A', bg: '#EDFFF4' },
+  { icon: '📸', name: 'Instagram', desc: '피드·릴스·스토리 자동화', color: '#E1306C', bg: '#FFF0F5' },
+  { icon: '▶', name: 'YouTube', desc: '쇼츠·설명 자동 생성', color: '#FF0000', bg: '#FFF0F0' },
+  { icon: '🌐', name: 'WordPress', desc: 'AI 블로그 완전 자동화', color: '#21759B', bg: '#EFF8FF' },
+  { icon: '📅', name: 'Google Calendar', desc: '일정 양방향 동기화', color: '#4285F4', bg: '#EFF5FF' },
+  { icon: '📓', name: 'Notion', desc: '문서·데이터베이스 연동', color: '#5B5BD6', bg: '#F0EFFF' },
+  { icon: '🛒', name: 'Coupang', desc: '제휴 상품 자동 포스팅', color: '#FF6B35', bg: '#FFF4EF' },
+  { icon: '⚙️', name: 'n8n', desc: '워크플로우 자동화', color: '#EA4B71', bg: '#FFF0F3' },
 ];
 
 const PLANS = [
-  { name: '무료', price: 0, employees: 1, features: ['AI 직원 1명', '기본 채팅', '프로젝트 관리', '7일 히스토리'], cta: '무료로 시작' },
-  { name: '베이직', price: 29000, employees: 3, features: ['AI 직원 3명', '영업 ERP', '회계 기본', '30일 히스토리', '스케줄 관리'], cta: '시작하기' },
-  { name: '스타터', price: 59000, employees: 5, highlight: true, badge: '가장 인기', features: ['AI 직원 5명', '전체 ERP', '마케팅 허브', 'SNS 관리', '90일 히스토리'], cta: '시작하기' },
-  { name: '프로', price: 99000, employees: 10, features: ['AI 직원 10명', '직원별 AI 설정', '홈페이지 빌더', 'Obsidian 백업', '무제한 히스토리'], cta: '시작하기' },
+  { name: '무료', price: 0, employees: 1, features: ['AI 직원 1명', '기본 채팅', '프로젝트 관리', '7일 히스토리'], cta: '무료로 시작', color: '#6366F1' },
+  { name: '베이직', price: 29000, employees: 3, features: ['AI 직원 3명', '영업 ERP', '회계 기본', '30일 히스토리', '스케줄 관리'], cta: '시작하기', color: '#10B981' },
+  { name: '스타터', price: 59000, employees: 5, highlight: true, badge: '가장 인기', features: ['AI 직원 5명', '전체 ERP', '마케팅 허브', 'SNS 관리', '90일 히스토리'], cta: '시작하기', color: '#6366F1' },
+  { name: '프로', price: 99000, employees: 10, features: ['AI 직원 10명', '직원별 AI 설정', '홈페이지 빌더', 'Obsidian 백업', '무제한 히스토리'], cta: '시작하기', color: '#8B5CF6' },
 ];
 
 const FAQS = [
@@ -96,11 +110,53 @@ const FAQS = [
   { q: '나중에 플랜을 변경할 수 있나요?', a: '언제든지 업그레이드하거나 다운그레이드할 수 있습니다. 업그레이드 즉시 추가 직원 채용이 가능합니다.' },
 ];
 
+// ── 데모 영상 모달 ────────────────────────────────────────────────────────────
+function VideoModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', fn);
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', fn); document.body.style.overflow = ''; };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+      <div className="relative w-full max-w-4xl aspect-video rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+        {/* 로컬 video 파일 우선, 없으면 YouTube 대체 */}
+        <video
+          className="w-full h-full object-cover"
+          controls
+          autoPlay
+          src="/demo.mp4"
+          onError={(e) => {
+            // 로컬 파일 없으면 YouTube로 대체
+            const target = e.currentTarget;
+            const parent = target.parentElement;
+            if (parent) {
+              const iframe = document.createElement('iframe');
+              iframe.src = 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1';
+              iframe.className = 'w-full h-full';
+              iframe.allow = 'autoplay; fullscreen';
+              iframe.allowFullscreen = true;
+              parent.replaceChild(iframe, target);
+            }
+          }}
+        />
+        <button onClick={onClose} className="absolute top-3 right-3 w-9 h-9 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors text-lg font-bold">×</button>
+      </div>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const typed = useTypewriter(['영업 팀장', '회계 담당자', '마케터', 'AI 팀 전체']);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeFeature, setActiveFeature] = useState(0);
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [hoveredEmployee, setHoveredEmployee] = useState<number | null>(null);
+  const mouse = useMouseParallax();
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 10);
@@ -108,282 +164,343 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
+  const FEATURES = [
+    {
+      tab: '💬 AI 채팅',
+      title: '대화 한 줄이 업무가 됩니다',
+      desc: '"이번 주 제안서 3건 작성해줘" → 즉시 실행. AI 팀장이 명확하게 이해하고 결과를 만들어냅니다.',
+      items: ['자연어 업무 지시', '컨텍스트 기억', '멀티 직원 협업', '작업 이력 관리'],
+      color: '#6366F1', bg: 'from-indigo-50 to-violet-50',
+      preview: (
+        <div className="space-y-3">
+          <div className="flex justify-end"><div className="bg-indigo-600 text-white text-sm px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-xs">이번 주 인스타그램 콘텐츠 3개 준비해줘</div></div>
+          <div className="flex gap-2 items-end"><div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center text-sm flex-shrink-0">🐇</div><div className="bg-white border border-gray-100 text-sm px-4 py-2.5 rounded-2xl rounded-tl-sm max-w-xs shadow-sm">피드·스토리·릴스 각 1편 준비했습니다. 캡션과 해시태그 포함해서 검토해주세요 ✅</div></div>
+          <div className="flex gap-2 items-end"><div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm flex-shrink-0">🦊</div><div className="bg-white border border-gray-100 text-sm px-4 py-2.5 rounded-2xl rounded-tl-sm max-w-xs shadow-sm">제안서도 같이 보냈습니다. 오늘 마감이라 먼저 처리했어요 ✓</div></div>
+          <div className="flex items-center gap-2 mt-2 pl-10"><div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full bg-indigo-300" style={{animation:`bounce 1.2s ${i*0.15}s ease-in-out infinite`}} />)}</div><span className="text-xs text-gray-400">Bear 담당 작성 중...</span></div>
+        </div>
+      ),
+    },
+    {
+      tab: '📊 ERP',
+      title: 'AI가 운영하는 ERP',
+      desc: '영업 파이프라인, 회계 장부, 마케팅 캘린더. AI 팀이 대표의 지시에 따라 직접 운영합니다.',
+      items: ['영업 파이프라인 관리', '실시간 손익 분석', 'SNS 캘린더 운영', '인보이스 자동 발행'],
+      color: '#10B981', bg: 'from-emerald-50 to-teal-50',
+      preview: (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {[{l:'이번달 매출',v:'₩4,250만',c:'#10B981'},{l:'진행중 리드',v:'23건',c:'#6366F1'},{l:'SNS 노출',v:'14.2만',c:'#F59E0B'}].map(s=>(
+              <div key={s.l} className="bg-white rounded-xl p-2.5 border border-gray-100 shadow-sm">
+                <div className="text-[9px] text-gray-400 mb-1">{s.l}</div>
+                <div className="text-sm font-black" style={{color:s.c}}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+          {[{n:'Fox 팀장',s:'제안서 작성 중',c:'#6366F1',p:65},{n:'Bear 담당',s:'결산 완료',c:'#10B981',p:100},{n:'Rabbit',s:'SNS 3건 예약',c:'#F59E0B',p:100}].map(e=>(
+            <div key={e.n} className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-gray-100 shadow-sm">
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:e.c}} />
+              <span className="text-xs font-semibold text-gray-800 w-14 flex-shrink-0">{e.n}</span>
+              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all" style={{width:`${e.p}%`,background:e.c}} /></div>
+              <span className="text-[10px] text-gray-400 w-20 truncate flex-shrink-0">{e.s}</span>
+            </div>
+          ))}
+        </div>
+      ),
+    },
+    {
+      tab: '🌐 SNS 자동화',
+      title: '모든 채널 동시 발행',
+      desc: '네이버 블로그·인스타·유튜브·워드프레스까지. 한 번 지시하면 모든 채널에 맞게 자동 변환 발행합니다.',
+      items: ['멀티 채널 동시 발행', '플랫폼별 최적화', '예약 발행', '성과 트래킹'],
+      color: '#F59E0B', bg: 'from-amber-50 to-orange-50',
+      preview: (
+        <div className="space-y-2">
+          {[
+            {icon:'📝',name:'네이버 블로그',status:'발행 완료',time:'방금 전',c:'#03C75A'},
+            {icon:'📸',name:'Instagram',status:'예약됨 (오후 7시)',time:'3시간 후',c:'#E1306C'},
+            {icon:'▶',name:'YouTube Shorts',status:'업로드 중...',time:'진행 중',c:'#FF0000'},
+            {icon:'🌐',name:'WordPress',status:'발행 완료',time:'5분 전',c:'#21759B'},
+          ].map(ch=>(
+            <div key={ch.name} className="flex items-center gap-3 bg-white rounded-xl px-3 py-2.5 border border-gray-100 shadow-sm">
+              <span className="text-xl">{ch.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-gray-800">{ch.name}</div>
+                <div className="text-[10px] text-gray-400">{ch.status}</div>
+              </div>
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:ch.c,boxShadow:`0 0 6px ${ch.c}80`}} />
+            </div>
+          ))}
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="bg-white text-gray-900 overflow-x-hidden selection:bg-blue-100">
+    <div className="bg-white text-gray-900 overflow-x-hidden selection:bg-indigo-100">
+      {videoOpen && <VideoModal onClose={() => setVideoOpen(false)} />}
+
       <style>{`
-        /* ── 기본 유틸 ── */
         @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
         @keyframes marquee { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        .fade-up{animation:fadeUp 0.7s ease both}
-        .fade-up-1{animation:fadeUp 0.7s 0.1s ease both}
-        .fade-up-2{animation:fadeUp 0.7s 0.2s ease both}
-        .fade-up-3{animation:fadeUp 0.7s 0.3s ease both}
-        .hover-lift{transition:transform 0.2s ease,box-shadow 0.2s ease}
-        .hover-lift:hover{transform:translateY(-3px);box-shadow:0 12px 40px rgba(0,0,0,0.1)}
-        .nav-link{position:relative}
-        .nav-link::after{content:'';position:absolute;bottom:-2px;left:0;width:0;height:1.5px;background:#1d1d1f;transition:width 0.25s ease}
-        .nav-link:hover::after{width:100%}
-        .card-hover{transition:all 0.25s ease}
-        .card-hover:hover{background:#f5f5f7;transform:translateY(-2px)}
-        .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:#f5f5f7;border-radius:100px;font-size:12px;font-weight:500;color:#6e6e73}
-        .dot-pulse{animation:pulse 2s ease-in-out infinite}
+        @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+        @keyframes float { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-12px)} }
+        @keyframes floatSlow { 0%,100%{transform:translateY(0px) rotate(0deg)} 50%{transform:translateY(-8px) rotate(2deg)} }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes gradientShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+        @keyframes scanBeam { 0%{opacity:0;top:0} 10%{opacity:1} 90%{opacity:0.3} 100%{top:100%;opacity:0} }
+        @keyframes ripple { 0%{transform:scale(0.8);opacity:1} 100%{transform:scale(2.4);opacity:0} }
+        @keyframes badgePop { 0%{opacity:0;transform:scale(0.8) translateY(-10px)} 100%{opacity:1;transform:scale(1) translateY(0)} }
 
-        /* ── HERO: Remotion-style 시퀀스 애니메이션 ── */
+        .fade-up { animation: fadeUp 0.7s ease both; }
+        .fade-up-1 { animation: fadeUp 0.7s 0.1s ease both; }
+        .fade-up-2 { animation: fadeUp 0.7s 0.2s ease both; }
+        .fade-up-3 { animation: fadeUp 0.7s 0.35s ease both; }
 
-        /* 배경 진입 */
-        @keyframes bgReveal{from{opacity:0}to{opacity:1}}
-        .hero-bg{animation:bgReveal 0.6s ease both}
-
-        /* 그리드 라인 페이드 */
-        @keyframes gridFade{0%{opacity:0}100%{opacity:1}}
-        .hero-grid-anim{animation:gridFade 1.2s 0.2s ease both}
-
-        /* 배지 드롭 */
-        @keyframes badgeDrop{0%{opacity:0;transform:translateY(-16px) scale(0.9)}100%{opacity:1;transform:translateY(0) scale(1)}}
-        .badge-anim{animation:badgeDrop 0.5s 0.35s cubic-bezier(0.34,1.56,0.64,1) both}
-
-        /* 텍스트 클립 리빌 (Remotion 시그니처) */
-        @keyframes clipReveal{0%{clip-path:inset(110% 0 0 0);transform:translateY(24px);opacity:0}100%{clip-path:inset(0% 0 0 0);transform:translateY(0);opacity:1}}
-        .word-1{animation:clipReveal 0.65s 0.55s cubic-bezier(0.16,1,0.3,1) both}
-        .word-2{animation:clipReveal 0.65s 0.72s cubic-bezier(0.16,1,0.3,1) both}
-        .sub-line{animation:clipReveal 0.55s 0.95s cubic-bezier(0.16,1,0.3,1) both}
-        .desc-line{animation:clipReveal 0.55s 1.1s cubic-bezier(0.16,1,0.3,1) both}
-
-        /* 텍스트 그라디언트 시머 */
-        @keyframes shimmerFlow{0%{background-position:-300% center}100%{background-position:300% center}}
-        .gradient-text{
-          background:linear-gradient(90deg,#6366f1,#8b5cf6,#a78bfa,#c4b5fd,#8b5cf6,#6366f1);
-          background-size:300% auto;
-          -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-          animation:shimmerFlow 4s 1.4s linear infinite;
+        .gradient-text {
+          background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 30%, #ec4899 60%, #f59e0b 100%);
+          background-size: 200% auto;
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+          animation: shimmer 4s linear infinite;
         }
 
-        /* CTA 버튼 팝 */
-        @keyframes ctaPop{0%{opacity:0;transform:scale(0.92) translateY(12px)}70%{transform:scale(1.02) translateY(-1px)}100%{opacity:1;transform:scale(1) translateY(0)}}
-        .cta-anim{animation:ctaPop 0.55s 1.25s cubic-bezier(0.34,1.56,0.64,1) both}
-
-        /* 통계 카운트업 슬라이드 */
-        @keyframes statSlide{0%{opacity:0;transform:translateY(16px)}100%{opacity:1;transform:translateY(0)}}
-        .stat-1{animation:statSlide 0.45s 1.45s ease both}
-        .stat-2{animation:statSlide 0.45s 1.55s ease both}
-        .stat-3{animation:statSlide 0.45s 1.65s ease both}
-
-        /* 캐릭터 엔트런스 (blur + scale) */
-        @keyframes charEntrance{
-          0%{opacity:0;transform:scale(0.75) translateY(50px);filter:blur(20px)}
-          60%{filter:blur(0px)}
-          80%{transform:scale(1.03) translateY(-4px)}
-          100%{opacity:1;transform:scale(1) translateY(0);filter:blur(0)}
+        .hero-gradient {
+          background: linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 30%, #FCE7F3 60%, #FFF7ED 100%);
+          background-size: 400% 400%;
+          animation: gradientShift 12s ease infinite;
         }
-        .char-anim{animation:charEntrance 1s 1.8s cubic-bezier(0.16,1,0.3,1) both}
 
-        /* 플로팅 카드 */
-        @keyframes cardFloat{0%{opacity:0;transform:translateX(30px) scale(0.9)}100%{opacity:1;transform:translateX(0) scale(1)}}
-        .card-1{animation:cardFloat 0.6s 2.3s cubic-bezier(0.16,1,0.3,1) both}
-        .card-2{animation:cardFloat 0.6s 2.55s cubic-bezier(0.16,1,0.3,1) both}
-        .card-3{animation:cardFloat 0.6s 2.8s cubic-bezier(0.16,1,0.3,1) both}
+        .card-3d {
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+          transform-style: preserve-3d;
+        }
+        .card-3d:hover {
+          transform: translateY(-6px) rotateX(3deg);
+          box-shadow: 0 20px 60px rgba(99,102,241,0.15);
+        }
 
-        /* 연속 부유 */
-        @keyframes levitate{0%,100%{transform:translateY(0px) rotate(0deg)}40%{transform:translateY(-10px) rotate(0.5deg)}70%{transform:translateY(4px) rotate(-0.3deg)}}
-        .lev-1{animation:levitate 5s 3.5s ease-in-out infinite}
-        .lev-2{animation:levitate 6s 3.8s ease-in-out infinite}
-        .lev-3{animation:levitate 4.5s 4.1s ease-in-out infinite}
+        .btn-glow {
+          position: relative;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+          background-size: 200% 200%;
+          animation: gradientShift 4s ease infinite;
+          box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+          transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn-glow:hover {
+          transform: translateY(-2px) scale(1.02);
+          box-shadow: 0 8px 30px rgba(99,102,241,0.5);
+        }
+        .btn-glow:active { transform: scale(0.98); }
 
-        /* 스캔 라인 (cinematic effect) */
-        @keyframes scan{0%{top:-2px;opacity:0.8}100%{top:100%;opacity:0}}
-        .scan-line{animation:scan 3s 2s linear infinite}
+        .ripple-ring {
+          animation: ripple 2s ease-out infinite;
+        }
+        .ripple-ring-2 {
+          animation: ripple 2s 0.7s ease-out infinite;
+        }
 
-        /* AI 액티비티 틱 */
-        @keyframes actTick{0%,100%{opacity:1}50%{opacity:0.5}}
-        .act-tick{animation:actTick 1.8s ease-in-out infinite}
+        .dot-pulse { animation: pulse 2s ease-in-out infinite; }
+        .float-1 { animation: float 4s ease-in-out infinite; }
+        .float-2 { animation: floatSlow 5s 0.5s ease-in-out infinite; }
+        .float-3 { animation: float 3.5s 1s ease-in-out infinite; }
 
-        /* 오브 글로우 */
-        @keyframes orbPulse{0%,100%{opacity:0.15;transform:scale(1)}50%{opacity:0.25;transform:scale(1.08)}}
-        .orb-1{animation:orbPulse 6s ease-in-out infinite}
-        .orb-2{animation:orbPulse 8s 2s ease-in-out infinite}
-        .orb-3{animation:orbPulse 5s 4s ease-in-out infinite}
+        .badge-pop { animation: badgePop 0.5s 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
 
-        /* 하단 그라디언트 트랜지션 */
-        @keyframes sectionReveal{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-        .section-reveal{animation:sectionReveal 0.7s ease both}
+        .feature-tab {
+          transition: all 0.25s ease;
+          white-space: nowrap;
+        }
 
-        /* 다크 히어로 추가 애니메이션 */
-        @keyframes orbDrift1 { 0%{transform:translate(0,0) scale(1)} 33%{transform:translate(40px,-30px) scale(1.1)} 66%{transform:translate(-20px,20px) scale(0.95)} 100%{transform:translate(0,0) scale(1)} }
-        @keyframes orbDrift2 { 0%{transform:translate(0,0) scale(1)} 50%{transform:translate(-60px,40px) scale(1.15)} 100%{transform:translate(0,0) scale(1)} }
-        @keyframes scanBeam { 0%{top:-5%;opacity:0} 5%{opacity:0.5} 95%{opacity:0.1} 100%{top:105%;opacity:0} }
-        @keyframes borderGlow { 0%,100%{box-shadow:0 0 30px rgba(99,102,241,0.4)} 50%{box-shadow:0 0 50px rgba(139,92,246,0.7),0 0 80px rgba(99,102,241,0.3)} }
-        @keyframes typingDot { 0%,80%,100%{transform:scale(0.7);opacity:0.3} 40%{transform:scale(1);opacity:1} }
-        .orb-drift-1{animation:orbDrift1 15s ease-in-out infinite}
-        .orb-drift-2{animation:orbDrift2 20s ease-in-out infinite}
+        .integration-card {
+          transition: all 0.2s ease;
+        }
+        .integration-card:hover {
+          transform: translateY(-4px) scale(1.02);
+        }
+
+        .video-play-btn {
+          transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease;
+        }
+        .video-play-btn:hover {
+          transform: scale(1.12);
+          box-shadow: 0 0 0 12px rgba(99,102,241,0.15), 0 20px 60px rgba(99,102,241,0.3);
+        }
       `}</style>
 
-      {/* ── NAV ──────────────────────────────────────────────── */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/80 backdrop-blur-2xl border-b border-black/[0.06]' : 'bg-white/0'}`}>
-        <nav className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#1d1d1f] flex items-center justify-center">
-              <span className="text-white text-xs font-black tracking-tight">L</span>
-            </div>
-            <span className="font-semibold text-[15px] tracking-tight text-[#1d1d1f]">LOOV</span>
+      {/* ── NAV ─────────────────────────────────────────────── */}
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/90 backdrop-blur-2xl border-b border-gray-100 shadow-sm' : 'bg-transparent'}`}>
+        <nav className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-black text-sm"
+              style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)'}}>L</div>
+            <span className="font-black text-[16px] tracking-tight text-gray-900">LOOV</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
-            {[['#features','기능'],['#integrations','연동'],['#pricing','요금제'],['#faq','FAQ']].map(([h,l]) => (
-              <a key={h} href={h} className="nav-link text-[13px] text-[#6e6e73] hover:text-[#1d1d1f] transition-colors font-medium">{l}</a>
+            {[['#features','기능'],['#demo','데모'],['#integrations','연동'],['#pricing','요금제'],['#faq','FAQ']].map(([h,l]) => (
+              <a key={h} href={h} className="text-[13px] text-gray-500 hover:text-gray-900 transition-colors font-medium relative group">
+                {l}
+                <span className="absolute -bottom-0.5 left-0 w-0 h-0.5 rounded-full group-hover:w-full transition-all duration-300" style={{background:'linear-gradient(90deg,#6366f1,#8b5cf6)'}} />
+              </a>
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/login" className="text-[13px] text-[#6e6e73] hover:text-[#1d1d1f] transition-colors px-3 py-1.5 font-medium">로그인</Link>
-            <Link href="/signup" className="text-[13px] bg-[#1d1d1f] hover:bg-[#3d3d3f] text-white px-4 py-2 rounded-full font-medium transition-colors">
-              무료 시작
+            <Link href="/login" className="text-[13px] text-gray-500 hover:text-gray-900 transition-colors px-3 py-2 font-medium">로그인</Link>
+            <Link href="/signup" className="btn-glow text-[13px] text-white px-5 py-2.5 rounded-full font-bold">
+              무료 시작 →
             </Link>
           </div>
         </nav>
       </header>
 
       {/* ── HERO ─────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-14 overflow-hidden bg-[#080810]">
-        {/* 배경 오브 */}
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none orb-drift-1" />
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-violet-600/10 blur-[100px] pointer-events-none orb-drift-2" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full bg-blue-900/10 blur-[80px] pointer-events-none" />
+      <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-16 overflow-hidden hero-gradient">
+        {/* 패럴랙스 배경 오브 */}
+        <div className="absolute top-1/4 left-1/5 w-[400px] h-[400px] rounded-full pointer-events-none"
+          style={{
+            background: 'radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%)',
+            transform: `translate(${mouse.x * -20}px, ${mouse.y * -20}px)`,
+            transition: 'transform 0.1s ease-out',
+          }} />
+        <div className="absolute bottom-1/3 right-1/5 w-[350px] h-[350px] rounded-full pointer-events-none"
+          style={{
+            background: 'radial-gradient(circle, rgba(236,72,153,0.14) 0%, transparent 70%)',
+            transform: `translate(${mouse.x * 25}px, ${mouse.y * 25}px)`,
+            transition: 'transform 0.1s ease-out',
+          }} />
+        <div className="absolute top-1/2 right-1/4 w-[250px] h-[250px] rounded-full pointer-events-none"
+          style={{
+            background: 'radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%)',
+            transform: `translate(${mouse.x * 15}px, ${mouse.y * -15}px)`,
+            transition: 'transform 0.1s ease-out',
+          }} />
 
         {/* 그리드 패턴 */}
-        <div className="absolute inset-0 hero-grid-pattern pointer-events-none" style={{
-          backgroundImage: 'linear-gradient(rgba(99,102,241,0.08) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,0.08) 1px,transparent 1px)',
+        <div className="absolute inset-0 pointer-events-none opacity-40" style={{
+          backgroundImage: 'linear-gradient(rgba(99,102,241,0.07) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,0.07) 1px,transparent 1px)',
           backgroundSize: '60px 60px',
-          animation: 'gridPulse 4s ease-in-out infinite'
         }} />
 
-        {/* 스캔 빔 */}
-        <div className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-400/40 to-transparent pointer-events-none" style={{animation:'scanBeam 5s 2s linear infinite',position:'absolute'}} />
-
-        <div className="relative w-full max-w-6xl mx-auto grid lg:grid-cols-[1.2fr_0.8fr] gap-8 lg:gap-4 items-center py-20">
+        <div className="relative w-full max-w-6xl mx-auto grid lg:grid-cols-[1.15fr_0.85fr] gap-10 items-center py-20">
           {/* 텍스트 */}
           <div>
-            <div className="badge-anim inline-flex items-center gap-2 mb-8 px-4 py-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 backdrop-blur-sm">
-              <span className="w-1.5 h-1.5 bg-green-400 rounded-full dot-pulse" />
-              <span className="text-[12px] text-indigo-300 font-medium tracking-wide">AI 직원 플랫폼 · LOOV</span>
+            {/* 배지 */}
+            <div className="badge-pop inline-flex items-center gap-2 mb-8 px-4 py-2 rounded-full bg-white/80 backdrop-blur border border-indigo-100 shadow-sm">
+              <span className="w-2 h-2 bg-green-400 rounded-full dot-pulse" />
+              <span className="text-[12px] font-semibold text-indigo-700">🚀 AI 직원 플랫폼 LOOV</span>
+              <span className="text-[11px] text-gray-400 hidden sm:inline">2,400+ 1인 기업 사용 중</span>
             </div>
 
-            <h1 className="text-[64px] md:text-[96px] font-black leading-[1.0] tracking-[-0.04em] text-white mb-5">
-              <span className="block word-1">혼자서도</span>
-              <span className="block word-2">
-                <span className="gradient-text" style={{textShadow:'none',filter:'drop-shadow(0 0 40px rgba(139,92,246,0.5))'}}>팀처럼.</span>
-              </span>
+            <h1 className="text-[58px] md:text-[82px] font-black leading-[1.0] tracking-[-0.04em] text-gray-900 mb-5 fade-up">
+              <span className="block">혼자서도</span>
+              <span className="block gradient-text">팀처럼.</span>
             </h1>
 
-            <div className="h-8 mb-6 sub-line">
-              <p className="text-lg md:text-xl text-white/50 font-medium">
+            <div className="h-9 mb-6 fade-up-1">
+              <p className="text-lg md:text-xl text-gray-500 font-medium">
                 지금 바로{' '}
-                <span className="text-white font-semibold">
+                <span className="text-gray-900 font-bold">
                   {typed}
-                  <span className="text-indigo-400 animate-pulse ml-0.5">|</span>
+                  <span className="text-indigo-500 animate-pulse ml-0.5">|</span>
                 </span>
                 을 고용하세요
               </p>
             </div>
 
-            <p className="desc-line text-[16px] md:text-[17px] text-white/40 leading-relaxed mb-10 max-w-md">
+            <p className="fade-up-2 text-[16px] md:text-[17px] text-gray-500 leading-relaxed mb-10 max-w-md">
               AI 직원이 영업·회계·마케팅을 대신합니다.<br />
               Claude, Gemini, GPT-4o 중 원하는 AI로<br />당신만의 팀을 구성하세요.
             </p>
 
-            <div className="cta-anim flex items-center gap-3 mb-14">
-              <Link href="/signup" className="relative inline-flex items-center gap-2 text-white text-[15px] font-bold px-7 py-3.5 rounded-full overflow-hidden transition-all hover:scale-[1.03] active:scale-[0.97]"
-                style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)',boxShadow:'0 0 30px rgba(99,102,241,0.4)',animation:'borderGlow 3s 2s ease-in-out infinite'}}>
-                <span className="relative z-10">무료로 시작하기</span>
-                <svg className="w-4 h-4 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+            <div className="fade-up-3 flex flex-wrap items-center gap-3 mb-14">
+              <Link href="/signup" className="btn-glow inline-flex items-center gap-2 text-white text-[15px] font-bold px-8 py-4 rounded-full">
+                무료로 시작하기
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               </Link>
-              <a href="#features" className="text-[14px] font-medium text-white/40 hover:text-white/70 transition-colors flex items-center gap-1.5 px-4 py-3.5 rounded-full border border-white/10 hover:border-white/20">
-                기능 보기 <span className="text-xs">↓</span>
-              </a>
+              <button
+                onClick={() => setVideoOpen(true)}
+                className="inline-flex items-center gap-2.5 text-[14px] font-semibold text-gray-700 hover:text-indigo-600 bg-white/70 hover:bg-white border border-gray-200 px-5 py-4 rounded-full transition-all backdrop-blur"
+              >
+                <span className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs" style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)'}}>▶</span>
+                데모 영상 보기
+              </button>
             </div>
 
             {/* 통계 */}
-            <div className="stat-1 flex items-center gap-1">
-              <div className="h-px flex-1 max-w-[1px] bg-white/10" />
-              <div className="flex items-center gap-8 px-0">
-                {[
-                  { v: '2,400+', l: '사용 중인 1인 기업' },
-                  { v: '97%', l: '업무 완료율' },
-                  { v: '3×', l: '생산성 향상' },
-                ].map((s, i) => (
-                  <div key={s.l} className={`stat-${i+1}`}>
-                    <div className="text-xl md:text-2xl font-black text-white tracking-tight">{s.v}</div>
-                    <div className="text-[11px] text-white/35 mt-0.5">{s.l}</div>
+            <div className="flex items-center gap-8 fade-up-3">
+              {[{ v: '2,400+', l: '사용 중인 1인 기업' },{ v: '97%', l: '업무 완료율' },{ v: '3×', l: '생산성 향상' }].map((s, i) => (
+                <div key={s.l}>
+                  <div className="text-xl md:text-2xl font-black text-gray-900 tracking-tight"
+                    style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>
+                    {s.v}
                   </div>
-                ))}
-              </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">{s.l}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* 3D 동물 + UI */}
-          <div className="relative h-[280px] lg:h-[360px]">
-            {/* 캐릭터 글로우 베이스 */}
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-20 rounded-full blur-3xl opacity-30 pointer-events-none"
-              style={{background:'rgba(139,92,246,0.6)'}} />
-
-            {/* 캐릭터 컨테이너 - 글래스 프레임 */}
-            <div className="absolute inset-0 rounded-3xl border border-white/5 bg-white/[0.02] backdrop-blur-sm overflow-hidden char-anim">
+          {/* 3D 캐릭터 + UI */}
+          <div className="relative h-[300px] lg:h-[420px]">
+            <div className="absolute inset-0 rounded-3xl overflow-hidden border border-white/60 shadow-2xl shadow-indigo-100/50 float-1"
+              style={{background:'linear-gradient(135deg,rgba(255,255,255,0.8),rgba(239,246,255,0.8))',backdropFilter:'blur(8px)'}}>
               <AnimalHero3D />
             </div>
 
-            {/* 플로팅 카드 1: AI 채팅 */}
-            <div className="card-1 absolute -top-4 -left-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 shadow-2xl hidden lg:block"
-              style={{animation:'cardFloat 0.6s 2.3s cubic-bezier(0.16,1,0.3,1) both'}}>
-              <div className="text-[10px] text-white/40 mb-1">Fox 팀장 · 영업</div>
-              <div className="text-[13px] font-semibold text-white">제안서 3건 완료 ✓</div>
+            {/* 플로팅 카드 */}
+            <div className="float-2 absolute -top-5 -left-8 bg-white border border-indigo-100 rounded-2xl px-4 py-3 shadow-xl hidden lg:block"
+              style={{boxShadow:'0 8px 30px rgba(99,102,241,0.15)'}}>
+              <div className="text-[10px] text-gray-400 mb-1">Fox 팀장 · 영업</div>
+              <div className="text-[13px] font-bold text-gray-900">제안서 3건 완료 ✓</div>
               <div className="flex items-center gap-1 mt-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400" style={{animation:'typingDot 1.4s 0s ease-in-out infinite'}} />
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400" style={{animation:'typingDot 1.4s 0.2s ease-in-out infinite'}} />
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400" style={{animation:'typingDot 1.4s 0.4s ease-in-out infinite'}} />
-                <span className="text-[10px] text-white/30 ml-1">처리 중</span>
+                {[0,1,2].map(i=><span key={i} className="w-1.5 h-1.5 rounded-full bg-indigo-400" style={{animation:`bounce 1.2s ${i*0.15}s ease-in-out infinite`}} />)}
+                <span className="text-[10px] text-gray-400 ml-1">처리 중</span>
               </div>
             </div>
 
-            {/* 플로팅 카드 2: SNS */}
-            <div className="card-2 absolute -bottom-4 -right-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 shadow-2xl hidden lg:block">
-              <div className="text-[10px] text-white/40 mb-1">Rabbit · 마케팅</div>
-              <div className="text-[13px] font-semibold text-white">SNS 예약 완료 ✓</div>
+            <div className="float-3 absolute -bottom-5 -right-6 bg-white border border-pink-100 rounded-2xl px-4 py-3 shadow-xl hidden lg:block"
+              style={{boxShadow:'0 8px 30px rgba(236,72,153,0.12)'}}>
+              <div className="text-[10px] text-gray-400 mb-1">Rabbit · 마케팅</div>
+              <div className="text-[13px] font-bold text-gray-900">SNS 예약 완료 ✓</div>
               <div className="flex items-center gap-1.5 mt-2">
                 {['#6366f1','#ec4899','#ef4444'].map((c,i) => (
-                  <div key={i} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px]"
-                    style={{background:`${c}30`,border:`1px solid ${c}60`}}>
+                  <div key={i} className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold"
+                    style={{background:c,color:'white'}}>
                     {['IG','YT','📝'][i]}
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* 플로팅 카드 3: AI 모델 */}
-            <div className="card-3 absolute top-1/2 -right-10 -translate-y-1/2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-3 py-3 shadow-2xl hidden lg:flex flex-col gap-2">
+            <div className="float-1 absolute top-1/2 -right-12 -translate-y-1/2 bg-white border border-violet-100 rounded-2xl px-3 py-3 shadow-xl hidden lg:flex flex-col gap-2"
+              style={{boxShadow:'0 8px 30px rgba(139,92,246,0.12)'}}>
               {[{name:'Claude',c:'#FF6B35'},{name:'Gemini',c:'#4285F4'},{name:'GPT-4o',c:'#10a37f'}].map(ai => (
                 <div key={ai.name} className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full act-tick" style={{background:ai.c}} />
-                  <span className="text-[10px] text-white/50 font-mono">{ai.name}</span>
+                  <div className="w-1.5 h-1.5 rounded-full dot-pulse" style={{background:ai.c}} />
+                  <span className="text-[10px] text-gray-500 font-mono">{ai.name}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* 하단 스크롤 인디케이터 */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-40 stat-3">
-          <span className="text-[11px] text-white/50 tracking-widest uppercase">Scroll</span>
-          <div className="w-px h-12 bg-gradient-to-b from-white/30 to-transparent" style={{animation:'scan 2s ease-in-out infinite'}} />
+        {/* 스크롤 인디케이터 */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 fade-up-3">
+          <span className="text-[10px] text-gray-400 tracking-widest uppercase">Scroll</span>
+          <div className="w-5 h-8 border-2 border-gray-300 rounded-full flex items-start justify-center pt-1">
+            <div className="w-1 h-2 bg-gray-400 rounded-full" style={{animation:'bounce 1.5s ease-in-out infinite'}} />
+          </div>
         </div>
       </section>
 
-      {/* ── 마퀴 ────────────────────────────────────────────── */}
-      <div className="border-y border-white/[0.06] py-3 overflow-hidden bg-[#0d0d18]">
-        <div className="flex gap-0 whitespace-nowrap" style={{ animation: 'marquee 28s linear infinite' }}>
+      {/* ── 마퀴 ─────────────────────────────────────────────── */}
+      <div className="border-y border-gray-100 py-3.5 overflow-hidden bg-gradient-to-r from-indigo-50 via-white to-purple-50">
+        <div className="flex gap-0 whitespace-nowrap" style={{ animation: 'marquee 30s linear infinite' }}>
           {[...Array(2)].flatMap(() =>
             ['네이버 블로그', 'Instagram', 'YouTube', 'WordPress', 'Google Calendar', 'Notion', 'Coupang', 'n8n', 'Claude AI', 'Gemini', 'GPT-4o', '영업 ERP', '회계 장부', 'SNS 자동화'].map((item, i) => (
-              <span key={`${item}-${i}`} className="inline-flex items-center gap-2 px-6 text-[12px] text-white/30 font-medium">
-                <span className="w-1 h-1 bg-white/20 rounded-full" />
+              <span key={`${item}-${i}`} className="inline-flex items-center gap-2 px-6 text-[12px] text-gray-500 font-medium">
+                <span className="w-1 h-1 bg-indigo-300 rounded-full" />
                 {item}
               </span>
             ))
@@ -391,40 +508,211 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* ── AI 직원 ─────────────────────────────────────────── */}
+      {/* ── 데모 영상 섹션 ───────────────────────────────────── */}
+      <section id="demo" className="py-28 px-6" style={{background:'linear-gradient(135deg,#EEF2FF 0%,#F5F3FF 50%,#FCE7F3 100%)'}}>
+        <div className="max-w-5xl mx-auto">
+          <Reveal className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-white/80 border border-indigo-100 shadow-sm text-[12px] font-semibold text-indigo-700">
+              ▶ 실제 데모
+            </div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-gray-900 mb-4">
+              직접 보세요.<br />
+              <span className="gradient-text">2분이면 충분합니다.</span>
+            </h2>
+            <p className="text-[17px] text-gray-500">
+              AI 직원이 실제로 업무를 처리하는 과정을 확인하세요.
+            </p>
+          </Reveal>
+
+          <Reveal delay={100}>
+            <div
+              className="relative rounded-3xl overflow-hidden cursor-pointer group"
+              style={{
+                background: 'linear-gradient(135deg, #1e1b4b, #312e81, #4c1d95)',
+                boxShadow: '0 30px 80px rgba(99,102,241,0.3), 0 0 0 1px rgba(255,255,255,0.1)',
+                aspectRatio: '16/9',
+              }}
+              onClick={() => setVideoOpen(true)}
+            >
+              {/* 배경 그라디언트 효과 */}
+              <div className="absolute inset-0 opacity-50"
+                style={{background:'radial-gradient(ellipse at 30% 40%, rgba(139,92,246,0.6), transparent 60%), radial-gradient(ellipse at 70% 60%, rgba(236,72,153,0.4), transparent 60%)'}} />
+
+              {/* 그리드 패턴 */}
+              <div className="absolute inset-0 opacity-20" style={{
+                backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)',
+                backgroundSize: '40px 40px',
+              }} />
+
+              {/* 스캔 빔 */}
+              <div className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-400/50 to-transparent"
+                style={{animation:'scanBeam 4s linear infinite', top:0}} />
+
+              {/* 대시보드 미리보기 UI */}
+              <div className="absolute inset-6 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
+                <div className="flex items-center gap-1.5 px-4 py-3 border-b border-white/10">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-400 opacity-70" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 opacity-70" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-green-400 opacity-70" />
+                  <div className="flex-1 h-5 bg-white/10 rounded ml-2 max-w-xs text-[10px] text-white/40 flex items-center px-2">app.loov.co.kr/dashboard</div>
+                </div>
+                <div className="grid grid-cols-4 gap-0 h-full">
+                  <div className="border-r border-white/10 p-3 space-y-2">
+                    {['🏠','💬','📊','💰','📣','👥'].map((ic,i)=>(<div key={i} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-sm">{ic}</div>))}
+                  </div>
+                  <div className="col-span-3 p-4">
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {['₩4,250만','23건','14.2만'].map((v,i)=>(
+                        <div key={i} className="bg-white/10 rounded-xl p-2">
+                          <div className="text-[9px] text-white/40 mb-1">{['매출','리드','노출'][i]}</div>
+                          <div className="text-sm font-black text-white">{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-1.5">
+                      {['Fox 팀장 · 제안서 작성 중...','Bear 담당 · 결산 완료 ✓','Rabbit · SNS 3건 예약 ✓'].map((t,i)=>(
+                        <div key={i} className="bg-white/10 rounded-lg px-3 py-2 text-[10px] text-white/60">{t}</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 재생 버튼 */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full bg-white/20 ripple-ring" />
+                  <div className="absolute inset-0 rounded-full bg-white/10 ripple-ring-2" />
+                  <button className="video-play-btn relative w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-2xl"
+                    style={{boxShadow:'0 0 0 0 rgba(255,255,255,0.4), 0 20px 40px rgba(0,0,0,0.4)'}}>
+                    <svg className="w-8 h-8 text-indigo-600 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* 호버 오버레이 */}
+              <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors duration-300" />
+
+              {/* 하단 레이블 */}
+              <div className="absolute bottom-6 left-0 right-0 flex justify-center">
+                <div className="bg-white/10 backdrop-blur border border-white/20 rounded-full px-5 py-2 text-[12px] text-white/80 font-medium">
+                  클릭해서 데모 영상 재생 · 2:34
+                </div>
+              </div>
+            </div>
+          </Reveal>
+
+          {/* 영상 하이라이트 */}
+          <div className="grid grid-cols-3 gap-4 mt-8">
+            {[
+              { icon: '💬', title: '채팅으로 업무 지시', desc: '0:15부터' },
+              { icon: '📊', title: 'ERP 자동 운영', desc: '0:52부터' },
+              { icon: '🌐', title: 'SNS 자동 발행', desc: '1:30부터' },
+            ].map((h, i) => (
+              <Reveal key={h.title} delay={i * 80}>
+                <button
+                  onClick={() => setVideoOpen(true)}
+                  className="w-full bg-white/80 hover:bg-white border border-white shadow-sm hover:shadow-md rounded-2xl p-4 text-left transition-all group"
+                >
+                  <div className="text-2xl mb-2">{h.icon}</div>
+                  <div className="text-[13px] font-bold text-gray-900 mb-0.5 group-hover:text-indigo-600 transition-colors">{h.title}</div>
+                  <div className="text-[11px] text-gray-400">{h.desc}</div>
+                </button>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 인터랙티브 기능 탭 ──────────────────────────────── */}
       <section id="features" className="py-28 px-6 bg-white">
         <div className="max-w-6xl mx-auto">
-          <Reveal className="max-w-xl mb-16">
-            <div className="pill mb-4">AI 직원 라인업</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-[#1d1d1f] mb-4">
+          <Reveal className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-indigo-50 border border-indigo-100 text-[12px] font-semibold text-indigo-700">AI 직원 기능</div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-gray-900 mb-4">
+              필요한 모든 기능이<br />하나에.
+            </h2>
+          </Reveal>
+
+          {/* 탭 */}
+          <div className="flex gap-2 justify-center mb-10 overflow-x-auto pb-2">
+            {FEATURES.map((f, i) => (
+              <button key={i} onClick={() => setActiveFeature(i)} className={`feature-tab px-5 py-2.5 rounded-full text-[13px] font-semibold border ${
+                activeFeature === i
+                  ? 'text-white border-transparent shadow-lg'
+                  : 'text-gray-500 bg-gray-50 border-gray-100 hover:bg-gray-100'
+              }`} style={activeFeature === i ? {background:`linear-gradient(135deg,${FEATURES[i].color},${FEATURES[i].color}cc)`,boxShadow:`0 4px 20px ${FEATURES[i].color}40`} : {}}>
+                {f.tab}
+              </button>
+            ))}
+          </div>
+
+          {/* 탭 콘텐츠 */}
+          <div className="grid lg:grid-cols-2 gap-8 items-center" key={activeFeature}>
+            <div style={{animation:'fadeUp 0.4s ease both'}}>
+              <h3 className="text-[30px] font-black text-gray-900 mb-3 leading-tight">{FEATURES[activeFeature].title}</h3>
+              <p className="text-[16px] text-gray-500 leading-relaxed mb-6">{FEATURES[activeFeature].desc}</p>
+              <div className="space-y-3 mb-8">
+                {FEATURES[activeFeature].items.map((item, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{background:`${FEATURES[activeFeature].color}20`}}>
+                      <svg className="w-3 h-3" fill="none" stroke={FEATURES[activeFeature].color} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                    <span className="text-[14px] text-gray-700 font-medium">{item}</span>
+                  </div>
+                ))}
+              </div>
+              <Link href="/signup" className="inline-flex items-center gap-2 font-semibold text-[14px] px-6 py-3 rounded-full text-white transition-all hover:opacity-90"
+                style={{background:`linear-gradient(135deg,${FEATURES[activeFeature].color},${FEATURES[activeFeature].color}cc)`}}>
+                지금 사용해보기 →
+              </Link>
+            </div>
+
+            <div className={`bg-gradient-to-br ${FEATURES[activeFeature].bg} rounded-3xl p-6 border border-white shadow-xl`}
+              style={{animation:'fadeUp 0.4s 0.1s ease both', boxShadow:`0 20px 60px ${FEATURES[activeFeature].color}15`}}>
+              {FEATURES[activeFeature].preview}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── AI 직원 카드 ─────────────────────────────────────── */}
+      <section className="py-24 px-6" style={{background:'linear-gradient(180deg,#F9FAFB 0%,#F3F4F6 100%)'}}>
+        <div className="max-w-6xl mx-auto">
+          <Reveal className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-white border border-gray-100 shadow-sm text-[12px] font-semibold text-gray-600">AI 직원 라인업</div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-gray-900 mb-4">
               필요한 팀원만<br />골라서 채용하세요.
             </h2>
-            <p className="text-[17px] text-[#6e6e73] leading-relaxed">
-              각 AI 직원은 해당 직무 전문 지식을 갖추고 있습니다.<br />
-              Claude · Gemini · GPT-4o를 직원별로 자유롭게 배치하세요.
-            </p>
           </Reveal>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {EMPLOYEES.map((emp, i) => (
               <Reveal key={emp.dept} delay={i * 60}>
-                <div className="card-hover bg-[#f5f5f7] rounded-3xl p-6 cursor-default">
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-4"
-                    style={{ background: `${emp.color}15` }}>
+                <div
+                  className="card-3d bg-white rounded-3xl p-6 cursor-default border border-gray-100"
+                  onMouseEnter={() => setHoveredEmployee(i)}
+                  onMouseLeave={() => setHoveredEmployee(null)}
+                  style={{boxShadow: hoveredEmployee === i ? `0 20px 60px ${emp.color}20` : '0 2px 12px rgba(0,0,0,0.04)'}}
+                >
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-4 transition-transform duration-300"
+                    style={{ background: `${emp.color}15`, transform: hoveredEmployee === i ? 'scale(1.1) rotate(-5deg)' : 'none' }}>
                     {emp.icon}
                   </div>
-                  <h3 className="text-[17px] font-bold text-[#1d1d1f] mb-3">{emp.dept}</h3>
+                  <h3 className="text-[17px] font-bold text-gray-900 mb-3">{emp.dept}</h3>
                   <div className="space-y-1.5 mb-4">
                     {emp.tasks.map(t => (
-                      <div key={t} className="flex items-center gap-2 text-[13px] text-[#6e6e73]">
-                        <div className="w-1 h-1 rounded-full bg-[#c7c7cc] flex-shrink-0" />
+                      <div key={t} className="flex items-center gap-2 text-[13px] text-gray-500">
+                        <div className="w-1 h-1 rounded-full flex-shrink-0" style={{background:emp.color}} />
                         {t}
                       </div>
                     ))}
                   </div>
-                  <div className="flex gap-1.5 pt-3 border-t border-black/[0.06]">
+                  <div className="flex gap-1.5 pt-3 border-t border-gray-50">
                     {['Claude','Gemini','GPT-4o'].map(ai => (
-                      <span key={ai} className="text-[10px] px-2 py-0.5 bg-white rounded-full text-[#6e6e73] border border-black/[0.06]">{ai}</span>
+                      <span key={ai} className="text-[10px] px-2 py-0.5 bg-gray-50 rounded-full text-gray-500 border border-gray-100">{ai}</span>
                     ))}
                   </div>
                 </div>
@@ -434,128 +722,25 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── 대시보드 섹션 ─────────────────────────────────── */}
-      <section className="py-28 px-6 bg-[#f5f5f7]">
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
-          <Reveal>
-            <div className="pill mb-4">내장 ERP</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-[#1d1d1f] mb-4">
-              AI 팀이 직접<br />운영하는 ERP.
-            </h2>
-            <p className="text-[17px] text-[#6e6e73] leading-relaxed mb-10">
-              영업 파이프라인, 회계 장부, 마케팅 캘린더까지 —<br />
-              대표의 지시에 따라 AI 팀이 직접 운영합니다.
-            </p>
-            <div className="space-y-3">
-              {[
-                { icon: '📊', title: '영업 ERP', desc: '리드 관리 · 파이프라인 · 계약 추적' },
-                { icon: '💰', title: '회계 ERP', desc: '수입/지출 · 인보이스 · 재무 보고서' },
-                { icon: '📣', title: '마케팅 허브', desc: 'SNS 캘린더 · 캠페인 · 성과 분석' },
-                { icon: '🌐', title: '홈페이지 빌더', desc: 'AI 블록 에디터 · 서브도메인 발행' },
-              ].map(item => (
-                <div key={item.title} className="flex items-center gap-4 bg-white rounded-2xl px-5 py-4 hover-lift">
-                  <span className="text-xl">{item.icon}</span>
-                  <div>
-                    <div className="text-[14px] font-semibold text-[#1d1d1f]">{item.title}</div>
-                    <div className="text-[12px] text-[#6e6e73]">{item.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Reveal>
-
-          <Reveal delay={100}>
-            {/* 대시보드 목업 */}
-            <div className="relative">
-              <div className="absolute -inset-4 bg-gradient-to-br from-indigo-50 to-violet-50 rounded-[2rem]" />
-              <div className="relative bg-white rounded-[1.5rem] overflow-hidden shadow-2xl shadow-black/10 border border-black/[0.06]">
-                {/* 브라우저 바 */}
-                <div className="flex items-center gap-1.5 px-4 py-3 border-b border-black/[0.05] bg-[#fafafa]">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
-                  <div className="flex-1 mx-3 h-5 bg-[#f0f0f0] rounded-md text-[10px] text-[#6e6e73] flex items-center px-2">
-                    app.loov.co.kr/dashboard
-                  </div>
-                </div>
-                <div className="flex" style={{ height: 340 }}>
-                  {/* 사이드바 */}
-                  <div className="w-12 border-r border-black/[0.05] flex flex-col items-center py-3 gap-3 bg-[#fafafa]">
-                    <div className="w-7 h-7 rounded-lg bg-[#1d1d1f] flex items-center justify-center text-[10px] font-black text-white">L</div>
-                    {['🏠','💬','📊','💰','📣'].map((ic, i) => (
-                      <div key={i} className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm ${i===0 ? 'bg-indigo-50' : 'hover:bg-gray-50'} cursor-pointer`}>{ic}</div>
-                    ))}
-                  </div>
-                  {/* 콘텐츠 */}
-                  <div className="flex-1 p-4 overflow-hidden">
-                    <div className="text-[11px] font-semibold text-[#1d1d1f] mb-3">대시보드 개요</div>
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      {[
-                        { l:'이번달 매출', v:'₩4,250만', c:'#00C07F' },
-                        { l:'진행중 리드', v:'23건', c:'#0066FF' },
-                        { l:'SNS 노출', v:'14.2만', c:'#FF6B35' },
-                      ].map(s => (
-                        <div key={s.l} className="bg-[#f5f5f7] rounded-xl p-2.5">
-                          <div className="text-[9px] text-[#6e6e73] mb-1">{s.l}</div>
-                          <div className="text-[13px] font-black" style={{ color: s.c }}>{s.v}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="bg-[#f5f5f7] rounded-xl p-3 mb-2">
-                      <div className="text-[10px] font-semibold text-[#6e6e73] mb-2">AI 직원 현황</div>
-                      {[
-                        { name:'Fox 팀장', status:'제안서 작성 중', c:'#0066FF', pct:65 },
-                        { name:'Bear 담당', status:'결산 완료', c:'#00C07F', pct:100 },
-                        { name:'Rabbit', status:'SNS 3건 예약', c:'#FF6B35', pct:100 },
-                      ].map(e => (
-                        <div key={e.name} className="flex items-center gap-2 mb-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: e.c }} />
-                          <span className="text-[10px] text-[#1d1d1f] font-medium w-14 flex-shrink-0">{e.name}</span>
-                          <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width:`${e.pct}%`, background: e.c }} />
-                          </div>
-                          <span className="text-[9px] text-[#6e6e73] flex-shrink-0 w-20 truncate">{e.status}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="bg-indigo-50 rounded-xl px-3 py-2.5 text-[11px] text-indigo-700 font-medium">
-                      💬 &quot;이번 주 인스타그램 콘텐츠 3개 준비해줘&quot;
-                    </div>
-                    <div className="bg-[#f5f5f7] rounded-xl px-3 py-2 mt-1.5 text-[10px] text-[#6e6e73]">
-                      🐇 피드·스토리·릴스로 준비했습니다. 검토해주세요 ✅
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ── 통합 서비스 ────────────────────────────────────── */}
+      {/* ── 통합 서비스 ──────────────────────────────────────── */}
       <section id="integrations" className="py-28 px-6 bg-white">
         <div className="max-w-6xl mx-auto">
-          <Reveal className="max-w-xl mb-16">
-            <div className="pill mb-4">통합 서비스</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-[#1d1d1f] mb-4">
-              모든 채널을<br />하나로.
-            </h2>
-            <p className="text-[17px] text-[#6e6e73] leading-relaxed">
-              AI 직원이 네이버 블로그, Instagram, WordPress 등<br />
-              모든 채널을 자동으로 운영합니다.
-            </p>
+          <Reveal className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-purple-50 border border-purple-100 text-[12px] font-semibold text-purple-700">통합 서비스</div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-gray-900 mb-4">모든 채널을<br />하나로.</h2>
           </Reveal>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
             {INTEGRATIONS.map((intg, i) => (
               <Reveal key={intg.name} delay={i * 50}>
-                <div className="card-hover bg-[#f5f5f7] rounded-3xl p-5 cursor-default">
+                <div className="integration-card rounded-3xl p-5 cursor-default border border-gray-50"
+                  style={{background:`linear-gradient(135deg,${intg.bg},white)`, boxShadow:'0 2px 12px rgba(0,0,0,0.04)'}}>
                   <div className="text-2xl mb-3">{intg.icon}</div>
-                  <div className="text-[15px] font-semibold text-[#1d1d1f] mb-1">{intg.name}</div>
-                  <div className="text-[12px] text-[#6e6e73]">{intg.desc}</div>
-                  <div className="flex items-center gap-1.5 mt-3">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                    <span className="text-[11px] text-[#6e6e73]">연동 가능</span>
+                  <div className="text-[15px] font-bold text-gray-900 mb-1">{intg.name}</div>
+                  <div className="text-[12px] text-gray-500 mb-3">{intg.desc}</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full" style={{background:intg.color}} />
+                    <span className="text-[11px] text-gray-400">연동 가능</span>
                   </div>
                 </div>
               </Reveal>
@@ -564,42 +749,72 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── AI 모델 ─────────────────────────────────────────── */}
-      <section className="py-28 px-6 bg-[#f5f5f7]">
+      {/* ── HOW IT WORKS ──────────────────────────────────────── */}
+      <section className="py-28 px-6" style={{background:'linear-gradient(135deg,#EEF2FF 0%,#F0FDFB 100%)'}}>
+        <div className="max-w-4xl mx-auto">
+          <Reveal className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-white/80 border border-indigo-100 text-[12px] font-semibold text-indigo-700">시작하기</div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] text-gray-900">4단계면 충분합니다.</h2>
+          </Reveal>
+          <div className="grid md:grid-cols-4 gap-6">
+            {[
+              { n:'1', icon:'🏢', t:'회사 등록', d:'회사 정보와 목표를 입력하면 AI가 최적의 팀 구성을 추천합니다', c:'#6366F1' },
+              { n:'2', icon:'👤', t:'직원 채용', d:'영업·회계·마케팅 등 필요한 부서의 AI 직원을 채용하세요', c:'#8B5CF6' },
+              { n:'3', icon:'💬', t:'지시 내리기', d:'채팅으로 업무를 지시하면 AI 직원이 즉시 수행합니다', c:'#EC4899' },
+              { n:'4', icon:'📈', t:'결과 확인', d:'모든 업무 결과가 대시보드에 실시간으로 집약됩니다', c:'#10B981' },
+            ].map((step, i) => (
+              <Reveal key={step.n} delay={i * 80}>
+                <div className="text-center">
+                  <div className="relative w-14 h-14 mx-auto mb-4">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
+                      style={{background:`${step.c}15`}}>
+                      {step.icon}
+                    </div>
+                    <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white"
+                      style={{background:step.c}}>{step.n}</div>
+                  </div>
+                  <h3 className="text-[15px] font-bold text-gray-900 mb-2">{step.t}</h3>
+                  <p className="text-[13px] text-gray-500 leading-relaxed">{step.d}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── AI 모델 ──────────────────────────────────────────── */}
+      <section className="py-28 px-6 bg-white">
         <div className="max-w-6xl mx-auto">
           <Reveal className="text-center mb-16">
-            <div className="pill mx-auto mb-4">AI 모델 선택</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-[#1d1d1f] mb-4">
-              원하는 AI로<br />팀을 구성하세요.
-            </h2>
-            <p className="text-[17px] text-[#6e6e73]">
-              API 키 하나면 됩니다. 직원별로 다른 AI를 배치할 수 있습니다.
-            </p>
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-orange-50 border border-orange-100 text-[12px] font-semibold text-orange-700">AI 모델 선택</div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] text-gray-900 mb-4">원하는 AI로<br />팀을 구성하세요.</h2>
+            <p className="text-[17px] text-gray-500">API 키 하나면 됩니다. 직원별로 다른 AI를 배치할 수 있습니다.</p>
           </Reveal>
           <div className="grid md:grid-cols-3 gap-5 max-w-4xl mx-auto">
             {[
-              { name:'Claude', sub:'by Anthropic', icon:'🧠', badge:'추천', feats:['뛰어난 추론 능력','긴 컨텍스트','한국어 최적화','안전한 응답'], accent:'#FF6B35' },
-              { name:'Gemini', sub:'by Google', icon:'💎', badge:'', feats:['멀티모달 지원','실시간 검색','이미지 분석','빠른 응답'], accent:'#4285F4' },
-              { name:'GPT-4o', sub:'by OpenAI', icon:'⚡', badge:'', feats:['코드 생성 특화','범용 업무','정밀한 지시','플러그인'], accent:'#10a37f' },
+              { name:'Claude', sub:'by Anthropic', icon:'🧠', badge:'추천', feats:['뛰어난 추론 능력','긴 컨텍스트','한국어 최적화','안전한 응답'], accent:'#FF6B35', bg:'from-orange-50 to-red-50' },
+              { name:'Gemini', sub:'by Google', icon:'💎', badge:'', feats:['멀티모달 지원','실시간 검색','이미지 분석','빠른 응답'], accent:'#4285F4', bg:'from-blue-50 to-indigo-50' },
+              { name:'GPT-4o', sub:'by OpenAI', icon:'⚡', badge:'', feats:['코드 생성 특화','범용 업무','정밀한 지시','플러그인'], accent:'#10a37f', bg:'from-emerald-50 to-teal-50' },
             ].map((ai, i) => (
               <Reveal key={ai.name} delay={i * 80}>
-                <div className="relative bg-white rounded-3xl p-6 hover-lift border border-black/[0.05]">
+                <div className={`relative bg-gradient-to-br ${ai.bg} rounded-3xl p-6 card-3d border border-white`}>
                   {ai.badge && (
-                    <span className="absolute top-5 right-5 text-[11px] font-bold px-2.5 py-1 bg-[#1d1d1f] text-white rounded-full">{ai.badge}</span>
+                    <span className="absolute top-5 right-5 text-[11px] font-bold px-2.5 py-1 rounded-full text-white"
+                      style={{background:ai.accent}}>{ai.badge}</span>
                   )}
                   <div className="text-3xl mb-4">{ai.icon}</div>
-                  <div className="text-[18px] font-black text-[#1d1d1f] mb-0.5">{ai.name}</div>
-                  <div className="text-[12px] text-[#6e6e73] mb-4">{ai.sub}</div>
+                  <div className="text-[18px] font-black text-gray-900 mb-0.5">{ai.name}</div>
+                  <div className="text-[12px] text-gray-400 mb-5">{ai.sub}</div>
                   <div className="space-y-2 mb-5">
                     {ai.feats.map(f => (
-                      <div key={f} className="flex items-center gap-2 text-[13px] text-[#6e6e73]">
+                      <div key={f} className="flex items-center gap-2 text-[13px] text-gray-600">
                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ai.accent }} />
                         {f}
                       </div>
                     ))}
                   </div>
-                  <div className="flex items-center justify-between bg-[#f5f5f7] rounded-xl px-3 py-2.5">
-                    <span className="text-[11px] text-[#6e6e73] font-mono">API Key: ••••••</span>
+                  <div className="flex items-center justify-between bg-white/70 rounded-xl px-3 py-2.5 border border-white">
+                    <span className="text-[11px] text-gray-400 font-mono">API Key: ••••••</span>
                     <span className="text-[11px] font-semibold text-green-500">연결됨</span>
                   </div>
                 </div>
@@ -609,117 +824,57 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ───────────────────────────────────── */}
-      <section className="py-28 px-6 bg-white">
-        <div className="max-w-4xl mx-auto">
-          <Reveal className="text-center mb-16">
-            <div className="pill mx-auto mb-4">시작하기</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-[#1d1d1f]">
-              4단계면 충분합니다.
-            </h2>
-          </Reveal>
-          <div className="grid md:grid-cols-4 gap-8">
-            {[
-              { n:'1', icon:'🏢', t:'회사 등록', d:'회사 정보와 목표를 입력하면 AI가 최적의 팀 구성을 추천합니다' },
-              { n:'2', icon:'👤', t:'직원 채용', d:'영업·회계·마케팅 등 필요한 부서의 AI 직원을 채용하세요' },
-              { n:'3', icon:'💬', t:'지시 내리기', d:'채팅으로 업무를 지시하면 AI 직원이 즉시 수행합니다' },
-              { n:'4', icon:'📈', t:'결과 확인', d:'모든 업무 결과가 대시보드에 실시간으로 집약됩니다' },
-            ].map((step, i) => (
-              <Reveal key={step.n} delay={i * 80}>
-                <div className="text-center">
-                  <div className="w-14 h-14 bg-[#f5f5f7] rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4">
-                    {step.icon}
-                  </div>
-                  <div className="text-[11px] font-black text-[#c7c7cc] mb-2 tracking-widest">STEP {step.n}</div>
-                  <h3 className="text-[15px] font-bold text-[#1d1d1f] mb-2">{step.t}</h3>
-                  <p className="text-[13px] text-[#6e6e73] leading-relaxed">{step.d}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── 1인 기업 특화 ───────────────────────────────────── */}
-      <section className="py-28 px-6 bg-[#f5f5f7]">
-        <div className="max-w-6xl mx-auto">
-          <Reveal className="max-w-xl mb-14">
-            <div className="pill mb-4">1인 기업 특화</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-[#1d1d1f]">
-              꼭 필요한 기능만<br />담았습니다.
-            </h2>
-          </Reveal>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { icon:'🏛️', t:'정부지원사업 알림', d:'1인 창업자·소상공인 대상 지원 사업을 AI가 자동 탐색합니다' },
-              { icon:'📋', t:'세금/세무 가이드', d:'부가세·종합소득세·절세 방법을 회계 AI가 안내합니다' },
-              { icon:'📑', t:'계약서 초안 작성', d:'업무 위탁·NDA·서비스 계약서 초안을 AI가 작성합니다' },
-              { icon:'📈', t:'비즈니스 분석', d:'매출 트렌드·고객 이탈·마진율을 AI가 분석하고 개선안을 제안합니다' },
-              { icon:'🌐', t:'홈페이지 관리', d:'회사 홈페이지 콘텐츠 업데이트와 블로그 포스팅을 대신합니다' },
-              { icon:'🔔', t:'일정·마감 관리', d:'세금 신고일·계약 갱신·프로젝트 마감을 추적하고 알림을 보냅니다' },
-            ].map((item, i) => (
-              <Reveal key={item.t} delay={i * 50}>
-                <div className="card-hover bg-white rounded-3xl p-6">
-                  <div className="text-2xl mb-3">{item.icon}</div>
-                  <h3 className="text-[15px] font-bold text-[#1d1d1f] mb-2">{item.t}</h3>
-                  <p className="text-[13px] text-[#6e6e73] leading-relaxed">{item.d}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── 요금제 ──────────────────────────────────────────── */}
-      <section id="pricing" className="py-28 px-6 bg-white">
+      {/* ── 요금제 ───────────────────────────────────────────── */}
+      <section id="pricing" className="py-28 px-6" style={{background:'linear-gradient(180deg,#F3F4F6 0%,#EEF2FF 100%)'}}>
         <div className="max-w-6xl mx-auto">
           <Reveal className="text-center mb-16">
-            <div className="pill mx-auto mb-4">요금제</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] leading-tight text-[#1d1d1f] mb-3">
-              성장에 맞게<br />팀을 늘려가세요.
-            </h2>
-            <p className="text-[17px] text-[#6e6e73]">무료로 시작, 필요할 때 업그레이드</p>
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-white border border-indigo-100 shadow-sm text-[12px] font-semibold text-indigo-700">요금제</div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] text-gray-900 mb-3">성장에 맞게<br />팀을 늘려가세요.</h2>
+            <p className="text-[17px] text-gray-500">무료로 시작, 필요할 때 업그레이드</p>
           </Reveal>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {PLANS.map((plan, i) => (
               <Reveal key={plan.name} delay={i * 70}>
-                <div className={`relative rounded-3xl p-6 flex flex-col h-full transition-all duration-200 ${
+                <div className={`relative rounded-3xl p-6 flex flex-col h-full transition-all duration-300 ${
                   plan.highlight
-                    ? 'bg-[#1d1d1f] text-white shadow-2xl shadow-black/20 scale-[1.02]'
-                    : 'bg-[#f5f5f7] hover:bg-[#ebebeb]'
-                }`}>
-                  {(plan as any).badge && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[11px] font-bold px-3 py-1 rounded-full whitespace-nowrap">
-                      {(plan as any).badge}
+                    ? 'text-white scale-[1.03]'
+                    : 'bg-white border border-gray-100 hover:shadow-xl hover:-translate-y-1'
+                }`} style={plan.highlight ? {
+                  background:'linear-gradient(135deg,#6366f1,#8b5cf6,#7c3aed)',
+                  boxShadow:'0 20px 60px rgba(99,102,241,0.35)',
+                } : {}}>
+                  {(plan as {badge?:string}).badge && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white text-indigo-600 text-[11px] font-bold px-3 py-1 rounded-full whitespace-nowrap shadow-md">
+                      ⭐ {(plan as {badge?:string}).badge}
                     </div>
                   )}
                   <div className="mb-5 mt-1">
-                    <h3 className={`text-[16px] font-bold mb-2 ${plan.highlight ? 'text-white' : 'text-[#1d1d1f]'}`}>{plan.name}</h3>
+                    <h3 className={`text-[16px] font-bold mb-2 ${plan.highlight ? 'text-white' : 'text-gray-900'}`}>{plan.name}</h3>
                     <div className="flex items-baseline gap-1">
-                      <span className={`text-[30px] font-black tracking-tight ${plan.highlight ? 'text-white' : 'text-[#1d1d1f]'}`}>
+                      <span className={`text-[30px] font-black tracking-tight ${plan.highlight ? 'text-white' : 'text-gray-900'}`}>
                         {plan.price === 0 ? '무료' : `₩${(plan.price/10000).toFixed(0)}만`}
                       </span>
-                      {plan.price > 0 && <span className={`text-[13px] ${plan.highlight ? 'text-white/60' : 'text-[#6e6e73]'}`}>/월</span>}
+                      {plan.price > 0 && <span className={`text-[13px] ${plan.highlight ? 'text-white/70' : 'text-gray-400'}`}>/월</span>}
                     </div>
-                    <div className={`text-[12px] mt-1.5 ${plan.highlight ? 'text-white/60' : 'text-[#6e6e73]'}`}>
-                      AI 직원 <strong className={plan.highlight ? 'text-white' : 'text-[#1d1d1f]'}>{plan.employees}명</strong>
+                    <div className={`text-[12px] mt-1.5 ${plan.highlight ? 'text-white/70' : 'text-gray-400'}`}>
+                      AI 직원 <strong className={plan.highlight ? 'text-white' : 'text-gray-900'}>{plan.employees}명</strong>
                     </div>
                   </div>
                   <div className="space-y-2 flex-1 mb-6">
                     {plan.features.map(f => (
-                      <div key={f} className={`flex items-center gap-2 text-[13px] ${plan.highlight ? 'text-white/80' : 'text-[#6e6e73]'}`}>
-                        <svg className={`w-3.5 h-3.5 flex-shrink-0 ${plan.highlight ? 'text-white' : 'text-[#1d1d1f]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
+                      <div key={f} className={`flex items-center gap-2 text-[13px] ${plan.highlight ? 'text-white/85' : 'text-gray-500'}`}>
+                        <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${plan.highlight ? 'bg-white/20' : 'bg-indigo-50'}`}>
+                          <svg className="w-2.5 h-2.5" fill="none" stroke={plan.highlight ? 'white' : '#6366f1'} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                        </div>
                         {f}
                       </div>
                     ))}
                   </div>
-                  <Link href="/signup" className={`block text-center py-3 rounded-2xl text-[14px] font-semibold transition-all ${
+                  <Link href="/signup" className={`block text-center py-3 rounded-2xl text-[14px] font-bold transition-all ${
                     plan.highlight
-                      ? 'bg-white text-[#1d1d1f] hover:bg-gray-100'
-                      : 'bg-[#1d1d1f] text-white hover:bg-[#3d3d3f]'
-                  }`}>
+                      ? 'bg-white text-indigo-600 hover:bg-indigo-50'
+                      : 'text-white hover:opacity-90'
+                  }`} style={!plan.highlight ? {background:`linear-gradient(135deg,${plan.color},${plan.color}cc)`} : {}}>
                     {plan.cta}
                   </Link>
                 </div>
@@ -727,34 +882,32 @@ export default function LandingPage() {
             ))}
           </div>
           <Reveal className="text-center mt-8">
-            <p className="text-[13px] text-[#c7c7cc]">엔터프라이즈 플랜 별도 문의 · 모든 플랜 부가세 별도</p>
+            <p className="text-[13px] text-gray-400">엔터프라이즈 플랜 별도 문의 · 모든 플랜 부가세 별도</p>
           </Reveal>
         </div>
       </section>
 
-      {/* ── FAQ ─────────────────────────────────────────────── */}
-      <section id="faq" className="py-28 px-6 bg-[#f5f5f7]">
+      {/* ── FAQ ──────────────────────────────────────────────── */}
+      <section id="faq" className="py-28 px-6 bg-white">
         <div className="max-w-2xl mx-auto">
           <Reveal className="text-center mb-14">
-            <div className="pill mx-auto mb-4">FAQ</div>
-            <h2 className="text-[44px] font-black tracking-[-0.03em] text-[#1d1d1f]">자주 묻는 질문</h2>
+            <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-gray-50 border border-gray-100 text-[12px] font-semibold text-gray-600">FAQ</div>
+            <h2 className="text-[44px] font-black tracking-[-0.03em] text-gray-900">자주 묻는 질문</h2>
           </Reveal>
           <div className="space-y-2">
             {FAQS.map((faq, i) => (
               <Reveal key={i} delay={i * 40}>
-                <div className={`bg-white rounded-2xl overflow-hidden transition-all ${openFaq===i ? 'shadow-sm' : ''}`}>
+                <div className={`rounded-2xl overflow-hidden border transition-all ${openFaq===i ? 'border-indigo-200 shadow-md' : 'border-gray-100'}`}>
                   <button
-                    className="w-full text-left px-6 py-4 flex items-center justify-between gap-4"
+                    className="w-full text-left px-6 py-4 flex items-center justify-between gap-4 bg-white"
                     onClick={() => setOpenFaq(openFaq===i ? null : i)}>
-                    <span className="text-[15px] font-semibold text-[#1d1d1f]">{faq.q}</span>
-                    <div className={`w-6 h-6 rounded-full bg-[#f5f5f7] flex items-center justify-center flex-shrink-0 transition-transform duration-200 ${openFaq===i ? 'rotate-45' : ''}`}>
-                      <svg className="w-3 h-3 text-[#1d1d1f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
+                    <span className="text-[15px] font-semibold text-gray-900">{faq.q}</span>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 ${openFaq===i ? 'rotate-45 bg-indigo-100' : 'bg-gray-100'}`}>
+                      <svg className={`w-3.5 h-3.5 ${openFaq===i ? 'text-indigo-600' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     </div>
                   </button>
                   {openFaq===i && (
-                    <div className="px-6 pb-5 text-[14px] text-[#6e6e73] leading-relaxed border-t border-black/[0.04] pt-4">
+                    <div className="px-6 pb-5 text-[14px] text-gray-500 leading-relaxed border-t border-indigo-50 pt-4 bg-indigo-50/30" style={{animation:'fadeUp 0.3s ease'}}>
                       {faq.a}
                     </div>
                   )}
@@ -765,47 +918,57 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── CTA ─────────────────────────────────────────────── */}
-      <section className="py-36 px-6 bg-[#1d1d1f] text-white text-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_50%,rgba(99,102,241,0.15),transparent)]" />
+      {/* ── CTA ──────────────────────────────────────────────── */}
+      <section className="py-36 px-6 text-center relative overflow-hidden" style={{background:'linear-gradient(135deg,#6366f1 0%,#8b5cf6 40%,#ec4899 80%,#f59e0b 100%)'}}>
+        <div className="absolute inset-0" style={{background:'radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.1), transparent)'}} />
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+          {[...Array(6)].map((_,i)=>(
+            <div key={i} className="absolute rounded-full bg-white/5"
+              style={{width:`${100+i*80}px`,height:`${100+i*80}px`,top:`${10+i*12}%`,left:`${5+i*16}%`,animation:`float ${3+i}s ${i*0.5}s ease-in-out infinite`}} />
+          ))}
+        </div>
         <Reveal className="relative max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 mb-8 px-4 py-2 rounded-full bg-white/[0.08] text-[12px] text-white/60">
-            <span className="w-1.5 h-1.5 bg-green-400 rounded-full dot-pulse" />
+          <div className="inline-flex items-center gap-2 mb-8 px-4 py-2 rounded-full bg-white/20 text-[12px] text-white font-semibold backdrop-blur">
+            <span className="w-1.5 h-1.5 bg-green-300 rounded-full dot-pulse" />
             지금 2,400+ 1인 기업이 사용 중
           </div>
-          <h2 className="text-[56px] md:text-[72px] font-black tracking-[-0.04em] leading-[1.02] mb-5">
+          <h2 className="text-[56px] md:text-[72px] font-black tracking-[-0.04em] leading-[1.02] text-white mb-5">
             지금 시작하세요.
           </h2>
-          <p className="text-[17px] text-white/50 mb-12 leading-relaxed">
+          <p className="text-[17px] text-white/80 mb-12 leading-relaxed">
             무료로 시작해서 성장에 맞게 팀을 늘려가세요.<br />
             신용카드 없이 30초면 됩니다.
           </p>
-          <Link href="/signup"
-            className="inline-flex items-center gap-2 bg-white text-[#1d1d1f] text-[16px] font-bold px-8 py-4 rounded-full hover:bg-gray-100 transition-all hover:scale-[1.02] active:scale-[0.98]">
-            무료로 AI 팀 구성하기
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </Link>
-          <p className="text-[12px] text-white/30 mt-5">AI 직원 1명 영구 무료 · 언제든 업그레이드</p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link href="/signup" className="inline-flex items-center gap-2 bg-white text-indigo-600 text-[16px] font-black px-8 py-4 rounded-full hover:bg-gray-50 transition-all hover:scale-[1.03] active:scale-[0.97] shadow-xl">
+              무료로 AI 팀 구성하기 →
+            </Link>
+            <button onClick={() => setVideoOpen(true)} className="inline-flex items-center gap-2 border-2 border-white/40 text-white text-[15px] font-semibold px-7 py-4 rounded-full hover:bg-white/10 transition-all backdrop-blur">
+              <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs">▶</span>
+              데모 보기
+            </button>
+          </div>
+          <p className="text-[12px] text-white/50 mt-6">AI 직원 1명 영구 무료 · 언제든 업그레이드</p>
         </Reveal>
       </section>
 
-      {/* ── FOOTER ──────────────────────────────────────────── */}
-      <footer className="bg-[#1d1d1f] border-t border-white/[0.08] py-14 px-6">
+      {/* ── FOOTER ───────────────────────────────────────────── */}
+      <footer className="bg-gray-900 py-14 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-5 gap-10 mb-10">
             <div className="md:col-span-2">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center">
-                  <span className="text-[#1d1d1f] text-xs font-black">L</span>
-                </div>
-                <span className="font-bold text-white">LOOV</span>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm text-white"
+                  style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)'}}>L</div>
+                <span className="font-black text-white text-[16px]">LOOV</span>
               </div>
-              <p className="text-[13px] text-white/40 leading-relaxed max-w-xs">
+              <p className="text-[13px] text-gray-400 leading-relaxed max-w-xs mb-4">
                 1인 기업을 위한 AI 직원 플랫폼.<br />
                 Leverage · Orchestrate · Own · Venture
               </p>
+              <div className="flex gap-2">
+                {['💼','📧','💬'].map((ic,i)=>(<button key={i} className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-sm transition-colors">{ic}</button>))}
+              </div>
             </div>
             {[
               { title:'제품', links:['기능 소개','통합 서비스','요금제','API 문서'] },
@@ -813,20 +976,20 @@ export default function LandingPage() {
               { title:'회사', links:['소개','블로그','채용','파트너십'] },
             ].map(col => (
               <div key={col.title}>
-                <h4 className="text-[13px] font-semibold text-white/60 mb-4">{col.title}</h4>
+                <h4 className="text-[13px] font-semibold text-gray-400 mb-4">{col.title}</h4>
                 <div className="space-y-2.5">
                   {col.links.map(l => (
-                    <div key={l} className="text-[13px] text-white/30 hover:text-white/60 cursor-pointer transition-colors">{l}</div>
+                    <div key={l} className="text-[13px] text-gray-500 hover:text-gray-300 cursor-pointer transition-colors">{l}</div>
                   ))}
                 </div>
               </div>
             ))}
           </div>
-          <div className="border-t border-white/[0.08] pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
-            <span className="text-[12px] text-white/25">© 2026 LOOV. All rights reserved.</span>
+          <div className="border-t border-gray-800 pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <span className="text-[12px] text-gray-600">© 2026 LOOV. All rights reserved.</span>
             <div className="flex gap-6">
               {['개인정보처리방침','이용약관'].map(l => (
-                <span key={l} className="text-[12px] text-white/25 hover:text-white/50 cursor-pointer transition-colors">{l}</span>
+                <span key={l} className="text-[12px] text-gray-600 hover:text-gray-400 cursor-pointer transition-colors">{l}</span>
               ))}
             </div>
           </div>
