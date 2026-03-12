@@ -17,7 +17,7 @@ interface NaverConnection {
 interface NaverCategory { no: number; name: string; }
 interface NotionArticle { id: string; title: string; status: string; lastEdited: string; }
 interface PublishResult { postId?: string; postUrl?: string; error?: string; errorCode?: string; }
-interface HistoryItem { id: string; title: string; post_url: string; status: string; created_at: string; }
+interface HistoryItem { id: string; title: string; post_url: string; status: string; created_at: string; content?: string; }
 
 type Tab = 'publish' | 'settings' | 'history';
 
@@ -380,30 +380,7 @@ export default function NaverPage() {
         ? `__url__:${representativeImage}`
         : thumbnailPrompt.trim() || undefined;
 
-      // ── 임시저장: 에이전트 없이 직접 API 호출 ──────────────────────────────
-      if (publishStatus === 'draft') {
-        const res = await fetch('/api/naver/publish', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: title.trim(), content: finalContent,
-            tags: parsedTags, categoryNo,
-            status: 'draft',
-            notionPageId: selectedArticle?.id || '',
-          }),
-        });
-        const data = await res.json() as { postId?: string; postUrl?: string; error?: string; errorCode?: string };
-        if (!res.ok) {
-          setPublishError(data.error || `오류 (${res.status})`);
-          if (data.errorCode === 'AUTH') setTab('settings');
-        } else {
-          setPublishResult({ postId: data.postId, postUrl: data.postUrl });
-          await loadHistory();
-        }
-        setPublishing(false);
-        return;
-      }
-
-      // ── 즉시/예약 발행: 로컬 에이전트 job 경로 ────────────────────────────
+      // ── 즉시/예약/임시저장 발행: 로컬 에이전트 job 경로 ─────────────────────
       setJobStatus('대기열 등록 중...');
       const res = await fetch('/api/naver/trigger', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
