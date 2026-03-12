@@ -344,7 +344,7 @@ export default function NaverPage() {
     if (!conn?.blog_id) { setPublishError('네이버 블로그 연결 설정이 필요합니다'); return; }
     if (!conn.nid_aut || !conn.nid_ses) { setPublishError('쿠키(NID_AUT, NID_SES)를 설정 탭에서 입력해주세요'); return; }
 
-    setPublishing(true); setPublishResult(null); setPublishError(''); setJobId(null); setJobStatus('대기열 등록 중...');
+    setPublishing(true); setPublishResult(null); setPublishError(''); setJobId(null); setJobStatus('');
     try {
       const parsedTags = tags.split(',').map((t) => t.trim()).filter(Boolean);
 
@@ -380,6 +380,31 @@ export default function NaverPage() {
         ? `__url__:${representativeImage}`
         : thumbnailPrompt.trim() || undefined;
 
+      // ── 임시저장: 에이전트 없이 직접 API 호출 ──────────────────────────────
+      if (publishStatus === 'draft') {
+        const res = await fetch('/api/naver/publish', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: title.trim(), content: finalContent,
+            tags: parsedTags, categoryNo,
+            status: 'draft',
+            notionPageId: selectedArticle?.id || '',
+          }),
+        });
+        const data = await res.json() as { postId?: string; postUrl?: string; error?: string; errorCode?: string };
+        if (!res.ok) {
+          setPublishError(data.error || `오류 (${res.status})`);
+          if (data.errorCode === 'AUTH') setTab('settings');
+        } else {
+          setPublishResult({ postId: data.postId, postUrl: data.postUrl });
+          await loadHistory();
+        }
+        setPublishing(false);
+        return;
+      }
+
+      // ── 즉시/예약 발행: 로컬 에이전트 job 경로 ────────────────────────────
+      setJobStatus('대기열 등록 중...');
       const res = await fetch('/api/naver/trigger', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
