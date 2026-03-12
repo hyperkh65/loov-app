@@ -19,6 +19,8 @@ const ALLOWED_KEYS = [
   'NAVER_AD_API_KEY',
   'NAVER_AD_SECRET',
   'NAVER_AD_CUSTOMER_ID',
+  // Kakao/Daum API
+  'KAKAO_REST_API_KEY',
 ] as const;
 
 export async function GET() {
