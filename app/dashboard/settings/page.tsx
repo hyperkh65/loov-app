@@ -43,7 +43,7 @@ export default function SettingsPage() {
   const [naverMsg, setNaverMsg] = useState('');
 
   // API 키 관리 state
-  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', TTSMAKER_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', AZURE_TTS_KEY: '', AZURE_TTS_REGION: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [apiKeysSaving, setApiKeysSaving] = useState(false);
   const [apiKeysMsg, setApiKeysMsg] = useState('');
@@ -198,7 +198,7 @@ export default function SettingsPage() {
     });
     if (r.ok) {
       setApiKeysMsg('✅ 저장 완료');
-      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', TTSMAKER_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', AZURE_TTS_KEY: '', AZURE_TTS_REGION: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
       const updated: Record<string, boolean> = { ...apiKeyStatus };
       Object.entries(apiKeys).forEach(([k, v]) => { if (v.trim()) updated[k] = true; });
       setApiKeyStatus(updated);
@@ -335,7 +335,8 @@ export default function SettingsPage() {
                 { key: 'CLAUDE_API_KEY', label: 'Claude API Key', desc: '네이버 블로그 Claude 리라이팅', link: 'https://console.anthropic.com/settings/keys' },
                 { key: 'PIXABAY_API_KEY', label: 'Pixabay API Key', desc: '숏폼 이미지 검색 · 네이버 블로그 이미지 (무료)', link: 'https://pixabay.com/api/docs/' },
                 { key: 'PEXELS_API_KEY', label: 'Pexels API Key', desc: '숏폼 고화질 이미지 검색 (무료)', link: 'https://www.pexels.com/api/' },
-                { key: 'TTSMAKER_API_KEY', label: 'TTSMaker API Key', desc: '숏폼 제작 1 TTS 음성 합성 (무료 20,000자/월)', link: 'https://ttsmaker.com/api' },
+                { key: 'AZURE_TTS_KEY', label: 'Azure TTS Key', desc: '숏폼 제작 1 고품질 한국어 음성 합성 (Microsoft Neural TTS)', link: 'https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices' },
+                { key: 'AZURE_TTS_REGION', label: 'Azure TTS Region', desc: '리전 예: koreacentral · eastasia · eastus (기본값: koreacentral)', link: 'https://learn.microsoft.com/azure/ai-services/speech-service/regions' },
               ] as const).map(({ key, label, desc, link }) => (
                 <div key={key}>
                   <div className="flex items-center justify-between mb-1.5">
