@@ -21,6 +21,8 @@ const ALLOWED_KEYS = [
   'NAVER_AD_CUSTOMER_ID',
   // Kakao/Daum API
   'KAKAO_REST_API_KEY',
+  // 갤러리 비밀번호
+  'GALLERY_SECRET_PASSWORD',
 ] as const;
 
 export async function GET() {
