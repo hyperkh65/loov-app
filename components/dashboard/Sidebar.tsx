@@ -50,6 +50,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/courses',   icon: '🎓', label: '강의' },
       { href: '/dashboard/community', icon: '🤝', label: '커뮤니티' },
       { href: '/dashboard/notion',    icon: '📔', label: 'Notion 연동' },
+      { href: '/dashboard/gallery',   icon: '🖼️', label: '갤러리' },
     ],
   },
   {
