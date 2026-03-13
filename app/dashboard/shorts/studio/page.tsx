@@ -111,11 +111,14 @@ const DEFAULT_SCENE = (): Scene => ({
 });
 
 const TTS_VOICES = [
-  { id: '2054', label: '한국어 여성 1 (밝고 친근)' },
-  { id: '2055', label: '한국어 남성 1 (차분)' },
-  { id: '2056', label: '한국어 여성 2 (따뜻)' },
-  { id: '2057', label: '한국어 남성 2 (활기)' },
-  { id: '2058', label: '한국어 여성 3 (전문적)' },
+  { id: 'ko-KR-SunHiNeural',    label: '선희 · 여성 · 밝고 친근' },
+  { id: 'ko-KR-InJoonNeural',   label: '인준 · 남성 · 차분' },
+  { id: 'ko-KR-JiMinNeural',    label: '지민 · 여성 · 활기' },
+  { id: 'ko-KR-BongJinNeural',  label: '봉진 · 남성 · 깊고 안정' },
+  { id: 'ko-KR-GookMinNeural',  label: '국민 · 남성 · 친근' },
+  { id: 'ko-KR-HyunsuNeural',   label: '현수 · 남성 · 에너지' },
+  { id: 'ko-KR-SeoHyeonNeural', label: '서현 · 여성 · 전문적' },
+  { id: 'ko-KR-YuJinNeural',    label: '유진 · 여성 · 따뜻' },
 ];
 
 const CHARACTER_EMOJIS = ['🐻', '🦊', '🤖', '🐱', '🦄', '🐧', '🐼', '🐸', '🦁', '🐯'];
@@ -1535,7 +1538,7 @@ export default function StudioPage() {
                     <button
                       onClick={() => setTtsMode('ttsmaker')}
                       className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${ttsMode === 'ttsmaker' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-                      TTSMaker
+                      Azure Neural
                     </button>
                   </div>
 
