@@ -24,6 +24,8 @@ const ALLOWED_KEYS = [
   // 갤러리
   'GALLERY_SECRET_PASSWORD',
   'GALLERY_NOTION_DB_URL',
+  // 숏폼
+  'PEXELS_API_KEY',
 ] as const;
 
 export async function GET() {
