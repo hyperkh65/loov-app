@@ -86,7 +86,7 @@ function ItemModal({
   const [title, setTitle] = useState(item?.title || '');
   const [memo, setMemo] = useState(item?.memo || '');
   const [tags, setTags] = useState((item?.tags || []).join(', '));
-  const [notionUrl, setNotionUrl] = useState(item?.notion_page_url || '');
+  const [notionUrl] = useState(item?.notion_page_url || '');
   const [imageUrl, setImageUrl] = useState(item?.image_url || '');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -214,14 +214,6 @@ function ItemModal({
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm resize-none focus:ring-2 focus:ring-indigo-300 focus:outline-none" />
           </div>
 
-          {/* Notion 연결 */}
-          <div>
-            <label className="text-xs font-bold text-gray-500 mb-2 block">📔 Notion 페이지 연결 (선택)</label>
-            <input value={notionUrl} onChange={e => setNotionUrl(e.target.value)}
-              placeholder="Notion 페이지 URL 붙여넣기 (https://notion.so/...)"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none" />
-            <p className="text-xs text-gray-400 mt-1">Notion 페이지를 열고 주소창 URL을 복사해서 붙여넣으세요</p>
-          </div>
 
           {/* 태그 */}
           <div>
@@ -411,6 +403,101 @@ function GalleryCard({ item, onClick }: { item: GalleryItem; onClick: () => void
   );
 }
 
+// ── 갤러리 설정 모달 ──────────────────────────────────────────────────────────
+function GallerySettingsModal({ onClose }: { onClose: () => void }) {
+  const [notionDbUrl, setNotionDbUrl] = useState('');
+  const [secretPw, setSecretPw] = useState('');
+  const [notionSet, setNotionSet] = useState(false);
+  const [pwSet, setPwSet] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    fetch('/api/app-settings')
+      .then(r => r.ok ? r.json() : {})
+      .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string> }) => {
+        setNotionSet(!!d.hasKey?.['GALLERY_NOTION_DB_URL']);
+        setPwSet(!!d.hasKey?.['GALLERY_SECRET_PASSWORD']);
+        if (d.settings?.['GALLERY_NOTION_DB_URL']) setNotionDbUrl(d.settings['GALLERY_NOTION_DB_URL']);
+      });
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setMsg('');
+    const body: Record<string, string> = {};
+    if (notionDbUrl.trim()) body['GALLERY_NOTION_DB_URL'] = notionDbUrl.trim();
+    if (secretPw.trim()) body['GALLERY_SECRET_PASSWORD'] = secretPw.trim();
+    if (Object.keys(body).length === 0) { setSaving(false); return; }
+    const res = await fetch('/api/app-settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      setMsg('✅ 저장됨');
+      if (notionDbUrl.trim()) setNotionSet(true);
+      if (secretPw.trim()) { setPwSet(true); setSecretPw(''); }
+      setTimeout(() => setMsg(''), 2000);
+    } else {
+      setMsg('❌ 저장 실패');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="font-black text-gray-900">⚙️ 갤러리 설정</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500">✕</button>
+        </div>
+        <div className="p-6 space-y-5">
+          {/* Notion DB 연결 */}
+          <div>
+            <label className="text-xs font-bold text-gray-700 mb-1.5 block flex items-center gap-1.5">
+              📔 Notion DB 연결
+              {notionSet && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">연결됨</span>}
+            </label>
+            <input
+              value={notionDbUrl}
+              onChange={e => setNotionDbUrl(e.target.value)}
+              placeholder="Notion 페이지 또는 DB URL (https://notion.so/...)"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none"
+            />
+            <p className="text-xs text-gray-400 mt-1">한 번만 입력하면 갤러리 전체에서 계속 사용됩니다</p>
+          </div>
+
+          {/* 비밀 갤러리 비밀번호 */}
+          <div>
+            <label className="text-xs font-bold text-gray-700 mb-1.5 block flex items-center gap-1.5">
+              🔒 비밀 갤러리 비밀번호
+              {pwSet && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold">설정됨</span>}
+            </label>
+            <input
+              type="password"
+              value={secretPw}
+              onChange={e => setSecretPw(e.target.value)}
+              placeholder={pwSet ? '새 비밀번호를 입력하면 교체됩니다' : '비밀번호 입력'}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-300 focus:outline-none"
+              autoComplete="new-password"
+            />
+          </div>
+
+          {msg && <p className={`text-sm font-medium text-center ${msg.startsWith('✅') ? 'text-emerald-600' : 'text-red-500'}`}>{msg}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={onClose} className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-500 font-semibold hover:bg-gray-50 transition-colors">닫기</button>
+            <button onClick={save} disabled={saving || (!notionDbUrl.trim() && !secretPw.trim())}
+              className="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-50 transition-colors">
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 메인 ──────────────────────────────────────────────────────────────────────
 export default function GalleryPage() {
   const [activeCategory, setActiveCategory] = useState<Category | 'all'>('all');
@@ -419,11 +506,21 @@ export default function GalleryPage() {
   const [secretUnlocked, setSecretUnlocked] = useState(false);
   const [showSecretModal, setShowSecretModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [editItem, setEditItem] = useState<GalleryItem | null>(null);
   const [detailItem, setDetailItem] = useState<GalleryItem | null>(null);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'masonry'>('grid');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'favorite'>('newest');
+  const [notionConnected, setNotionConnected] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/app-settings')
+      .then(r => r.ok ? r.json() : {})
+      .then((d: { hasKey?: Record<string, boolean> }) => {
+        setNotionConnected(!!d.hasKey?.['GALLERY_NOTION_DB_URL']);
+      });
+  }, []);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -491,6 +588,14 @@ export default function GalleryPage() {
           onClose={() => { setDetailItem(null); loadItems(); }}
         />
       )}
+      {showSettings && (
+        <GallerySettingsModal onClose={() => {
+          setShowSettings(false);
+          fetch('/api/app-settings').then(r => r.ok ? r.json() : {}).then((d: { hasKey?: Record<string, boolean> }) => {
+            setNotionConnected(!!d.hasKey?.['GALLERY_NOTION_DB_URL']);
+          });
+        }} />
+      )}
 
       {/* 헤더 */}
       <header className="bg-white border-b border-gray-100 px-6 py-4 sticky top-0 z-20">
@@ -501,9 +606,20 @@ export default function GalleryPage() {
                 style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)'}}>🖼️</span>
               사진 갤러리
             </h1>
-            <p className="text-xs text-gray-400 mt-0.5">개인·업무·비밀 갤러리 · 메모 · Notion 연결</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-gray-400">개인·업무·비밀 갤러리 · 메모</p>
+              {notionConnected && (
+                <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full font-semibold">📔 Notion 연결됨</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* 설정 */}
+            <button onClick={() => setShowSettings(true)}
+              className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
+              title="갤러리 설정">
+              ⚙️
+            </button>
             {/* 뷰 모드 */}
             <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
               {(['grid','masonry'] as const).map(m => (
