@@ -685,12 +685,18 @@ export default function ShortsPage() {
               AI 스크립트 · Pixabay/Pexels/DALL-E · Web TTS · YouTube·네이버·Instagram·TikTok
             </p>
           </div>
-          {scenes.length > 0 && (
-            <button onClick={copyScript}
-              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-xs font-semibold text-gray-600 transition-colors">
-              📋 복사
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <a href="/dashboard/shorts/remove-text"
+              className="px-3 py-2 bg-purple-100 hover:bg-purple-200 rounded-xl text-xs font-semibold text-purple-700 transition-colors whitespace-nowrap">
+              ✂️ 텍스트 제거
+            </a>
+            {scenes.length > 0 && (
+              <button onClick={copyScript}
+                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-xs font-semibold text-gray-600 transition-colors">
+                📋 복사
+              </button>
+            )}
+          </div>
         </div>
         {/* 스텝 탭 */}
         <div className="flex gap-1 flex-wrap">
