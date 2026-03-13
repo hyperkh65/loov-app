@@ -20,7 +20,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -47,6 +47,12 @@ export default function SettingsPage() {
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [apiKeysSaving, setApiKeysSaving] = useState(false);
   const [apiKeysMsg, setApiKeysMsg] = useState('');
+
+  // Gallery settings state
+  const [galleryPw, setGalleryPw] = useState('');
+  const [galleryPwSet, setGalleryPwSet] = useState(false);
+  const [gallerySaving, setGallerySaving] = useState(false);
+  const [galleryMsg, setGalleryMsg] = useState('');
 
   // Google Calendar state
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -84,6 +90,13 @@ export default function SettingsPage() {
         .then((r) => r.ok ? r.json() : {})
         .then((d: { hasKey?: Record<string, boolean> }) => {
           if (d.hasKey) setNaverKeyStatus(d.hasKey);
+        });
+    }
+    if (activeTab === 'gallery') {
+      fetch('/api/app-settings')
+        .then((r) => r.ok ? r.json() : {})
+        .then((d: { hasKey?: Record<string, boolean> }) => {
+          setGalleryPwSet(!!d.hasKey?.['GALLERY_SECRET_PASSWORD']);
         });
     }
     if (activeTab === 'google') {
@@ -210,7 +223,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1191,6 +1204,76 @@ export default function SettingsPage() {
               <div className="mt-3 bg-white rounded-xl p-3 text-xs text-orange-600">
                 💡 저장 후 <a href="/dashboard/coupang" className="underline font-bold">쿠팡파트너스 페이지</a>에서 상품 검색 → 제휴링크 생성 → SNS 자동 홍보가 가능합니다
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 갤러리 탭 */}
+        {activeTab === 'gallery' && (
+          <div className="space-y-6 max-w-2xl">
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">🔒</span>
+                <div>
+                  <h2 className="font-bold text-gray-900">비밀 갤러리 비밀번호</h2>
+                  <p className="text-xs text-gray-400">비밀 카테고리 갤러리를 열 때 필요한 비밀번호를 설정합니다</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-1 block">
+                  비밀번호
+                  {galleryPwSet && <span className="ml-2 text-xs text-emerald-600 font-normal">✅ 설정됨</span>}
+                </label>
+                <input
+                  type="password"
+                  value={galleryPw}
+                  onChange={(e) => setGalleryPw(e.target.value)}
+                  placeholder={galleryPwSet ? '새 비밀번호를 입력하면 교체됩니다' : '비밀번호 입력'}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400"
+                  autoComplete="new-password"
+                />
+                <p className="text-xs text-gray-400 mt-1">비밀 갤러리에 접근할 때마다 이 비밀번호를 입력해야 합니다</p>
+              </div>
+
+              {galleryMsg && (
+                <div className={`p-3 rounded-xl text-sm font-medium ${galleryMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                  {galleryMsg}
+                </div>
+              )}
+
+              <button
+                disabled={gallerySaving || !galleryPw.trim()}
+                onClick={async () => {
+                  setGallerySaving(true); setGalleryMsg('');
+                  const res = await fetch('/api/app-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ GALLERY_SECRET_PASSWORD: galleryPw }),
+                  });
+                  if (res.ok) {
+                    setGalleryMsg('✅ 비밀번호가 저장되었습니다');
+                    setGalleryPwSet(true);
+                    setGalleryPw('');
+                  } else {
+                    setGalleryMsg('❌ 저장 실패');
+                  }
+                  setGallerySaving(false);
+                }}
+                className="w-full py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-colors"
+              >
+                {gallerySaving ? '저장 중...' : '🔒 비밀번호 저장'}
+              </button>
+            </div>
+
+            <div className="bg-purple-50 border border-purple-100 rounded-2xl p-5">
+              <h3 className="font-bold text-gray-900 mb-2">💡 갤러리 사용 안내</h3>
+              <ul className="space-y-1.5 text-sm text-gray-600">
+                <li className="flex gap-2"><span className="text-blue-500">🙋</span><span><strong>개인용</strong> — 개인 사진 및 메모</span></li>
+                <li className="flex gap-2"><span className="text-emerald-500">💼</span><span><strong>업무용</strong> — 업무 자료 및 레퍼런스</span></li>
+                <li className="flex gap-2"><span className="text-purple-500">🔒</span><span><strong>비밀용</strong> — 위에서 설정한 비밀번호로 보호됩니다</span></li>
+                <li className="flex gap-2"><span className="text-indigo-400">📔</span><span>각 사진에 <strong>Notion 페이지를 연결</strong>할 수 있습니다 (Notion 연동 먼저 설정)</span></li>
+              </ul>
             </div>
           </div>
         )}
