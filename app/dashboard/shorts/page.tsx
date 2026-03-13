@@ -19,6 +19,7 @@ interface Scene {
   image_source: ImageSource;
 }
 interface PixabayImage { id: number; url: string; thumb: string; tags: string; author: string }
+interface BlogPost { id: string; title: string; url: string; image: string; excerpt: string; content: string; date: string; categories: string[] }
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const DURATIONS = [
@@ -591,6 +592,34 @@ export default function ShortsPage() {
   const [pickerIdx, setPickerIdx] = useState<number | null>(null);
   const [defaultImgSource, setDefaultImgSource] = useState<ImageSource>('pixabay');
 
+  // 블로그
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
+  const [blogLoading, setBlogLoading] = useState(false);
+  const [blogSearch, setBlogSearch] = useState('');
+  const [showBlog, setShowBlog] = useState(false);
+  const [selectedBlogPost, setSelectedBlogPost] = useState<BlogPost | null>(null);
+
+  // ── 블로그 로드 ──────────────────────────────────────────────────────────────
+  const loadBlog = useCallback(async () => {
+    setBlogLoading(true);
+    const res = await fetch('/api/shorts/blog');
+    if (res.ok) setBlogPosts((await res.json() as { posts: BlogPost[] }).posts);
+    setBlogLoading(false);
+  }, []);
+
+  useEffect(() => { if (showBlog && blogPosts.length === 0) loadBlog(); }, [showBlog]); // eslint-disable-line
+
+  const selectBlogPost = async (post: BlogPost) => {
+    setSelectedBlogPost(post);
+    let content = post.content;
+    if (!content) {
+      const r = await fetch(`/api/shorts/blog?url=${encodeURIComponent(post.url)}`);
+      if (r.ok) content = ((await r.json()) as { content?: string }).content ?? '';
+    }
+    setTopic(`제목: ${post.title}\n카테고리: ${post.categories.join(', ')}\n내용: ${content.slice(0, 600)}`);
+    setShowBlog(false);
+  };
+
   const updateScene = (i: number, s: Scene) => setScenes(prev => prev.map((x, j) => j === i ? s : x));
   const deleteScene = (i: number) => setScenes(prev => prev.filter((_, j) => j !== i));
   const addScene = () => setScenes(prev => [...prev, {
@@ -682,7 +711,7 @@ export default function ShortsPage() {
               숏폼 스튜디오
             </h1>
             <p className="text-xs text-gray-400 mt-0.5">
-              AI 스크립트 · Pixabay/Pexels/DALL-E · Web TTS · YouTube·네이버·Instagram·TikTok
+              AI 스크립트 · Pixabay/Pexels/DALL-E · TTSMaker · 캐릭터 마스코트 · YouTube·네이버·Instagram·TikTok
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -745,13 +774,80 @@ export default function ShortsPage() {
                 </div>
               </div>
 
-              {/* 주제 */}
+              {/* 주제 – 직접입력 / 블로그 탭 */}
               <div>
-                <label className="text-xs font-bold text-gray-500 mb-2 block">주제 / 키워드</label>
-                <input value={topic} onChange={e => setTopic(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && generateScript()}
-                  placeholder="예: 직장인 연말정산 꿀팁, 강아지 훈련법, 5분 홈트, 재테크 실수 TOP5"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl text-sm focus:border-indigo-400 focus:outline-none" />
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="text-xs font-bold text-gray-500">주제 / 키워드</label>
+                  <div className="ml-auto flex gap-1">
+                    <button onClick={() => setShowBlog(false)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${!showBlog ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      ✍️ 직접 입력
+                    </button>
+                    <button onClick={() => setShowBlog(true)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${showBlog ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      📰 블로그에서
+                    </button>
+                  </div>
+                </div>
+
+                {!showBlog ? (
+                  <div className="space-y-1.5">
+                    {selectedBlogPost && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-700">
+                        <span className="truncate flex-1">📰 {selectedBlogPost.title}</span>
+                        <button onClick={() => { setSelectedBlogPost(null); setTopic(''); }} className="text-indigo-400 hover:text-indigo-600">✕</button>
+                      </div>
+                    )}
+                    <textarea value={topic} onChange={e => setTopic(e.target.value)}
+                      rows={3}
+                      placeholder="예: 직장인 연말정산 꿀팁, 강아지 훈련법, 5분 홈트, 재테크 실수 TOP5"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl text-sm focus:border-indigo-400 focus:outline-none resize-none" />
+                  </div>
+                ) : (
+                  /* ── 블로그 패널 ── */
+                  <div className="border-2 border-indigo-200 rounded-2xl overflow-hidden">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border-b border-indigo-200">
+                      <span className="text-xs font-bold text-indigo-700">2days.kr 최신 글</span>
+                      <button onClick={loadBlog} className="ml-auto text-[10px] text-indigo-500 hover:text-indigo-700">새로고침</button>
+                    </div>
+                    <div className="p-3 border-b border-gray-100">
+                      <input value={blogSearch} onChange={e => setBlogSearch(e.target.value)}
+                        placeholder="제목·카테고리 검색..."
+                        className="w-full px-3 py-1.5 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      {blogLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-10 text-gray-400 text-xs">
+                          <div className="w-4 h-4 border-2 border-gray-300 border-t-indigo-400 rounded-full animate-spin" />
+                          불러오는 중...
+                        </div>
+                      ) : blogPosts.filter(p => !blogSearch || p.title.toLowerCase().includes(blogSearch.toLowerCase()) || p.categories.some(c => c.toLowerCase().includes(blogSearch.toLowerCase()))).map(post => (
+                        <div key={post.id} onClick={() => selectBlogPost(post)}
+                          className="flex gap-2.5 p-3 border-b border-gray-100 cursor-pointer hover:bg-indigo-50 transition-colors group">
+                          {post.image ? (
+                            <img src={post.image} alt="" className="w-16 h-16 object-cover rounded-xl flex-shrink-0 group-hover:opacity-90" />
+                          ) : (
+                            <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-300 text-2xl">📄</div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold text-gray-800 line-clamp-2 mb-1 leading-snug">{post.title}</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] text-gray-400">{post.date}</span>
+                              {post.categories[0] && <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full">{post.categories[0]}</span>}
+                            </div>
+                            {post.excerpt && <div className="text-[10px] text-gray-400 mt-1 line-clamp-1">{post.excerpt}</div>}
+                          </div>
+                          <div className="flex-shrink-0 self-center">
+                            <div className="w-7 h-7 bg-indigo-600 group-hover:bg-indigo-500 rounded-lg flex items-center justify-center text-white text-xs transition-colors">→</div>
+                          </div>
+                        </div>
+                      ))}
+                      {!blogLoading && blogPosts.filter(p => !blogSearch || p.title.toLowerCase().includes(blogSearch.toLowerCase())).length === 0 && (
+                        <div className="py-10 text-center text-gray-400 text-xs">글이 없습니다</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 길이 */}
