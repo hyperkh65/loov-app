@@ -94,34 +94,6 @@ function ItemModal({
   const [preview, setPreview] = useState(item?.image_url || '');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Notion 페이지 피커
-  const [notionPages, setNotionPages] = useState<{ id: string; title: string; url: string }[]>([]);
-  const [notionSearch, setNotionSearch] = useState('');
-  const [notionLoading, setNotionLoading] = useState(false);
-  const [showNotionPicker, setShowNotionPicker] = useState(false);
-  const notionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const loadNotionPages = useCallback(async (q: string) => {
-    setNotionLoading(true);
-    const res = await fetch(`/api/notion/pages?q=${encodeURIComponent(q)}`);
-    if (res.ok) {
-      const d = await res.json() as { pages?: { id: string; title: string; url: string }[] };
-      setNotionPages(d.pages || []);
-    }
-    setNotionLoading(false);
-  }, []);
-
-  const handleNotionSearchChange = (val: string) => {
-    setNotionSearch(val);
-    if (notionTimer.current) clearTimeout(notionTimer.current);
-    notionTimer.current = setTimeout(() => loadNotionPages(val), 400);
-  };
-
-  const selectNotionPage = (page: { id: string; title: string; url: string }) => {
-    setNotionUrl(page.url);
-    setShowNotionPicker(false);
-    setNotionSearch('');
-  };
 
   const uploadFile = async (file: File) => {
     setUploading(true);
@@ -245,67 +217,10 @@ function ItemModal({
           {/* Notion 연결 */}
           <div>
             <label className="text-xs font-bold text-gray-500 mb-2 block">📔 Notion 페이지 연결 (선택)</label>
-            {notionUrl ? (
-              <div className="flex items-center gap-2 p-3 bg-indigo-50 rounded-xl border border-indigo-200">
-                <span className="text-lg">📔</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-indigo-700 truncate">{notionUrl}</div>
-                </div>
-                <button onClick={() => setNotionUrl('')}
-                  className="text-xs text-gray-400 hover:text-red-500 transition-colors px-2 py-1 rounded-lg hover:bg-white">✕</button>
-              </div>
-            ) : (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => { setShowNotionPicker(true); loadNotionPages(''); }}
-                  className="w-full flex items-center gap-2 px-4 py-2.5 border border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-indigo-300 hover:text-indigo-500 transition-colors"
-                >
-                  <span>📔</span> Notion 페이지 검색하여 연결...
-                </button>
-                <div className="mt-1.5">
-                  <input value={notionUrl} onChange={e => setNotionUrl(e.target.value)}
-                    placeholder="또는 URL 직접 입력 (https://notion.so/...)"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-500 focus:ring-1 focus:ring-indigo-300 focus:outline-none" />
-                </div>
-              </div>
-            )}
-
-            {/* Notion 페이지 피커 드롭다운 */}
-            {showNotionPicker && (
-              <div className="mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden">
-                <div className="p-3 border-b border-gray-100 flex items-center gap-2">
-                  <span className="text-gray-400 text-sm">🔍</span>
-                  <input
-                    autoFocus
-                    value={notionSearch}
-                    onChange={e => handleNotionSearchChange(e.target.value)}
-                    placeholder="페이지 이름으로 검색..."
-                    className="flex-1 text-sm focus:outline-none"
-                  />
-                  <button onClick={() => setShowNotionPicker(false)} className="text-gray-400 hover:text-gray-600 text-xs px-1">✕</button>
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {notionLoading ? (
-                    <div className="flex items-center justify-center py-6 text-sm text-gray-400">
-                      <div className="w-4 h-4 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin mr-2" />불러오는 중...
-                    </div>
-                  ) : notionPages.length === 0 ? (
-                    <div className="text-center py-6 text-sm text-gray-400">
-                      {notionSearch ? '검색 결과 없음' : 'Notion 페이지가 없습니다'}
-                    </div>
-                  ) : (
-                    notionPages.map(page => (
-                      <button key={page.id} onClick={() => selectNotionPage(page)}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors text-left border-b border-gray-50 last:border-0">
-                        <span className="text-lg">📄</span>
-                        <span className="text-sm text-gray-700 truncate">{page.title}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
+            <input value={notionUrl} onChange={e => setNotionUrl(e.target.value)}
+              placeholder="Notion 페이지 URL 붙여넣기 (https://notion.so/...)"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none" />
+            <p className="text-xs text-gray-400 mt-1">Notion 페이지를 열고 주소창 URL을 복사해서 붙여넣으세요</p>
           </div>
 
           {/* 태그 */}
