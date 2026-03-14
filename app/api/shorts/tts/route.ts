@@ -30,15 +30,9 @@ export async function POST(req: NextRequest) {
     if (!text?.trim()) return NextResponse.json({ error: '텍스트가 없습니다.' }, { status: 400 });
 
     // 시놀로지 NAS Edge-TTS 서버 URL (설정에서 지정)
-    const nasUrl = await getSetting('EDGE_TTS_SERVER_URL');
+    const nasUrl = (await getSetting('EDGE_TTS_SERVER_URL')) || 'http://aboda.kr:5050';
 
-    if (!nasUrl) {
-      return NextResponse.json({
-        error: '시놀로지 Edge-TTS 서버 URL이 설정되지 않았습니다.\n설정 > API 키 > EDGE_TTS_SERVER_URL 에 입력하세요.\n예: http://your-nas-ddns.synology.me:5050'
-      }, { status: 400 });
-    }
-
-    const secret = await getSetting('EDGE_TTS_SECRET') ?? '';
+    const secret = (await getSetting('EDGE_TTS_SECRET')) || 'loov_tts_secret';
     const ratePercent = Math.round((speed - 1.0) * 100);
 
     const res = await fetch(`${nasUrl.replace(/\/$/, '')}/tts`, {
