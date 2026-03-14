@@ -493,6 +493,8 @@ export default function StudioPage() {
   const bgmPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
   // 미리보기 BGM
   const previewBgmRef = useRef<HTMLAudioElement | null>(null);
+  const [bgmPlaying, setBgmPlaying] = useState(false);
+  const [bgmError, setBgmError] = useState('');
 
   // 음성 목록
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -804,6 +806,8 @@ export default function StudioPage() {
       previewBgmRef.current.pause();
       previewBgmRef.current = null;
     }
+    setBgmPlaying(false);
+    setBgmError('');
   }, []);
 
   // Ref to always have latest character state in rAF loop
@@ -978,16 +982,22 @@ export default function StudioPage() {
     setPlaying(true);
     scenes.forEach(s => { if (s.imageUrl) preloadImage(s.imageUrl).catch(() => {}); });
     // 미리보기 BGM 시작
+    setBgmError('');
+    setBgmPlaying(false);
     if (previewBgmRef.current) {
       previewBgmRef.current.pause();
       previewBgmRef.current = null;
     }
     if (settings.bgmUrl) {
-      const bgm = new Audio(settings.bgmUrl);
+      const bgm = new Audio();
+      bgm.src = settings.bgmUrl;
       bgm.loop = true;
-      bgm.volume = settings.bgmVolume;
-      bgm.play().catch(() => {});
+      bgm.volume = Math.min(1, Math.max(0, settings.bgmVolume));
+      bgm.onerror = () => setBgmError('BGM 로드 실패: URL을 확인하세요');
+      bgm.onplaying = () => setBgmPlaying(true);
+      bgm.onpause = () => setBgmPlaying(false);
       previewBgmRef.current = bgm;
+      bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
     }
     playPreviewScene(0, scenes);
   };
@@ -1720,7 +1730,15 @@ export default function StudioPage() {
 
               {/* BGM */}
               <div>
-                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2">🎵 배경음악 (BGM)</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">🎵 배경음악 (BGM)</div>
+                  <div className="flex items-center gap-1.5">
+                    {bgmPlaying && <span className="flex items-center gap-1 text-[9px] text-green-400"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />재생중</span>}
+                    {bgmError && <span className="text-[9px] text-red-400" title={bgmError}>⚠️ 오류</span>}
+                    {!settings.bgmUrl && <span className="text-[9px] text-gray-600">미선택</span>}
+                  </div>
+                </div>
+                {bgmError && <div className="mb-2 px-2 py-1.5 bg-red-900/30 border border-red-700/40 rounded-lg text-[9px] text-red-300">{bgmError}</div>}
 
                 {/* BGM 프리셋 카드 */}
                 <div className="space-y-1.5 mb-3">
