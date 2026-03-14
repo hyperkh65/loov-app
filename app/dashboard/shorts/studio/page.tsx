@@ -989,11 +989,12 @@ export default function StudioPage() {
       previewBgmRef.current = null;
     }
     if (settings.bgmUrl) {
-      const bgm = new Audio();
-      bgm.src = settings.bgmUrl;
+      // /api/proxy-audio 를 통해 프록시로 로드 (CDN CORS/Referrer 문제 우회)
+      const proxyUrl = `/api/proxy-audio?url=${encodeURIComponent(settings.bgmUrl)}`;
+      const bgm = new Audio(proxyUrl);
       bgm.loop = true;
       bgm.volume = Math.min(1, Math.max(0, settings.bgmVolume));
-      bgm.onerror = () => setBgmError('BGM 로드 실패: URL을 확인하세요');
+      bgm.onerror = () => setBgmError('BGM 로드 실패 — URL을 확인하거나 다른 음악을 선택하세요');
       bgm.onplaying = () => setBgmPlaying(true);
       bgm.onpause = () => setBgmPlaying(false);
       previewBgmRef.current = bgm;
