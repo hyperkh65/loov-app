@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     const totalDuration = words.length > 0 ? words[words.length - 1].end : 0;
 
     return NextResponse.json({
-      audio: `data:audio/mp3;base64,${base64}`,
+      audio: `data:audio/mpeg;base64,${base64}`,
       words,
       duration: totalDuration, // ms
       voice,
