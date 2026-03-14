@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
+export const maxDuration = 30; // Vercel 함수 최대 실행 시간 (초)
+
 // 한국어 Edge-TTS 음성 목록
 export const EDGE_VOICES = [
   { id: 'ko-KR-SunHiNeural',     name: '선희 (여성·밝고 활기찬)',   gender: 'f', style: ['cheerful','sad','angry'] },
@@ -56,9 +58,11 @@ export async function POST(req: NextRequest) {
     const words: { word: string; start: number; end: number }[] = [];
 
     await new Promise<void>((resolve, reject) => {
+      // 25초 타임아웃
+      const timeout = setTimeout(() => reject(new Error('TTS 타임아웃 (25초)')), 25000);
+
       const { audioStream, metadataStream } = tts.toStream(ssml);
 
-      // 단어 타임스탬프 파싱
       if (metadataStream) {
         metadataStream.on('data', (data: Buffer) => {
           try {
@@ -83,22 +87,28 @@ export async function POST(req: NextRequest) {
       }
 
       audioStream.on('data', (chunk: Buffer) => audioChunks.push(chunk));
-      audioStream.on('end', () => resolve());
-      audioStream.on('error', reject);
+      audioStream.on('end', () => { clearTimeout(timeout); resolve(); });
+      audioStream.on('error', (e) => { clearTimeout(timeout); reject(e); });
     });
 
     const audioBuffer = Buffer.concat(audioChunks);
+
+    if (audioBuffer.length === 0) {
+      return NextResponse.json({ error: 'Edge-TTS: 오디오 데이터가 비어 있습니다. Vercel 서버리스 WebSocket 제한일 수 있습니다.' }, { status: 500 });
+    }
+
     const base64 = audioBuffer.toString('base64');
     const totalDuration = words.length > 0 ? words[words.length - 1].end : 0;
 
     return NextResponse.json({
       audio: `data:audio/mpeg;base64,${base64}`,
       words,
-      duration: totalDuration, // ms
+      duration: totalDuration,
       voice,
+      size: audioBuffer.length,
     });
   } catch (e) {
     console.error('edge-tts error:', e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: `Edge-TTS 오류: ${String(e)}` }, { status: 500 });
   }
 }
