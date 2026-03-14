@@ -135,19 +135,18 @@ const SUPERTONIC_VOICES = [
 
 const CHARACTER_EMOJIS = ['🐻', '🦊', '🤖', '🐱', '🦄', '🐧', '🐼', '🐸', '🦁', '🐯'];
 
+const BGM_BASE = 'http://aboda.kr:5050/bgm';
 const BGM_PRESETS: BgmPreset[] = [
-  { id: 'calm1',   genre: '잔잔',   label: '잔잔한 피아노',    url: 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3' },
-  { id: 'calm2',   genre: '잔잔',   label: '어쿠스틱 기타',    url: 'https://assets.mixkit.co/music/preview/mixkit-guitar-and-cello-442.mp3' },
-  { id: 'upbeat1', genre: '업비트', label: '신나는 팝',        url: 'https://assets.mixkit.co/music/preview/mixkit-sun-and-his-daughter-580.mp3' },
-  { id: 'upbeat2', genre: '업비트', label: '경쾌한 비트',      url: 'https://assets.mixkit.co/music/preview/mixkit-hip-hop-02-738.mp3' },
-  { id: 'lofi1',   genre: 'Lo-fi', label: 'Lo-fi 힙합',       url: 'https://assets.mixkit.co/music/preview/mixkit-life-is-a-dream-837.mp3' },
-  { id: 'lofi2',   genre: 'Lo-fi', label: 'Chill 비트',       url: 'https://assets.mixkit.co/music/preview/mixkit-valley-sunset-127.mp3' },
-  { id: 'epic1',   genre: '에픽',   label: '오케스트라 에픽',  url: 'https://assets.mixkit.co/music/preview/mixkit-epic-orchestra-910.mp3' },
-  { id: 'epic2',   genre: '에픽',   label: '시네마틱 드라마',  url: 'https://assets.mixkit.co/music/preview/mixkit-cinematic-mystery-548.mp3' },
-  { id: 'fun1',    genre: '코믹',   label: '귀엽고 경쾌',      url: 'https://assets.mixkit.co/music/preview/mixkit-children-fun-2853.mp3' },
-  { id: 'emo1',    genre: '감동',   label: '감동적인 피아노',  url: 'https://assets.mixkit.co/music/preview/mixkit-piano-reflections-22.mp3' },
-  { id: 'trend1',  genre: '트렌드', label: '트렌디 팝',        url: 'https://assets.mixkit.co/music/preview/mixkit-pop-celebratory-background-196.mp3' },
-  { id: 'trend2',  genre: '트렌드', label: '모던 비트',        url: 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3' },
+  { id: 'calm1',   genre: '잔잔',   label: 'Wholesome',         url: `${BGM_BASE}/calm1.mp3` },
+  { id: 'calm2',   genre: '잔잔',   label: 'Gymnopedie No.1',   url: `${BGM_BASE}/calm2.mp3` },
+  { id: 'upbeat1', genre: '업비트', label: 'Easy Lemon',        url: `${BGM_BASE}/upbeat1.mp3` },
+  { id: 'upbeat2', genre: '업비트', label: 'Digital Lemonade',  url: `${BGM_BASE}/upbeat2.mp3` },
+  { id: 'lofi1',   genre: 'Lo-fi', label: 'Investigations',     url: `${BGM_BASE}/lofi1.mp3` },
+  { id: 'fun1',    genre: '코믹',   label: 'Cut and Run',       url: `${BGM_BASE}/fun1.mp3` },
+  { id: 'epic1',   genre: '에픽',   label: 'Intended Force',    url: `${BGM_BASE}/epic1.mp3` },
+  { id: 'emo1',    genre: '감동',   label: 'Bittersweet',       url: `${BGM_BASE}/emo1.mp3` },
+  { id: 'trend1',  genre: '트렌드', label: 'Sneaky Snitch',     url: `${BGM_BASE}/trend1.mp3` },
+  { id: 'trend2',  genre: '트렌드', label: 'Local Forecast',    url: `${BGM_BASE}/trend2.mp3` },
 ];
 
 const GENRE_COLORS: Record<string, string> = {
