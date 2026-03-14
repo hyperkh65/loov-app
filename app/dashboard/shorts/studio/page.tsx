@@ -345,17 +345,19 @@ function ImagePicker({ query, dallePrompt, onSelect, onClose }: {
   query: string; dallePrompt: string;
   onSelect: (url: string, src: Scene['imageSource']) => void; onClose: () => void;
 }) {
-  const [src, setSrc] = useState<'pixabay' | 'pexels' | 'dalle' | 'custom'>('pixabay');
+  const [src, setSrc] = useState<'pixabay' | 'pexels' | 'dalle' | 'custom' | 'upload'>('pixabay');
   const [q, setQ] = useState(query);
   const [dp, setDp] = useState(dallePrompt || query);
   const [customUrl, setCustomUrl] = useState('');
   const [images, setImages] = useState<PixImage[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [uploadPreview, setUploadPreview] = useState('');
+  const [uploading, setUploading] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const search = async (qVal: string, srcVal: string) => {
-    if (srcVal === 'custom') return;
+    if (srcVal === 'custom' || srcVal === 'upload') return;
     setLoading(true); setErr('');
     const p = new URLSearchParams({ q: qVal, source: srcVal, per_page: '9' });
     if (srcVal === 'dalle') p.set('dalle_prompt', qVal);
@@ -365,23 +367,72 @@ function ImagePicker({ query, dallePrompt, onSelect, onClose }: {
     setLoading(false);
   };
 
-  useEffect(() => { if (src !== 'custom' && src !== 'dalle') search(q, src); }, [src]); // eslint-disable-line
+  useEffect(() => { if (src !== 'custom' && src !== 'dalle' && src !== 'upload') search(q, src); }, [src]); // eslint-disable-line
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // 미리보기
+    const reader = new FileReader();
+    reader.onload = ev => setUploadPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    // Supabase 업로드
+    setUploading(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/shorts/upload-image', { method: 'POST', body: fd });
+    const d = await res.json() as { url?: string; error?: string };
+    setUploading(false);
+    if (d.url) { onSelect(d.url, 'custom'); onClose(); }
+    else setErr(d.error ?? '업로드 실패');
+  };
+
+  const TABS = [
+    { v: 'pixabay', label: '🖼️ Pixabay' },
+    { v: 'pexels',  label: '📷 Pexels' },
+    { v: 'dalle',   label: '🤖 DALL-E' },
+    { v: 'custom',  label: '🔗 URL' },
+    { v: 'upload',  label: '📤 업로드' },
+  ] as const;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
       <div className="relative bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-3 border-b flex items-center gap-2">
-          {(['pixabay','pexels','dalle','custom'] as const).map(s => (
-            <button key={s} onClick={() => setSrc(s)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${src === s ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500'}`}>
-              {s === 'pixabay' ? '🖼️ Pixabay' : s === 'pexels' ? '📷 Pexels' : s === 'dalle' ? '🤖 DALL-E' : '🔗 URL'}
+        <div className="px-4 py-3 border-b flex items-center gap-1.5 flex-wrap">
+          {TABS.map(t => (
+            <button key={t.v} onClick={() => setSrc(t.v)}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${src === t.v ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500'}`}>
+              {t.label}
             </button>
           ))}
           <button onClick={onClose} className="ml-auto w-7 h-7 bg-gray-100 rounded-full text-gray-400 flex items-center justify-center">✕</button>
         </div>
         <div className="px-5 py-3 border-b">
-          {src === 'custom' ? (
+          {src === 'upload' ? (
+            <div className="space-y-3">
+              <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                <div className="text-gray-400 text-sm font-medium">📁 클릭하여 이미지 선택</div>
+                <div className="text-gray-400 text-xs mt-1">JPG, PNG, WebP, GIF</div>
+              </label>
+              {uploading && (
+                <div className="flex items-center gap-2 text-indigo-600 text-sm">
+                  <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                  업로드 중...
+                </div>
+              )}
+              {uploadPreview && !uploading && (
+                <div className="flex items-center gap-3">
+                  <img src={uploadPreview} alt="" className="w-16 h-24 object-cover rounded-xl border" />
+                  <button onClick={() => { onSelect(uploadPreview, 'custom'); onClose(); }}
+                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-colors">
+                    이 이미지 사용
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : src === 'custom' ? (
             <div className="flex gap-2">
               <input value={customUrl} onChange={e => setCustomUrl(e.target.value)} placeholder="https://..." className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm" />
               <button onClick={() => { onSelect(customUrl, 'custom'); onClose(); }} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold">적용</button>
@@ -414,7 +465,7 @@ function ImagePicker({ query, dallePrompt, onSelect, onClose }: {
           ) : (
             <div className="grid grid-cols-3 gap-2">
               {images.map(img => (
-                <button key={img.id} onClick={() => { onSelect(img.url, src); onClose(); }}
+                <button key={img.id} onClick={() => { onSelect(img.url, src as Scene['imageSource']); onClose(); }}
                   className="group relative rounded-xl overflow-hidden hover:ring-4 hover:ring-indigo-400 transition-all" style={{ aspectRatio: '9/16' }}>
                   <img src={img.thumb} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
@@ -459,6 +510,8 @@ export default function StudioPage() {
   const [blogLoading, setBlogLoading] = useState(false);
   const [blogSearch, setBlogSearch] = useState('');
   const [selectedPost, setSelectedPost] = useState<BlogPost | null>(null);
+  const [customBlogUrl, setCustomBlogUrl] = useState('');
+  const [useBlogImages, setUseBlogImages] = useState(false);
 
   // 생성
   const [generating, setGenerating] = useState(false);
@@ -670,9 +723,10 @@ export default function StudioPage() {
   };
 
   // ── 블로그 로드 ────────────────────────────────────────────────────────────
-  const loadBlog = useCallback(async () => {
+  const loadBlog = useCallback(async (blogUrl?: string) => {
     setBlogLoading(true);
-    const res = await fetch('/api/shorts/blog');
+    const params = blogUrl ? `?blog_url=${encodeURIComponent(blogUrl)}` : '';
+    const res = await fetch(`/api/shorts/blog${params}`);
     if (res.ok) setBlogPosts((await res.json() as { posts: BlogPost[] }).posts);
     setBlogLoading(false);
   }, []);
@@ -684,11 +738,28 @@ export default function StudioPage() {
     setSelectedPost(post);
     setGenerating(true); setGenError('');
     try {
-      let content = post.content;
-      if (!content) {
-        const cRes = await fetch(`/api/shorts/blog?url=${encodeURIComponent(post.url)}`);
-        if (cRes.ok) content = ((await cRes.json()) as { content?: string }).content ?? '';
-      }
+      // 본문 + 블로그 이미지 병렬 fetch
+      const [contentRes, imgRes] = await Promise.allSettled([
+        post.content
+          ? Promise.resolve({ content: post.content })
+          : fetch(`/api/shorts/blog?url=${encodeURIComponent(post.url)}`).then(r => r.ok ? r.json() : {}),
+        useBlogImages
+          ? fetch(`/api/shorts/blog?url=${encodeURIComponent(post.url)}&get_images=true`).then(r => r.ok ? r.json() : { images: [] })
+          : Promise.resolve({ images: [] }),
+      ]);
+
+      const content: string = contentRes.status === 'fulfilled'
+        ? (contentRes.value as { content?: string }).content ?? post.content ?? ''
+        : post.content ?? '';
+      const blogImages: string[] = imgRes.status === 'fulfilled'
+        ? ((imgRes.value as { images?: string[] }).images ?? [])
+        : [];
+
+      // 커버 이미지(post.image)를 첫 번째에 추가
+      const allBlogImages = post.image
+        ? [post.image, ...blogImages.filter(u => u !== post.image)]
+        : blogImages;
+
       const topic = `제목: ${post.title}\n카테고리: ${post.categories.join(', ')}\n내용 요약: ${content.slice(0, 500)}`;
 
       const res = await fetch('/api/shorts/generate', {
@@ -699,16 +770,27 @@ export default function StudioPage() {
       const data = await res.json() as { title?: string; scenes?: { id: number; duration: number; narration: string; subtitle: string; image_query: string; dalle_prompt: string }[]; error?: string };
       if (data.error) { setGenError(data.error); return; }
       setTitle(data.title ?? post.title);
-      const newScenes = (data.scenes ?? []).map(s => ({
+
+      const newScenes = (data.scenes ?? []).map((s, i) => ({
         ...DEFAULT_SCENE(),
         duration: s.duration, narration: s.narration, subtitle: s.subtitle,
         imageQuery: s.image_query, dallePrompt: s.dalle_prompt ?? '',
         imageEffect: 'zoom-in' as ImageEffect,
+        // 블로그 이미지 있으면 순서대로 적용
+        ...(useBlogImages && allBlogImages[i] ? {
+          imageUrl: allBlogImages[i],
+          imageSource: 'custom' as const,
+        } : {}),
       }));
       setScenes(newScenes);
       setSelectedId(newScenes[0]?.id ?? '');
       setLeftTab('scenes');
-      setTimeout(() => autoFetchImages(newScenes), 500);
+
+      // 블로그 이미지가 부족한 씬만 Pixabay로 채우기
+      const scenesNeedingImages = newScenes.filter(s => !s.imageUrl);
+      if (scenesNeedingImages.length > 0) {
+        setTimeout(() => autoFetchImages(newScenes), 500);
+      }
     } catch (e) { setGenError(String(e)); }
     finally { setGenerating(false); }
   };
@@ -1257,14 +1339,39 @@ export default function StudioPage() {
           {leftTab === 'blog' && (
             <div className="flex flex-col flex-1 min-h-0">
               <div className="p-3 border-b border-gray-800 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="text-xs font-bold text-gray-300">2days.kr</div>
-                  <button onClick={() => setBatchMode(v => !v)}
-                    className={`ml-auto px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${batchMode ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-white border border-gray-700'}`}>
-                    {batchMode ? '✕ 배치 취소' : '⚡ 배치 선택'}
+                {/* 블로그 소스 선택 */}
+                <div className="flex gap-1.5">
+                  <button onClick={() => loadBlog()}
+                    className="flex-1 py-1.5 rounded-lg text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
+                    📰 2days.kr
                   </button>
-                  <button onClick={loadBlog} className="text-[10px] text-gray-500 hover:text-white">↻</button>
+                  <button onClick={() => setBatchMode(v => !v)}
+                    className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${batchMode ? 'bg-amber-600 text-white' : 'text-gray-500 hover:text-white border border-gray-700'}`}>
+                    {batchMode ? '✕' : '⚡'}
+                  </button>
+                  <button onClick={() => loadBlog(customBlogUrl || undefined)} className="text-[10px] text-gray-500 hover:text-white px-1">↻</button>
                 </div>
+                {/* 다른 블로그 URL 입력 */}
+                <div className="flex gap-1.5">
+                  <input value={customBlogUrl} onChange={e => setCustomBlogUrl(e.target.value)}
+                    placeholder="다른 블로그 URL (https://...)"
+                    onKeyDown={e => e.key === 'Enter' && loadBlog(customBlogUrl)}
+                    className="flex-1 bg-gray-800 text-white px-2.5 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                  {customBlogUrl && (
+                    <button onClick={() => loadBlog(customBlogUrl)}
+                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition-colors">
+                      가져오기
+                    </button>
+                  )}
+                </div>
+                {/* 블로그 이미지 사용 옵션 */}
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input type="checkbox" checked={useBlogImages} onChange={e => setUseBlogImages(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-indigo-500 rounded" />
+                  <span className="text-[10px] text-gray-400 group-hover:text-gray-200 transition-colors">
+                    🖼️ 블로그 이미지 가져오기 (생성 시 블로그 이미지 우선 사용)
+                  </span>
+                </label>
                 <input value={blogSearch} onChange={e => setBlogSearch(e.target.value)}
                   placeholder="포스트 검색..." className="w-full bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                 {batchMode && batchSelected.size > 0 && !batchRunning && (
