@@ -136,18 +136,18 @@ const SUPERTONIC_VOICES = [
 const CHARACTER_EMOJIS = ['🐻', '🦊', '🤖', '🐱', '🦄', '🐧', '🐼', '🐸', '🦁', '🐯'];
 
 const BGM_PRESETS: BgmPreset[] = [
-  { id: 'calm1',   genre: '잔잔',   label: '잔잔한 피아노',    url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3' },
-  { id: 'calm2',   genre: '잔잔',   label: '어쿠스틱 기타',    url: 'https://cdn.pixabay.com/download/audio/2022/04/27/audio_67f7e5bf64.mp3' },
-  { id: 'upbeat1', genre: '업비트', label: '신나는 팝',        url: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0c6ff1bbb.mp3' },
-  { id: 'upbeat2', genre: '업비트', label: '경쾌한 비트',      url: 'https://cdn.pixabay.com/download/audio/2023/03/09/audio_c76a5f23bb.mp3' },
-  { id: 'lofi1',   genre: 'Lo-fi', label: 'Lo-fi 힙합',       url: 'https://cdn.pixabay.com/download/audio/2022/05/17/audio_69a61cd6d6.mp3' },
-  { id: 'lofi2',   genre: 'Lo-fi', label: 'Chill 비트',       url: 'https://cdn.pixabay.com/download/audio/2022/08/31/audio_d3fc45e7b1.mp3' },
-  { id: 'epic1',   genre: '에픽',   label: '오케스트라 에픽',  url: 'https://cdn.pixabay.com/download/audio/2022/04/27/audio_c9076a9c73.mp3' },
-  { id: 'epic2',   genre: '에픽',   label: '시네마틱 드라마',  url: 'https://cdn.pixabay.com/download/audio/2021/11/25/audio_5a853b4e0a.mp3' },
-  { id: 'fun1',    genre: '코믹',   label: '귀여운 동요풍',    url: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_270f49c1a7.mp3' },
-  { id: 'emo1',    genre: '감동',   label: '감동적인 피아노',  url: 'https://cdn.pixabay.com/download/audio/2022/10/30/audio_b236c5abfa.mp3' },
-  { id: 'trend1',  genre: '트렌드', label: '트렌디 팝 비트',   url: 'https://cdn.pixabay.com/download/audio/2023/01/04/audio_74c2a26d8b.mp3' },
-  { id: 'trend2',  genre: '트렌드', label: '모던 R&B',         url: 'https://cdn.pixabay.com/download/audio/2023/02/28/audio_bf7a40cc15.mp3' },
+  { id: 'calm1',   genre: '잔잔',   label: '잔잔한 피아노',    url: 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3' },
+  { id: 'calm2',   genre: '잔잔',   label: '어쿠스틱 기타',    url: 'https://assets.mixkit.co/music/preview/mixkit-guitar-and-cello-442.mp3' },
+  { id: 'upbeat1', genre: '업비트', label: '신나는 팝',        url: 'https://assets.mixkit.co/music/preview/mixkit-sun-and-his-daughter-580.mp3' },
+  { id: 'upbeat2', genre: '업비트', label: '경쾌한 비트',      url: 'https://assets.mixkit.co/music/preview/mixkit-hip-hop-02-738.mp3' },
+  { id: 'lofi1',   genre: 'Lo-fi', label: 'Lo-fi 힙합',       url: 'https://assets.mixkit.co/music/preview/mixkit-life-is-a-dream-837.mp3' },
+  { id: 'lofi2',   genre: 'Lo-fi', label: 'Chill 비트',       url: 'https://assets.mixkit.co/music/preview/mixkit-valley-sunset-127.mp3' },
+  { id: 'epic1',   genre: '에픽',   label: '오케스트라 에픽',  url: 'https://assets.mixkit.co/music/preview/mixkit-epic-orchestra-910.mp3' },
+  { id: 'epic2',   genre: '에픽',   label: '시네마틱 드라마',  url: 'https://assets.mixkit.co/music/preview/mixkit-cinematic-mystery-548.mp3' },
+  { id: 'fun1',    genre: '코믹',   label: '귀엽고 경쾌',      url: 'https://assets.mixkit.co/music/preview/mixkit-children-fun-2853.mp3' },
+  { id: 'emo1',    genre: '감동',   label: '감동적인 피아노',  url: 'https://assets.mixkit.co/music/preview/mixkit-piano-reflections-22.mp3' },
+  { id: 'trend1',  genre: '트렌드', label: '트렌디 팝',        url: 'https://assets.mixkit.co/music/preview/mixkit-pop-celebratory-background-196.mp3' },
+  { id: 'trend2',  genre: '트렌드', label: '모던 비트',        url: 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3' },
 ];
 
 const GENRE_COLORS: Record<string, string> = {
@@ -833,9 +833,7 @@ export default function StudioPage() {
 
   // BGM 볼륨 실시간 반영
   useEffect(() => {
-    if (bgmGainRef.current) {
-      bgmGainRef.current.gain.value = Math.min(1, Math.max(0, settings.bgmVolume));
-    } else if (previewBgmRef.current) {
+    if (previewBgmRef.current) {
       previewBgmRef.current.volume = Math.min(1, Math.max(0, settings.bgmVolume));
     }
   }, [settings.bgmVolume]);
@@ -1005,57 +1003,14 @@ export default function StudioPage() {
       previewBgmRef.current = null;
     }
     if (settings.bgmUrl) {
-      // 브라우저 직접 재생 — 버튼 클릭(사용자 제스처) 컨텍스트에서 즉시 play()
-      // AudioContext를 먼저 unlock한 뒤 HTMLAudioElement를 연결
-      try {
-        const audioCtx = new AudioContext();
-        bgmAudioCtxRef.current = audioCtx;
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.value = Math.min(1, Math.max(0, settings.bgmVolume));
-        gainNode.connect(audioCtx.destination);
-        bgmGainRef.current = gainNode;
-
-        const bgm = new Audio(settings.bgmUrl);
-        bgm.crossOrigin = 'anonymous';
-        bgm.loop = true;
-        bgm.volume = 1; // 볼륨은 GainNode로 제어
-        bgm.onplaying = () => setBgmPlaying(true);
-        bgm.onpause = () => setBgmPlaying(false);
-        bgm.onerror = () => {
-          // crossOrigin 없이 재시도 (일부 CDN은 CORS 헤더 미지원)
-          const bgm2 = new Audio(settings.bgmUrl);
-          bgm2.loop = true;
-          bgm2.volume = Math.min(1, Math.max(0, settings.bgmVolume));
-          bgm2.onplaying = () => setBgmPlaying(true);
-          bgm2.onpause = () => setBgmPlaying(false);
-          bgm2.onerror = () => setBgmError('BGM 로드 실패: URL을 확인하세요');
-          previewBgmRef.current = bgm2;
-          bgm2.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
-        };
-
-        const src = audioCtx.createMediaElementSource(bgm);
-        src.connect(gainNode);
-        previewBgmRef.current = bgm;
-        bgm.play().catch(() => {
-          // AudioContext 연결 실패 시 단순 Audio로 재시도
-          const bgm3 = new Audio(settings.bgmUrl);
-          bgm3.loop = true;
-          bgm3.volume = Math.min(1, Math.max(0, settings.bgmVolume));
-          bgm3.onplaying = () => setBgmPlaying(true);
-          bgm3.onerror = () => setBgmError('BGM 재생 실패');
-          previewBgmRef.current = bgm3;
-          bgm3.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
-        });
-      } catch {
-        // AudioContext 미지원 환경 — 단순 Audio 재생
-        const bgm = new Audio(settings.bgmUrl);
-        bgm.loop = true;
-        bgm.volume = Math.min(1, Math.max(0, settings.bgmVolume));
-        bgm.onplaying = () => setBgmPlaying(true);
-        bgm.onerror = () => setBgmError('BGM 재생 실패');
-        previewBgmRef.current = bgm;
-        bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
-      }
+      const bgm = new Audio(settings.bgmUrl);
+      bgm.loop = true;
+      bgm.volume = Math.min(1, Math.max(0, settings.bgmVolume));
+      bgm.onplaying = () => setBgmPlaying(true);
+      bgm.onpause  = () => setBgmPlaying(false);
+      bgm.onerror  = () => setBgmError(`BGM 로드 실패 (code ${bgm.error?.code}): ${settings.bgmUrl}`);
+      previewBgmRef.current = bgm;
+      bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
     }
     playPreviewScene(0, scenes);
   };
