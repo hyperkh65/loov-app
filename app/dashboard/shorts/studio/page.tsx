@@ -111,14 +111,14 @@ const DEFAULT_SCENE = (): Scene => ({
 });
 
 const TTS_VOICES = [
-  { id: 'ko-KR-SunHiNeural',    label: '선희 · 여성 · 밝고 친근' },
-  { id: 'ko-KR-InJoonNeural',   label: '인준 · 남성 · 따뜻하고 친근' },
-  { id: 'ko-KR-JiMinNeural',    label: '지민 · 여성 · 부드럽' },
-  { id: 'ko-KR-BongJinNeural',  label: '봉진 · 남성 · 차분·전문적' },
-  { id: 'ko-KR-GookMinNeural',  label: '국민 · 남성 · 젊고 활기찬' },
-  { id: 'ko-KR-HyunsuNeural',   label: '현수 · 남성 · 내레이션' },
-  { id: 'ko-KR-SeoHyeonNeural', label: '서현 · 여성 · 어린이' },
-  { id: 'ko-KR-YuJinNeural',    label: '유진 · 여성 · 감성적' },
+  { id: 'ko-KR-Neural2-A', label: '가연 · 여성 · 자연스럽고 따뜻' },
+  { id: 'ko-KR-Neural2-B', label: '준혁 · 남성 · 차분하고 전문적' },
+  { id: 'ko-KR-Neural2-C', label: '민준 · 남성 · 활기차고 친근' },
+  { id: 'ko-KR-Neural2-D', label: '서연 · 여성 · 밝고 에너지' },
+  { id: 'ko-KR-Wavenet-A', label: '아연 · 여성 · Wavenet' },
+  { id: 'ko-KR-Wavenet-B', label: '도현 · 남성 · Wavenet' },
+  { id: 'ko-KR-Wavenet-C', label: '지수 · 남성 · Wavenet' },
+  { id: 'ko-KR-Wavenet-D', label: '예린 · 여성 · Wavenet' },
 ];
 
 const CHARACTER_EMOJIS = ['🐻', '🦊', '🤖', '🐱', '🦄', '🐧', '🐼', '🐸', '🦁', '🐯'];
@@ -438,7 +438,7 @@ export default function StudioPage() {
 
   // TTS 모드
   const [ttsMode, setTtsMode] = useState<TtsMode>('webSpeech');
-  const [ttsVoiceId, setTtsVoiceId] = useState('ko-KR-SunHiNeural');
+  const [ttsVoiceId, setTtsVoiceId] = useState('ko-KR-Neural2-A');
   const [ttsError, setTtsError] = useState('');
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -722,11 +722,10 @@ export default function StudioPage() {
     }
     setTtsError('');
     try {
-      const ratePercent = Math.round((rate - 1.0) * 100);
-      const res = await fetch('/api/shorts/edge-tts', {
+      const res = await fetch('/api/shorts/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: voiceId, rate: ratePercent }),
+        body: JSON.stringify({ text, voice_id: voiceId, speed: rate }),
       });
       const data = await res.json() as { audio?: string; error?: string };
       if (!res.ok || data.error) {
