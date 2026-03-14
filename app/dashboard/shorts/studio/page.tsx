@@ -491,9 +491,11 @@ export default function StudioPage() {
   // BGM 프리셋 미리듣기
   const [bgmPreviewId, setBgmPreviewId] = useState<string | null>(null);
   const bgmPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
-  // 미리보기 BGM
+  // 미리보기 BGM (Web Audio API)
   const previewBgmRef = useRef<HTMLAudioElement | null>(null);
   const bgmBlobUrlRef = useRef<string | null>(null);
+  const bgmAudioCtxRef = useRef<AudioContext | null>(null);
+  const bgmGainRef = useRef<GainNode | null>(null);
   const [bgmPlaying, setBgmPlaying] = useState(false);
   const [bgmLoading, setBgmLoading] = useState(false);
   const [bgmError, setBgmError] = useState('');
@@ -803,7 +805,12 @@ export default function StudioPage() {
       ttsAudioRef.current.pause();
       ttsAudioRef.current = null;
     }
-    // BGM 정지
+    // BGM 정지 (Web Audio API)
+    if (bgmAudioCtxRef.current) {
+      bgmAudioCtxRef.current.close().catch(() => {});
+      bgmAudioCtxRef.current = null;
+      bgmGainRef.current = null;
+    }
     if (previewBgmRef.current) {
       previewBgmRef.current.pause();
       previewBgmRef.current = null;
@@ -826,8 +833,10 @@ export default function StudioPage() {
 
   // BGM 볼륨 실시간 반영
   useEffect(() => {
-    if (previewBgmRef.current) {
-      previewBgmRef.current.volume = settings.bgmVolume;
+    if (bgmGainRef.current) {
+      bgmGainRef.current.gain.value = Math.min(1, Math.max(0, settings.bgmVolume));
+    } else if (previewBgmRef.current) {
+      previewBgmRef.current.volume = Math.min(1, Math.max(0, settings.bgmVolume));
     }
   }, [settings.bgmVolume]);
 
@@ -996,27 +1005,57 @@ export default function StudioPage() {
       previewBgmRef.current = null;
     }
     if (settings.bgmUrl) {
-      // fetch → Blob URL 방식 (CDN CORS/Range 문제 완전 우회)
-      setBgmLoading(true);
-      const bgmVol = settings.bgmVolume;
-      const proxyUrl = `/api/proxy-audio?url=${encodeURIComponent(settings.bgmUrl)}`;
-      fetch(proxyUrl)
-        .then(r => r.ok ? r.blob() : Promise.reject(`HTTP ${r.status}`))
-        .then(blob => {
-          const objUrl = URL.createObjectURL(blob);
-          bgmBlobUrlRef.current = objUrl;
-          const bgm = new Audio(objUrl);
-          bgm.loop = true;
-          bgm.volume = Math.min(1, Math.max(0, bgmVol));
-          bgm.onplaying = () => setBgmPlaying(true);
-          bgm.onpause = () => setBgmPlaying(false);
-          if (!previewBgmRef.current) { // 이미 정지됐으면 skip
-            previewBgmRef.current = bgm;
-            bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
-          }
-        })
-        .catch(e => setBgmError('BGM 로드 실패: ' + String(e)))
-        .finally(() => setBgmLoading(false));
+      // 브라우저 직접 재생 — 버튼 클릭(사용자 제스처) 컨텍스트에서 즉시 play()
+      // AudioContext를 먼저 unlock한 뒤 HTMLAudioElement를 연결
+      try {
+        const audioCtx = new AudioContext();
+        bgmAudioCtxRef.current = audioCtx;
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = Math.min(1, Math.max(0, settings.bgmVolume));
+        gainNode.connect(audioCtx.destination);
+        bgmGainRef.current = gainNode;
+
+        const bgm = new Audio(settings.bgmUrl);
+        bgm.crossOrigin = 'anonymous';
+        bgm.loop = true;
+        bgm.volume = 1; // 볼륨은 GainNode로 제어
+        bgm.onplaying = () => setBgmPlaying(true);
+        bgm.onpause = () => setBgmPlaying(false);
+        bgm.onerror = () => {
+          // crossOrigin 없이 재시도 (일부 CDN은 CORS 헤더 미지원)
+          const bgm2 = new Audio(settings.bgmUrl);
+          bgm2.loop = true;
+          bgm2.volume = Math.min(1, Math.max(0, settings.bgmVolume));
+          bgm2.onplaying = () => setBgmPlaying(true);
+          bgm2.onpause = () => setBgmPlaying(false);
+          bgm2.onerror = () => setBgmError('BGM 로드 실패: URL을 확인하세요');
+          previewBgmRef.current = bgm2;
+          bgm2.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
+        };
+
+        const src = audioCtx.createMediaElementSource(bgm);
+        src.connect(gainNode);
+        previewBgmRef.current = bgm;
+        bgm.play().catch(() => {
+          // AudioContext 연결 실패 시 단순 Audio로 재시도
+          const bgm3 = new Audio(settings.bgmUrl);
+          bgm3.loop = true;
+          bgm3.volume = Math.min(1, Math.max(0, settings.bgmVolume));
+          bgm3.onplaying = () => setBgmPlaying(true);
+          bgm3.onerror = () => setBgmError('BGM 재생 실패');
+          previewBgmRef.current = bgm3;
+          bgm3.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
+        });
+      } catch {
+        // AudioContext 미지원 환경 — 단순 Audio 재생
+        const bgm = new Audio(settings.bgmUrl);
+        bgm.loop = true;
+        bgm.volume = Math.min(1, Math.max(0, settings.bgmVolume));
+        bgm.onplaying = () => setBgmPlaying(true);
+        bgm.onerror = () => setBgmError('BGM 재생 실패');
+        previewBgmRef.current = bgm;
+        bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
+      }
     }
     playPreviewScene(0, scenes);
   };
