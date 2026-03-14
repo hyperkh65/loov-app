@@ -1,7 +1,6 @@
 import os, base64, io, tempfile
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
-import soundfile as sf
 
 app = FastAPI()
 
@@ -62,10 +61,15 @@ async def tts(request: Request):
     style = tts_engine.get_voice_style(voice_name=voice)
     wav, duration = tts_engine.synthesize(text, voice_style=style, lang=lang, speed=speed)
 
-    # numpy array → WAV bytes → base64
-    buf = io.BytesIO()
-    sf.write(buf, wav, samplerate=24000, format="WAV", subtype="PCM_16")
-    audio_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    # supertonic save_audio → 임시 파일 → base64
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        tmp_path = f.name
+    try:
+        tts_engine.save_audio(wav, tmp_path)
+        with open(tmp_path, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+    finally:
+        os.unlink(tmp_path)
 
     return JSONResponse({
         "audio":    f"data:audio/wav;base64,{audio_b64}",
