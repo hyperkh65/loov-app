@@ -4,22 +4,45 @@ import { getSetting } from '@/lib/get-setting';
 
 // 길이 → 장면 수
 const SCENE_MAP: Record<number, number> = { 15: 3, 30: 5, 60: 9, 120: 16, 180: 22 };
-const CHARS_PER_SEC = 5.2; // 한국어 자연 발화 속도
+const CHARS_PER_SEC = 5.0; // 한국어 자연 발화 속도
 
-const TONE_DESC: Record<string, string> = {
-  info:    '친근하고 따뜻한 정보 전달 톤. "어? 이거 진짜야?" 반응 유발. 구체적 예시·수치 활용.',
-  fun:     '유쾌하고 밝은 밈/유머 톤. 가벼운 반전과 과장 표현 적극 사용. 시청자가 웃으며 공유하고 싶게.',
-  emotion: '감동·공감·진솔함. "내 얘기다"라고 느낄 수 있게. 감정을 담은 표현으로 마음을 움직이게.',
-  edu:     '친절한 선생님 톤. 어려운 개념을 쉽게 설명. "첫째..., 둘째..." 구조로 이해하기 쉽게.',
-  story:   '스토리텔러 톤. 기승전결 있는 짧은 이야기. 다음 장면이 궁금하게.',
-  trend:   '유행·이슈에 빠르게 반응하는 MZ 감성. 신조어 적절히 사용. 함께 반응하는 느낌.',
+const TONE_FORMULA: Record<string, string> = {
+  info: `[정보형 바이럴 공식]
+• 오프닝: "99%가 모르는 사실" / "전문가들이 숨긴 진실" / "이거 알면 인생 달라짐"
+• 전개: 구체적 수치·사례·비교로 신뢰감 + 충격 동시 제공
+• 마무리: "이미 아는 사람들은 조용히 활용 중이야"`,
+
+  fun: `[코믹·밈 바이럴 공식]
+• 오프닝: 황당한 상황 묘사 or 공감 100% 짜증 상황으로 시작
+• 전개: 반전 → 더 큰 반전 → 예상 못한 결말 구조
+• 마무리: 댓글 싸움 유발하는 선택지 or 공감 요청`,
+
+  emotion: `[감동·공감 바이럴 공식]
+• 오프닝: "살면서 이런 경험 있었어?" / 공감 상황으로 마음의 문 열기
+• 전개: 디테일한 감정 묘사 → "나만 이런 거 아니었구나" 안도감
+• 마무리: 따뜻한 위로 or 행동 변화 유도 (저장 유도)`,
+
+  edu: `[교육형 바이럴 공식]
+• 오프닝: "학교에서 안 가르쳐 준 것" / "이거 모르면 손해"
+• 전개: 1→2→3 단계 구조, 각 단계마다 "이게 핵심이야" 강조
+• 마무리: 한 줄 요약 + "저장해두면 나중에 써먹을 수 있어"`,
+
+  story: `[스토리텔링 바이럴 공식]
+• 오프닝: 결말의 충격적 한 줄 먼저 공개 ("그래서 나는 결국...")
+• 전개: 시간 역순 or 기승전결, 각 씬이 클리프행어로 끝나야 함
+• 마무리: 반전 또는 교훈 + 시청자 경험 묻기`,
+
+  trend: `[트렌드·이슈 바이럴 공식]
+• 오프닝: 지금 당장 화제인 키워드 + "이거 봤어?" 형식
+• 전개: MZ 감성 + 신조어 자연스럽게 + "우리만 아는 거" 느낌
+• 마무리: "댓글에 의견 적어줘" / "링크 저장해" (참여 유도)`,
 };
 
-const PLATFORM_TIPS: Record<string, string> = {
-  youtube:  '첫 3초에 이 영상을 봐야 하는 이유 명확히. 마지막은 구독·좋아요 유도.',
-  naver:    '검색 키워드 자연스럽게 포함. 실용적이고 친근하게. 정보 신뢰도 강조.',
-  instagram:'감성적이고 비주얼 강한 표현. 저장하고 싶게. 해시태그 친화적 마무리.',
-  tiktok:   '처음 1초부터 바로 본론. 빠른 전개. 댓글 유도하는 질문으로 마무리.',
+const PLATFORM_HOOK: Record<string, string> = {
+  youtube:  '첫 3초: "이 영상 끝까지 보면 [구체적 혜택]" 명시. 마지막: 구독·좋아요를 억지로 말하지 말고 자연스럽게 스토리에 녹이기.',
+  naver:    '검색 키워드(제목 주제어)를 자연스럽게 나레이션에 2회 이상 포함. "내 블로그에 더 자세히 정리해뒀어"로 마무리.',
+  instagram:'감각적·감성적 표현 위주. "저장하고 나중에 써먹어" 유도. 해시태그 대신 감성 키워드로 마무리.',
+  tiktok:   '첫 1초: 바로 본론. "끝까지 보면 알아"로 시청 지속 유도. "댓글에 [A] or [B] 달아줘"로 참여 폭발.',
 };
 
 function buildPrompt(
@@ -27,73 +50,84 @@ function buildPrompt(
   character?: { enabled: boolean; name: string; emoji: string; personality: string }
 ): string {
   const numScenes = SCENE_MAP[duration] ?? 9;
-  const toneDesc = TONE_DESC[tone] ?? TONE_DESC.info;
-  const platformTip = PLATFORM_TIPS[platform] ?? PLATFORM_TIPS.youtube;
+  const formula = TONE_FORMULA[tone] ?? TONE_FORMULA.info;
+  const platformHook = PLATFORM_HOOK[platform] ?? PLATFORM_HOOK.youtube;
 
-  // 장면별 초 배분 (훅 짧게, 중간 길게, 마무리 중간)
+  // 장면별 초 배분 — 훅(짧게) / 전개(골고루) / 마무리(중간)
   const sceneDurations: number[] = [];
   for (let i = 0; i < numScenes; i++) {
-    if (i === 0) sceneDurations.push(Math.max(4, Math.round(duration * 0.12)));
+    if (i === 0) sceneDurations.push(Math.max(3, Math.round(duration * 0.10)));
     else if (i === numScenes - 1) sceneDurations.push(Math.max(4, Math.round(duration * 0.10)));
-    else sceneDurations.push(Math.max(5, Math.round((duration - sceneDurations[0] - Math.round(duration * 0.10)) / (numScenes - 2))));
+    else sceneDurations.push(Math.max(4, Math.round((duration - sceneDurations[0] - Math.round(duration * 0.10)) / (numScenes - 2))));
   }
   const total = sceneDurations.reduce((a, b) => a + b, 0);
   if (total !== duration) sceneDurations[Math.floor(numScenes / 2)] += (duration - total);
 
   const characterBlock = character?.enabled ? `
-[캐릭터 설정]
+━━━━━ 캐릭터 설정 ━━━━━
 이름: ${character.name} (${character.emoji}) / 성격: ${character.personality}
-- 나레이션은 이 캐릭터가 시청자에게 직접 말하는 1인칭 구어체로 작성
-- 중간 장면 1~2개에서 캐릭터가 등장해 설명하는 구성 포함
-- 캐릭터 등장 장면은 "character_appears": true 추가
+- 나레이션은 이 캐릭터가 직접 말하는 1인칭 친구 구어체
+- 중간 장면 1~2개에 "character_appears": true 추가
+━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
-  const lengthGuide = sceneDurations.map((sec, i) =>
-    `   장면 ${i+1} (${sec}초): ${Math.round(sec * CHARS_PER_SEC)}~${Math.round(sec * 6.5)}글자`
-  ).join('\n');
+  const lengthGuide = sceneDurations.map((sec, i) => {
+    const minChar = Math.round(sec * CHARS_PER_SEC);
+    const maxChar = Math.round(sec * 6.2);
+    const role = i === 0 ? '🔥 HOOK — 멈추게 만드는 한 방' : i === numScenes - 1 ? '🎯 PAYOFF — 기억에 남는 마무리' : `📌 전개 ${i} — 궁금증 심화 + 클리프행어`;
+    return `  장면 ${i+1} [${sec}초] ${role}\n    → 나레이션: ${minChar}~${maxChar}글자 (이 범위 벗어나면 실패)`;
+  }).join('\n');
 
   const sceneTemplate = sceneDurations.map((sec, i) =>
-    `{"id":${i+1},"duration":${sec},"narration":"(${Math.round(sec*CHARS_PER_SEC)}글자이상 구어체)","subtitle":"12자이내","image_query":"english keywords","dalle_prompt":"vertical cinematic scene, no text","image_url":"","image_source":"pixabay"${character?.enabled && (i===1||i===Math.floor(numScenes/2))?',"character_appears":true':''}}`
+    `{"id":${i+1},"duration":${sec},"narration":"(구어체, ${Math.round(sec*CHARS_PER_SEC)}자 이상)","subtitle":"10자이내 핵심어","image_query":"2~3 english words","dalle_prompt":"vertical 9:16 cinematic, no text, no face"${character?.enabled && (i===1||i===Math.floor(numScenes/2))?',"character_appears":true':''}}`
   ).join(',\n    ');
 
-  return `당신은 한국 최고의 숏폼 영상 작가입니다. 시청자가 끝까지 보게 만드는 생생하고 자연스러운 스크립트를 씁니다.
+  return `당신은 대한민국 최고의 숏폼 바이럴 콘텐츠 크리에이터입니다.
+틱톡·유튜브 쇼츠에서 수백만 조회수를 만든 공식을 완벽히 알고 있습니다.
+출력은 반드시 유효한 JSON만, 코드블록이나 설명 없이 출력합니다.
 
-[주제]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[주제 및 소재]
 ${topic}
 
-[제작 조건]
-- 플랫폼: ${platform} / ${platformTip}
-- 영상 길이: ${duration}초 / 총 ${numScenes}장면
-- 톤: ${toneDesc}
+[영상 스펙]
+• 플랫폼: ${platform} | ${platformHook}
+• 총 길이: ${duration}초 / ${numScenes}개 장면
 ${characterBlock}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[바이럴 공식 — 반드시 이 구조로]
+${formula}
 
-[핵심 규칙]
-1. 나레이션 = 실제 사람이 친구에게 말하는 구어체 (문어체·딱딱한 표현 절대 금지)
-   ✅ "야, 이거 진짜 몰랐지? 나도 최근에 알았는데 완전 충격이었어."
-   ✅ "솔직히 말할게. 나도 처음엔 이게 이렇게 중요한 줄 몰랐거든."
-   ❌ "오늘은 ~에 대해 알아보겠습니다." (절대 금지)
-   ❌ "안녕하세요 여러분, 오늘은~" (절대 금지)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[나레이션 황금률]
+✅ 친구에게 카톡 음성메시지 보내듯 → "야", "근데", "솔직히", "이게 뭔말이냐면", "진짜임"
+✅ 짧은 문장 + 의도적 끊어읽기 → 리듬감 + 강조 효과
+✅ 숫자/퍼센트/구체적 사례 → 신뢰 + 충격
+✅ 각 씬 끝: 다음 씬이 보고 싶게 만드는 클리프행어 ("근데 여기서 반전이 있어", "그런데 이게 전부가 아니야")
+✅ 마지막 씬: 저장·공유·댓글 자연스럽게 유도
 
-2. 나레이션 글자 수 반드시 준수:
+❌ 절대 금지: "안녕하세요", "오늘은 ~에 대해 알아보겠습니다", "이상으로", "감사합니다"
+❌ 절대 금지: 문어체·강의체·뉴스 앵커 톤
+❌ 절대 금지: 나레이션이 자막/이미지 설명에 그치는 것 — 감정·스토리가 있어야 함
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[장면별 글자 수 — 이 범위를 지켜야 TTS 싱크가 맞음]
 ${lengthGuide}
 
-3. 첫 장면: 질문·반전·공감 중 하나로 강렬 오프닝 (시청자가 멈추게)
-4. 중간: 구체적 정보·감정·스토리를 자연스럽게 연결 (끊기지 않게)
-5. 마지막: 핵심 메시지 + 행동 유도 자연스럽게 녹이기
-6. subtitle: 12자 이내 임팩트 단어/문구 (그 장면의 핵심)
-7. image_query: Pixabay/Pexels 영어 2~3단어 (분위기·상황)
-8. dalle_prompt: 세로형 배경 영어 묘사 (no text, no people, cinematic quality)
-
-JSON만 출력 (설명 없이):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+JSON 형식 (이것만 출력):
 {
-  "title": "SEO 최적화 제목 40자이내",
-  "description": "영상설명 2~3줄 + 해시태그 5개",
-  "hook": "썸네일 강렬 문구",
+  "title": "클릭 안 하면 손해인 제목 (숫자·감정 포함, 40자 이내)",
+  "description": "SEO 설명 2~3줄 + 관련 해시태그 5개",
+  "hook": "썸네일 문구 — 궁금증 폭발, 15자 이내",
   "scenes": [
     ${sceneTemplate}
   ]
 }`;
 }
+
+// GPT용 시스템 프롬프트
+const GPT_SYSTEM = '당신은 대한민국 최고의 숏폼 바이럴 콘텐츠 크리에이터입니다. 시청자가 첫 3초에 멈추고, 끝까지 보고, 공유하게 만드는 스크립트를 씁니다. 반드시 유효한 JSON만 출력하며, 코드블록이나 추가 설명은 절대 포함하지 않습니다.';
 
 async function callAI(prompt: string, apiKey: string, provider: string): Promise<string> {
   if (provider === 'claude') {
@@ -101,8 +135,9 @@ async function callAI(prompt: string, apiKey: string, provider: string): Promise
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4000,
+        system: GPT_SYSTEM,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -110,14 +145,20 @@ async function callAI(prompt: string, apiKey: string, provider: string): Promise
     return d.content?.[0]?.text ?? '';
   }
   if (provider === 'gpt4o' || provider === 'gpt4' || provider === 'gpt35') {
-    const model = provider === 'gpt4o' ? 'gpt-4o-mini' : 'gpt-3.5-turbo';
+    const model = provider === 'gpt4o' ? 'gpt-4o'
+      : provider === 'gpt4' ? 'gpt-4-turbo'
+      : 'gpt-3.5-turbo';
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: GPT_SYSTEM },
+          { role: 'user', content: prompt },
+        ],
         max_tokens: 4000,
+        temperature: 0.85,
         response_format: { type: 'json_object' },
       }),
     });
@@ -130,6 +171,7 @@ async function callAI(prompt: string, apiKey: string, provider: string): Promise
   const geminiModel = genAI.getGenerativeModel({
     model: 'gemini-2.0-flash',
     generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 4000 },
+    systemInstruction: GPT_SYSTEM,
   });
   const result = await geminiModel.generateContent(prompt);
   return result.response.text();
