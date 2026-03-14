@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // 허용 도메인 (SSRF 방지)
-const ALLOWED = ['cdn.pixabay.com', 'pixabay.com', 'cdn.freesound.org', 'aboda.kr'];
+const ALLOWED = ['assets.mixkit.co', 'mixkit.co', 'cdn.pixabay.com', 'pixabay.com', 'cdn.freesound.org', 'aboda.kr'];
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
