@@ -493,7 +493,9 @@ export default function StudioPage() {
   const bgmPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
   // 미리보기 BGM
   const previewBgmRef = useRef<HTMLAudioElement | null>(null);
+  const bgmBlobUrlRef = useRef<string | null>(null);
   const [bgmPlaying, setBgmPlaying] = useState(false);
+  const [bgmLoading, setBgmLoading] = useState(false);
   const [bgmError, setBgmError] = useState('');
 
   // 음성 목록
@@ -806,7 +808,12 @@ export default function StudioPage() {
       previewBgmRef.current.pause();
       previewBgmRef.current = null;
     }
+    if (bgmBlobUrlRef.current) {
+      URL.revokeObjectURL(bgmBlobUrlRef.current);
+      bgmBlobUrlRef.current = null;
+    }
     setBgmPlaying(false);
+    setBgmLoading(false);
     setBgmError('');
   }, []);
 
@@ -989,16 +996,27 @@ export default function StudioPage() {
       previewBgmRef.current = null;
     }
     if (settings.bgmUrl) {
-      // /api/proxy-audio 를 통해 프록시로 로드 (CDN CORS/Referrer 문제 우회)
+      // fetch → Blob URL 방식 (CDN CORS/Range 문제 완전 우회)
+      setBgmLoading(true);
+      const bgmVol = settings.bgmVolume;
       const proxyUrl = `/api/proxy-audio?url=${encodeURIComponent(settings.bgmUrl)}`;
-      const bgm = new Audio(proxyUrl);
-      bgm.loop = true;
-      bgm.volume = Math.min(1, Math.max(0, settings.bgmVolume));
-      bgm.onerror = () => setBgmError('BGM 로드 실패 — URL을 확인하거나 다른 음악을 선택하세요');
-      bgm.onplaying = () => setBgmPlaying(true);
-      bgm.onpause = () => setBgmPlaying(false);
-      previewBgmRef.current = bgm;
-      bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
+      fetch(proxyUrl)
+        .then(r => r.ok ? r.blob() : Promise.reject(`HTTP ${r.status}`))
+        .then(blob => {
+          const objUrl = URL.createObjectURL(blob);
+          bgmBlobUrlRef.current = objUrl;
+          const bgm = new Audio(objUrl);
+          bgm.loop = true;
+          bgm.volume = Math.min(1, Math.max(0, bgmVol));
+          bgm.onplaying = () => setBgmPlaying(true);
+          bgm.onpause = () => setBgmPlaying(false);
+          if (!previewBgmRef.current) { // 이미 정지됐으면 skip
+            previewBgmRef.current = bgm;
+            bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
+          }
+        })
+        .catch(e => setBgmError('BGM 로드 실패: ' + String(e)))
+        .finally(() => setBgmLoading(false));
     }
     playPreviewScene(0, scenes);
   };
@@ -1734,6 +1752,7 @@ export default function StudioPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">🎵 배경음악 (BGM)</div>
                   <div className="flex items-center gap-1.5">
+                    {bgmLoading && <span className="text-[9px] text-yellow-400 animate-pulse">로딩중...</span>}
                     {bgmPlaying && <span className="flex items-center gap-1 text-[9px] text-green-400"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />재생중</span>}
                     {bgmError && <span className="text-[9px] text-red-400" title={bgmError}>⚠️ 오류</span>}
                     {!settings.bgmUrl && <span className="text-[9px] text-gray-600">미선택</span>}
