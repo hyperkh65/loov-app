@@ -43,7 +43,7 @@ export default function SettingsPage() {
   const [naverMsg, setNaverMsg] = useState('');
 
   // API 키 관리 state
-  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_TTS_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [apiKeysSaving, setApiKeysSaving] = useState(false);
   const [apiKeysMsg, setApiKeysMsg] = useState('');
@@ -198,7 +198,7 @@ export default function SettingsPage() {
     });
     if (r.ok) {
       setApiKeysMsg('✅ 저장 완료');
-      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_TTS_API_KEY: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
       const updated: Record<string, boolean> = { ...apiKeyStatus };
       Object.entries(apiKeys).forEach(([k, v]) => { if (v.trim()) updated[k] = true; });
       setApiKeyStatus(updated);
@@ -335,7 +335,8 @@ export default function SettingsPage() {
                 { key: 'CLAUDE_API_KEY', label: 'Claude API Key', desc: '네이버 블로그 Claude 리라이팅', link: 'https://console.anthropic.com/settings/keys' },
                 { key: 'PIXABAY_API_KEY', label: 'Pixabay API Key', desc: '숏폼 이미지 검색 · 네이버 블로그 이미지 (무료)', link: 'https://pixabay.com/api/docs/' },
                 { key: 'PEXELS_API_KEY', label: 'Pexels API Key', desc: '숏폼 고화질 이미지 검색 (무료)', link: 'https://www.pexels.com/api/' },
-                { key: 'GOOGLE_TTS_API_KEY', label: 'Google TTS API Key', desc: '숏폼 제작 1 한국어 Neural2 고품질 TTS · 무료 1M자/월', link: 'https://console.cloud.google.com/apis/library/texttospeech.googleapis.com' },
+                { key: 'EDGE_TTS_SERVER_URL', label: 'Edge-TTS 서버 URL', desc: '시놀로지 NAS Docker Edge-TTS 서버 주소 (예: http://xxx.synology.me:5050)', link: 'https://github.com/rany2/edge-tts' },
+                { key: 'EDGE_TTS_SECRET', label: 'Edge-TTS 시크릿', desc: 'NAS TTS 서버 인증 시크릿 (docker-compose의 API_SECRET 값)', link: 'https://github.com/rany2/edge-tts' },
               ] as const).map(({ key, label, desc, link }) => (
                 <div key={key}>
                   <div className="flex items-center justify-between mb-1.5">
