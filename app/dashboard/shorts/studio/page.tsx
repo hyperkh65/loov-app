@@ -1002,12 +1002,16 @@ export default function StudioPage() {
       previewBgmRef.current = null;
     }
     if (settings.bgmUrl) {
-      const bgm = new Audio(settings.bgmUrl);
+      // HTTP URL은 Mixed Content 차단 → 프록시로 우회
+      const audioUrl = settings.bgmUrl.startsWith('http://')
+        ? `/api/proxy-audio?url=${encodeURIComponent(settings.bgmUrl)}`
+        : settings.bgmUrl;
+      const bgm = new Audio(audioUrl);
       bgm.loop = true;
       bgm.volume = Math.min(1, Math.max(0, settings.bgmVolume));
       bgm.onplaying = () => setBgmPlaying(true);
       bgm.onpause  = () => setBgmPlaying(false);
-      bgm.onerror  = () => setBgmError(`BGM 로드 실패 (code ${bgm.error?.code}): ${settings.bgmUrl}`);
+      bgm.onerror  = () => setBgmError(`BGM 로드 실패 (code ${bgm.error?.code})`);
       previewBgmRef.current = bgm;
       bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
     }
@@ -1028,7 +1032,10 @@ export default function StudioPage() {
       setBgmPreviewId(null);
     } else {
       bgmPreviewAudioRef.current?.pause();
-      const audio = new Audio(preset.url);
+      const previewUrl = preset.url.startsWith('http://')
+        ? `/api/proxy-audio?url=${encodeURIComponent(preset.url)}`
+        : preset.url;
+      const audio = new Audio(previewUrl);
       audio.volume = 0.4;
       audio.play().catch(() => {});
       audio.onended = () => { setBgmPreviewId(null); bgmPreviewAudioRef.current = null; };
