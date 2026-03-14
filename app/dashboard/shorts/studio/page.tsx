@@ -438,7 +438,8 @@ export default function StudioPage() {
 
   // TTS 모드
   const [ttsMode, setTtsMode] = useState<TtsMode>('webSpeech');
-  const [ttsVoiceId, setTtsVoiceId] = useState('2054');
+  const [ttsVoiceId, setTtsVoiceId] = useState('ko-KR-SunHiNeural');
+  const [ttsError, setTtsError] = useState('');
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // 블로그
@@ -719,21 +720,26 @@ export default function StudioPage() {
       ttsAudioRef.current.pause();
       ttsAudioRef.current = null;
     }
+    setTtsError('');
     try {
-      // rate: 1.0 기준 → Edge-TTS rate는 % (-50~+100)
       const ratePercent = Math.round((rate - 1.0) * 100);
       const res = await fetch('/api/shorts/edge-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice: voiceId, rate: ratePercent }),
       });
-      if (!res.ok) return;
       const data = await res.json() as { audio?: string; error?: string };
+      if (!res.ok || data.error) {
+        setTtsError(data.error ?? `TTS 오류 (${res.status})`);
+        return;
+      }
       if (!data.audio) return;
       const audio = new Audio(data.audio);
       ttsAudioRef.current = audio;
-      audio.play().catch(() => {});
-    } catch { /* silent fail */ }
+      audio.play().catch((e) => setTtsError('오디오 재생 실패: ' + String(e)));
+    } catch (e) {
+      setTtsError('Edge-TTS 연결 실패: ' + String(e));
+    }
   }, []);
 
   // ── 프리뷰 렌더 ────────────────────────────────────────────────────────────
@@ -1556,7 +1562,7 @@ export default function StudioPage() {
                     </>
                   )}
 
-                  {/* TTSMaker 음성 선택 */}
+                  {/* Edge-TTS 음성 선택 */}
                   {ttsMode === 'ttsmaker' && (
                     <div className="space-y-1">
                       {TTS_VOICES.map(v => (
@@ -1566,6 +1572,11 @@ export default function StudioPage() {
                           {ttsVoiceId === v.id && '▶ '}{v.label}
                         </button>
                       ))}
+                      {ttsError && (
+                        <div className="mt-1.5 px-2.5 py-2 bg-red-900/40 border border-red-700/50 rounded-lg text-[10px] text-red-300 break-all">
+                          ⚠️ {ttsError}
+                        </div>
+                      )}
                     </div>
                   )}
 
