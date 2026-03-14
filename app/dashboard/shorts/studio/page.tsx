@@ -715,7 +715,7 @@ export default function StudioPage() {
   }, [preloadImage]);
 
   // ── Edge-TTS (Microsoft Neural, 무료) ─────────────────────────────────────
-  const playTtsMaker = useCallback(async (text: string, voiceId: string, rate: number) => {
+  const playTtsMaker = useCallback(async (text: string, voiceId: string, rate: number): Promise<HTMLAudioElement | null> => {
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
       ttsAudioRef.current = null;
@@ -730,14 +730,16 @@ export default function StudioPage() {
       const data = await res.json() as { audio?: string; error?: string };
       if (!res.ok || data.error) {
         setTtsError(data.error ?? `TTS 오류 (${res.status})`);
-        return;
+        return null;
       }
-      if (!data.audio) return;
+      if (!data.audio) return null;
       const audio = new Audio(data.audio);
       ttsAudioRef.current = audio;
       audio.play().catch((e) => setTtsError('오디오 재생 실패: ' + String(e)));
+      return audio;
     } catch (e) {
       setTtsError('Edge-TTS 연결 실패: ' + String(e));
+      return null;
     }
   }, []);
 
@@ -865,25 +867,38 @@ export default function StudioPage() {
     previewAnimRef.current = requestAnimationFrame(() => renderPreviewFrame(sceneList, idx, startTime));
   }, [preloadImage]);
 
-  const playPreviewScene = useCallback((idx: number, sceneList: Scene[]) => {
+  const playPreviewScene = useCallback(async (idx: number, sceneList: Scene[]) => {
     if (idx >= sceneList.length) { stopPreview(); return; }
     const sc = sceneList[idx];
     setPreviewIdx(idx);
     cancelAnimationFrame(previewAnimRef.current);
     renderPreviewFrame(sceneList, idx, Date.now());
 
-    // Cancel previous TTS
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
       ttsAudioRef.current = null;
     }
     window.speechSynthesis?.cancel();
 
-    // TTS
+    let sceneDurationMs = sc.duration * 1000;
+
     if (sc.narration) {
       const currentSettings = settingsRef.current;
       if (ttsMode === 'ttsmaker') {
-        playTtsMaker(sc.narration, ttsVoiceId, currentSettings.voiceRate);
+        const audio = await playTtsMaker(sc.narration, ttsVoiceId, currentSettings.voiceRate);
+        // 실제 오디오 길이가 씬 길이보다 길면 맞춰서 대기
+        if (audio) {
+          await new Promise<void>(resolve => {
+            const onMeta = () => {
+              if (audio.duration && !isNaN(audio.duration)) {
+                sceneDurationMs = Math.max(sceneDurationMs, audio.duration * 1000 + 300);
+              }
+              resolve();
+            };
+            if (audio.readyState >= 1) { onMeta(); }
+            else { audio.addEventListener('loadedmetadata', onMeta, { once: true }); setTimeout(resolve, 500); }
+          });
+        }
       } else {
         const u = new SpeechSynthesisUtterance(sc.narration);
         u.lang = 'ko-KR'; u.rate = currentSettings.voiceRate; u.pitch = currentSettings.voicePitch;
@@ -893,7 +908,7 @@ export default function StudioPage() {
       }
     }
 
-    previewTimerRef.current = setTimeout(() => playPreviewScene(idx + 1, sceneList), sc.duration * 1000);
+    previewTimerRef.current = setTimeout(() => playPreviewScene(idx + 1, sceneList), sceneDurationMs);
   }, [renderPreviewFrame, stopPreview, ttsMode, ttsVoiceId, playTtsMaker]);
 
   const startPreview = () => {
