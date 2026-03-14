@@ -1,9 +1,22 @@
 import os, base64, asyncio, tempfile
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import edge_tts
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+BGM_DIR = os.path.join(os.path.dirname(__file__), "bgm")
+if os.path.isdir(BGM_DIR):
+    app.mount("/bgm", StaticFiles(directory=BGM_DIR), name="bgm")
 
 API_SECRET = os.environ.get("API_SECRET", "")
 
