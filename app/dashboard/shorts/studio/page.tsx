@@ -10,7 +10,7 @@ type SubPos      = 'top' | 'middle' | 'bottom';
 type SubSize     = 'sm' | 'md' | 'lg' | 'xl';
 type LeftTab     = 'blog' | 'scenes';
 type Platform    = 'youtube' | 'naver' | 'instagram' | 'tiktok';
-type TtsMode     = 'webSpeech' | 'ttsmaker';
+type TtsMode     = 'webSpeech' | 'ttsmaker' | 'supertonic';
 type CharSize    = 'sm' | 'md' | 'lg';
 type SubFont     = 'default' | 'bold' | 'outline' | 'shadow' | 'neon';
 
@@ -119,6 +119,18 @@ const TTS_VOICES = [
   { id: 'ko-KR-HyunsuNeural',   label: '현수 · 남성 · 내레이션' },
   { id: 'ko-KR-SeoHyeonNeural', label: '서현 · 여성 · 어린이' },
   { id: 'ko-KR-YuJinNeural',    label: '유진 · 여성 · 감성적' },
+];
+const SUPERTONIC_VOICES = [
+  { id: 'F1', label: 'F1 · 여성 · 차분' },
+  { id: 'F2', label: 'F2 · 여성 · 밝음' },
+  { id: 'F3', label: 'F3 · 여성 · 감성적' },
+  { id: 'F4', label: 'F4 · 여성 · 전문적' },
+  { id: 'F5', label: 'F5 · 여성 · 활기찬' },
+  { id: 'M1', label: 'M1 · 남성 · 차분' },
+  { id: 'M2', label: 'M2 · 남성 · 밝음' },
+  { id: 'M3', label: 'M3 · 남성 · 내레이션' },
+  { id: 'M4', label: 'M4 · 남성 · 전문적' },
+  { id: 'M5', label: 'M5 · 남성 · 활기찬' },
 ];
 
 const CHARACTER_EMOJIS = ['🐻', '🦊', '🤖', '🐱', '🦄', '🐧', '🐼', '🐸', '🦁', '🐯'];
@@ -439,6 +451,7 @@ export default function StudioPage() {
   // TTS 모드
   const [ttsMode, setTtsMode] = useState<TtsMode>('webSpeech');
   const [ttsVoiceId, setTtsVoiceId] = useState('ko-KR-SunHiNeural');
+  const [supertonicVoiceId, setSupertonicVoiceId] = useState('F3');
   const [ttsError, setTtsError] = useState('');
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -743,6 +756,35 @@ export default function StudioPage() {
     }
   }, []);
 
+  // ── Supertonic TTS (고품질 On-device, NAS Docker) ──────────────────────────
+  const playSupertonic = useCallback(async (text: string, voiceId: string, speed: number): Promise<HTMLAudioElement | null> => {
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current = null;
+    }
+    setTtsError('');
+    try {
+      const res = await fetch('/api/shorts/supertonic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice_id: voiceId, speed, lang: 'ko' }),
+      });
+      const data = await res.json() as { audio?: string; error?: string };
+      if (!res.ok || data.error) {
+        setTtsError(data.error ?? `Supertonic 오류 (${res.status})`);
+        return null;
+      }
+      if (!data.audio) return null;
+      const audio = new Audio(data.audio);
+      ttsAudioRef.current = audio;
+      audio.play().catch((e) => setTtsError('오디오 재생 실패: ' + String(e)));
+      return audio;
+    } catch (e) {
+      setTtsError('Supertonic 연결 실패: ' + String(e));
+      return null;
+    }
+  }, []);
+
   // ── 프리뷰 렌더 ────────────────────────────────────────────────────────────
   const stopPreview = useCallback(() => {
     setPlaying(false); setPreviewIdx(0);
@@ -884,21 +926,25 @@ export default function StudioPage() {
 
     if (sc.narration) {
       const currentSettings = settingsRef.current;
+      const waitForAudio = async (audio: HTMLAudioElement | null) => {
+        if (!audio) return;
+        await new Promise<void>(resolve => {
+          const onMeta = () => {
+            if (audio.duration && !isNaN(audio.duration)) {
+              sceneDurationMs = Math.max(sceneDurationMs, audio.duration * 1000 + 300);
+            }
+            resolve();
+          };
+          if (audio.readyState >= 1) { onMeta(); }
+          else { audio.addEventListener('loadedmetadata', onMeta, { once: true }); setTimeout(resolve, 500); }
+        });
+      };
       if (ttsMode === 'ttsmaker') {
         const audio = await playTtsMaker(sc.narration, ttsVoiceId, currentSettings.voiceRate);
-        // 실제 오디오 길이가 씬 길이보다 길면 맞춰서 대기
-        if (audio) {
-          await new Promise<void>(resolve => {
-            const onMeta = () => {
-              if (audio.duration && !isNaN(audio.duration)) {
-                sceneDurationMs = Math.max(sceneDurationMs, audio.duration * 1000 + 300);
-              }
-              resolve();
-            };
-            if (audio.readyState >= 1) { onMeta(); }
-            else { audio.addEventListener('loadedmetadata', onMeta, { once: true }); setTimeout(resolve, 500); }
-          });
-        }
+        await waitForAudio(audio);
+      } else if (ttsMode === 'supertonic') {
+        const audio = await playSupertonic(sc.narration, supertonicVoiceId, currentSettings.voiceRate);
+        await waitForAudio(audio);
       } else {
         const u = new SpeechSynthesisUtterance(sc.narration);
         u.lang = 'ko-KR'; u.rate = currentSettings.voiceRate; u.pitch = currentSettings.voicePitch;
@@ -909,7 +955,7 @@ export default function StudioPage() {
     }
 
     previewTimerRef.current = setTimeout(() => playPreviewScene(idx + 1, sceneList), sceneDurationMs);
-  }, [renderPreviewFrame, stopPreview, ttsMode, ttsVoiceId, playTtsMaker]);
+  }, [renderPreviewFrame, stopPreview, ttsMode, ttsVoiceId, supertonicVoiceId, playTtsMaker, playSupertonic]);
 
   const startPreview = () => {
     if (!scenes.length) return;
@@ -1550,7 +1596,7 @@ export default function StudioPage() {
                 <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2">🔊 TTS 음성</div>
                 <div className="space-y-2.5">
                   {/* TTS 모드 선택 */}
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 flex-wrap">
                     <button
                       onClick={() => setTtsMode('webSpeech')}
                       className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${ttsMode === 'webSpeech' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
@@ -1559,7 +1605,12 @@ export default function StudioPage() {
                     <button
                       onClick={() => setTtsMode('ttsmaker')}
                       className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${ttsMode === 'ttsmaker' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-                      Edge-TTS (무료)
+                      Edge-TTS
+                    </button>
+                    <button
+                      onClick={() => setTtsMode('supertonic')}
+                      className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${ttsMode === 'supertonic' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+                      Supertonic
                     </button>
                   </div>
 
@@ -1586,6 +1637,29 @@ export default function StudioPage() {
                           {ttsVoiceId === v.id && '▶ '}{v.label}
                         </button>
                       ))}
+                      {ttsError && (
+                        <div className="mt-1.5 px-2.5 py-2 bg-red-900/40 border border-red-700/50 rounded-lg text-[10px] text-red-300 break-all">
+                          ⚠️ {ttsError}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Supertonic 음성 선택 */}
+                  {ttsMode === 'supertonic' && (
+                    <div className="space-y-1">
+                      <div className="px-2 py-1.5 bg-purple-900/30 border border-purple-700/40 rounded-lg text-[9px] text-purple-300">
+                        🎙️ Supertonic · 고품질 AI TTS · NAS Docker
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">
+                        {SUPERTONIC_VOICES.map(v => (
+                          <button key={v.id}
+                            onClick={() => setSupertonicVoiceId(v.id)}
+                            className={`text-left px-2 py-1.5 rounded-lg text-[10px] transition-all ${supertonicVoiceId === v.id ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
+                            {supertonicVoiceId === v.id && '▶ '}{v.label}
+                          </button>
+                        ))}
+                      </div>
                       {ttsError && (
                         <div className="mt-1.5 px-2.5 py-2 bg-red-900/40 border border-red-700/50 rounded-lg text-[10px] text-red-300 break-all">
                           ⚠️ {ttsError}
