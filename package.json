@@ -24,6 +24,7 @@
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.577.0",
     "mammoth": "^1.11.0",
+    "mp4-muxer": "^5.2.2",
     "msedge-tts": "^2.0.4",
     "next": "16.1.6",
     "pdf-parse": "^2.4.5",

@@ -528,7 +528,9 @@ export default function StudioPage() {
   // 내보내기
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportStatus, setExportStatus] = useState('');
   const [downloadUrl, setDownloadUrl] = useState('');
+  const [exportExt, setExportExt] = useState('mp4');
 
   // 배치 자동화
   const [batchMode, setBatchMode] = useState(false);
@@ -1126,108 +1128,260 @@ export default function StudioPage() {
     }
   };
 
-  // ── Canvas 영상 내보내기 ────────────────────────────────────────────────────
+  // ── 씬 렌더 헬퍼 (export/preview 공용) ──────────────────────────────────────
+  const renderSceneToCanvas = useCallback((
+    ctx: CanvasRenderingContext2D, sc: Scene, f: number, scFrames: number,
+    cw: number, ch: number, animTime: number, subStyle: SubtitleStyle, char: Character,
+  ) => {
+    const FPS = 30;
+    const progress = f / scFrames;
+    const TRANS_FRAMES = sc.transition !== 'none' ? Math.min(FPS * 0.4, scFrames * 0.2) : 0;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cw, ch);
+    let slideOffX = 0, slideOffY = 0;
+    const tp = Math.min(f / Math.max(TRANS_FRAMES, 1), 1);
+    if (sc.transition === 'slide-up' && f < TRANS_FRAMES) slideOffY = ch * 0.12 * (1 - tp);
+    if (sc.transition === 'slide-left' && f < TRANS_FRAMES) slideOffX = cw * 0.2 * (1 - tp);
+    if (sc.transition === 'slide-right' && f < TRANS_FRAMES) slideOffX = -cw * 0.2 * (1 - tp);
+    if (slideOffX !== 0 || slideOffY !== 0) { ctx.save(); ctx.translate(slideOffX, -slideOffY); }
+    const img = sc.imageUrl ? loadedImages.current.get(sc.imageUrl) : null;
+    if (img) drawKenBurns(ctx, img, sc.imageEffect, progress, cw, ch);
+    const grad = ctx.createLinearGradient(0, 0, 0, ch);
+    grad.addColorStop(0, 'rgba(0,0,0,0.3)'); grad.addColorStop(0.6, 'rgba(0,0,0,0.05)'); grad.addColorStop(1, 'rgba(0,0,0,0.7)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, cw, ch);
+    drawSubtitle(ctx, sc.subtitle, subStyle, cw, ch);
+    drawCharacter(ctx, char, sc, cw, ch, animTime);
+    if (slideOffX !== 0 || slideOffY !== 0) ctx.restore();
+    if (sc.transition === 'fade' && f < TRANS_FRAMES) { ctx.fillStyle = `rgba(0,0,0,${1-tp})`; ctx.fillRect(0,0,cw,ch); }
+    else if (sc.transition === 'flash' && f < TRANS_FRAMES) { ctx.fillStyle = `rgba(255,255,255,${(1-tp)*0.9})`; ctx.fillRect(0,0,cw,ch); }
+    else if (sc.transition === 'dissolve' && f < TRANS_FRAMES) { ctx.fillStyle = `rgba(20,20,40,${1-tp})`; ctx.fillRect(0,0,cw,ch); }
+  }, []);
+
+  // ── Canvas 영상 내보내기 (MP4 우선, WebM 폴백) ──────────────────────────────
   const exportVideo = useCallback(async () => {
     const canvas = exportCanvasRef.current;
     if (!canvas || !scenes.length) return;
-    setExporting(true); setExportProgress(0); setDownloadUrl('');
+    setExporting(true); setExportProgress(0); setDownloadUrl(''); setExportExt('mp4');
 
+    const FPS = 30;
     const cw = 1080, ch = 1920;
     canvas.width = cw; canvas.height = ch;
     const ctx = canvas.getContext('2d')!;
 
+    // 이미지 프리로드
+    setExportStatus('이미지 로딩...');
     for (const sc of scenes) {
       if (sc.imageUrl) await preloadImage(sc.imageUrl).catch(() => {});
     }
 
-    let bgmAudio: HTMLAudioElement | null = null;
-    const canvasStream = canvas.captureStream(30);
-    if (settings.bgmUrl) {
-      try {
-        const audioCtx = new AudioContext();
-        bgmAudio = new Audio(settings.bgmUrl);
-        bgmAudio.crossOrigin = 'anonymous';
-        bgmAudio.loop = true;
-        bgmAudio.volume = settings.bgmVolume;
-        const src = audioCtx.createMediaElementSource(bgmAudio);
-        const dest = audioCtx.createMediaStreamDestination();
-        src.connect(dest);
-        canvasStream.addTrack(dest.stream.getAudioTracks()[0]);
-        bgmAudio.play();
-      } catch { /* BGM 없어도 진행 */ }
+    // ── TTS 오디오 사전 생성 ────────────────────────────────────────────────
+    const ttsArrayBuffers: (ArrayBuffer | null)[] = new Array(scenes.length).fill(null);
+    if (ttsMode !== 'webSpeech') {
+      setExportStatus(`TTS 생성 중... (0/${scenes.length})`);
+      let done = 0;
+      await Promise.all(scenes.map(async (sc, i) => {
+        if (!sc.narration) { done++; return; }
+        try {
+          const endpoint = ttsMode === 'supertonic' ? '/api/shorts/supertonic' : '/api/shorts/tts';
+          const body = ttsMode === 'supertonic'
+            ? { text: sc.narration, voice_id: supertonicVoiceId, speed: settingsRef.current.voiceRate }
+            : { text: sc.narration, voice_id: ttsVoiceId, speed: settingsRef.current.voiceRate };
+          const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const data = await res.json() as { audio?: string };
+          if (data.audio) {
+            const b64 = data.audio.split(',')[1];
+            if (b64) {
+              const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+              for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+              ttsArrayBuffers[i] = bytes.buffer;
+            }
+          }
+        } catch { /* 해당 씬 TTS 스킵 */ }
+        done++;
+        setExportStatus(`TTS 생성 중... (${done}/${scenes.length})`);
+        setExportProgress(Math.round((done / scenes.length) * 18));
+      }));
     }
 
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
-    const chunks: Blob[] = [];
-    const recorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond: 10_000_000 });
-    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    // ── TTS 디코딩 + 씬별 실제 길이 계산 ────────────────────────────────────
+    setExportStatus('오디오 분석 중...');
+    const tmpCtx = new AudioContext();
+    const ttsAudioBuffers: (AudioBuffer | null)[] = await Promise.all(
+      ttsArrayBuffers.map(async (ab) => {
+        if (!ab) return null;
+        try { return await tmpCtx.decodeAudioData(ab.slice(0)); } catch { return null; }
+      })
+    );
+    await tmpCtx.close();
+    const sceneDurSecs = scenes.map((sc, i) => {
+      const tts = ttsAudioBuffers[i];
+      return tts ? Math.max(sc.duration, tts.duration + 0.35) : sc.duration;
+    });
+    const totalDurSec = sceneDurSecs.reduce((a, b) => a + b, 0);
+    setExportProgress(20);
 
-    const done = new Promise<void>(res => { recorder.onstop = () => res(); });
-    recorder.start(200);
+    // ── MP4 경로: VideoEncoder + AudioEncoder + mp4-muxer ───────────────────
+    const canUseMP4 = typeof VideoEncoder !== 'undefined'
+      && typeof AudioEncoder !== 'undefined'
+      && typeof VideoFrame !== 'undefined'
+      && typeof AudioData !== 'undefined';
 
-    const FPS = 30;
-    let totalRendered = 0;
-    const totalFrames = scenes.reduce((s, sc) => s + sc.duration * FPS, 0);
-    let exportAnimTime = 0;
+    if (canUseMP4) {
+      try {
+        const { Muxer, ArrayBufferTarget } = await import('mp4-muxer');
+        const SR = 44100;
 
-    for (const sc of scenes) {
-      const img = sc.imageUrl ? loadedImages.current.get(sc.imageUrl) : null;
-      const scFrames = sc.duration * FPS;
-      const TRANS_FRAMES = sc.transition !== 'none' ? Math.min(FPS * 0.4, scFrames * 0.2) : 0;
-
-      for (let f = 0; f < scFrames; f++) {
-        const progress = f / scFrames;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, cw, ch);
-
-        // Slide transition
-        let slideOffX = 0, slideOffY = 0;
-        const tp = Math.min(f / Math.max(TRANS_FRAMES, 1), 1);
-        if (sc.transition === 'slide-up' && f < TRANS_FRAMES)    slideOffY = ch * 0.12 * (1 - tp);
-        if (sc.transition === 'slide-left' && f < TRANS_FRAMES)   slideOffX = cw * 0.2 * (1 - tp);
-        if (sc.transition === 'slide-right' && f < TRANS_FRAMES)  slideOffX = -cw * 0.2 * (1 - tp);
-
-        if (slideOffX !== 0 || slideOffY !== 0) { ctx.save(); ctx.translate(slideOffX, -slideOffY); }
-
-        if (img) drawKenBurns(ctx, img, sc.imageEffect, progress, cw, ch);
-
-        const grad = ctx.createLinearGradient(0, 0, 0, ch);
-        grad.addColorStop(0, 'rgba(0,0,0,0.3)'); grad.addColorStop(0.6, 'rgba(0,0,0,0.05)'); grad.addColorStop(1, 'rgba(0,0,0,0.7)');
-        ctx.fillStyle = grad; ctx.fillRect(0, 0, cw, ch);
-
-        drawSubtitle(ctx, sc.subtitle, settings.subtitleStyle, cw, ch);
-        exportAnimTime += 1 / FPS;
-        drawCharacter(ctx, character, sc, cw, ch, exportAnimTime);
-
-        if (slideOffX !== 0 || slideOffY !== 0) ctx.restore();
-
-        // Overlay transitions
-        if (sc.transition === 'fade' && f < TRANS_FRAMES) {
-          ctx.fillStyle = `rgba(0,0,0,${1 - tp})`;
-          ctx.fillRect(0, 0, cw, ch);
-        } else if (sc.transition === 'flash' && f < TRANS_FRAMES) {
-          ctx.fillStyle = `rgba(255,255,255,${(1 - tp) * 0.9})`;
-          ctx.fillRect(0, 0, cw, ch);
-        } else if (sc.transition === 'dissolve' && f < TRANS_FRAMES) {
-          ctx.fillStyle = `rgba(20,20,40,${1 - tp})`;
-          ctx.fillRect(0, 0, cw, ch);
+        // 오디오 믹싱 (OfflineAudioContext)
+        setExportStatus('오디오 믹싱 중...');
+        const offCtx = new OfflineAudioContext(2, Math.ceil(totalDurSec * SR), SR);
+        if (settings.bgmUrl) {
+          try {
+            const bgmUrl = settings.bgmUrl.startsWith('http://')
+              ? `/api/proxy-audio?url=${encodeURIComponent(settings.bgmUrl)}` : settings.bgmUrl;
+            const bgmBuf = await offCtx.decodeAudioData(await (await fetch(bgmUrl)).arrayBuffer());
+            const bgmGain = offCtx.createGain(); bgmGain.gain.value = Math.min(1, Math.max(0, settings.bgmVolume));
+            const bgmSrc = offCtx.createBufferSource(); bgmSrc.buffer = bgmBuf; bgmSrc.loop = true;
+            bgmSrc.connect(bgmGain); bgmGain.connect(offCtx.destination); bgmSrc.start(0);
+          } catch { /* BGM 없이 */ }
         }
+        let ttsOff = 0;
+        for (let i = 0; i < scenes.length; i++) {
+          if (ttsArrayBuffers[i]) {
+            try {
+              const ttsBuf = await offCtx.decodeAudioData(ttsArrayBuffers[i]!.slice(0));
+              const ttsGain = offCtx.createGain(); ttsGain.gain.value = Math.min(1, Math.max(0, settings.ttsVolume ?? 1.0));
+              const ttsSrc = offCtx.createBufferSource(); ttsSrc.buffer = ttsBuf;
+              ttsSrc.connect(ttsGain); ttsGain.connect(offCtx.destination); ttsSrc.start(ttsOff);
+            } catch { /* 스킵 */ }
+          }
+          ttsOff += sceneDurSecs[i];
+        }
+        setExportStatus('오디오 렌더링 중...');
+        const rendered = await offCtx.startRendering();
+        setExportProgress(28);
 
-        totalRendered++;
-        if (f % FPS === 0) setExportProgress(Math.round((totalRendered / totalFrames) * 100));
-        await new Promise(r => setTimeout(r, 1000 / FPS));
+        // AudioEncoder
+        setExportStatus('오디오 인코딩 중...');
+        const target = new ArrayBufferTarget();
+        const muxer = new Muxer({
+          target,
+          video: { codec: 'avc', width: cw, height: ch },
+          audio: { codec: 'aac', sampleRate: SR, numberOfChannels: 2 },
+          fastStart: 'in-memory',
+        });
+        const audioEnc = new AudioEncoder({
+          output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+          error: (e) => { throw e; },
+        });
+        audioEnc.configure({ codec: 'mp4a.40.2', sampleRate: SR, numberOfChannels: 2, bitrate: 128_000 });
+        const aCh0 = rendered.getChannelData(0);
+        const aCh1 = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : aCh0;
+        const ACHUNK = 4096;
+        for (let offset = 0; offset < rendered.length; offset += ACHUNK) {
+          const end = Math.min(offset + ACHUNK, rendered.length);
+          const nf = end - offset;
+          const planar = new Float32Array(nf * 2);
+          planar.set(aCh0.subarray(offset, end), 0);
+          planar.set(aCh1.subarray(offset, end), nf);
+          const ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: nf, numberOfChannels: 2, timestamp: Math.round(offset / SR * 1_000_000), data: planar });
+          audioEnc.encode(ad); ad.close();
+        }
+        await audioEnc.flush();
+        setExportProgress(35);
+
+        // VideoEncoder
+        setExportStatus('비디오 인코딩 중...');
+        const videoEnc = new VideoEncoder({
+          output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+          error: (e) => { throw e; },
+        });
+        videoEnc.configure({ codec: 'avc1.640028', width: cw, height: ch, bitrate: 10_000_000, framerate: FPS });
+
+        const totalFrames = sceneDurSecs.reduce((s, d) => s + Math.ceil(d * FPS), 0);
+        let fi = 0; let animT = 0;
+        for (let scIdx = 0; scIdx < scenes.length; scIdx++) {
+          const sc = scenes[scIdx];
+          const scFrames = Math.ceil(sceneDurSecs[scIdx] * FPS);
+          for (let f = 0; f < scFrames; f++) {
+            animT += 1 / FPS;
+            renderSceneToCanvas(ctx, sc, f, scFrames, cw, ch, animT, settings.subtitleStyle, character);
+            const ts = Math.round(fi * (1_000_000 / FPS));
+            const vf = new VideoFrame(canvas, { timestamp: ts });
+            videoEnc.encode(vf, { keyFrame: fi % (FPS * 2) === 0 }); vf.close();
+            fi++;
+            if (fi % FPS === 0) {
+              setExportProgress(35 + Math.round((fi / totalFrames) * 60));
+              setExportStatus(`비디오 인코딩 중... ${Math.round(fi / totalFrames * 100)}%`);
+            }
+            await new Promise(r => setTimeout(r, 0));
+          }
+        }
+        await videoEnc.flush();
+        muxer.finalize();
+        const mp4Blob = new Blob([target.buffer], { type: 'video/mp4' });
+        setDownloadUrl(URL.createObjectURL(mp4Blob));
+        setExportExt('mp4'); setExportProgress(100); setExportStatus(''); setExporting(false);
+        return;
+      } catch (e) {
+        console.warn('MP4 인코딩 실패, WebM으로 대체:', e);
       }
     }
 
-    recorder.stop();
-    bgmAudio?.pause();
-    await done;
+    // ── WebM 폴백: MediaRecorder + AudioContext ─────────────────────────────
+    setExportStatus('WebM 렌더링 중...');
+    const audioCtx = new AudioContext({ sampleRate: 44100 });
+    const audioDest = audioCtx.createMediaStreamDestination();
+    let bgmSrc2: AudioBufferSourceNode | null = null;
+    if (settings.bgmUrl) {
+      try {
+        const bgmUrl = settings.bgmUrl.startsWith('http://')
+          ? `/api/proxy-audio?url=${encodeURIComponent(settings.bgmUrl)}` : settings.bgmUrl;
+        const bgmBuf = await audioCtx.decodeAudioData(await (await fetch(bgmUrl)).arrayBuffer());
+        const bgmGain = audioCtx.createGain(); bgmGain.gain.value = Math.min(1, Math.max(0, settings.bgmVolume));
+        bgmSrc2 = audioCtx.createBufferSource(); bgmSrc2.buffer = bgmBuf; bgmSrc2.loop = true;
+        bgmSrc2.connect(bgmGain); bgmGain.connect(audioDest); bgmSrc2.start();
+      } catch { /* BGM 없이 */ }
+    }
+    const canvasStream = canvas.captureStream(FPS);
+    for (const t of audioDest.stream.getAudioTracks()) canvasStream.addTrack(t);
+    const webmMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+    const chunks: Blob[] = [];
+    const recorder = new MediaRecorder(canvasStream, { mimeType: webmMime, videoBitsPerSecond: 10_000_000 });
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    const recDone = new Promise<void>(res => { recorder.onstop = () => res(); });
+    recorder.start(200);
 
-    const blob = new Blob(chunks, { type: mimeType });
-    setDownloadUrl(URL.createObjectURL(blob));
-    setExporting(false);
-    setExportProgress(100);
-  }, [scenes, settings, character, preloadImage]);
+    const totalFrames2 = sceneDurSecs.reduce((s, d) => s + Math.ceil(d * FPS), 0);
+    let frames2 = 0; let animT2 = 0;
+    for (let scIdx = 0; scIdx < scenes.length; scIdx++) {
+      const sc = scenes[scIdx];
+      const scFrames = Math.ceil(sceneDurSecs[scIdx] * FPS);
+      // TTS 재생 (AudioContext → MediaRecorder에 믹싱)
+      if (ttsArrayBuffers[scIdx]) {
+        try {
+          const ttsBuf = await audioCtx.decodeAudioData(ttsArrayBuffers[scIdx]!.slice(0));
+          const ttsGain = audioCtx.createGain(); ttsGain.gain.value = Math.min(1, Math.max(0, settings.ttsVolume ?? 1.0));
+          const ttsSrc = audioCtx.createBufferSource(); ttsSrc.buffer = ttsBuf;
+          ttsSrc.connect(ttsGain); ttsGain.connect(audioDest); ttsSrc.start();
+        } catch { /* 스킵 */ }
+      }
+      for (let f = 0; f < scFrames; f++) {
+        animT2 += 1 / FPS;
+        renderSceneToCanvas(ctx, sc, f, scFrames, cw, ch, animT2, settings.subtitleStyle, character);
+        frames2++;
+        if (f % FPS === 0) {
+          setExportProgress(20 + Math.round((frames2 / totalFrames2) * 75));
+          setExportStatus(`WebM 렌더링 중... ${Math.round(frames2 / totalFrames2 * 100)}%`);
+        }
+        await new Promise(r => setTimeout(r, 1000 / FPS));
+      }
+    }
+    recorder.stop(); bgmSrc2?.stop();
+    await audioCtx.close(); await recDone;
+    const webmBlob = new Blob(chunks, { type: webmMime });
+    setDownloadUrl(URL.createObjectURL(webmBlob));
+    setExportExt('webm'); setExportProgress(100); setExportStatus(''); setExporting(false);
+  }, [scenes, settings, character, preloadImage, ttsMode, ttsVoiceId, supertonicVoiceId, renderSceneToCanvas]);
 
   const filteredPosts = blogPosts.filter(p =>
     !blogSearch || p.title.toLowerCase().includes(blogSearch.toLowerCase()) ||
@@ -1509,16 +1663,16 @@ export default function StudioPage() {
           {/* 내보내기 진행 / 다운로드 */}
           {exporting && (
             <div className="w-60 space-y-2">
-              <div className="text-xs text-gray-400 text-center">영상 렌더링 중... {exportProgress}%</div>
+              <div className="text-xs text-gray-400 text-center">{exportStatus || `렌더링 중... ${exportProgress}%`}</div>
               <div className="w-full bg-gray-800 rounded-full h-1.5">
                 <div className="bg-orange-500 h-1.5 rounded-full transition-all" style={{ width: `${exportProgress}%` }} />
               </div>
             </div>
           )}
           {downloadUrl && (
-            <a href={downloadUrl} download={`${title}_${Date.now()}.webm`}
+            <a href={downloadUrl} download={`${title}_${Date.now()}.${exportExt}`}
               className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5">
-              ⬇️ WebM 다운로드
+              ⬇️ {exportExt.toUpperCase()} 다운로드
             </a>
           )}
         </div>
