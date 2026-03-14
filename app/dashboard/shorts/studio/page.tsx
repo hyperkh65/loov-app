@@ -33,7 +33,7 @@ interface SubtitleStyle {
 }
 interface Settings {
   platform: Platform; voiceRate: number; voicePitch: number; voiceIdx: number;
-  bgmUrl: string; bgmVolume: number; subtitleStyle: SubtitleStyle;
+  bgmUrl: string; bgmVolume: number; ttsVolume: number; subtitleStyle: SubtitleStyle;
 }
 interface BlogPost {
   id: string; title: string; url: string; image: string;
@@ -92,7 +92,7 @@ const PLATFORMS: { v: Platform; icon: string; label: string }[] = [
 ];
 const DEFAULT_SETTINGS: Settings = {
   platform: 'youtube', voiceRate: 1.1, voicePitch: 1.0, voiceIdx: 0,
-  bgmUrl: '', bgmVolume: 0.2,
+  bgmUrl: '', bgmVolume: 0.2, ttsVolume: 1.0,
   subtitleStyle: { position: 'bottom', textColor: '#ffffff', bgColor: 'rgba(0,0,0,0.6)', size: 'lg', bold: true, font: 'default', outline: false, strokeColor: '#000000', shadow: true },
 };
 const DEFAULT_CHARACTER: Character = {
@@ -491,6 +491,8 @@ export default function StudioPage() {
   // BGM 프리셋 미리듣기
   const [bgmPreviewId, setBgmPreviewId] = useState<string | null>(null);
   const bgmPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  // 미리보기 BGM
+  const previewBgmRef = useRef<HTMLAudioElement | null>(null);
 
   // 음성 목록
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -747,6 +749,7 @@ export default function StudioPage() {
       }
       if (!data.audio) return null;
       const audio = new Audio(data.audio);
+      audio.volume = settingsRef.current.ttsVolume ?? 1.0;
       ttsAudioRef.current = audio;
       audio.play().catch((e) => setTtsError('오디오 재생 실패: ' + String(e)));
       return audio;
@@ -776,6 +779,7 @@ export default function StudioPage() {
       }
       if (!data.audio) return null;
       const audio = new Audio(data.audio);
+      audio.volume = settingsRef.current.ttsVolume ?? 1.0;
       ttsAudioRef.current = audio;
       audio.play().catch((e) => setTtsError('오디오 재생 실패: ' + String(e)));
       return audio;
@@ -791,10 +795,14 @@ export default function StudioPage() {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     cancelAnimationFrame(previewAnimRef.current);
     window.speechSynthesis?.cancel();
-    // Cancel TTSMaker audio
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
       ttsAudioRef.current = null;
+    }
+    // BGM 정지
+    if (previewBgmRef.current) {
+      previewBgmRef.current.pause();
+      previewBgmRef.current = null;
     }
   }, []);
 
@@ -804,6 +812,13 @@ export default function StudioPage() {
 
   const settingsRef = useRef<Settings>(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  // BGM 볼륨 실시간 반영
+  useEffect(() => {
+    if (previewBgmRef.current) {
+      previewBgmRef.current.volume = settings.bgmVolume;
+    }
+  }, [settings.bgmVolume]);
 
   const renderPreviewFrame = useCallback((sceneList: Scene[], idx: number, startTime: number) => {
     const canvas = previewCanvasRef.current;
@@ -948,6 +963,7 @@ export default function StudioPage() {
       } else {
         const u = new SpeechSynthesisUtterance(sc.narration);
         u.lang = 'ko-KR'; u.rate = currentSettings.voiceRate; u.pitch = currentSettings.voicePitch;
+        u.volume = currentSettings.ttsVolume ?? 1.0;
         const koVoices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('ko'));
         if (koVoices[currentSettings.voiceIdx]) u.voice = koVoices[currentSettings.voiceIdx];
         window.speechSynthesis.speak(u);
@@ -961,6 +977,18 @@ export default function StudioPage() {
     if (!scenes.length) return;
     setPlaying(true);
     scenes.forEach(s => { if (s.imageUrl) preloadImage(s.imageUrl).catch(() => {}); });
+    // 미리보기 BGM 시작
+    if (previewBgmRef.current) {
+      previewBgmRef.current.pause();
+      previewBgmRef.current = null;
+    }
+    if (settings.bgmUrl) {
+      const bgm = new Audio(settings.bgmUrl);
+      bgm.loop = true;
+      bgm.volume = settings.bgmVolume;
+      bgm.play().catch(() => {});
+      previewBgmRef.current = bgm;
+    }
     playPreviewScene(0, scenes);
   };
 
@@ -1736,13 +1764,22 @@ export default function StudioPage() {
                     className="w-full bg-gray-800 text-white px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                 </div>
 
-                {/* 볼륨 */}
+                {/* BGM 볼륨 */}
                 <div>
-                  <label className="text-[10px] text-gray-500 mb-1 block">볼륨 {Math.round(settings.bgmVolume * 100)}%</label>
-                  <input type="range" min="0" max="0.5" step="0.05" value={settings.bgmVolume}
+                  <label className="text-[10px] text-gray-500 mb-1 block">🎵 BGM 볼륨 {Math.round(settings.bgmVolume * 100)}%</label>
+                  <input type="range" min="0" max="1" step="0.05" value={settings.bgmVolume}
                     onChange={e => setSettings(s => ({ ...s, bgmVolume: Number(e.target.value) }))}
                     className="w-full accent-indigo-500" />
                 </div>
+
+                {/* TTS 볼륨 */}
+                <div>
+                  <label className="text-[10px] text-gray-500 mb-1 block">🎙️ TTS 볼륨 {Math.round(settings.ttsVolume * 100)}%</label>
+                  <input type="range" min="0" max="1" step="0.05" value={settings.ttsVolume}
+                    onChange={e => setSettings(s => ({ ...s, ttsVolume: Number(e.target.value) }))}
+                    className="w-full accent-purple-500" />
+                </div>
+
                 <a href="https://pixabay.com/music/" target="_blank" rel="noopener noreferrer"
                   className="text-[10px] text-indigo-400 hover:underline mt-1.5 block">
                   🎵 Pixabay 무료 음악 →
