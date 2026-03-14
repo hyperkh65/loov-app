@@ -112,13 +112,13 @@ const DEFAULT_SCENE = (): Scene => ({
 
 const TTS_VOICES = [
   { id: 'ko-KR-SunHiNeural',    label: '선희 · 여성 · 밝고 친근' },
-  { id: 'ko-KR-InJoonNeural',   label: '인준 · 남성 · 차분' },
-  { id: 'ko-KR-JiMinNeural',    label: '지민 · 여성 · 활기' },
-  { id: 'ko-KR-BongJinNeural',  label: '봉진 · 남성 · 깊고 안정' },
-  { id: 'ko-KR-GookMinNeural',  label: '국민 · 남성 · 친근' },
-  { id: 'ko-KR-HyunsuNeural',   label: '현수 · 남성 · 에너지' },
-  { id: 'ko-KR-SeoHyeonNeural', label: '서현 · 여성 · 전문적' },
-  { id: 'ko-KR-YuJinNeural',    label: '유진 · 여성 · 따뜻' },
+  { id: 'ko-KR-InJoonNeural',   label: '인준 · 남성 · 따뜻하고 친근' },
+  { id: 'ko-KR-JiMinNeural',    label: '지민 · 여성 · 부드럽' },
+  { id: 'ko-KR-BongJinNeural',  label: '봉진 · 남성 · 차분·전문적' },
+  { id: 'ko-KR-GookMinNeural',  label: '국민 · 남성 · 젊고 활기찬' },
+  { id: 'ko-KR-HyunsuNeural',   label: '현수 · 남성 · 내레이션' },
+  { id: 'ko-KR-SeoHyeonNeural', label: '서현 · 여성 · 어린이' },
+  { id: 'ko-KR-YuJinNeural',    label: '유진 · 여성 · 감성적' },
 ];
 
 const CHARACTER_EMOJIS = ['🐻', '🦊', '🤖', '🐱', '🦄', '🐧', '🐼', '🐸', '🦁', '🐯'];
@@ -713,23 +713,24 @@ export default function StudioPage() {
     setFetchingImages(false);
   }, [preloadImage]);
 
-  // ── TTSMaker 음성 ──────────────────────────────────────────────────────────
+  // ── Edge-TTS (Microsoft Neural, 무료) ─────────────────────────────────────
   const playTtsMaker = useCallback(async (text: string, voiceId: string, rate: number) => {
-    // Cancel any existing TTS audio
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
       ttsAudioRef.current = null;
     }
     try {
-      const res = await fetch('/api/shorts/tts', {
+      // rate: 1.0 기준 → Edge-TTS rate는 % (-50~+100)
+      const ratePercent = Math.round((rate - 1.0) * 100);
+      const res = await fetch('/api/shorts/edge-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice_id: voiceId, speed: rate }),
+        body: JSON.stringify({ text, voice: voiceId, rate: ratePercent }),
       });
       if (!res.ok) return;
       const data = await res.json() as { audio?: string; error?: string };
       if (!data.audio) return;
-      const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+      const audio = new Audio(data.audio);
       ttsAudioRef.current = audio;
       audio.play().catch(() => {});
     } catch { /* silent fail */ }
@@ -1538,7 +1539,7 @@ export default function StudioPage() {
                     <button
                       onClick={() => setTtsMode('ttsmaker')}
                       className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${ttsMode === 'ttsmaker' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-                      Azure Neural
+                      Edge-TTS (무료)
                     </button>
                   </div>
 
