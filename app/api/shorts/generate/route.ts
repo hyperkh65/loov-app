@@ -4,7 +4,8 @@ import { getSetting } from '@/lib/get-setting';
 
 // 길이 → 장면 수
 const SCENE_MAP: Record<number, number> = { 15: 3, 30: 5, 60: 9, 120: 16, 180: 22 };
-const CHARS_PER_SEC = 5.0; // 한국어 자연 발화 속도
+const CHARS_PER_SEC = 9.5;  // 한국어 숏폼 발화 속도 (빠른 나레이션 기준)
+const CHARS_MAX_SEC = 12.0; // 최대 (매우 빠른 숏폼)
 
 const TONE_FORMULA: Record<string, string> = {
   info: `[정보형 바이럴 공식]
@@ -73,13 +74,13 @@ function buildPrompt(
 
   const lengthGuide = sceneDurations.map((sec, i) => {
     const minChar = Math.round(sec * CHARS_PER_SEC);
-    const maxChar = Math.round(sec * 6.2);
+    const maxChar = Math.round(sec * CHARS_MAX_SEC);
     const role = i === 0 ? '🔥 HOOK — 멈추게 만드는 한 방' : i === numScenes - 1 ? '🎯 PAYOFF — 기억에 남는 마무리' : `📌 전개 ${i} — 궁금증 심화 + 클리프행어`;
-    return `  장면 ${i+1} [${sec}초] ${role}\n    → 나레이션: ${minChar}~${maxChar}글자 (이 범위 벗어나면 실패)`;
+    return `  장면 ${i+1} [${sec}초] ${role}\n    → 나레이션: 최소 ${minChar}자 / 목표 ${Math.round(sec*10.5)}자 (침묵 0초, 빼곡히 채울 것)`;
   }).join('\n');
 
   const sceneTemplate = sceneDurations.map((sec, i) =>
-    `{"id":${i+1},"duration":${sec},"narration":"(구어체, ${Math.round(sec*CHARS_PER_SEC)}자 이상)","subtitle":"10자이내 핵심어","image_query":"2~3 english words","dalle_prompt":"vertical 9:16 cinematic, no text, no face"${character?.enabled && (i===1||i===Math.floor(numScenes/2))?',"character_appears":true':''}}`
+    `{"id":${i+1},"duration":${sec},"narration":"(최소 ${Math.round(sec*CHARS_PER_SEC)}자, 빠른 구어체로 빽빽하게)","subtitle":"10자이내 핵심어","image_query":"2~3 english words","dalle_prompt":"vertical 9:16 cinematic, no text, no face"${character?.enabled && (i===1||i===Math.floor(numScenes/2))?',"character_appears":true':''}}`
   ).join(',\n    ');
 
   return `당신은 대한민국 최고의 숏폼 바이럴 콘텐츠 크리에이터입니다.
@@ -100,18 +101,27 @@ ${formula}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [나레이션 황금률]
+🔴 핵심: 나레이션은 영상 내내 쉬지 않고 계속 나와야 한다. 침묵 = 시청자 이탈.
+   각 씬의 duration(초) × 9.5자 이상을 반드시 채울 것. 모자라면 실패한 스크립트임.
+
 ✅ 친구에게 카톡 음성메시지 보내듯 → "야", "근데", "솔직히", "이게 뭔말이냐면", "진짜임"
-✅ 짧은 문장 + 의도적 끊어읽기 → 리듬감 + 강조 효과
-✅ 숫자/퍼센트/구체적 사례 → 신뢰 + 충격
+✅ 빠르고 리드미컬하게 → 숨 쉬듯 이어지는 문장들, 끊김 없이
+✅ 숫자/퍼센트/구체적 사례 → 신뢰 + 충격 (예: "3개월 만에 37만원", "10명 중 8명이")
 ✅ 각 씬 끝: 다음 씬이 보고 싶게 만드는 클리프행어 ("근데 여기서 반전이 있어", "그런데 이게 전부가 아니야")
 ✅ 마지막 씬: 저장·공유·댓글 자연스럽게 유도
 
+❌ 절대 금지: 나레이션이 짧아서 씬 중간에 침묵이 생기는 것 (가장 치명적 오류)
 ❌ 절대 금지: "안녕하세요", "오늘은 ~에 대해 알아보겠습니다", "이상으로", "감사합니다"
 ❌ 절대 금지: 문어체·강의체·뉴스 앵커 톤
-❌ 절대 금지: 나레이션이 자막/이미지 설명에 그치는 것 — 감정·스토리가 있어야 함
+❌ 절대 금지: 두루뭉술한 표현 — "좋아요", "중요해요" 같은 알맹이 없는 문장
+
+[나레이션 밀도 예시]
+씬 길이 6초라면 최소 57자, 아래처럼 빽빽하게:
+"야 이거 진짜야? 나도 처음엔 말도 안 된다고 했거든. 근데 직접 해보니까 완전 달라. 이게 핵심이야."
+(57자 — 이 정도 밀도가 정상. 이보다 짧으면 다시 써야 함)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[장면별 글자 수 — 이 범위를 지켜야 TTS 싱크가 맞음]
+[장면별 나레이션 최소 글자 수 — 반드시 채워야 함, 모자라면 TTS 침묵 발생]
 ${lengthGuide}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
