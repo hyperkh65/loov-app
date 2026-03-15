@@ -39,6 +39,8 @@ const NAV_GROUPS = [
       { href: '/dashboard/shorts',             icon: '🎬', label: '숏폼 제작 1' },
       { href: '/dashboard/shorts2',            icon: '🎞',  label: '숏폼 제작 2 (Remotion)' },
       { href: '/dashboard/shorts/remove-text', icon: '✂️', label: '동영상 텍스트 제거' },
+      { href: '/dashboard/shorts/studio', icon: '🎥', label: '숏폼 제작 3 (스튜디오)' },
+      { href: '/dashboard/shorts/thumbnail', icon: '🖼️', label: '썸네일 제작' },
       { href: '/dashboard/coupang',   icon: '🛒', label: '쿠팡파트너스' },
       { href: '/dashboard/wordpress', icon: '📝', label: 'WordPress 발행' },
       { href: '/dashboard/naver',     icon: '🟢', label: '네이버 블로그' },

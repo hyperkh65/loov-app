@@ -57,6 +57,23 @@ interface BgmPreset {
   url: string;
 }
 
+interface TextOverlay {
+  id: string;
+  text: string;
+  x: number; // 0-100 (% of canvas width)
+  y: number; // 0-100 (% of canvas height)
+  fontSize: number; // px at 1080px canvas width
+  color: string;
+  fontWeight: 'normal' | 'bold' | 'black';
+  rotation: number; // degrees
+  opacity: number; // 0-1
+  bgColor: string;
+  bgOpacity: number;
+  stroke: boolean;
+  strokeColor: string;
+  fontFamily: string;
+}
+
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const IMG_EFFECTS: { v: ImageEffect; label: string; icon: string }[] = [
   { v: 'static',    label: '고정',    icon: '⬜' },
@@ -90,8 +107,14 @@ const PLATFORMS: { v: Platform; icon: string; label: string }[] = [
   { v: 'youtube', icon: '▶️', label: 'YouTube' }, { v: 'naver', icon: '🟢', label: '네이버' },
   { v: 'instagram', icon: '📸', label: 'Instagram' }, { v: 'tiktok', icon: '🎵', label: 'TikTok' },
 ];
+const PLATFORM_CANVAS: Record<Platform, { width: number; height: number; label: string; ratio: string }> = {
+  youtube:   { width: 1920, height: 1080, label: '16:9', ratio: '16/9' },
+  naver:     { width: 1080, height: 1920, label: '9:16', ratio: '9/16' },
+  instagram: { width: 1080, height: 1920, label: '9:16', ratio: '9/16' },
+  tiktok:    { width: 1080, height: 1920, label: '9:16', ratio: '9/16' },
+};
 const DEFAULT_SETTINGS: Settings = {
-  platform: 'youtube', voiceRate: 1.1, voicePitch: 1.0, voiceIdx: 0,
+  platform: 'youtube', voiceRate: 1.4, voicePitch: 1.0, voiceIdx: 0,
   bgmUrl: '', bgmVolume: 0.2, ttsVolume: 1.0,
   subtitleStyle: { position: 'bottom', textColor: '#ffffff', bgColor: 'rgba(0,0,0,0.6)', size: 'lg', bold: true, font: 'default', outline: false, strokeColor: '#000000', shadow: true },
 };
@@ -340,6 +363,45 @@ function drawCharacter(
   }
 }
 
+function drawTextOverlays(
+  ctx: CanvasRenderingContext2D,
+  overlays: TextOverlay[],
+  cw: number,
+  ch: number,
+) {
+  for (const ov of overlays) {
+    if (!ov.text) continue;
+    const x = (ov.x / 100) * cw;
+    const y = (ov.y / 100) * ch;
+    const fs = Math.round(ov.fontSize * (cw / 1080));
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate((ov.rotation * Math.PI) / 180);
+    ctx.globalAlpha = ov.opacity;
+    const weight = ov.fontWeight === 'black' ? '900' : ov.fontWeight === 'bold' ? '700' : '400';
+    ctx.font = `${weight} ${fs}px "${ov.fontFamily || 'Noto Sans KR'}", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (ov.bgOpacity > 0) {
+      const metrics = ctx.measureText(ov.text);
+      const padX = fs * 0.4, padY = fs * 0.25;
+      ctx.fillStyle = ov.bgColor;
+      ctx.globalAlpha = ov.bgOpacity;
+      ctx.fillRect(-metrics.width / 2 - padX, -fs / 2 - padY, metrics.width + padX * 2, fs + padY * 2);
+      ctx.globalAlpha = ov.opacity;
+    }
+    if (ov.stroke) {
+      ctx.strokeStyle = ov.strokeColor;
+      ctx.lineWidth = fs * 0.08;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(ov.text, 0, 0);
+    }
+    ctx.fillStyle = ov.color;
+    ctx.fillText(ov.text, 0, 0);
+    ctx.restore();
+  }
+}
+
 // ── 이미지 피커 ───────────────────────────────────────────────────────────────
 function ImagePicker({ query, dallePrompt, onSelect, onClose }: {
   query: string; dallePrompt: string;
@@ -498,10 +560,14 @@ export default function StudioPage() {
   // 캐릭터
   const [character, setCharacter] = useState<Character>(DEFAULT_CHARACTER);
 
+  // 텍스트 오버레이
+  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+
   // TTS 모드
-  const [ttsMode, setTtsMode] = useState<TtsMode>('webSpeech');
+  const [ttsMode, setTtsMode] = useState<TtsMode>('supertonic');
   const [ttsVoiceId, setTtsVoiceId] = useState('ko-KR-SunHiNeural');
-  const [supertonicVoiceId, setSupertonicVoiceId] = useState('F3');
+  const [supertonicVoiceId, setSupertonicVoiceId] = useState('F1');
   const [ttsError, setTtsError] = useState('');
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -917,6 +983,9 @@ export default function StudioPage() {
   const settingsRef = useRef<Settings>(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
 
+  const textOverlaysRef = useRef<TextOverlay[]>([]);
+  useEffect(() => { textOverlaysRef.current = textOverlays; }, [textOverlays]);
+
   // BGM 볼륨 실시간 반영
   useEffect(() => {
     if (previewBgmRef.current) {
@@ -980,6 +1049,7 @@ export default function StudioPage() {
     // 캐릭터
     animTimeRef.current += 0.016;
     drawCharacter(ctx, currentCharacter, sc, cw, ch, animTimeRef.current);
+    drawTextOverlays(ctx, textOverlaysRef.current, cw, ch);
 
     if (slideOffsetX !== 0 || slideOffsetY !== 0) {
       ctx.restore();
@@ -1135,6 +1205,7 @@ export default function StudioPage() {
   const renderSceneToCanvas = useCallback((
     ctx: CanvasRenderingContext2D, sc: Scene, f: number, scFrames: number,
     cw: number, ch: number, animTime: number, subStyle: SubtitleStyle, char: Character,
+    overlays: TextOverlay[] = [],
   ) => {
     const FPS = 30;
     const progress = f / scFrames;
@@ -1153,6 +1224,7 @@ export default function StudioPage() {
     ctx.fillStyle = grad; ctx.fillRect(0, 0, cw, ch);
     drawSubtitle(ctx, sc.subtitle, subStyle, cw, ch);
     drawCharacter(ctx, char, sc, cw, ch, animTime);
+    drawTextOverlays(ctx, overlays, cw, ch);
     if (slideOffX !== 0 || slideOffY !== 0) ctx.restore();
     if (sc.transition === 'fade' && f < TRANS_FRAMES) { ctx.fillStyle = `rgba(0,0,0,${1-tp})`; ctx.fillRect(0,0,cw,ch); }
     else if (sc.transition === 'flash' && f < TRANS_FRAMES) { ctx.fillStyle = `rgba(255,255,255,${(1-tp)*0.9})`; ctx.fillRect(0,0,cw,ch); }
@@ -1166,7 +1238,7 @@ export default function StudioPage() {
     setExporting(true); setExportProgress(0); setDownloadUrl(''); setExportExt('mp4');
 
     const FPS = 30;
-    const cw = 1080, ch = 1920;
+    const { width: cw, height: ch } = PLATFORM_CANVAS[settingsRef.current.platform];
     canvas.width = cw; canvas.height = ch;
     const ctx = canvas.getContext('2d')!;
 
@@ -1306,7 +1378,7 @@ export default function StudioPage() {
           const scFrames = Math.ceil(sceneDurSecs[scIdx] * FPS);
           for (let f = 0; f < scFrames; f++) {
             animT += 1 / FPS;
-            renderSceneToCanvas(ctx, sc, f, scFrames, cw, ch, animT, settings.subtitleStyle, character);
+            renderSceneToCanvas(ctx, sc, f, scFrames, cw, ch, animT, settings.subtitleStyle, character, textOverlays);
             const ts = Math.round(fi * (1_000_000 / FPS));
             const vf = new VideoFrame(canvas, { timestamp: ts });
             videoEnc.encode(vf, { keyFrame: fi % (FPS * 2) === 0 }); vf.close();
@@ -1370,7 +1442,7 @@ export default function StudioPage() {
       }
       for (let f = 0; f < scFrames; f++) {
         animT2 += 1 / FPS;
-        renderSceneToCanvas(ctx, sc, f, scFrames, cw, ch, animT2, settings.subtitleStyle, character);
+        renderSceneToCanvas(ctx, sc, f, scFrames, cw, ch, animT2, settings.subtitleStyle, character, textOverlays);
         frames2++;
         if (f % FPS === 0) {
           setExportProgress(20 + Math.round((frames2 / totalFrames2) * 75));
@@ -1384,7 +1456,7 @@ export default function StudioPage() {
     const webmBlob = new Blob(chunks, { type: webmMime });
     setDownloadUrl(URL.createObjectURL(webmBlob));
     setExportExt('webm'); setExportProgress(100); setExportStatus(''); setExporting(false);
-  }, [scenes, settings, character, preloadImage, ttsMode, ttsVoiceId, supertonicVoiceId, renderSceneToCanvas]);
+  }, [scenes, settings, character, textOverlays, preloadImage, ttsMode, ttsVoiceId, supertonicVoiceId, renderSceneToCanvas]);
 
   const filteredPosts = blogPosts.filter(p =>
     !blogSearch || p.title.toLowerCase().includes(blogSearch.toLowerCase()) ||
@@ -1419,6 +1491,9 @@ export default function StudioPage() {
               {p.icon} {p.label}
             </button>
           ))}
+          <span className="text-[10px] text-gray-500 bg-gray-800 px-2 py-1 rounded">
+            {PLATFORM_CANVAS[settings.platform].label}
+          </span>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-gray-500">{scenes.length}장면 · {totalDuration}초</span>
@@ -2086,6 +2161,147 @@ export default function StudioPage() {
                   className="text-[10px] text-indigo-400 hover:underline mt-1.5 block">
                   🎵 Pixabay 무료 음악 →
                 </a>
+              </div>
+
+              <div className="border-t border-gray-800" />
+
+              {/* 텍스트 오버레이 */}
+              <div>
+                <div className="flex items-center mb-2.5">
+                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">✍️ 텍스트 오버레이</div>
+                  <button
+                    onClick={() => {
+                      const newOverlay: TextOverlay = {
+                        id: `ov_${Date.now()}`,
+                        text: '텍스트',
+                        x: 50, y: 30,
+                        fontSize: 60,
+                        color: '#ffffff',
+                        fontWeight: 'bold',
+                        rotation: 0,
+                        opacity: 1,
+                        bgColor: '#000000',
+                        bgOpacity: 0,
+                        stroke: false,
+                        strokeColor: '#000000',
+                        fontFamily: 'Noto Sans KR',
+                      };
+                      setTextOverlays(prev => [...prev, newOverlay]);
+                      setSelectedOverlayId(newOverlay.id);
+                    }}
+                    className="ml-auto px-2.5 py-1 rounded-lg text-[10px] font-bold bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors">
+                    ➕ 추가
+                  </button>
+                </div>
+
+                {textOverlays.length === 0 && (
+                  <div className="text-center text-[10px] text-gray-600 py-4">텍스트 오버레이 없음</div>
+                )}
+
+                {textOverlays.map((ov) => (
+                  <div key={ov.id} className={`mb-3 p-2.5 rounded-xl border transition-all ${selectedOverlayId === ov.id ? 'border-indigo-500 bg-indigo-900/20' : 'border-gray-700 bg-gray-800/50'}`}>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <button
+                        onClick={() => setSelectedOverlayId(ov.id === selectedOverlayId ? null : ov.id)}
+                        className="flex-1 text-left text-[10px] text-gray-300 font-bold truncate">
+                        {ov.text || '(빈 텍스트)'}
+                      </button>
+                      <button
+                        onClick={() => { setTextOverlays(prev => prev.filter(o => o.id !== ov.id)); if (selectedOverlayId === ov.id) setSelectedOverlayId(null); }}
+                        className="text-gray-600 hover:text-red-400 text-xs transition-colors">✕</button>
+                    </div>
+
+                    {selectedOverlayId === ov.id && (
+                      <div className="space-y-2">
+                        {/* 텍스트 입력 */}
+                        <input
+                          value={ov.text}
+                          onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, text: e.target.value } : o))}
+                          placeholder="텍스트 입력..."
+                          className="w-full bg-gray-700 text-white px-2.5 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+
+                        {/* X 위치 */}
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-0.5 block">X 위치 {ov.x}%</label>
+                          <input type="range" min="0" max="100" step="1" value={ov.x}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, x: Number(e.target.value) } : o))}
+                            className="w-full accent-indigo-500" />
+                        </div>
+
+                        {/* Y 위치 */}
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-0.5 block">Y 위치 {ov.y}%</label>
+                          <input type="range" min="0" max="100" step="1" value={ov.y}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, y: Number(e.target.value) } : o))}
+                            className="w-full accent-indigo-500" />
+                        </div>
+
+                        {/* 폰트 크기 */}
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-0.5 block">크기 {ov.fontSize}px</label>
+                          <input type="range" min="20" max="200" step="2" value={ov.fontSize}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, fontSize: Number(e.target.value) } : o))}
+                            className="w-full accent-indigo-500" />
+                        </div>
+
+                        {/* 폰트 굵기 */}
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-1 block">굵기</label>
+                          <div className="flex gap-1">
+                            {(['normal', 'bold', 'black'] as const).map(fw => (
+                              <button key={fw}
+                                onClick={() => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, fontWeight: fw } : o))}
+                                className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${ov.fontWeight === fw ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
+                                {fw === 'normal' ? '보통' : fw === 'bold' ? '굵게' : '최굵'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 색상 */}
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <span className="text-[10px] text-gray-500">글자색</span>
+                          <input type="color" value={ov.color}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, color: e.target.value } : o))}
+                            className="w-7 h-7 rounded-lg border border-gray-700 cursor-pointer" />
+                          <span className="text-[10px] text-gray-500">외곽색</span>
+                          <input type="color" value={ov.strokeColor}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, strokeColor: e.target.value } : o))}
+                            className="w-7 h-7 rounded-lg border border-gray-700 cursor-pointer" />
+                          <button
+                            onClick={() => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, stroke: !o.stroke } : o))}
+                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${ov.stroke ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-400'}`}>
+                            외곽
+                          </button>
+                        </div>
+
+                        {/* 회전 */}
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-0.5 block">회전 {ov.rotation}°</label>
+                          <input type="range" min="-180" max="180" step="1" value={ov.rotation}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, rotation: Number(e.target.value) } : o))}
+                            className="w-full accent-indigo-500" />
+                        </div>
+
+                        {/* 투명도 */}
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-0.5 block">투명도 {Math.round(ov.opacity * 100)}%</label>
+                          <input type="range" min="0" max="1" step="0.05" value={ov.opacity}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, opacity: Number(e.target.value) } : o))}
+                            className="w-full accent-indigo-500" />
+                        </div>
+
+                        {/* 배경 투명도 */}
+                        <div>
+                          <label className="text-[10px] text-gray-500 mb-0.5 block">배경 투명도 {Math.round(ov.bgOpacity * 100)}%</label>
+                          <input type="range" min="0" max="1" step="0.05" value={ov.bgOpacity}
+                            onChange={e => setTextOverlays(prev => prev.map(o => o.id === ov.id ? { ...o, bgOpacity: Number(e.target.value) } : o))}
+                            className="w-full accent-indigo-500" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
 
             </div>
