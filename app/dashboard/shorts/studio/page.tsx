@@ -788,33 +788,36 @@ export default function StudioPage() {
       setSelectedId(newScenes[0]?.id ?? '');
       setLeftTab('scenes');
 
-      // 블로그 이미지가 부족한 씬만 Pixabay로 채우기
-      const scenesNeedingImages = newScenes.filter(s => !s.imageUrl);
-      if (scenesNeedingImages.length > 0) {
-        setTimeout(() => autoFetchImages(newScenes), 500);
-      }
+      // 이미지 없는 씬 → Pixabay/Pexels에서 자동 검색 (블로그 이미지 부족해도 자동 보완)
+      autoFetchImages(newScenes);
     } catch (e) { setGenError(String(e)); }
     finally { setGenerating(false); }
   };
 
   // ── 이미지 자동 검색 ────────────────────────────────────────────────────────
   const autoFetchImages = useCallback(async (sceneList: Scene[]) => {
+    const needImg = sceneList.filter(s => !s.imageUrl && s.imageQuery);
+    if (!needImg.length) return;
     setFetchingImages(true);
-    const updated = [...sceneList];
-    for (let i = 0; i < updated.length; i++) {
-      if (updated[i].imageUrl || !updated[i].imageQuery) continue;
-      try {
-        const res = await fetch(`/api/shorts/images?q=${encodeURIComponent(updated[i].imageQuery)}&source=pixabay&per_page=3`);
-        if (res.ok) {
-          const d = await res.json() as { images?: PixImage[] };
-          if (d.images?.[0]) {
-            updated[i] = { ...updated[i], imageUrl: d.images[0].url };
-            await preloadImage(d.images[0].url).catch(() => {});
+
+    for (const sc of needImg) {
+      let found = '';
+      // Pixabay → Pexels 순서로 시도
+      for (const source of ['pixabay', 'pexels'] as const) {
+        try {
+          const res = await fetch(`/api/shorts/images?q=${encodeURIComponent(sc.imageQuery)}&source=${source}&per_page=3`);
+          if (res.ok) {
+            const d = await res.json() as { images?: PixImage[] };
+            if (d.images?.[0]) { found = d.images[0].url; break; }
           }
-        }
-      } catch { /* continue */ }
+        } catch { /* 다음 소스 시도 */ }
+      }
+      if (found) {
+        // 씬마다 즉시 반영 (마지막에 한꺼번에 덮어쓰면 충돌 발생)
+        setScenes(prev => prev.map(s => s.id === sc.id ? { ...s, imageUrl: found } : s));
+        preloadImage(found).catch(() => {});
+      }
     }
-    setScenes([...updated]);
     setFetchingImages(false);
   }, [preloadImage]);
 
@@ -1587,7 +1590,7 @@ export default function StudioPage() {
               {fetchingImages && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-indigo-900/30 text-xs text-indigo-400">
                   <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                  이미지 자동 검색 중...
+                  Pixabay/Pexels에서 이미지 자동 검색 중...
                 </div>
               )}
               {scenes.map((sc, i) => (
