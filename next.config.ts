@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
         hostname: 'cdnjs.cloudflare.com',
         pathname: '/ajax/libs/twemoji/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'y.yarn.co',
+      },
     ],
   },
 };
