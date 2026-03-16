@@ -27,7 +27,7 @@ async function searchViaScaper(query: string): Promise<YarnClip[]> {
     `${SCRAPER_URL}/search?q=${encodeURIComponent(query)}&limit=30`,
     {
       headers: scraperHeaders(),
-      signal: AbortSignal.timeout(50000),
+      signal: AbortSignal.timeout(55000),
     }
   );
 
