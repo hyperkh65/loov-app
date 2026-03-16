@@ -352,7 +352,7 @@ export default function EnglishShortsPage() {
             <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
               {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
               {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-              <video ref={videoRef} className="w-full h-full" playsInline controls referrerPolicy="no-referrer" />
+              <video ref={videoRef} className="w-full h-full" playsInline controls />
 
               {/* 자막 CSS 오버레이 */}
               {displayClip && (activeClip?.showSubtitle ?? true) && (
