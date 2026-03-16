@@ -315,6 +315,7 @@ export default function EnglishShortsPage() {
                   <div className="relative cursor-pointer bg-gray-800 aspect-video" onClick={() => playFromGrid(clip)}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={clip.thumbnailUrl} alt={clip.text}
+                      referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }} />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/50">
@@ -350,7 +351,8 @@ export default function EnglishShortsPage() {
           <div className="p-3 border-b border-gray-800 shrink-0">
             <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
               {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-              <video ref={videoRef} className="w-full h-full" playsInline controls />
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <video ref={videoRef} className="w-full h-full" playsInline controls referrerPolicy="no-referrer" />
 
               {/* 자막 CSS 오버레이 */}
               {displayClip && (activeClip?.showSubtitle ?? true) && (
@@ -534,6 +536,7 @@ export default function EnglishShortsPage() {
                   <span className="text-[10px] text-gray-500 w-3 shrink-0">{i + 1}</span>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={ec.thumbnailUrl} alt={ec.text}
+                    referrerPolicy="no-referrer"
                     className="w-14 h-8 rounded object-cover bg-gray-700 shrink-0"
                     onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }} />
                   <div className="flex-1 min-w-0">
