@@ -48,6 +48,8 @@ export default function CCTVViewerPage() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [showRecordings, setShowRecordings] = useState(false);
   const [recFilter, setRecFilter] = useState<'all' | 'cam1' | 'cam2' | 'cctv'>('all');
+  const [selectedDate, setSelectedDate] = useState(''); // 'YYYY-MM-DD' 형식
+  const [playbackRate, setPlaybackRate] = useState(1); // 재생 속도
 
   // 재생 모달
   const [playUrl, setPlayUrl] = useState<string | null>(null);
@@ -303,6 +305,20 @@ export default function CCTVViewerPage() {
     return true;
   });
 
+  const getRecordingDate = (name: string): Date | null => {
+    const m = name.match(/_(\d{10,13})\./);
+    if (!m) return null;
+    const ts = parseInt(m[1]);
+    return new Date(ts > 9999999999 ? ts : ts * 1000);
+  };
+
+  const dateFilteredRecordings = filteredRecordings.filter(r => {
+    if (!selectedDate) return true;
+    const d = getRecordingDate(r.name);
+    if (!d) return true;
+    return d.toISOString().slice(0, 10) === selectedDate;
+  });
+
   const playRecording = async (name: string) => {
     setPlayLoading(true);
     setPlayName(name);
@@ -324,6 +340,11 @@ export default function CCTVViewerPage() {
     setPlayUrl(null);
     setPlayName('');
   };
+
+  // 재생 속도 적용
+  useEffect(() => {
+    if (playVideoRef.current) playVideoRef.current.playbackRate = playbackRate;
+  }, [playbackRate, playUrl]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -596,7 +617,7 @@ export default function CCTVViewerPage() {
               <h3 className="font-semibold text-sm">📁 저장된 녹화</h3>
               <span className="text-xs text-gray-500">({filteredRecordings.length}개)</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* 필터 탭 */}
               {(['all', 'cam1', 'cam2', 'cctv'] as const).map(f => (
                 <button key={f} onClick={() => setRecFilter(f)}
@@ -604,6 +625,16 @@ export default function CCTVViewerPage() {
                   {f === 'all' ? '전체' : f.toUpperCase()}
                 </button>
               ))}
+              {/* 날짜 필터 */}
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                className="bg-gray-800 text-gray-300 text-xs rounded-lg px-2 py-1 border border-gray-700"
+              />
+              {selectedDate && (
+                <button onClick={() => setSelectedDate('')} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
+              )}
               <button onClick={loadRecordings} className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400">🔄</button>
             </div>
           </div>
@@ -614,11 +645,51 @@ export default function CCTVViewerPage() {
             <span>📷 CAM2: 모션 감지 시 저장</span>
           </div>
 
+          {/* 타임라인 뷰 (날짜 선택 시) */}
+          {selectedDate && dateFilteredRecordings.length > 0 && (
+            <div className="px-4 py-3 border-b border-gray-800">
+              <div className="text-xs text-gray-500 mb-2">📅 {selectedDate} 타임라인</div>
+              <div className="relative h-8 bg-gray-800 rounded-lg overflow-hidden">
+                {/* 시간 눈금 */}
+                {[0, 6, 12, 18, 24].map(h => (
+                  <div key={h} className="absolute top-0 bottom-0 border-l border-gray-600/30 text-[8px] text-gray-600 pl-0.5"
+                    style={{ left: `${(h / 24) * 100}%` }}>
+                    {h > 0 && h < 24 ? `${h}시` : ''}
+                  </div>
+                ))}
+                {/* 녹화 블록 */}
+                {dateFilteredRecordings.map(r => {
+                  const d = getRecordingDate(r.name);
+                  if (!d) return null;
+                  const hourPct = ((d.getHours() * 60 + d.getMinutes()) / (24 * 60)) * 100;
+                  const widthPct = (30 / (24 * 60)) * 100; // 30초 = 0.035%
+                  return (
+                    <div
+                      key={r.name}
+                      onClick={() => playRecording(r.name)}
+                      className="absolute top-1 bottom-1 rounded-sm cursor-pointer hover:opacity-100 opacity-80"
+                      style={{
+                        left: `${hourPct}%`,
+                        width: `max(4px, ${widthPct}%)`,
+                        backgroundColor: r.name.startsWith('cam1_') ? '#3b82f6' : '#22c55e',
+                      }}
+                      title={`${d.toLocaleTimeString('ko-KR')} - ${r.name}`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex gap-2 mt-1">
+                <span className="text-[10px] flex items-center gap-1"><span className="w-2 h-2 bg-blue-500 rounded-sm inline-block"></span>CAM1</span>
+                <span className="text-[10px] flex items-center gap-1"><span className="w-2 h-2 bg-green-500 rounded-sm inline-block"></span>CAM2</span>
+              </div>
+            </div>
+          )}
+
           {/* 목록 */}
           <div className="divide-y divide-gray-800 max-h-96 overflow-y-auto">
-            {filteredRecordings.length === 0 ? (
+            {dateFilteredRecordings.length === 0 ? (
               <div className="px-4 py-8 text-center text-gray-600 text-sm">저장된 녹화 없음</div>
-            ) : filteredRecordings.map(r => {
+            ) : dateFilteredRecordings.map(r => {
               const cam = getCamLabel(r.name);
               return (
                 <div key={r.name} className="px-4 py-3 flex items-center justify-between hover:bg-gray-800/40 gap-3">
@@ -717,6 +788,17 @@ export default function CCTVViewerPage() {
                   controlsList="nodownload"
                 />
               ) : null}
+            </div>
+
+            {/* 재생 속도 컨트롤 */}
+            <div className="flex items-center gap-2 px-4 py-2 bg-gray-800/50 border-t border-gray-800">
+              <span className="text-xs text-gray-500">재생 속도:</span>
+              {[1, 2, 4, 8, 16].map(rate => (
+                <button key={rate} onClick={() => setPlaybackRate(rate)}
+                  className={`px-2 py-1 text-xs rounded ${playbackRate === rate ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
+                  {rate}x
+                </button>
+              ))}
             </div>
           </div>
         </div>

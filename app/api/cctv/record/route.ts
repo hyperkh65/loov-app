@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
+import { checkAndArchive } from '@/app/api/cctv/storage/route';
 
 export const maxDuration = 60; // Vercel 함수 최대 60초 (기본 10초로는 대용량 파일 전송 실패 가능)
 
@@ -25,6 +26,8 @@ export async function POST(req: NextRequest) {
 
     if (result.code !== 0) throw new Error(result.stderr || '저장 실패');
 
+    // 업로드 성공 응답을 먼저 보내고, 백그라운드에서 스토리지 체크
+    checkAndArchive().catch(console.error); // await 없이 fire-and-forget
     return NextResponse.json({ ok: true, filename, size: buffer.length });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

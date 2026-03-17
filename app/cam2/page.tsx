@@ -228,6 +228,17 @@ export default function Cam2Page() {
     });
     localStreamRef.current = stream;
 
+    // iOS 백그라운드 방지: 오디오를 극소 볼륨으로 출력 (페이지 살아있게)
+    try {
+      const keepAliveCtx = new AudioContext();
+      const src = keepAliveCtx.createMediaStreamSource(stream);
+      const gain = keepAliveCtx.createGain();
+      gain.gain.value = 0.001; // 거의 무음이지만 0이 아님
+      src.connect(gain);
+      gain.connect(keepAliveCtx.destination);
+      keepAliveCtx.resume().catch(() => {});
+    } catch { /* ignore */ }
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -280,6 +291,20 @@ export default function Cam2Page() {
     setViewerConnected(false);
     setPhase('lock');
   }, [stopRecording]);
+
+  // iOS 백그라운드에서 돌아왔을 때 MediaRecorder 재시작
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && isRecordingRef.current) {
+        // 돌아왔을 때 MediaRecorder가 죽어있으면 재시작
+        if (mediaRecorderRef.current?.state === 'inactive' && localStreamRef.current) {
+          startRecording(localStreamRef.current);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [startRecording]);
 
   // ── 잠금화면 ──────────────────────────────────────────
   if (phase === 'lock') {
