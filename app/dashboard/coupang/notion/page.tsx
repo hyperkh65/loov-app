@@ -71,7 +71,8 @@ export default function CoupangNotionPage() {
   // ── SNS 연결 조회 ─────────────────────────────
   useEffect(() => {
     fetch('/api/sns/connections').then(r => r.json()).then(d => {
-      setConnections(d.connections || []);
+      // API가 배열을 직접 반환
+      setConnections(Array.isArray(d) ? d : (d.connections || []));
     }).catch(() => {});
   }, []);
 
