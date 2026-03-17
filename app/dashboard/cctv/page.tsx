@@ -47,6 +47,13 @@ export default function CCTVViewerPage() {
   // 녹화 목록
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [showRecordings, setShowRecordings] = useState(false);
+  const [recFilter, setRecFilter] = useState<'all' | 'cam1' | 'cam2' | 'cctv'>('all');
+
+  // 재생 모달
+  const [playUrl, setPlayUrl] = useState<string | null>(null);
+  const [playName, setPlayName] = useState('');
+  const [playLoading, setPlayLoading] = useState(false);
+  const playVideoRef = useRef<HTMLVideoElement>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -281,6 +288,42 @@ export default function CCTVViewerPage() {
   const formatDuration = (s: number) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const formatSize = (b: number) => b < 1024*1024 ? `${(b/1024).toFixed(0)}KB` : `${(b/1024/1024).toFixed(1)}MB`;
   const formatDate = (ts: number) => new Date(ts*1000).toLocaleString('ko-KR', { month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit' });
+
+  const getCamLabel = (name: string) => {
+    if (name.startsWith('cam1_')) return { label: 'CAM1', color: 'text-blue-400 bg-blue-900/30' };
+    if (name.startsWith('cam2_')) return { label: 'CAM2', color: 'text-green-400 bg-green-900/30' };
+    return { label: 'CCTV', color: 'text-gray-400 bg-gray-700/30' };
+  };
+
+  const filteredRecordings = recordings.filter(r => {
+    if (recFilter === 'all') return true;
+    if (recFilter === 'cam1') return r.name.startsWith('cam1_');
+    if (recFilter === 'cam2') return r.name.startsWith('cam2_');
+    if (recFilter === 'cctv') return !r.name.startsWith('cam1_') && !r.name.startsWith('cam2_');
+    return true;
+  });
+
+  const playRecording = async (name: string) => {
+    setPlayLoading(true);
+    setPlayName(name);
+    setPlayUrl(null);
+    try {
+      const res = await fetch(`/api/nas/download?path=/volume1/homes/urjent/loov/movie/${encodeURIComponent(name)}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setPlayUrl(url);
+    } catch {
+      alert('영상을 불러오지 못했습니다.');
+    } finally {
+      setPlayLoading(false);
+    }
+  };
+
+  const closePlayer = () => {
+    if (playUrl) URL.revokeObjectURL(playUrl);
+    setPlayUrl(null);
+    setPlayName('');
+  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -541,42 +584,134 @@ export default function CCTVViewerPage() {
       {/* 녹화 목록 */}
       {showRecordings && (
         <div className="mx-4 mb-4 bg-gray-900 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-            <h3 className="font-semibold text-sm">📁 NAS 저장 목록</h3>
-            <button onClick={loadRecordings} className="text-xs text-gray-500 hover:text-gray-300">🔄</button>
+          {/* 헤더 */}
+          <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-sm">📁 저장된 녹화</h3>
+              <span className="text-xs text-gray-500">({filteredRecordings.length}개)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* 필터 탭 */}
+              {(['all', 'cam1', 'cam2', 'cctv'] as const).map(f => (
+                <button key={f} onClick={() => setRecFilter(f)}
+                  className={`px-2 py-1 rounded text-xs font-medium ${recFilter === f ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+                  {f === 'all' ? '전체' : f.toUpperCase()}
+                </button>
+              ))}
+              <button onClick={loadRecordings} className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400">🔄</button>
+            </div>
           </div>
-          <div className="divide-y divide-gray-800 max-h-64 overflow-y-auto">
-            {recordings.length === 0 ? (
-              <div className="px-4 py-6 text-center text-gray-600 text-sm">저장된 녹화 없음</div>
-            ) : recordings.map(r => (
-              <div key={r.name} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-800/50">
-                <div>
-                  <p className="text-xs text-gray-300 font-mono">{r.name}</p>
-                  <p className="text-xs text-gray-600">{formatDate(r.modTime)} · {formatSize(r.size)}</p>
+
+          {/* cam1 간격 안내 */}
+          <div className="px-4 py-2 bg-gray-800/50 border-b border-gray-800 text-xs text-gray-500 flex gap-4">
+            <span>📹 CAM1: 5분 단위 자동 분할 저장</span>
+            <span>📷 CAM2: 모션 감지 시 저장</span>
+          </div>
+
+          {/* 목록 */}
+          <div className="divide-y divide-gray-800 max-h-96 overflow-y-auto">
+            {filteredRecordings.length === 0 ? (
+              <div className="px-4 py-8 text-center text-gray-600 text-sm">저장된 녹화 없음</div>
+            ) : filteredRecordings.map(r => {
+              const cam = getCamLabel(r.name);
+              return (
+                <div key={r.name} className="px-4 py-3 flex items-center justify-between hover:bg-gray-800/40 gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${cam.color}`}>
+                      {cam.label}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-300 font-mono truncate">{r.name}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{formatDate(r.modTime)} · {formatSize(r.size)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* 재생 */}
+                    <button
+                      onClick={() => playRecording(r.name)}
+                      className="px-2.5 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 rounded text-xs font-medium flex items-center gap-1"
+                    >
+                      ▶ 재생
+                    </button>
+                    {/* 다운로드 */}
+                    <a
+                      href={`/api/nas/download?path=/volume1/homes/urjent/loov/movie/${encodeURIComponent(r.name)}`}
+                      download={r.name}
+                      className="px-2 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 rounded text-xs"
+                    >
+                      ⬇
+                    </a>
+                    {/* 삭제 */}
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`"${r.name}" 삭제?`)) return;
+                        await fetch('/api/cctv/record', {
+                          method: 'DELETE',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ filename: r.name }),
+                        });
+                        loadRecordings();
+                      }}
+                      className="px-2 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs"
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={`/api/nas/download?path=/volume1/homes/urjent/loov/movie/${encodeURIComponent(r.name)}`}
-                    className="text-xs px-2 py-1 bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30"
-                  >
-                    ⬇
-                  </a>
-                  <button
-                    onClick={async () => {
-                      await fetch('/api/cctv/record', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ filename: r.name }),
-                      });
-                      loadRecordings();
-                    }}
-                    className="text-xs px-2 py-1 bg-red-600/20 text-red-400 rounded hover:bg-red-600/30"
-                  >
-                    🗑
-                  </button>
-                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 재생 모달 */}
+      {(playUrl || playLoading) && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) closePlayer(); }}
+        >
+          <div className="w-full max-w-3xl bg-gray-900 rounded-2xl overflow-hidden shadow-2xl">
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${getCamLabel(playName).color}`}>
+                  {getCamLabel(playName).label}
+                </span>
+                <span className="text-xs text-gray-300 font-mono truncate">{playName}</span>
               </div>
-            ))}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <a
+                  href={playUrl || '#'}
+                  download={playName}
+                  className="px-3 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 rounded text-xs"
+                >
+                  ⬇ 다운로드
+                </a>
+                <button onClick={closePlayer} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* 비디오 */}
+            <div className="bg-black aspect-video flex items-center justify-center">
+              {playLoading ? (
+                <div className="text-center text-gray-500">
+                  <div className="text-3xl mb-3 animate-pulse">⏳</div>
+                  <p className="text-sm">영상 불러오는 중...</p>
+                  <p className="text-xs mt-1 opacity-60">파일 크기에 따라 시간이 걸릴 수 있습니다</p>
+                </div>
+              ) : playUrl ? (
+                <video
+                  ref={playVideoRef}
+                  src={playUrl}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                  controlsList="nodownload"
+                />
+              ) : null}
+            </div>
           </div>
         </div>
       )}
