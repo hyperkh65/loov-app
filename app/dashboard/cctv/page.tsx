@@ -53,6 +53,7 @@ export default function CCTVViewerPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recChunksRef = useRef<Blob[]>([]);
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
@@ -116,12 +117,21 @@ export default function CCTVViewerPage() {
     });
 
     await sbChannel.subscribe();
-    // 카메라에 연결 요청
-    sbChannel.send({ type: 'broadcast', event: 'viewer-request', payload: {} });
+    // 카메라에 연결 요청 (최초 + 3초마다 재시도 — 카메라가 늦게 켜져도 연결됨)
+    const sendRequest = () => {
+      if (pcRef.current?.connectionState !== 'connected') {
+        sbChannel.send({ type: 'broadcast', event: 'viewer-request', payload: {} });
+      } else {
+        if (retryTimerRef.current) clearInterval(retryTimerRef.current);
+      }
+    };
+    sendRequest();
+    retryTimerRef.current = setInterval(sendRequest, 3000);
   }, [selectedCam]);
 
   const disconnect = useCallback(() => {
     stopRecording();
+    if (retryTimerRef.current) clearInterval(retryTimerRef.current);
     pcRef.current?.close();
     channelRef.current?.unsubscribe();
     audioCtxRef.current?.close();
