@@ -17,6 +17,25 @@ function isVideoUrl(url: string): boolean {
   return /\.(mp4|mov|avi|webm)(\?|$)/i.test(url);
 }
 
+/** Threads child 컨테이너가 FINISHED 될 때까지 폴링 (최대 30초) */
+async function waitThreadsContainerFinished(containerId: string, accessToken: string): Promise<boolean> {
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const res = await fetch(
+        `https://graph.threads.net/v1.0/${containerId}?fields=status,error_message&access_token=${accessToken}`
+      );
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (data.status === 'FINISHED') return true;
+      if (data.status === 'ERROR') return false;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 // ── Twitter 미디어 업로드 (v1.1 simple upload) ────────
 
 export async function uploadMediaToTwitter(accessToken: string, mediaUrl: string): Promise<string> {
@@ -128,9 +147,20 @@ export async function postToThreadsWithMedia(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ media_type: 'IMAGE', image_url: url, is_carousel_item: true, access_token: accessToken }),
       });
-      if (cr.ok) childIds.push((await cr.json()).id);
+      if (!cr.ok) continue;
+      const { id: childId } = await cr.json();
+      // Threads 스펙상 child 컨테이너가 FINISHED 상태가 될 때까지 대기 필요
+      const ready = await waitThreadsContainerFinished(childId, accessToken);
+      if (ready) childIds.push(childId);
     }
-    containerBody = { media_type: 'CAROUSEL', children: childIds.join(','), text: content.substring(0, 500), access_token: accessToken };
+    if (childIds.length === 0) {
+      // 이미지가 모두 실패하면 텍스트로 폴백
+      containerBody = { media_type: 'TEXT', text: content.substring(0, 500), access_token: accessToken };
+    } else if (childIds.length === 1) {
+      containerBody = { media_type: 'IMAGE', image_url: mediaUrls[0], text: content.substring(0, 500), access_token: accessToken };
+    } else {
+      containerBody = { media_type: 'CAROUSEL', children: childIds.join(','), text: content.substring(0, 500), access_token: accessToken };
+    }
   } else {
     containerBody = { media_type: 'TEXT', text: content.substring(0, 500), access_token: accessToken };
   }
