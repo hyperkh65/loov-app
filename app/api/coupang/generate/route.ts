@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import { getSetting } from '@/lib/get-setting';
 import type { Platform } from '@/lib/sns/platforms';
 
 const CHAR_LIMIT: Record<string, number> = {
@@ -82,15 +83,9 @@ export async function POST(req: NextRequest) {
   if (!productName || !platforms?.length)
     return NextResponse.json({ error: '상품명과 플랫폼은 필수입니다' }, { status: 400 });
 
-  // notion_connections에서 OpenAI 키 가져오기
-  const { data: conn } = await supabase
-    .from('notion_connections')
-    .select('openai_api_key')
-    .eq('user_id', user.id)
-    .single();
-
-  const openaiKey = conn?.openai_api_key?.trim() || process.env.OPENAI_API_KEY || '';
-  if (!openaiKey) return NextResponse.json({ error: 'OpenAI API 키가 없습니다. WordPress 설정에서 입력하세요.' }, { status: 400 });
+  // 대시보드 설정(app_settings)에서 OpenAI 키 가져오기
+  const openaiKey = await getSetting('OPENAI_API_KEY');
+  if (!openaiKey) return NextResponse.json({ error: 'OpenAI API 키가 없습니다. 설정 페이지에서 입력하세요.' }, { status: 400 });
 
   const contents: Record<string, string> = {};
   for (const platform of platforms as Platform[]) {
