@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { nasExec } from '@/lib/nas-ssh';
+import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 
 const MOVIE_DIR = '/volume1/homes/urjent/loov/movie';
 
-// POST: 녹화 영상 청크 저장
+// POST: 녹화 영상 청크 저장 (stdin pipe 방식 — shell 인수 길이 제한 없음)
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
@@ -13,12 +13,12 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: 'file 필요' }, { status: 400 });
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const base64 = buffer.toString('base64');
     const destPath = `${MOVIE_DIR}/${filename}`;
 
-    // Python3로 base64 디코딩 후 저장 (바이너리 안전)
-    const result = await nasExec(
-      `python3 -c "import base64; open('${destPath}','wb').write(base64.b64decode('${base64}'))"`
+    // 바이너리를 stdin으로 pipe → python3가 직접 파일 저장
+    const result = await nasExecWithStdin(
+      `python3 -c "import sys; open('${destPath}','wb').write(sys.stdin.buffer.read())"`,
+      buffer
     );
 
     if (result.code !== 0) throw new Error(result.stderr || '저장 실패');
