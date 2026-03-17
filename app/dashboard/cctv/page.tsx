@@ -610,7 +610,7 @@ export default function CCTVViewerPage() {
 
           {/* cam1 간격 안내 */}
           <div className="px-4 py-2 bg-gray-800/50 border-b border-gray-800 text-xs text-gray-500 flex gap-4">
-            <span>📹 CAM1: 5분 단위 자동 분할 저장</span>
+            <span>📹 CAM1: 30초 단위 자동 분할 저장</span>
             <span>📷 CAM2: 모션 감지 시 저장</span>
           </div>
 
