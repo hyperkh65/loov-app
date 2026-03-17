@@ -71,8 +71,8 @@ export async function POST(req: NextRequest) {
   if (!productName || !affiliateUrl || !platforms?.length)
     return NextResponse.json({ error: '상품명, 제휴링크, 플랫폼은 필수입니다' }, { status: 400 });
 
-  // 첫 번째 이미지만 첨부
-  const firstImage: string[] = imageUrls?.[0] ? [imageUrls[0]] : [];
+  // 이미지 전체 첨부 (최대 5개, 플랫폼 제한 내)
+  const allImages: string[] = (imageUrls || []).filter(Boolean).slice(0, 5);
   const commentText = `🛒 구매하러 가기 👇\n${affiliateUrl}\n\n${COUPANG_DISCLOSURE}`;
 
   const results: { platform: string; success: boolean; content?: string; error?: string }[] = [];
@@ -98,10 +98,10 @@ export async function POST(req: NextRequest) {
         || await generateHookContent(productName, price || 0, discountRate || 0, firstReview || '', platform, aiApiKey);
       generatedContent[platform] = content;
 
-      // 메인 포스트 (첫 번째 이미지만 첨부)
+      // 메인 포스트 (이미지 전체 첨부)
       const { id: platformPostId } = await postToPlatformWithMedia(
         platform, conn.access_token, conn.platform_user_id || '',
-        content, firstImage,
+        content, allImages,
       );
       postIds[platform] = platformPostId;
 
