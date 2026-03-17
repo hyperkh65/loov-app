@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 
+export const maxDuration = 60; // Vercel 함수 최대 60초 (기본 10초로는 대용량 파일 전송 실패 가능)
+
 const MOVIE_DIR = '/volume1/homes/urjent/loov/movie';
 
 // POST: 녹화 영상 청크 저장 (stdin pipe 방식 — shell 인수 길이 제한 없음)
