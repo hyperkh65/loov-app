@@ -9,7 +9,7 @@ interface NasFile {
   modTime: number;
 }
 
-const ROOT = '/volume1';
+const ROOT = '/volume1/homes/urjent/loov';
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-';
@@ -221,6 +221,7 @@ export default function NasPage() {
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 flex-wrap">
         <h1 className="text-base font-bold text-gray-900 flex items-center gap-2">
           🖥️ <span>시놀로지 NAS</span>
+          <span className="text-xs text-gray-400 font-normal">(loov 폴더)</span>
         </h1>
         <div className="h-4 w-px bg-gray-200" />
         {/* breadcrumb */}

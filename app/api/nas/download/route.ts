@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFileAsBase64 } from '@/lib/nas-sftp';
 import path from 'path';
 
+const NAS_ROOT = '/volume1/homes/urjent/loov';
+
 export async function GET(req: NextRequest) {
-  const filePath = new URL(req.url).searchParams.get('path') || '';
-  if (!filePath) return NextResponse.json({ error: 'path 필요' }, { status: 400 });
+  const raw = new URL(req.url).searchParams.get('path') || '';
+  const filePath = raw.replace(/\.\.+/g, '');
+  if (!filePath || !filePath.startsWith(NAS_ROOT))
+    return NextResponse.json({ error: '허용된 경로 외부 접근 불가' }, { status: 403 });
 
   try {
     const base64 = await readFileAsBase64(filePath);
