@@ -266,8 +266,6 @@ export default function Cam1Page() {
           ))}
         </div>
 
-        {isStreaming && <div className="absolute w-2 h-2 rounded-full bg-green-400" style={{ top: 'max(0.75rem, env(safe-area-inset-top))', right: '5rem' }} />}
-        {isRecording && <div className="absolute w-2 h-2 rounded-full bg-red-400 animate-pulse" style={{ top: 'max(0.75rem, env(safe-area-inset-top))', right: '6rem' }} />}
       </div>
     );
   }
@@ -302,23 +300,19 @@ export default function Cam1Page() {
 
   // ── 활성화 (완전 검은 화면) ───────────────────────────
   return (
-    <div className="fixed inset-0 bg-black select-none" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-      {/* 극도로 작은 상태 표시 — 거의 안 보임 */}
-      <div className="absolute flex items-center gap-1.5"
-        style={{ top: 'max(0.5rem, env(safe-area-inset-top))', left: '0.75rem' }}>
-        {isStreaming && <div className="w-1.5 h-1.5 rounded-full bg-green-600 opacity-40" />}
-        {isRecording && <div className="w-1.5 h-1.5 rounded-full bg-red-600 opacity-40 animate-pulse" />}
-        {viewerConnected && <div className="w-1.5 h-1.5 rounded-full bg-blue-600 opacity-40" />}
-      </div>
-
-      {/* 중지 버튼 — 오른쪽 하단 아주 작게 */}
+    <div className="fixed inset-0 bg-black select-none">
+      {/* 완전 투명 중지 터치 영역 — 우하단 모서리 2번 탭 */}
       <button
         onClick={stopCamera}
-        className="absolute text-white/10 text-xs"
-        style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))', right: '1rem' }}
-      >
-        ■
-      </button>
+        className="absolute opacity-0"
+        style={{
+          bottom: 'max(1.5rem, env(safe-area-inset-bottom))',
+          right: '1rem',
+          width: '3rem',
+          height: '3rem',
+        }}
+        aria-hidden="true"
+      />
     </div>
   );
 }
