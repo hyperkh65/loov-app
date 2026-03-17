@@ -464,34 +464,40 @@ export default function CCTVViewerPage() {
             </button>
           </div>
 
-          {/* 녹화 컨트롤 */}
-          <div className="bg-gray-900 rounded-xl p-4 flex items-center gap-3 flex-wrap">
-            {!recording ? (
-              <button onClick={startRecording} disabled={status !== 'connected'}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 rounded-lg text-sm font-semibold transition-colors">
-                <div className="w-3 h-3 rounded-full bg-white" />
-                녹화 시작
-              </button>
-            ) : (
-              <button onClick={stopRecording}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-semibold">
-                <div className="w-3 h-3 bg-white" />
-                녹화 중지
-              </button>
-            )}
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <div onClick={() => setAutoRecord(v => !v)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${autoRecord ? 'bg-orange-500' : 'bg-gray-600'}`}>
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${autoRecord ? 'left-5.5' : 'left-0.5'}`} />
+          {/* 라이브 스트림 수동 녹화 컨트롤 */}
+          <div className="bg-gray-900 rounded-xl p-3 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-xs text-gray-500 font-medium">🖥 뷰어 측 라이브 녹화</div>
+              <div className="text-[10px] text-gray-600 bg-gray-800 px-2 py-0.5 rounded">
+                ※ cam1/cam2 자체 저장과 별개
               </div>
-              <span className="text-xs text-gray-400">자동 녹화</span>
-            </label>
-
-            <button onClick={() => setShowRecordings(v => !v)}
-              className="ml-auto px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300">
-              📁 저장 목록 ({recordings.length})
-            </button>
+              <button onClick={() => setShowRecordings(v => !v)}
+                className="ml-auto px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300">
+                📁 저장 목록 ({recordings.length})
+              </button>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              {!recording ? (
+                <button onClick={startRecording} disabled={status !== 'connected'}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 rounded-lg text-xs font-semibold transition-colors">
+                  <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                  라이브 녹화 시작
+                </button>
+              ) : (
+                <button onClick={stopRecording}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold">
+                  <div className="w-2.5 h-2.5 bg-white" />
+                  라이브 녹화 중지 {formatDuration(recDuration)}
+                </button>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <div onClick={() => setAutoRecord(v => !v)}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${autoRecord ? 'bg-orange-500' : 'bg-gray-600'}`}>
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${autoRecord ? 'left-4.5' : 'left-0.5'}`} />
+                </div>
+                <span className="text-xs text-gray-400">감지 시 자동</span>
+              </label>
+            </div>
           </div>
         </div>
 
