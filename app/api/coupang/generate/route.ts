@@ -8,11 +8,11 @@ const CHAR_LIMIT: Record<string, number> = {
 };
 
 const PLATFORM_STYLE: Record<string, string> = {
-  threads: '짧고 강렬한 문장. 줄바꿈으로 호흡. 반말 구어체.',
-  twitter: '한 방에 꽂히는 한 줄. 해시태그 2~3개.',
-  instagram: '감성적 일상 구어체. 이모지 풍부. 해시태그 10개 이내.',
-  facebook: '지인한테 말하듯 자연스럽게. 정보 포함.',
-  linkedin: '가치 중심. 약간 전문적 톤.',
+  threads: '줄바꿈으로 리듬감. 2~4줄 짧은 문장. 이모지 1~2개 포인트만.',
+  twitter: '한 방에 꽂히는 한 줄 + 해시태그 2~3개. 군더더기 없이.',
+  instagram: '감각적 구어체. 이모지 풍부. 해시태그 8~10개.',
+  facebook: '친한 친구에게 카톡으로 알려주듯. 자연스럽게.',
+  linkedin: '가치 중심 추천. 전문적이지만 딱딱하지 않게.',
 };
 
 async function generateHookContent(
@@ -25,27 +25,28 @@ async function generateHookContent(
   const limit = CHAR_LIMIT[platform] || 500;
   const style = PLATFORM_STYLE[platform] || '자연스러운 SNS 구어체';
 
-  const systemPrompt = `너는 SNS에 일상적인 글을 올리는 평범한 사람이야.
-절대 금지:
-- "후기", "리뷰", "홍보", "제품", "광고", "추천드립니다" 같은 단어
-- 따옴표("") 사용
-- "구매했습니다", "사용해봤습니다" 같은 딱딱한 표현
-- AI가 쓴 티 나는 문장
+  const systemPrompt = `너는 온라인 MD야. 상품을 누구보다 잘 알고, 실제 사용한 사람의 경험에서 가장 핵심적인 한 줄을 뽑아내는 능력이 있어.
 
-글쓰기 규칙:
+절대 쓰면 안 되는 단어:
+- 후기, 리뷰, 상품평, 홍보, 광고, 추천드립니다, 구매했습니다, 사용해봤습니다
+- "좋은 제품입니다", "만족스럽습니다" 같은 공허한 말
+
+글쓰기 원칙:
+- 첫 줄이 전부야. 읽자마자 "어? 나 이거 필요한데?" 또는 "헐 진짜?" 하게 만들어
+- 실제 경험에서 나온 구체적 포인트를 첫 줄로 (막연한 표현 금지)
+- "솔직히", "진짜로", "이거 왜 진작에", "이 가격에 이게?" 같은 톤
+- 가격은 자연스럽게 — 놀라운 가성비 느낌으로
+- 사고 싶어지는 이유 하나만 명확하게
+- 링크는 댓글에 달 거니까 본문에 절대 넣지 마
 - ${style}
-- 진짜 내가 쓴 것처럼 자연스럽고 구어체로
-- 첫 문장에서 바로 공감이나 궁금증을 유발
-- 가격 정보는 자연스럽게 녹여서
-- 이모지 적극 활용해서 읽기 편하게
-- 구매링크는 댓글에 따로 달 거니까 본문에 절대 넣지 마
-- ${limit}자 이내. 글만 출력. 설명 없이.`;
+- ${limit}자 이내. 글만 출력.`;
 
   const userPrompt = `상품: ${productName}
 가격: ${price.toLocaleString()}원
-실제 구매자 경험: ${reviewText || '써보니까 진짜 좋았음'}
+실제 구매자 경험 (여기서 핵심만 뽑아내):
+"${(reviewText || '완전 만족').slice(0, 400)}"
 
-위 정보를 바탕으로 ${platform}에 올릴 글 써줘.`;
+${platform}용 글 써줘.`;
 
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -69,8 +70,9 @@ async function generateHookContent(
     if (text) return text;
   } catch { /* fallback */ }
 
-  // fallback
-  return `${productName}\n\n${price.toLocaleString()}원인데 완전 득템 💸\n\n링크는 댓글에 👇`;
+  return reviewText
+    ? `${reviewText.slice(0, 60).trim()}...\n\n${productName}\n${price.toLocaleString()}원\n\n👇댓글`
+    : `${productName}\n${price.toLocaleString()}원\n\n링크 댓글에 👇`;
 }
 
 export async function POST(req: NextRequest) {
@@ -83,7 +85,6 @@ export async function POST(req: NextRequest) {
   if (!productName || !platforms?.length)
     return NextResponse.json({ error: '상품명과 플랫폼은 필수입니다' }, { status: 400 });
 
-  // 대시보드 설정(app_settings)에서 OpenAI 키 가져오기
   const openaiKey = await getSetting('OPENAI_API_KEY');
   if (!openaiKey) return NextResponse.json({ error: 'OpenAI API 키가 없습니다. 설정 페이지에서 입력하세요.' }, { status: 400 });
 
