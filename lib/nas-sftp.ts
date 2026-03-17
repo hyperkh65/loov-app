@@ -1,125 +1,75 @@
-/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
-const { Client } = require('ssh2');
+/**
+ * NAS 파일 작업 - SSH exec 방식 (n8n과 동일, Vercel에서 검증됨)
+ * SFTP는 Synology 방화벽이 외부 chroot 제한하는 경우 있어서 SSH exec로 대체
+ */
+import { nasExec } from './nas-ssh';
 
 export interface SFTPFile {
   name: string;
   isDir: boolean;
   size: number;
-  modTime: number; // unix timestamp
+  modTime: number;
 }
 
-function getSFTP(): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const conn = new Client();
-    conn.on('ready', () => {
-      conn.sftp((err: any, sftp: any) => {
-        if (err) { conn.end(); return reject(err); }
-        // attach cleanup
-        sftp._conn = conn;
-        sftp.close = () => conn.end();
-        resolve(sftp);
-      });
+// ls -la --time-style=+%s 출력 파싱
+function parseLsOutput(raw: string): SFTPFile[] {
+  const lines = raw.split('\n').filter(Boolean);
+  const files: SFTPFile[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('total') || line.includes(' . ') || line.includes(' .. ')) continue;
+    // 형식: drwxrwxrwx+ 1 owner group size timestamp name
+    const m = line.match(/^([d\-l])[rwxst+\-]{9}[\+@\.]?\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+(.+)$/);
+    if (!m) continue;
+    const name = m[4].trim();
+    if (name.startsWith('@') || name === '.eaDir') continue;
+    files.push({
+      name,
+      isDir: m[1] === 'd',
+      size: parseInt(m[2]) || 0,
+      modTime: parseInt(m[3]) || 0,
     });
-    conn.on('error', reject);
-    conn.connect({
-      host: process.env.NAS_SSH_HOST || 'hy64.synology.me',
-      port: parseInt(process.env.NAS_SSH_PORT || '22'),
-      username: process.env.NAS_SSH_USER || 'urjent',
-      password: process.env.NAS_SSH_PASSWORD || 'Aa050677##7759',
-      readyTimeout: 10000,
-    });
+  }
+
+  return files.sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    return a.name.localeCompare(b.name, 'ko');
   });
 }
 
-// volume1 루트가 SFTP의 '.'이므로, /volume1/xxx → xxx 로 매핑
-function toSFTPPath(path: string): string {
-  // path는 항상 /로 시작하는 절대경로 형태로 받음
-  // /volume1 prefix 제거, leading slash 제거
-  const normalized = path.replace(/^\/volume1/, '').replace(/^\//, '') || '.';
-  return normalized;
-}
-
 export async function listFiles(path: string): Promise<SFTPFile[]> {
-  const sftp = await getSFTP();
-  try {
-    return await new Promise((resolve, reject) => {
-      sftp.readdir(toSFTPPath(path), (err: any, list: any[]) => {
-        if (err) return reject(err);
-        const files: SFTPFile[] = list
-          .filter(f => !f.filename.startsWith('@') && f.filename !== '.eaDir')
-          .map(f => ({
-            name: f.filename,
-            isDir: f.longname.startsWith('d'),
-            size: f.attrs.size || 0,
-            modTime: f.attrs.mtime || 0,
-          }))
-          .sort((a, b) => {
-            if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-            return a.name.localeCompare(b.name, 'ko');
-          });
-        resolve(files);
-      });
-    });
-  } finally {
-    sftp.close();
-  }
+  const result = await nasExec(`ls -la --time-style=+%s "${path}" 2>&1`);
+  if (result.code !== 0) throw new Error(result.stdout || result.stderr || 'ls 실패');
+  return parseLsOutput(result.stdout);
 }
 
 export async function createFolder(path: string): Promise<void> {
-  const sftp = await getSFTP();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      sftp.mkdir(toSFTPPath(path), (err: any) => err ? reject(err) : resolve());
-    });
-  } finally {
-    sftp.close();
-  }
+  const result = await nasExec(`mkdir -p "${path}"`);
+  if (result.code !== 0) throw new Error(result.stderr || '폴더 생성 실패');
 }
 
 export async function deleteItem(path: string, isDir: boolean): Promise<void> {
-  const sftp = await getSFTP();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      if (isDir) {
-        sftp.rmdir(toSFTPPath(path), (err: any) => err ? reject(err) : resolve());
-      } else {
-        sftp.unlink(toSFTPPath(path), (err: any) => err ? reject(err) : resolve());
-      }
-    });
-  } finally {
-    sftp.close();
-  }
+  const cmd = isDir ? `rm -rf "${path}"` : `rm -f "${path}"`;
+  const result = await nasExec(cmd);
+  if (result.code !== 0) throw new Error(result.stderr || '삭제 실패');
 }
 
 export async function renameItem(oldPath: string, newPath: string): Promise<void> {
-  const sftp = await getSFTP();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      sftp.rename(toSFTPPath(oldPath), toSFTPPath(newPath), (err: any) => err ? reject(err) : resolve());
-    });
-  } finally {
-    sftp.close();
-  }
+  const result = await nasExec(`mv "${oldPath}" "${newPath}"`);
+  if (result.code !== 0) throw new Error(result.stderr || '이름 변경 실패');
 }
 
-export async function readFileStream(path: string): Promise<NodeJS.ReadableStream> {
-  const sftp = await getSFTP();
-  const stream = sftp.createReadStream(toSFTPPath(path));
-  stream.on('close', () => sftp.close());
-  stream.on('error', () => sftp.close());
-  return stream;
+// 다운로드: base64로 인코딩해서 가져옴 (바이너리 안전)
+export async function readFileAsBase64(path: string): Promise<string> {
+  const result = await nasExec(`base64 "${path}"`);
+  if (result.code !== 0) throw new Error(result.stderr || '파일 읽기 실패');
+  return result.stdout;
 }
 
-export async function writeFileStream(path: string, data: Buffer): Promise<void> {
-  const sftp = await getSFTP();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const ws = sftp.createWriteStream(toSFTPPath(path));
-      ws.on('close', resolve);
-      ws.on('error', reject);
-      ws.end(data);
-    });
-  } finally {
-    sftp.close();
-  }
+// 업로드: base64 인코딩 후 SSH로 전송
+export async function writeFileFromBase64(path: string, base64Data: string): Promise<void> {
+  // 큰따옴표 안에 base64 데이터 넣기 (개행 제거)
+  const data = base64Data.replace(/\s+/g, '');
+  const result = await nasExec(`echo "${data}" | base64 -d > "${path}"`);
+  if (result.code !== 0) throw new Error(result.stderr || '파일 쓰기 실패');
 }

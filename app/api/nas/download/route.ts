@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFileStream } from '@/lib/nas-sftp';
+import { readFileAsBase64 } from '@/lib/nas-sftp';
 import path from 'path';
 
 export async function GET(req: NextRequest) {
@@ -7,25 +7,16 @@ export async function GET(req: NextRequest) {
   if (!filePath) return NextResponse.json({ error: 'path 필요' }, { status: 400 });
 
   try {
-    const stream = await readFileStream(filePath);
+    const base64 = await readFileAsBase64(filePath);
+    const buffer = Buffer.from(base64.replace(/\s+/g, ''), 'base64');
     const filename = path.basename(filePath);
-
-    // Node.js readable stream → Web ReadableStream 변환
-    const readable = new ReadableStream({
-      start(controller) {
-        (stream as NodeJS.ReadableStream).on('data', (chunk: Buffer) => {
-          controller.enqueue(new Uint8Array(chunk));
-        });
-        (stream as NodeJS.ReadableStream).on('end', () => controller.close());
-        (stream as NodeJS.ReadableStream).on('error', (err: Error) => controller.error(err));
-      },
-    });
-
     const encodedFilename = encodeURIComponent(filename);
-    return new NextResponse(readable, {
+
+    return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/octet-stream',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
+        'Content-Length': String(buffer.length),
       },
     });
   } catch (e) {

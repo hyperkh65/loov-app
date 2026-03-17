@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFileStream } from '@/lib/nas-sftp';
+import { writeFileFromBase64 } from '@/lib/nas-sftp';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,8 +12,9 @@ export async function POST(req: NextRequest) {
     for (const file of files) {
       try {
         const buffer = Buffer.from(await file.arrayBuffer());
+        const base64 = buffer.toString('base64');
         const destPath = dir.replace(/\/$/, '') + '/' + file.name;
-        await writeFileStream(destPath, buffer);
+        await writeFileFromBase64(destPath, base64);
         results.push({ name: file.name, ok: true });
       } catch (e) {
         results.push({ name: file.name, ok: false, error: String(e) });
@@ -25,5 +26,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
-
-export const config = { api: { bodyParser: false } };
