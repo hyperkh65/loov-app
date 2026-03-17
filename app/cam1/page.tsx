@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 const CCTV_PIN = process.env.NEXT_PUBLIC_CCTV_PIN || '0609';
 const CHANNEL = 'cctv-cam1';
 const CAM_ID = 'cam1';
-const CHUNK_MS = 5 * 60 * 1000;
+const CHUNK_MS = 60 * 1000; // 1분 청크 (iOS 업로드 한계 고려)
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -76,33 +76,51 @@ export default function Cam1Page() {
     } catch { /* ignore */ }
   };
 
-  const flushChunk = useCallback(async (blob: Blob, ts: number) => {
+  // iOS Safari는 webm 미지원 → mp4 우선 시도
+  const getSupportedMimeType = () => {
+    const types = [
+      'video/mp4;codecs=avc1,mp4a.40.2', // iOS Safari (H.264 + AAC)
+      'video/mp4',                         // iOS Safari 폴백
+      'video/webm;codecs=vp9,opus',        // Chrome/Android
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
+  };
+
+  const flushChunk = useCallback(async (blob: Blob, ts: number, ext: string) => {
     if (blob.size < 1000) return;
     try {
-      const filename = `${CAM_ID}_${ts}.webm`;
+      const filename = `${CAM_ID}_${ts}.${ext}`;
       const form = new FormData();
       form.append('file', blob, filename);
       form.append('filename', filename);
-      await fetch('/api/cctv/record', { method: 'POST', body: form });
-    } catch { /* ignore */ }
+      const res = await fetch('/api/cctv/record', { method: 'POST', body: form });
+      if (!res.ok) console.error('upload failed', await res.text());
+    } catch (e) { console.error('flushChunk error', e); }
   }, []);
 
   const startChunk = useCallback((stream: MediaStream) => {
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-      ? 'video/webm;codecs=vp9,opus'
-      : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-        ? 'video/webm;codecs=vp8,opus'
-        : 'video/webm';
-    const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
+    const mimeType = getSupportedMimeType();
+    const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+    let mr: MediaRecorder;
+    try {
+      mr = mimeType
+        ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_500_000 })
+        : new MediaRecorder(stream, { videoBitsPerSecond: 1_500_000 });
+    } catch (e) {
+      console.error('MediaRecorder 생성 실패', e);
+      return;
+    }
     mediaRecorderRef.current = mr;
     recChunksRef.current = [];
     const startTs = Date.now();
 
     mr.ondataavailable = (e) => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
     mr.onstop = () => {
-      const blob = new Blob(recChunksRef.current, { type: 'video/webm' });
+      const blob = new Blob(recChunksRef.current, { type: mimeType || 'video/webm' });
       recChunksRef.current = [];
-      flushChunk(blob, startTs);
+      flushChunk(blob, startTs, ext);
       if (isRecordingRef.current) startChunk(stream);
     };
 

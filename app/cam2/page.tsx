@@ -76,15 +76,27 @@ export default function Cam2Page() {
     } catch { /* ignore */ }
   };
 
-  const flushChunk = useCallback(async (blob: Blob, ts: number) => {
+  const getSupportedMimeType = () => {
+    const types = [
+      'video/mp4;codecs=avc1,mp4a.40.2',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
+  };
+
+  const flushChunk = useCallback(async (blob: Blob, ts: number, ext: string) => {
     if (blob.size < 1000) return;
     try {
-      const filename = `${CAM_ID}_${ts}.webm`;
+      const filename = `${CAM_ID}_${ts}.${ext}`;
       const form = new FormData();
       form.append('file', blob, filename);
       form.append('filename', filename);
-      await fetch('/api/cctv/record', { method: 'POST', body: form });
-    } catch { /* ignore */ }
+      const res = await fetch('/api/cctv/record', { method: 'POST', body: form });
+      if (!res.ok) console.error('upload failed', await res.text());
+    } catch (e) { console.error('flushChunk error', e); }
   }, []);
 
   const startRecording = useCallback((stream: MediaStream) => {
@@ -92,21 +104,28 @@ export default function Cam2Page() {
     isRecordingRef.current = true;
     setIsRecording(true);
 
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-      ? 'video/webm;codecs=vp9,opus'
-      : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-        ? 'video/webm;codecs=vp8,opus'
-        : 'video/webm';
-    const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 3_000_000 });
+    const mimeType = getSupportedMimeType();
+    const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+    let mr: MediaRecorder;
+    try {
+      mr = mimeType
+        ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_500_000 })
+        : new MediaRecorder(stream, { videoBitsPerSecond: 1_500_000 });
+    } catch (e) {
+      console.error('MediaRecorder 생성 실패', e);
+      isRecordingRef.current = false;
+      setIsRecording(false);
+      return;
+    }
     mediaRecorderRef.current = mr;
     recChunksRef.current = [];
     recStartTsRef.current = Date.now();
 
     mr.ondataavailable = (e) => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
     mr.onstop = () => {
-      const blob = new Blob(recChunksRef.current, { type: 'video/webm' });
+      const blob = new Blob(recChunksRef.current, { type: mimeType || 'video/webm' });
       recChunksRef.current = [];
-      flushChunk(blob, recStartTsRef.current);
+      flushChunk(blob, recStartTsRef.current, ext);
       isRecordingRef.current = false;
       setIsRecording(false);
     };
