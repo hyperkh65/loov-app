@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { n8nCli, n8nQuery } from '@/lib/nas-ssh';
 
-// PATCH: 워크플로우 활성화/비활성화
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { active } = await req.json();
-    const { id } = params;
+    const { id } = await params;
 
     const result = await n8nCli(`update:workflow --id=${id} --active=${active}`);
 
@@ -25,10 +24,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-// GET: 단일 워크플로우 정보
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const result = await n8nQuery(
       `SELECT id, name, active FROM workflow_entity WHERE id='${id}'`
     );
