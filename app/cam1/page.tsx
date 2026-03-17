@@ -3,7 +3,7 @@
 /**
  * CAM1 - 계속 녹화 카메라 (아이폰 잠금화면 위장)
  * 활성화: 시계 3번 빠르게 탭 → PIN 입력
- * 기능: WebRTC 스트리밍 + 5분 단위 NAS 자동 녹화
+ * 기능: WebRTC 스트리밍 + 5분 단위 NAS 자동 녹화 (1080p 고화질)
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -12,11 +12,25 @@ import { createClient } from '@supabase/supabase-js';
 const CCTV_PIN = process.env.NEXT_PUBLIC_CCTV_PIN || '0609';
 const CHANNEL = 'cctv-cam1';
 const CAM_ID = 'cam1';
-const CHUNK_MS = 5 * 60 * 1000; // 5분 청크
+const CHUNK_MS = 5 * 60 * 1000;
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
+
+// 전체화면 진입 (iOS Safari는 미지원 → 홈화면 추가 안내)
+function requestFullscreen() {
+  const el = document.documentElement;
+  if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
+}
+
+// 홈 화면에서 실행 중인지 (iOS PWA standalone)
+function isStandalone() {
+  return typeof window !== 'undefined' &&
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
 
 export default function Cam1Page() {
   const [phase, setPhase] = useState<'lock' | 'pin' | 'active'>('lock');
@@ -28,6 +42,7 @@ export default function Cam1Page() {
   const [time, setTime] = useState('');
   const [date, setDate] = useState('');
   const [clockTaps, setClockTaps] = useState(0);
+  const [showPwaHint, setShowPwaHint] = useState(false);
   const clockTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -42,7 +57,6 @@ export default function Cam1Page() {
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
 
-  // 시계 업데이트
   useEffect(() => {
     const tick = () => {
       const now = new Date();
@@ -62,7 +76,6 @@ export default function Cam1Page() {
     } catch { /* ignore */ }
   };
 
-  // 청크 저장 (NAS 업로드)
   const flushChunk = useCallback(async (blob: Blob, ts: number) => {
     if (blob.size < 1000) return;
     try {
@@ -74,54 +87,44 @@ export default function Cam1Page() {
     } catch { /* ignore */ }
   }, []);
 
-  // MediaRecorder 한 세션 시작 (CHUNK_MS 후 자동 rotate)
   const startChunk = useCallback((stream: MediaStream) => {
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-      ? 'video/webm;codecs=vp8,opus'
-      : 'video/webm';
-    const mr = new MediaRecorder(stream, { mimeType });
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+      ? 'video/webm;codecs=vp9,opus'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+        ? 'video/webm;codecs=vp8,opus'
+        : 'video/webm';
+    const mr = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
     mediaRecorderRef.current = mr;
     recChunksRef.current = [];
     const startTs = Date.now();
 
-    mr.ondataavailable = (e) => {
-      if (e.data.size > 0) recChunksRef.current.push(e.data);
-    };
-
+    mr.ondataavailable = (e) => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
     mr.onstop = () => {
       const blob = new Blob(recChunksRef.current, { type: 'video/webm' });
       recChunksRef.current = [];
       flushChunk(blob, startTs);
-      // 아직 녹화 중이면 다음 청크 시작
       if (isRecordingRef.current) startChunk(stream);
     };
 
-    mr.start(5000); // 5초마다 ondataavailable 트리거 (버퍼링)
-
-    // CHUNK_MS 후 자동 stop → onstop에서 재시작
+    mr.start(5000);
     chunkTimerRef.current = setTimeout(() => {
       if (mr.state === 'recording') mr.stop();
     }, CHUNK_MS);
   }, [flushChunk]);
 
-  // 녹화 시작
   const startRecording = useCallback((stream: MediaStream) => {
     isRecordingRef.current = true;
     setIsRecording(true);
     startChunk(stream);
   }, [startChunk]);
 
-  // 녹화 중지
   const stopRecording = useCallback(() => {
     isRecordingRef.current = false;
     setIsRecording(false);
     if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop();
-    }
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
   }, []);
 
-  // 시계 탭 (3번 → PIN)
   const handleClockTap = () => {
     const next = clockTaps + 1;
     setClockTaps(next);
@@ -150,17 +153,21 @@ export default function Cam1Page() {
     }
   };
 
-  // 카메라 시작
   const startCamera = useCallback(async () => {
     await requestWakeLock();
+    requestFullscreen();
 
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: true,
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 },
+      },
+      audio: { echoCancellation: false, noiseSuppression: false, sampleRate: 48000 },
     });
     localStreamRef.current = stream;
 
-    // WebRTC
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -170,35 +177,33 @@ export default function Cam1Page() {
     pcRef.current = pc;
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    const channel = supabase.channel(CHANNEL, { config: { broadcast: { self: false } } });
-    channelRef.current = channel;
+    const ch = supabase.channel(CHANNEL, { config: { broadcast: { self: false } } });
+    channelRef.current = ch;
 
     pc.onicecandidate = ({ candidate }) => {
-      if (candidate) channel.send({ type: 'broadcast', event: 'cam-ice', payload: { candidate: candidate.toJSON() } });
+      if (candidate) ch.send({ type: 'broadcast', event: 'cam-ice', payload: { candidate: candidate.toJSON() } });
     };
     pc.onconnectionstatechange = () => setViewerConnected(pc.connectionState === 'connected');
 
-    channel.on('broadcast', { event: 'viewer-request' }, async () => {
+    ch.on('broadcast', { event: 'viewer-request' }, async () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      channel.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });
+      ch.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });
     });
-    channel.on('broadcast', { event: 'viewer-answer' }, async ({ payload }) => {
+    ch.on('broadcast', { event: 'viewer-answer' }, async ({ payload }) => {
       if (pc.signalingState === 'have-local-offer')
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
     });
-    channel.on('broadcast', { event: 'viewer-ice' }, async ({ payload }) => {
+    ch.on('broadcast', { event: 'viewer-ice' }, async ({ payload }) => {
       try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch { /* ignore */ }
     });
 
-    await channel.subscribe();
+    await ch.subscribe();
     setIsStreaming(true);
-
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    channel.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });
+    ch.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });
 
-    // 즉시 연속 녹화 시작
     startRecording(stream);
   }, [startRecording]);
 
@@ -208,6 +213,7 @@ export default function Cam1Page() {
     pcRef.current?.close();
     channelRef.current?.unsubscribe();
     wakeLockRef.current?.release();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     setIsStreaming(false);
     setViewerConnected(false);
     setPhase('lock');
@@ -217,10 +223,24 @@ export default function Cam1Page() {
   if (phase === 'lock') {
     return (
       <div
-        className="fixed inset-0 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 flex flex-col items-center justify-start pt-20 select-none"
-        style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}
+        className="fixed inset-0 flex flex-col items-center justify-start pt-20 select-none"
+        style={{
+          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+          background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+          paddingTop: 'max(5rem, env(safe-area-inset-top))',
+        }}
       >
-        <div className="absolute top-0 left-0 right-0 flex justify-between items-center px-6 pt-3 text-white text-xs font-semibold">
+        {/* PWA 힌트 */}
+        {showPwaHint && (
+          <div className="absolute top-0 left-0 right-0 z-50 bg-black/95 text-white text-xs px-4 py-3 text-center">
+            완전한 전체화면을 위해 Safari → <strong>공유 버튼 → 홈 화면에 추가</strong> 후 앱으로 실행하세요
+            <button onClick={() => setShowPwaHint(false)} className="ml-3 text-white/50">✕</button>
+          </div>
+        )}
+
+        {/* 상태바 */}
+        <div className="absolute top-0 left-0 right-0 flex justify-between items-center px-6 text-white text-xs font-semibold"
+          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
           <span>{time.slice(0,5)}</span>
           <div className="flex items-center gap-1"><span>●●●</span><span>WiFi</span><span>🔋</span></div>
         </div>
@@ -239,14 +259,15 @@ export default function Cam1Page() {
           ))}
         </div>
 
-        <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-5">
+        <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-5"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {['📞','📩','🌐','🎵'].map((icon, i) => (
             <div key={i} className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-2xl">{icon}</div>
           ))}
         </div>
 
-        {isStreaming && <div className="absolute top-3 right-20 w-2 h-2 rounded-full bg-green-400" />}
-        {isRecording && <div className="absolute top-3 right-24 w-2 h-2 rounded-full bg-red-400 animate-pulse" />}
+        {isStreaming && <div className="absolute w-2 h-2 rounded-full bg-green-400" style={{ top: 'max(0.75rem, env(safe-area-inset-top))', right: '5rem' }} />}
+        {isRecording && <div className="absolute w-2 h-2 rounded-full bg-red-400 animate-pulse" style={{ top: 'max(0.75rem, env(safe-area-inset-top))', right: '6rem' }} />}
       </div>
     );
   }
@@ -255,8 +276,8 @@ export default function Cam1Page() {
   if (phase === 'pin') {
     return (
       <div
-        className="fixed inset-0 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 flex flex-col items-center justify-center select-none"
-        style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}
+        className="fixed inset-0 flex flex-col items-center justify-center select-none"
+        style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)' }}
       >
         <div className="text-white text-center mb-8">
           <div className="text-lg font-light opacity-80">암호 입력</div>
@@ -279,27 +300,24 @@ export default function Cam1Page() {
     );
   }
 
-  // ── 활성화 (검은 화면 + 상태 표시) ───────────────────
+  // ── 활성화 (완전 검은 화면) ───────────────────────────
   return (
-    <div
-      className="fixed inset-0 bg-black flex flex-col items-center justify-center select-none"
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}
-    >
-      <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isStreaming ? 'bg-green-400' : 'bg-gray-500'}`} />
-          {isRecording && <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />}
-          <span className="text-white/40 text-xs">{viewerConnected ? '●' : '○'}</span>
-        </div>
-        <span className="text-white/30 text-xs">{time}</span>
+    <div className="fixed inset-0 bg-black select-none" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+      {/* 극도로 작은 상태 표시 — 거의 안 보임 */}
+      <div className="absolute flex items-center gap-1.5"
+        style={{ top: 'max(0.5rem, env(safe-area-inset-top))', left: '0.75rem' }}>
+        {isStreaming && <div className="w-1.5 h-1.5 rounded-full bg-green-600 opacity-40" />}
+        {isRecording && <div className="w-1.5 h-1.5 rounded-full bg-red-600 opacity-40 animate-pulse" />}
+        {viewerConnected && <div className="w-1.5 h-1.5 rounded-full bg-blue-600 opacity-40" />}
       </div>
 
-      <div className="text-white/10 text-xs text-center">
-        <div className="text-4xl mb-2 opacity-20">📷</div>
-      </div>
-
-      <button onClick={stopCamera} className="absolute bottom-8 px-6 py-2 bg-white/10 rounded-full text-white/40 text-sm">
-        중지
+      {/* 중지 버튼 — 오른쪽 하단 아주 작게 */}
+      <button
+        onClick={stopCamera}
+        className="absolute text-white/10 text-xs"
+        style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))', right: '1rem' }}
+      >
+        ■
       </button>
     </div>
   );

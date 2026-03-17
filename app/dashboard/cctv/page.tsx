@@ -38,6 +38,12 @@ export default function CCTVViewerPage() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [motionLevel, setMotionLevel] = useState(0);
 
+  // 화면 변환
+  const [rotation, setRotation] = useState(0); // 0 / 90 / 180 / 270
+  const [flipH, setFlipH] = useState(false);
+  const [flipV, setFlipV] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   // 녹화 목록
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -328,13 +334,22 @@ export default function CCTVViewerPage() {
       <div className="p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* ── 메인 비디오 ── */}
         <div className="lg:col-span-2 space-y-3">
-          <div className="relative bg-black rounded-xl overflow-hidden aspect-video">
+          {/* 비디오 + 회전/반전 컨트롤 */}
+          <div
+            id="video-container"
+            className={`relative bg-black rounded-xl overflow-hidden ${
+              rotation === 90 || rotation === 270 ? 'aspect-[9/16]' : 'aspect-video'
+            }`}
+          >
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted={false}
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain transition-transform duration-300"
+              style={{
+                transform: `rotate(${rotation}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`,
+              }}
             />
             <canvas ref={canvasRef} className="hidden" />
 
@@ -346,7 +361,7 @@ export default function CCTVViewerPage() {
                   <p className="text-gray-400 text-sm">
                     {status === 'waiting' ? '카메라 연결 대기중...' : '카메라가 오프라인입니다'}
                   </p>
-                  <p className="text-gray-500 text-xs mt-1">아이폰에서 /cctv 페이지를 열어주세요</p>
+                  <p className="text-gray-500 text-xs mt-1">아이폰에서 /cam1 또는 /cam2 페이지를 열어주세요</p>
                 </div>
               </div>
             )}
@@ -365,6 +380,45 @@ export default function CCTVViewerPage() {
                 <span className="text-xs font-mono text-white">{formatDuration(recDuration)}</span>
               </div>
             )}
+
+            {/* 전체화면 버튼 */}
+            <button
+              onClick={() => {
+                const el = document.getElementById('video-container');
+                if (!document.fullscreenElement) {
+                  el?.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+                } else {
+                  document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+                }
+              }}
+              className="absolute bottom-3 right-3 p-1.5 bg-black/50 hover:bg-black/80 rounded-lg text-white/70 hover:text-white transition-colors"
+              title="전체화면"
+            >
+              {isFullscreen ? '⊠' : '⛶'}
+            </button>
+          </div>
+
+          {/* 화면 변환 컨트롤 */}
+          <div className="bg-gray-900 rounded-xl p-3 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500 mr-1">화면:</span>
+            {/* 회전 */}
+            <button onClick={() => setRotation(r => (r + 90) % 360)}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded-lg flex items-center gap-1">
+              ↻ <span>회전 {rotation}°</span>
+            </button>
+            <button onClick={() => setRotation(0)}
+              className="px-2 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded-lg">
+              원위치
+            </button>
+            {/* 반전 */}
+            <button onClick={() => setFlipH(v => !v)}
+              className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1 ${flipH ? 'bg-blue-600/30 text-blue-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+              ↔ 좌우반전
+            </button>
+            <button onClick={() => setFlipV(v => !v)}
+              className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1 ${flipV ? 'bg-blue-600/30 text-blue-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+              ↕ 상하반전
+            </button>
           </div>
 
           {/* 녹화 컨트롤 */}
