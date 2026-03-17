@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { n8nQuery } from '@/lib/nas-ssh';
 
 // GET: 실행 히스토리
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = params.id;
+    const { id } = await params;
 
     const result = await n8nQuery(
       `SELECT id, mode, status, "startedAt", "stoppedAt",
