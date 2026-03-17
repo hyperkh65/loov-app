@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 const CCTV_PIN = process.env.NEXT_PUBLIC_CCTV_PIN || '0609';
 const CHANNEL = 'cctv-cam1';
 const CAM_ID = 'cam1';
-const CHUNK_MS = 60 * 1000; // 1분 청크 (iOS 업로드 한계 고려)
+const CHUNK_MS = 30 * 1000; // 30초 청크
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -38,6 +38,8 @@ export default function Cam1Page() {
   const [pinError, setPinError] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [uploadCount, setUploadCount] = useState(0);
+  const [uploadError, setUploadError] = useState(false);
   const [viewerConnected, setViewerConnected] = useState(false);
   const [time, setTime] = useState('');
   const [date, setDate] = useState('');
@@ -89,15 +91,28 @@ export default function Cam1Page() {
   };
 
   const flushChunk = useCallback(async (blob: Blob, ts: number, ext: string) => {
-    if (blob.size < 1000) return;
+    if (blob.size < 1000) { console.warn('blob too small', blob.size); return; }
     try {
+      console.log(`[cam1] uploading ${(blob.size/1024/1024).toFixed(1)}MB ext=${ext}`);
       const filename = `${CAM_ID}_${ts}.${ext}`;
       const form = new FormData();
       form.append('file', blob, filename);
       form.append('filename', filename);
       const res = await fetch('/api/cctv/record', { method: 'POST', body: form });
-      if (!res.ok) console.error('upload failed', await res.text());
-    } catch (e) { console.error('flushChunk error', e); }
+      if (!res.ok) {
+        const txt = await res.text();
+        console.error('upload failed', res.status, txt);
+        setUploadError(true);
+        setTimeout(() => setUploadError(false), 5000);
+      } else {
+        console.log('[cam1] upload OK', filename);
+        setUploadCount(c => c + 1);
+      }
+    } catch (e) {
+      console.error('flushChunk error', e);
+      setUploadError(true);
+      setTimeout(() => setUploadError(false), 5000);
+    }
   }, []);
 
   const startChunk = useCallback((stream: MediaStream) => {
@@ -106,8 +121,8 @@ export default function Cam1Page() {
     let mr: MediaRecorder;
     try {
       mr = mimeType
-        ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_500_000 })
-        : new MediaRecorder(stream, { videoBitsPerSecond: 1_500_000 });
+        ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 800_000 })
+        : new MediaRecorder(stream, { videoBitsPerSecond: 800_000 });
     } catch (e) {
       console.error('MediaRecorder 생성 실패', e);
       return;
@@ -316,10 +331,22 @@ export default function Cam1Page() {
     );
   }
 
-  // ── 활성화 (완전 검은 화면) ───────────────────────────
+  // ── 활성화 (거의 검은 화면 — 진단 정보 아주 작게) ────
   return (
     <div className="fixed inset-0 bg-black select-none">
-      {/* 완전 투명 중지 터치 영역 — 우하단 모서리 2번 탭 */}
+      {/* 좌하단: 업로드 카운터 (아주 작고 어둡게) */}
+      <div
+        className="absolute text-[10px] font-mono"
+        style={{
+          bottom: 'max(1.5rem, env(safe-area-inset-bottom))',
+          left: '1rem',
+          color: uploadError ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.15)',
+        }}
+      >
+        {uploadError ? 'ERR' : uploadCount > 0 ? `↑${uploadCount}` : '●'}
+      </div>
+
+      {/* 우하단: 투명 중지 버튼 */}
       <button
         onClick={stopCamera}
         className="absolute opacity-0"
