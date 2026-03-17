@@ -314,12 +314,18 @@ export default function CoupangNotionPage() {
                 )}
 
                 {/* 링크 */}
-                {selected.partnerLink && (
-                  <a href={selected.partnerLink} target="_blank" rel="noopener noreferrer"
-                    className="inline-block mt-2 text-xs text-blue-500 hover:underline">
-                    🔗 파트너스 링크 확인
-                  </a>
-                )}
+                <div className="mt-2">
+                  {selected.partnerLink ? (
+                    <a href={selected.partnerLink} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-green-600 font-semibold hover:underline bg-green-50 px-2 py-1 rounded-lg">
+                      🔗 수익 링크 확인 (link.coupang.com) ✓
+                    </a>
+                  ) : (
+                    <div className="text-xs text-orange-500 bg-orange-50 px-2 py-1 rounded-lg">
+                      ⚠️ 파트너스 링크 없음 — 댓글에 원본 쿠팡 URL이 들어갑니다
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 플랫폼 선택 */}
@@ -366,8 +372,11 @@ export default function CoupangNotionPage() {
                           rows={5}
                           className="w-full text-sm text-gray-700 resize-none focus:outline-none bg-transparent"
                         />
-                        <div className="mt-2 pt-2 border-t border-gray-50 text-xs text-gray-400">
-                          💬 댓글: {selected.partnerLink} · {DISCLOSURE}
+                        <div className="mt-2 pt-2 border-t border-gray-50 text-xs space-y-1">
+                          <div className={selected.partnerLink ? 'text-green-600 font-semibold' : 'text-orange-500'}>
+                            💬 댓글: {selected.partnerLink || selected.originalUrl || '링크 없음'}
+                          </div>
+                          <div className="text-gray-400">{DISCLOSURE}</div>
                         </div>
                       </div>
                     )
