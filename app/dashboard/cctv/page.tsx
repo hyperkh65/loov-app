@@ -3,7 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const CHANNEL = 'cctv-room';
+const CHANNELS = {
+  'cctv-room': { label: '/cctv', desc: '스트리밍 전용' },
+  'cctv-cam1': { label: '/cam1', desc: '계속 녹화' },
+  'cctv-cam2': { label: '/cam2', desc: '모션 녹화' },
+} as const;
+type CamChannel = keyof typeof CHANNELS;
+
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -16,6 +22,7 @@ interface Recording {
 }
 
 export default function CCTVViewerPage() {
+  const [selectedCam, setSelectedCam] = useState<CamChannel>('cctv-cam1');
   const [status, setStatus] = useState<'idle' | 'waiting' | 'connected' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
 
@@ -64,6 +71,7 @@ export default function CCTVViewerPage() {
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pcRef.current = pc;
+    const channel = selectedCam;
 
     pc.ontrack = ({ streams }) => {
       if (videoRef.current && streams[0]) {
@@ -82,35 +90,35 @@ export default function CCTVViewerPage() {
       }
     };
 
-    const channel = supabase.channel(CHANNEL, { config: { broadcast: { self: false } } });
-    channelRef.current = channel;
+    const sbChannel = supabase.channel(channel, { config: { broadcast: { self: false } } });
+    channelRef.current = sbChannel;
 
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
-        channel.send({ type: 'broadcast', event: 'viewer-ice', payload: { candidate: candidate.toJSON() } });
+        sbChannel.send({ type: 'broadcast', event: 'viewer-ice', payload: { candidate: candidate.toJSON() } });
       }
     };
 
     // 카메라 offer 수신 → answer 생성
-    channel.on('broadcast', { event: 'cam-offer' }, async ({ payload }) => {
+    sbChannel.on('broadcast', { event: 'cam-offer' }, async ({ payload }) => {
       if (pc.signalingState === 'stable' || pc.signalingState === 'have-remote-offer') {
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        channel.send({ type: 'broadcast', event: 'viewer-answer', payload: { sdp: pc.localDescription } });
+        sbChannel.send({ type: 'broadcast', event: 'viewer-answer', payload: { sdp: pc.localDescription } });
         setStatusMsg('응답 전송 완료, 연결 중...');
       }
     });
 
     // 카메라 ICE 후보 수신
-    channel.on('broadcast', { event: 'cam-ice' }, async ({ payload }) => {
+    sbChannel.on('broadcast', { event: 'cam-ice' }, async ({ payload }) => {
       try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch { /* ignore */ }
     });
 
-    await channel.subscribe();
+    await sbChannel.subscribe();
     // 카메라에 연결 요청
-    channel.send({ type: 'broadcast', event: 'viewer-request', payload: {} });
-  }, []);
+    sbChannel.send({ type: 'broadcast', event: 'viewer-request', payload: {} });
+  }, [selectedCam]);
 
   const disconnect = useCallback(() => {
     stopRecording();
@@ -261,30 +269,49 @@ export default function CCTVViewerPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* 헤더 */}
-      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold">📷 CCTV 뷰어</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-            status === 'connected' ? 'bg-green-500/20 text-green-400'
-            : status === 'waiting' ? 'bg-yellow-500/20 text-yellow-400'
-            : 'bg-gray-700 text-gray-400'
-          }`}>
-            {status === 'connected' ? '● LIVE' : status === 'waiting' ? '⏳ 대기중' : '○ 오프라인'}
-          </span>
-          {statusMsg && <span className="text-xs text-gray-500">{statusMsg}</span>}
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-bold">📷 CCTV 뷰어</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              status === 'connected' ? 'bg-green-500/20 text-green-400'
+              : status === 'waiting' ? 'bg-yellow-500/20 text-yellow-400'
+              : 'bg-gray-700 text-gray-400'
+            }`}>
+              {status === 'connected' ? '● LIVE' : status === 'waiting' ? '⏳ 대기중' : '○ 오프라인'}
+            </span>
+            {statusMsg && <span className="text-xs text-gray-500">{statusMsg}</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            {status === 'idle' ? (
+              <button onClick={connect}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium">
+                연결
+              </button>
+            ) : (
+              <button onClick={disconnect}
+                className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg font-medium">
+                연결 해제
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {status === 'idle' ? (
-            <button onClick={connect}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium">
-              연결
+        {/* 카메라 채널 탭 */}
+        <div className="flex gap-2">
+          {(Object.entries(CHANNELS) as [CamChannel, typeof CHANNELS[CamChannel]][]).map(([key, info]) => (
+            <button
+              key={key}
+              onClick={() => { if (status !== 'idle') disconnect(); setSelectedCam(key); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                selectedCam === key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              <span className="font-mono">{info.label}</span>
+              <span className="ml-1 opacity-60">{info.desc}</span>
             </button>
-          ) : (
-            <button onClick={disconnect}
-              className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg font-medium">
-              연결 해제
-            </button>
-          )}
+          ))}
         </div>
       </div>
 
@@ -431,8 +458,16 @@ export default function CCTVViewerPage() {
           <div className="bg-gray-900 rounded-xl p-4">
             <h3 className="text-sm font-semibold text-gray-300 mb-2">📱 카메라 설정</h3>
             <p className="text-xs text-gray-500 mb-2">아이폰 Safari에서 아래 URL 접속:</p>
-            <div className="bg-gray-800 rounded-lg p-2 text-xs font-mono text-blue-400 break-all">
-              {typeof window !== 'undefined' ? window.location.origin : ''}/cctv
+            <div className="space-y-2">
+              {(Object.entries(CHANNELS) as [CamChannel, typeof CHANNELS[CamChannel]][]).map(([key, info]) => (
+                <div key={key} className={`rounded-lg p-2 text-xs font-mono break-all border ${
+                  selectedCam === key ? 'bg-blue-900/30 text-blue-300 border-blue-700/50' : 'bg-gray-800 text-gray-500 border-transparent'
+                }`}>
+                  <span className="text-gray-400">{typeof window !== 'undefined' ? window.location.origin : ''}</span>
+                  <span className="font-bold">{info.label}</span>
+                  <span className="ml-2 font-sans text-[10px] opacity-60">— {info.desc}</span>
+                </div>
+              ))}
             </div>
             <p className="text-xs text-gray-600 mt-2">시계를 3번 탭 → PIN 입력</p>
           </div>
