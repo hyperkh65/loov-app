@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 
-const AGODA_SITE_ID = process.env.AGODA_SITE_ID || '1959217';
-const AGODA_API_KEY = process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30';
+const AGODA_SITE_ID = (process.env.AGODA_SITE_ID || '1959217').trim();
+const AGODA_API_KEY = (process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30').trim();
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
