@@ -44,8 +44,35 @@ async function callGemini(prompt: string): Promise<string> {
   return text;
 }
 
-// 각 호텔 섹션에 이미지 카드를 삽입하는 HTML 빌더
-function buildHotelImageCard(hotel: AgodaHotel, formatPrice: (p: number) => string): string {
+// Pixabay에서 호텔/도시 관련 이미지 검색
+async function searchPixabayImages(query: string, count: number = 3): Promise<string[]> {
+  try {
+    const apiKey = await getSetting('PIXABAY_API_KEY');
+    if (!apiKey) return [];
+    const params = new URLSearchParams({
+      key: apiKey,
+      q: query,
+      image_type: 'photo',
+      per_page: String(count + 2),
+      safesearch: 'true',
+      min_width: '800',
+      order: 'popular',
+    });
+    const res = await fetch(`https://pixabay.com/api/?${params}`);
+    if (!res.ok) return [];
+    const data = await res.json() as { hits?: { largeImageURL: string }[] };
+    return (data.hits || []).map(h => h.largeImageURL).slice(0, count);
+  } catch {
+    return [];
+  }
+}
+
+// 호텔 이미지 갤러리 카드 빌더 (메인 1장 + 추가 최대 3장)
+function buildHotelImageCard(
+  hotel: AgodaHotel,
+  formatPrice: (p: number) => string,
+  extraImages: string[] = [],
+): string {
   const stars = '⭐'.repeat(Math.round(hotel.starRating));
   const discount = hotel.discountPercentage > 0
     ? `<span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:13px;font-weight:bold;margin-left:8px">-${Math.round(hotel.discountPercentage)}%</span>`
@@ -58,9 +85,24 @@ function buildHotelImageCard(hotel: AgodaHotel, formatPrice: (p: number) => stri
     hotel.includeBreakfast ? '🍳 조식 포함' : '',
   ].filter(Boolean).join(' &nbsp;|&nbsp; ');
 
+  // 모든 이미지 수집 (Agoda 메인 + Pixabay 추가)
+  const allImages = [hotel.imageURL, ...extraImages].filter(Boolean);
+
+  // 메인 이미지 (전체 너비)
+  const mainImageHtml = allImages[0]
+    ? `<img src="${allImages[0]}" alt="${hotel.hotelName}" style="width:100%;height:260px;object-fit:cover;display:block">`
+    : '';
+
+  // 추가 이미지 갤러리 (2~4장, 그리드)
+  const galleryImages = allImages.slice(1, 4);
+  const galleryHtml = galleryImages.length > 0 ? `
+<div style="display:grid;grid-template-columns:repeat(${galleryImages.length},1fr);gap:3px;margin-top:3px">
+  ${galleryImages.map((url, i) => `<img src="${url}" alt="${hotel.hotelName} ${i + 2}" style="width:100%;height:160px;object-fit:cover;display:block">`).join('\n  ')}
+</div>` : '';
+
   return `
 <div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin:24px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
-  ${hotel.imageURL ? `<img src="${hotel.imageURL}" alt="${hotel.hotelName}" style="width:100%;height:220px;object-fit:cover;display:block">` : ''}
+  ${mainImageHtml}${galleryHtml}
   <div style="padding:16px">
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <span style="font-size:14px">${stars}</span>
@@ -89,22 +131,34 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     cityName: string;
     cityNameKo: string;
+    cityNameEn?: string;
     hotels: AgodaHotel[];
     checkIn: string;
     checkOut: string;
     travelStyle?: string;
   };
 
-  const { cityName, cityNameKo, hotels, checkIn, checkOut, travelStyle = '커플' } = body;
+  const { cityName, cityNameKo, cityNameEn, hotels, checkIn, checkOut, travelStyle = '커플' } = body;
   if (!hotels?.length) return NextResponse.json({ error: '호텔 데이터 필요' }, { status: 400 });
 
   const topHotels = hotels.slice(0, 5);
   const formatPrice = (p: number) => p > 0 ? `${Math.round(p).toLocaleString('ko-KR')}원` : '';
 
-  // 호텔 이미지 카드 HTML (AI 생성 후 각 h3 뒤에 삽입할 수 있도록 미리 빌드)
-  const hotelCards = topHotels.map(h => ({
+  // 각 호텔별 Pixabay 이미지 3장 병렬 검색
+  const pixabayQuery = cityNameEn || cityName;
+  const hotelExtraImages = await Promise.all(
+    topHotels.map(async (h) => {
+      // 호텔 이름으로 먼저 검색, 결과 없으면 도시명으로
+      const byName = await searchPixabayImages(`${h.hotelName} hotel`, 3);
+      if (byName.length >= 2) return byName;
+      return searchPixabayImages(`${pixabayQuery} hotel luxury`, 3);
+    })
+  );
+
+  // 호텔 이미지 카드 (Pixabay 이미지 포함)
+  const hotelCards = topHotels.map((h, i) => ({
     name: h.hotelName,
-    card: buildHotelImageCard(h, formatPrice),
+    card: buildHotelImageCard(h, formatPrice, hotelExtraImages[i] || []),
   }));
 
   const hotelList = topHotels.map((h, i) => {
@@ -118,8 +172,7 @@ export async function POST(req: NextRequest) {
    - 예약링크: ${h.landingURL}`;
   }).join('\n\n');
 
-  const jsonRule = `\n반드시 아래 JSON만 출력 (마크다운/코드블록 없이):
-{"title":"SEO제목(60자이내)","content":"HTML본문","metaDescription":"메타설명150자이내","labels":["태그1","태그2","태그3"]}`;
+  const jsonRule = `\n반드시 아래 JSON만 출력 (마크다운/코드블록 없이):\n{"title":"SEO제목(60자이내)","content":"HTML본문","metaDescription":"메타설명150자이내","labels":["태그1","태그2","태그3"]}`;
 
   const prompt = `너는 여행 전문 블로거야. ${travelStyle} 여행자 관점에서 "${cityNameKo || cityName}" 여행 호텔 추천 글을 자연스러운 후기 형식으로 써줘.
 
@@ -157,8 +210,7 @@ ${hotelList}
       parsed = JSON.parse(m[0]);
     }
 
-    // AI 생성 본문에 호텔 이미지 카드 삽입
-    // <h3 id="hotel-N"> 또는 호텔명 h3 뒤에 카드 삽입
+    // AI 생성 본문에 호텔 이미지 갤러리 카드 삽입
     let content = parsed.content || '';
 
     // 방법1: id="hotel-N" 패턴으로 삽입
@@ -175,7 +227,7 @@ ${hotelList}
       }
     });
 
-    // 방법3: 여전히 삽입 안 된 카드는 첫 번째 h2 뒤에 모아서 추가
+    // 방법3: 삽입 안 된 카드는 첫 번째 h2 뒤에 모아서 추가
     const insertedCards = hotelCards.filter((hc, i) => {
       const idPat = new RegExp(`hotel-${i + 1}`);
       return !idPat.test(content) && !content.includes(hc.name.slice(0, 10));
