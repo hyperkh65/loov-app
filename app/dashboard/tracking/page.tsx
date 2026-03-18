@@ -54,6 +54,8 @@ export default function TrackingDashboardPage() {
   const [isReplaying, setIsReplaying] = useState(false);
   const [selectedMemo, setSelectedMemo] = useState<VoiceMemo | null>(null);
   const [leafletReady, setLeafletReady] = useState(false);
+  const [playingMemoId, setPlayingMemoId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const leafletRef = useRef<any>(null);
 
@@ -360,24 +362,44 @@ export default function TrackingDashboardPage() {
             )}
 
             {routeData?.voiceMemos.map(memo => (
-              <button
+              <div
                 key={memo.id}
                 onClick={() => {
                   setSelectedMemo(selectedMemo?.id === memo.id ? null : memo);
-                  // Pan map to memo location
                   if (memo.lat && memo.lng && leafletMapRef.current) {
                     leafletMapRef.current.setView([memo.lat, memo.lng], 16);
                   }
                 }}
-                className={`w-full text-left px-4 py-3 border-b border-slate-700/30 hover:bg-slate-800/50 transition-colors ${
+                className={`w-full text-left px-4 py-3 border-b border-slate-700/30 hover:bg-slate-800/50 transition-colors cursor-pointer ${
                   selectedMemo?.id === memo.id ? 'bg-slate-800 border-l-2 border-l-cyan-500' : ''
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-mono text-cyan-400">{formatMemoTime(memo.created_at)}</span>
-                  {memo.duration_sec && (
-                    <span className="text-xs text-white/30">{memo.duration_sec}초</span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {memo.duration_sec && <span className="text-xs text-white/30">{memo.duration_sec}초</span>}
+                    {/* 재생 버튼 */}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (playingMemoId === memo.id) {
+                          audioRef.current?.pause();
+                          setPlayingMemoId(null);
+                        } else {
+                          if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+                          const audio = new Audio(`/api/tracking/voice-file?path=${encodeURIComponent(memo.nas_path)}`);
+                          audioRef.current = audio;
+                          audio.play();
+                          setPlayingMemoId(memo.id);
+                          audio.onended = () => setPlayingMemoId(null);
+                          audio.onerror = () => setPlayingMemoId(null);
+                        }
+                      }}
+                      className="w-6 h-6 rounded-full bg-cyan-500/20 hover:bg-cyan-500/40 flex items-center justify-center text-[10px] text-cyan-400 transition-colors"
+                    >
+                      {playingMemoId === memo.id ? '⏸' : '▶'}
+                    </button>
+                  </div>
                 </div>
                 <div className={`text-xs text-white/60 leading-relaxed ${selectedMemo?.id === memo.id ? '' : 'line-clamp-2'}`}>
                   {memo.transcript || '(변환 없음)'}
@@ -387,7 +409,7 @@ export default function TrackingDashboardPage() {
                     {memo.lat.toFixed(4)}, {memo.lng.toFixed(4)}
                   </div>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </div>

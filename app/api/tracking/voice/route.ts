@@ -35,7 +35,9 @@ export async function POST(req: NextRequest) {
 
     const kst = new Date(Date.now() + 9 * 3600_000);
     const ts = kst.toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
-    const filename = `${ts}.webm`;
+    const fileExt = file.name.endsWith('.mp4') ? 'mp4' : 'webm';
+    const fileMimeType = file.type || (fileExt === 'mp4' ? 'audio/mp4' : 'audio/webm');
+    const filename = `${ts}.${fileExt}`;
     const nasPath = `${VOICE_DIR}/${filename}`;
 
     await nasExec(`mkdir -p ${VOICE_DIR}`);
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
         const genAI = new GoogleGenerativeAI(geminiKey);
         const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
         const result = await model.generateContent([
-          { inlineData: { mimeType: 'audio/webm', data: buffer.toString('base64') } },
+          { inlineData: { mimeType: fileMimeType, data: buffer.toString('base64') } },
           '이 음성을 한국어로 정확하게 텍스트로 변환해줘. 메모 형식으로 정리해줘.',
         ]);
         transcript = result.response.text();

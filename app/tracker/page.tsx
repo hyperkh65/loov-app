@@ -252,10 +252,11 @@ export default function TrackerPage() {
     mediaRecorderRef.current.stop();
   }, []);
 
-  const uploadVoiceMemo = useCallback(async (blob: Blob, durationSec: number) => {
+  const uploadVoiceMemo = useCallback(async (blob: Blob, durationSec: number, actualMimeType?: string) => {
     try {
+      const ext = (actualMimeType || '').includes('mp4') ? 'mp4' : 'webm';
       const form = new FormData();
-      form.append('file', blob, 'memo.webm');
+      form.append('file', blob, `memo.${ext}`);
       if (currentPosRef.current) {
         form.append('lat', String(currentPosRef.current.lat));
         form.append('lng', String(currentPosRef.current.lng));
@@ -284,13 +285,15 @@ export default function TrackerPage() {
       voiceChunksRef.current = [];
       const recStart = Date.now();
       isVoiceRecordingRef.current = true; setIsVoiceRecording(true); setVoiceElapsed(0);
+      // 실제 녹음 mimeType (iOS는 audio/mp4)
+      const actualMimeType = mr.mimeType || mimeType || 'audio/mp4';
       mr.ondataavailable = (e) => { if (e.data.size > 0) voiceChunksRef.current.push(e.data); };
       mr.onstop = () => {
         const durationSec = Math.round((Date.now() - recStart) / 1000);
-        const blob = new Blob(voiceChunksRef.current, { type: mimeType || 'audio/webm' });
+        const blob = new Blob(voiceChunksRef.current, { type: actualMimeType });
         voiceChunksRef.current = [];
         stream.getTracks().forEach(t => t.stop());
-        uploadVoiceMemo(blob, durationSec);
+        uploadVoiceMemo(blob, durationSec, actualMimeType);
         setVoiceElapsed(0); setWaveform(Array(20).fill(4));
       };
       mr.start(500);
