@@ -120,57 +120,102 @@ function ThumbnailGenerator({ defaultTitle, defaultKeyword, onInsert }: Thumbnai
       const h = img.naturalHeight * scale;
       ctx.drawImage(img, (1080 - w) / 2, (1080 - h) / 2, w, h);
 
-      // 2. Gradient overlay
+      // 2. Light dark overlay (투명도 낮게)
       const grad = ctx.createLinearGradient(0, 0, 0, 1080);
       if (colorScheme === 'blue') {
-        grad.addColorStop(0, 'rgba(0,20,60,0.65)');
-        grad.addColorStop(1, 'rgba(0,10,40,0.75)');
+        grad.addColorStop(0, 'rgba(0,10,40,0.30)');
+        grad.addColorStop(0.5, 'rgba(0,15,50,0.42)');
+        grad.addColorStop(1, 'rgba(0,10,40,0.35)');
       } else if (colorScheme === 'green') {
-        grad.addColorStop(0, 'rgba(0,40,20,0.65)');
-        grad.addColorStop(1, 'rgba(0,20,10,0.75)');
+        grad.addColorStop(0, 'rgba(0,20,10,0.30)');
+        grad.addColorStop(0.5, 'rgba(0,25,15,0.42)');
+        grad.addColorStop(1, 'rgba(0,20,10,0.35)');
       } else {
-        grad.addColorStop(0, 'rgba(0,0,0,0.45)');
-        grad.addColorStop(0.5, 'rgba(0,0,0,0.62)');
-        grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+        // 다크: 중앙만 살짝 더 어둡게 (비네팅 효과)
+        grad.addColorStop(0, 'rgba(0,0,0,0.22)');
+        grad.addColorStop(0.5, 'rgba(0,0,0,0.38)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.28)');
       }
       ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1080, 1080);
+
+      // 비네팅 (테두리 어둡게)
+      const vignette = ctx.createRadialGradient(540, 540, 300, 540, 540, 760);
+      vignette.addColorStop(0, 'rgba(0,0,0,0)');
+      vignette.addColorStop(1, 'rgba(0,0,0,0.45)');
+      ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, 1080, 1080);
 
       // 3. Gold top bar
       ctx.fillStyle = '#f0b429';
       ctx.fillRect(0, 0, 1080, 10);
 
-      // 4. Main title
-      const fontSize = mainTitle.length <= 10 ? 110 : mainTitle.length <= 16 ? 95 : 80;
+      // 4. Main title — blur halo + crisp white text
+      const fontSize = mainTitle.length <= 8 ? 120 : mainTitle.length <= 14 ? 100 : mainTitle.length <= 20 ? 86 : 72;
       ctx.font = `bold ${fontSize}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "나눔고딕", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      const lines = wrapText(ctx, mainTitle, 940);
-      const lineHeight = fontSize * 1.25;
+      const lines = wrapText(ctx, mainTitle, 960);
+      const lineHeight = fontSize * 1.3;
       const totalTextH = lines.length * lineHeight;
-      const subH = subTitle ? 75 : 0;
-      const totalH = totalTextH + subH + (subTitle ? 40 : 0);
+      const subH = subTitle ? 80 : 0;
+      const totalH = totalTextH + subH + (subTitle ? 30 : 0);
       const startY = (1080 - totalH) / 2;
+
+      const drawTextWithBlur = (text: string, x: number, y: number, size: number) => {
+        ctx.font = `bold ${size}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+
+        // 1단계: 넓은 blur 레이어 (주변 번짐 효과)
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.95)';
+        ctx.shadowBlur = 45;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        for (let i = 0; i < 6; i++) ctx.fillText(text, x, y);
+        ctx.restore();
+
+        // 2단계: 중간 blur (그림자 강화)
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,1)';
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = 'rgba(20,20,20,0.8)';
+        for (let i = 0; i < 3; i++) ctx.fillText(text, x, y);
+        ctx.restore();
+
+        // 3단계: 선명한 흰 텍스트 (no shadow)
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, x, y);
+        ctx.restore();
+      };
 
       lines.forEach((line, i) => {
         const y = startY + i * lineHeight + lineHeight / 2;
-        ctx.lineWidth = 8;
-        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-        ctx.strokeText(line, 540, y);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(line, 540, y);
+        drawTextWithBlur(line, 540, y, fontSize);
       });
 
-      // 5. Subtitle
+      // 5. Subtitle — blur 효과 동일 적용, 색상만 다르게
       if (subTitle) {
-        const subY = startY + totalTextH + 50;
-        ctx.font = `bold 56px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif`;
-        ctx.lineWidth = 6;
-        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-        ctx.strokeText(subTitle, 540, subY);
-        ctx.fillStyle = colorScheme === 'green' ? '#4ade80' : colorScheme === 'blue' ? '#60a5fa' : '#ffffff';
+        const subFontSize = 54;
+        const subY = startY + totalTextH + 45;
+
+        // blur halo
+        ctx.save();
+        ctx.font = `bold ${subFontSize}px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif`;
+        ctx.shadowColor = 'rgba(0,0,0,0.95)';
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        for (let i = 0; i < 5; i++) ctx.fillText(subTitle, 540, subY);
+        ctx.restore();
+
+        // 선명한 텍스트
+        ctx.save();
+        ctx.font = `bold ${subFontSize}px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif`;
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = colorScheme === 'green' ? '#86efac' : colorScheme === 'blue' ? '#93c5fd' : '#e2e8f0';
         ctx.fillText(subTitle, 540, subY);
+        ctx.restore();
       }
 
       // 6. Thin bottom bar
