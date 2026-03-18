@@ -22,10 +22,20 @@ interface VoiceMemo {
   nas_path: string;
 }
 
+interface DwellPoint {
+  lat: number;
+  lng: number;
+  startTime: string;
+  endTime: string;
+  durationMin: number;
+  address: { ko: string; en: string };
+}
+
 interface RouteData {
   date: string;
   locations: LocationPoint[];
   voiceMemos: VoiceMemo[];
+  dwellPoints: DwellPoint[];
   stats: {
     pointCount: number;
     totalDistanceKm: number;
@@ -126,6 +136,26 @@ export default function TrackingDashboardPage() {
     L.marker([last.lat, last.lng], { icon: endIcon })
       .addTo(layerGroup)
       .bindPopup('<b>종료</b><br>' + new Date(last.recorded_at).toLocaleTimeString('ko-KR'));
+
+    // 체류 마커 (10분 이상)
+    (data.dwellPoints ?? []).forEach((dwell: DwellPoint) => {
+      const icon = L.divIcon({
+        html: `<div style="background:#f59e0b;border:2px solid #fbbf24;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.5)">🏠</div>`,
+        iconSize: [28, 28], iconAnchor: [14, 14], className: '',
+      });
+      const startStr = new Date(dwell.startTime).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      const endStr = new Date(dwell.endTime).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      L.marker([dwell.lat, dwell.lng], { icon })
+        .addTo(layerGroup)
+        .bindPopup(`
+          <div style="font-family:sans-serif;min-width:200px;">
+            <div style="font-weight:bold;color:#f59e0b;margin-bottom:6px">🏠 ${dwell.durationMin}분 체류</div>
+            <div style="font-size:11px;color:#aaa;margin-bottom:4px">${startStr} ~ ${endStr}</div>
+            ${dwell.address.ko ? `<div style="font-size:12px;color:#eee;margin-bottom:2px">${dwell.address.ko}</div>` : ''}
+            ${dwell.address.en ? `<div style="font-size:11px;color:#999">${dwell.address.en}</div>` : ''}
+          </div>
+        `);
+    });
 
     // Voice memo markers
     data.voiceMemos.forEach((memo: VoiceMemo) => {
