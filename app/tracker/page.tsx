@@ -64,7 +64,8 @@ export default function TrackerPage() {
   const watchIdRef = useRef<number | null>(null);
   const lastPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const isSendingRef = useRef(false);
-  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabaseRef = useRef<any>(null);
   const accessTokenRef = useRef<string>('');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
