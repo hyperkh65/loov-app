@@ -73,37 +73,59 @@ export async function POST(req: NextRequest) {
   };
 
   const { title, content, isDraft = false } = body;
-  // Blogger label 제한: 각 200자 이하, 최대 20개, 특수문자 제거
-  const labels = (body.labels || [])
-    .map((l: string) => l.replace(/[<>"']/g, '').trim().slice(0, 200))
-    .filter((l: string) => l.length > 0)
-    .slice(0, 20);
 
-  if (!title || !content) {
+  // 제목 정제: 앞뒤 공백, null byte 제거, 500자 제한
+  const cleanTitle = (title || '').replace(/\x00/g, '').trim().slice(0, 500);
+  // 본문 정제: null byte 제거
+  const cleanContent = (content || '').replace(/\x00/g, '');
+  // 라벨 정제: 특수문자/개행/null 제거, 100자 제한, 최대 5개
+  const labels = (body.labels || [])
+    .map((l: string) => l.replace(/[<>"'\x00\r\n]/g, '').trim().slice(0, 100))
+    .filter((l: string) => l.length > 0)
+    .slice(0, 5);
+
+  if (!cleanTitle || !cleanContent) {
     return NextResponse.json({ error: '제목과 본문은 필수입니다.' }, { status: 400 });
   }
 
   try {
-    const postPayload: Record<string, unknown> = {
-      title: title.slice(0, 500),
-      content,
-      ...(labels.length > 0 ? { labels } : {}),
-    };
+    // labels 없이 먼저 시도, 에러 시 labels 제외 재시도
+    const makePayload = (withLabels: boolean): Record<string, unknown> => ({
+      title: cleanTitle,
+      content: cleanContent,
+      ...(withLabels && labels.length > 0 ? { labels } : {}),
+    });
 
     const publishParam = isDraft ? '?isDraft=true' : '';
-    const res = await fetch(`${BLOGGER_API}${publishParam}`, {
+    const url = `${BLOGGER_API}${publishParam}`;
+
+    let res = await fetch(url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(postPayload),
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(makePayload(true)),
     });
+
+    // labels로 인한 오류면 labels 없이 재시도
+    if (!res.ok && labels.length > 0) {
+      const errCheck = await res.json();
+      if (errCheck.error?.code === 400) {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(makePayload(false)),
+        });
+      } else {
+        return NextResponse.json(
+          { error: errCheck.error?.message || 'Blogger 발행 실패', detail: errCheck },
+          { status: res.status }
+        );
+      }
+    }
 
     if (!res.ok) {
       const errData = await res.json();
       return NextResponse.json(
-        { error: errData.error?.message || 'Blogger 발행 실패' },
+        { error: errData.error?.message || 'Blogger 발행 실패', detail: errData },
         { status: res.status }
       );
     }
@@ -115,7 +137,7 @@ export async function POST(req: NextRequest) {
       user_id: user.id,
       blog_id: BLOG_ID,
       post_id: post.id,
-      title: post.title,
+      title: post.title || cleanTitle,
       keyword: body.keyword || null,
       content_type: body.contentType || null,
       labels,
