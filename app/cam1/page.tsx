@@ -231,6 +231,8 @@ export default function Cam1Page() {
     pc.onconnectionstatechange = () => setViewerConnected(pc.connectionState === 'connected');
 
     ch.on('broadcast', { event: 'viewer-request' }, async () => {
+      // 이미 협상 중이면 무시 (중복 offer 방지)
+      if (pc.signalingState !== 'stable') return;
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       ch.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });
