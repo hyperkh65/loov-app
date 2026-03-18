@@ -6,8 +6,15 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const apiKey = req.nextUrl.searchParams.get('apiKey');
-  if (!apiKey) return NextResponse.json({ error: 'apiKey 필요' }, { status: 400 });
+  // 기존 노션 설정에서 API 키 자동 로드
+  const { data: settings } = await supabase
+    .from('bossai_company_settings')
+    .select('notion_config')
+    .eq('user_id', user.id)
+    .single();
+  const config = settings?.notion_config as { apiKey?: string } | null;
+  if (!config?.apiKey) return NextResponse.json({ error: 'Notion API 키를 먼저 설정해주세요. (노션 설정 페이지)' }, { status: 400 });
+  const apiKey = config.apiKey;
 
   try {
     const res = await fetch('https://api.notion.com/v1/search', {
