@@ -438,7 +438,7 @@ export default function BloggerPage() {
   const [agCity, setAgCity] = useState<AgodaCity | null>(null);
   const [agCustomCityId, setAgCustomCityId] = useState('');
   const [agMinStars, setAgMinStars] = useState(0);
-  const [agMinReview, setAgMinReview] = useState(7);
+  const [agMinReview, setAgMinReview] = useState(0);
   const [agMaxResult, setAgMaxResult] = useState(10);
   const [agSortBy, setAgSortBy] = useState('AllGuestsReviewScore');
   const [agHotels, setAgHotels] = useState<AgodaHotel[]>([]);
