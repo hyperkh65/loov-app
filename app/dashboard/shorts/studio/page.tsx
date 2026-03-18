@@ -586,7 +586,9 @@ export default function StudioPage() {
 
   // 미리보기
   const [playing, setPlaying] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [previewIdx, setPreviewIdx] = useState(0);
+  const preloadedAudiosRef = useRef<(HTMLAudioElement | null)[]>([]);
 
   // 이미지 피커
   const [pickerSceneId, setPickerSceneId] = useState<string | null>(null);
@@ -947,10 +949,52 @@ export default function StudioPage() {
     }
   }, []);
 
+  // ── TTS 사전 로드 (재생 없이 오디오 객체만 준비) ──────────────────────────
+  const fetchTtsAudio = useCallback(async (text: string): Promise<HTMLAudioElement | null> => {
+    try {
+      const currentSettings = settingsRef.current;
+      let audioUrl: string | null = null;
+      if (ttsMode === 'ttsmaker') {
+        const res = await fetch('/api/shorts/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice_id: ttsVoiceId, speed: currentSettings.voiceRate }),
+        });
+        const data = await res.json() as { audio?: string; error?: string };
+        if (!res.ok || data.error || !data.audio) return null;
+        audioUrl = data.audio;
+      } else if (ttsMode === 'supertonic') {
+        const res = await fetch('/api/shorts/supertonic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice_id: supertonicVoiceId, speed: currentSettings.voiceRate, lang: 'ko' }),
+        });
+        const data = await res.json() as { audio?: string; error?: string };
+        if (!res.ok || data.error || !data.audio) return null;
+        audioUrl = data.audio;
+      } else {
+        return null;
+      }
+      if (!audioUrl) return null;
+      const audio = new Audio(audioUrl);
+      audio.volume = currentSettings.ttsVolume ?? 1.0;
+      await new Promise<void>(resolve => {
+        audio.addEventListener('canplaythrough', () => resolve(), { once: true });
+        audio.addEventListener('error', () => resolve(), { once: true });
+        audio.load();
+        setTimeout(resolve, 4000);
+      });
+      return audio;
+    } catch { return null; }
+  }, [ttsMode, ttsVoiceId, supertonicVoiceId]);
+
   // ── 프리뷰 렌더 ────────────────────────────────────────────────────────────
   const stopPreview = useCallback(() => {
-    setPlaying(false); setPreviewIdx(0);
+    setPlaying(false); setPreviewIdx(0); setPreviewLoading(false);
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    // 사전 생성된 TTS 오디오 정리
+    preloadedAudiosRef.current.forEach(a => { if (a) { a.pause(); a.src = ''; } });
+    preloadedAudiosRef.current = [];
     cancelAnimationFrame(previewAnimRef.current);
     window.speechSynthesis?.cancel();
     if (ttsAudioRef.current) {
@@ -1115,26 +1159,28 @@ export default function StudioPage() {
 
     if (sc.narration) {
       const currentSettings = settingsRef.current;
-      const waitForAudio = async (audio: HTMLAudioElement | null) => {
-        if (!audio) return;
-        await new Promise<void>(resolve => {
-          const onMeta = () => {
-            if (audio.duration && !isNaN(audio.duration)) {
-              sceneDurationMs = Math.max(sceneDurationMs, audio.duration * 1000 + 300);
-            }
-            resolve();
-          };
-          if (audio.readyState >= 1) { onMeta(); }
-          else { audio.addEventListener('loadedmetadata', onMeta, { once: true }); setTimeout(resolve, 500); }
-        });
-      };
-      if (ttsMode === 'ttsmaker') {
-        const audio = await playTtsMaker(sc.narration, ttsVoiceId, currentSettings.voiceRate);
-        await waitForAudio(audio);
-      } else if (ttsMode === 'supertonic') {
-        const audio = await playSupertonic(sc.narration, supertonicVoiceId, currentSettings.voiceRate);
-        await waitForAudio(audio);
-      } else {
+      const preloaded = preloadedAudiosRef.current[idx];
+
+      if (preloaded) {
+        // 사전 로드된 오디오 즉시 재생 (API 지연 없음)
+        preloaded.currentTime = 0;
+        preloaded.volume = currentSettings.ttsVolume ?? 1.0;
+        ttsAudioRef.current = preloaded;
+        preloaded.play().catch(e => setTtsError('오디오 재생 실패: ' + String(e)));
+        if (preloaded.duration && !isNaN(preloaded.duration)) {
+          sceneDurationMs = Math.max(sceneDurationMs, preloaded.duration * 1000 + 200);
+        } else {
+          await new Promise<void>(resolve => {
+            preloaded.addEventListener('loadedmetadata', () => {
+              if (preloaded.duration && !isNaN(preloaded.duration)) {
+                sceneDurationMs = Math.max(sceneDurationMs, preloaded.duration * 1000 + 200);
+              }
+              resolve();
+            }, { once: true });
+            setTimeout(resolve, 300);
+          });
+        }
+      } else if (ttsMode === 'webSpeech') {
         const u = new SpeechSynthesisUtterance(sc.narration);
         u.lang = 'ko-KR'; u.rate = currentSettings.voiceRate; u.pitch = currentSettings.voicePitch;
         u.volume = currentSettings.ttsVolume ?? 1.0;
@@ -1145,12 +1191,25 @@ export default function StudioPage() {
     }
 
     previewTimerRef.current = setTimeout(() => playPreviewScene(idx + 1, sceneList), sceneDurationMs);
-  }, [renderPreviewFrame, stopPreview, ttsMode, ttsVoiceId, supertonicVoiceId, playTtsMaker, playSupertonic]);
+  }, [renderPreviewFrame, stopPreview, ttsMode, setTtsError]);
 
-  const startPreview = () => {
+  const startPreview = async () => {
     if (!scenes.length) return;
+    const currentScenes = scenes;
+    setPreviewLoading(true);
+    // 이미지 사전 로드
+    currentScenes.forEach(s => { if (s.imageUrl) preloadImage(s.imageUrl).catch(() => {}); });
+    // TTS 전체 사전 생성 (병렬) - API 지연으로 인한 침묵 방지
+    const audios = await Promise.all(
+      currentScenes.map(sc =>
+        sc.narration && (ttsMode === 'ttsmaker' || ttsMode === 'supertonic')
+          ? fetchTtsAudio(sc.narration)
+          : Promise.resolve(null)
+      )
+    );
+    preloadedAudiosRef.current = audios;
+    setPreviewLoading(false);
     setPlaying(true);
-    scenes.forEach(s => { if (s.imageUrl) preloadImage(s.imageUrl).catch(() => {}); });
     // 미리보기 BGM 시작
     setBgmError('');
     setBgmPlaying(false);
@@ -1172,7 +1231,7 @@ export default function StudioPage() {
       previewBgmRef.current = bgm;
       bgm.play().catch(e => setBgmError('BGM 재생 실패: ' + String(e)));
     }
-    playPreviewScene(0, scenes);
+    playPreviewScene(0, currentScenes);
   };
 
   useEffect(() => () => {
@@ -1715,13 +1774,19 @@ export default function StudioPage() {
             <div className="absolute top-3 left-1/2 -translate-x-1/2 w-16 h-4 bg-gray-800 rounded-full" />
             <div className="absolute top-6 left-2 right-2 bottom-6 rounded-[2rem] overflow-hidden bg-gray-900">
               <canvas ref={previewCanvasRef} width={540} height={960} className="w-full h-full" />
-              {!playing && (
+              {!playing && !previewLoading && (
                 <button onClick={startPreview}
                   className="absolute inset-0 flex items-center justify-center group">
                   <div className="w-14 h-14 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/20 transition-colors group-hover:scale-105">
                     <span className="text-2xl ml-1">▶</span>
                   </div>
                 </button>
+              )}
+              {previewLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60">
+                  <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin mb-2" />
+                  <span className="text-[10px] text-white/80">음성 준비 중...</span>
+                </div>
               )}
               {playing && (
                 <div className="absolute top-3 right-3 text-[10px] text-white/70 bg-black/40 px-2 py-0.5 rounded-full">
@@ -1734,7 +1799,12 @@ export default function StudioPage() {
           <div className="flex items-center gap-3">
             {playing
               ? <button onClick={stopPreview} className="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-xl text-xs font-bold transition-colors">⏹ 정지</button>
-              : <button onClick={startPreview} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold transition-colors">▶ 미리보기</button>
+              : previewLoading
+                ? <button disabled className="px-5 py-2 bg-gray-600 rounded-xl text-xs font-bold opacity-60 flex items-center gap-1.5">
+                    <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin" />
+                    음성 준비 중...
+                  </button>
+                : <button onClick={startPreview} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold transition-colors">▶ 미리보기</button>
             }
           </div>
 

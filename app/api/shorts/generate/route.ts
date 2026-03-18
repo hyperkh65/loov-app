@@ -80,7 +80,7 @@ function buildPrompt(
   }).join('\n');
 
   const sceneTemplate = sceneDurations.map((sec, i) =>
-    `{"id":${i+1},"duration":${sec},"narration":"(최소 ${Math.round(sec*CHARS_PER_SEC)}자, 빠른 구어체로 빽빽하게)","subtitle":"10자이내 핵심어","image_query":"2~3 english words","dalle_prompt":"vertical 9:16 cinematic, no text, no face"${character?.enabled && (i===1||i===Math.floor(numScenes/2))?',"character_appears":true':''}}`
+    `{"id":${i+1},"duration":${sec},"narration":"(최소 ${Math.round(sec*CHARS_PER_SEC)}자, 빠른 구어체)","subtitle":"(이모지1개+임팩트문구, 예:'😱 말이 돼?','💥 이거였어!','🔥 진짜야?','🤯 반전','💡 핵심!', 12자이내)","image_query":"2~3 english words","dalle_prompt":"vertical 9:16 cinematic, no text, no face"${character?.enabled && (i===1||i===Math.floor(numScenes/2))?',"character_appears":true':''}}`
   ).join(',\n    ');
 
   return `당신은 대한민국 최고의 숏폼 바이럴 콘텐츠 크리에이터입니다.
@@ -109,6 +109,14 @@ ${formula}
 ✅ 숫자/퍼센트/구체적 사례 → 신뢰 + 충격 (예: "3개월 만에 37만원", "10명 중 8명이")
 ✅ 각 씬 끝: 다음 씬이 보고 싶게 만드는 클리프행어 ("근데 여기서 반전이 있어", "그런데 이게 전부가 아니야")
 ✅ 마지막 씬: 저장·공유·댓글 자연스럽게 유도
+
+[subtitle 자막 규칙]
+✅ 반드시 이모지 1개 + 짧고 강렬한 감정 문구 조합
+✅ 그 씬의 감정/충격/궁금증을 한 방에 표현
+✅ 예시 → "😱 말이 돼?", "💥 이거였어!", "🔥 진짜야?", "🤯 반전 있음", "💡 핵심 공개", "🎯 바로 이거!", "⚡ 충격 사실", "😤 이게 맞아?", "🙈 몰랐지?", "🤑 대박이잖아"
+✅ 질문형·감탄형·반전형으로 시청자 감정 자극
+❌ 금지: 단순 키워드 ("핵심정보", "중요", "주의", "예시" 등) → 아무 감정도 없음
+❌ 금지: ~임, ~함, ~됨 종결 자막
 
 ❌ 절대 금지: 나레이션이 짧아서 씬 중간에 침묵이 생기는 것 (가장 치명적 오류)
 ❌ 절대 금지: "안녕하세요", "오늘은 ~에 대해 알아보겠습니다", "이상으로", "감사합니다"
