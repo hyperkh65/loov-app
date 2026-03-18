@@ -70,6 +70,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: '모바일',
+    items: [
+      { href: '/dashboard/tracking',   icon: '📍', label: '위치 트래킹' },
+    ],
+  },
+  {
     label: '설정',
     items: [
       { href: '/dashboard/settings', icon: '⚙️', label: 'AI 설정' },
