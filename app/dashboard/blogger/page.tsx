@@ -403,7 +403,14 @@ export default function BloggerPage() {
   const [editorMode, setEditorMode] = useState<'edit' | 'preview'>('edit');
   const [isDraft, setIsDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState<{ url?: string; error?: string } | null>(null);
+  const [publishResult, setPublishResult] = useState<{ url?: string; wpUrl?: string; error?: string } | null>(null);
+  // WordPress 크로스 포스팅
+  const [wpEnabled, setWpEnabled] = useState(false);
+  const [wpShowSettings, setWpShowSettings] = useState(false);
+  const [wpUrl, setWpUrl] = useState('https://blog.2days.kr');
+  const [wpUsername, setWpUsername] = useState('');
+  const [wpPassword, setWpPassword] = useState('');
+  const [publishedUrls, setPublishedUrls] = useState<string[]>([]);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLIFrameElement>(null);
 
@@ -456,7 +463,7 @@ export default function BloggerPage() {
   // ── SNS ────────────────────────────────────────────────────────────────
   const [snsModal, setSnsModal] = useState(false);
   const [snsLoading, setSnsLoading] = useState(false);
-  const [snsTexts, setSnsTexts] = useState<SnsTexts | null>(null);
+  const [snsTexts, setSnsTexts] = useState<SnsTexts & { threadsUrl?: string } | null>(null);
   const [snsConnections, setSnsConnections] = useState<SnsConnection[]>([]);
   const [snsActivePlatform, setSnsActivePlatform] = useState<keyof SnsTexts>('instagram');
   const [snsEditText, setSnsEditText] = useState('');
@@ -479,6 +486,8 @@ export default function BloggerPage() {
       if (cp) { const p = JSON.parse(cp); setCpApiKey(p.apiKey || ''); setCpDbId(p.dbId || ''); }
       const nt = localStorage.getItem('blogger_nt_config');
       if (nt) { const p = JSON.parse(nt); setNtDbId(p.dbId || ''); }
+      const wp = localStorage.getItem('blogger_wp_config');
+      if (wp) { const p = JSON.parse(wp); setWpUrl(p.wpUrl || 'https://blog.2days.kr'); setWpUsername(p.wpUsername || ''); setWpPassword(p.wpPassword || ''); setWpEnabled(p.wpEnabled || false); }
     } catch { /* ignore */ }
   }, []);
 
@@ -638,8 +647,9 @@ export default function BloggerPage() {
 
   async function handlePublish() {
     if (!editTitle.trim() || !editContent.trim()) return;
-    setPublishing(true); setPublishResult(null);
+    setPublishing(true); setPublishResult(null); setPublishedUrls([]);
     try {
+      // 1. Blogger 발행
       const res = await fetch('/api/blogger/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -647,7 +657,29 @@ export default function BloggerPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '발행 실패');
-      setPublishResult({ url: data.url });
+
+      const urls: string[] = [];
+      if (data.url) urls.push(data.url);
+      let wpPostUrl = '';
+
+      // 2. WordPress 동시 발행 (활성화된 경우)
+      if (wpEnabled && wpUrl && wpUsername && wpPassword) {
+        try {
+          const wpRes = await fetch('/api/blogger/cross-post-wp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: editTitle, content: editContent, labels: editLabels,
+              isDraft, wpUrl, wpUsername, wpPassword,
+            }),
+          });
+          const wpData = await wpRes.json();
+          if (wpRes.ok && wpData.url) { wpPostUrl = wpData.url; urls.push(wpData.url); }
+        } catch { /* WP 발행 실패해도 Blogger 성공 유지 */ }
+      }
+
+      setPublishedUrls(urls);
+      setPublishResult({ url: data.url, wpUrl: wpPostUrl || undefined });
     } catch (err) { setPublishResult({ error: String(err) }); }
     finally { setPublishing(false); }
   }
@@ -756,6 +788,7 @@ export default function BloggerPage() {
             hotelName: h.hotelName, reviewScore: h.reviewScore,
             dailyRate: h.dailyRate, discountPercentage: h.discountPercentage,
           })),
+          blogUrls: publishedUrls.length > 0 ? publishedUrls : undefined,
         }),
       });
       const data = await res.json();
@@ -771,14 +804,45 @@ export default function BloggerPage() {
     if (!snsSelectedPlatforms.length) { alert('발행할 SNS를 선택해주세요.'); return; }
     if (!snsEditText.trim()) { alert('발행할 텍스트가 없습니다.'); return; }
     setSnsPosting(true); setSnsPostResult(null);
+
+    // Threads는 URL을 thread_items(댓글)로 분리, 나머지는 본문에 URL 포함
+    const threadsUrl = snsTexts?.threadsUrl || '';
+    const nonThreadPlatforms = snsSelectedPlatforms.filter(p => p !== 'threads');
+    const hasThreads = snsSelectedPlatforms.includes('threads');
+
+    const allResults: { platform: string; success: boolean; error?: string }[] = [];
+
     try {
-      const res = await fetch('/api/sns/post-now', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: snsEditText, platforms: snsSelectedPlatforms }),
-      });
-      const data = await res.json();
-      setSnsPostResult(data.results || []);
+      // 트위터/페이스북/인스타그램: 본문에 URL 포함된 상태로 발행
+      if (nonThreadPlatforms.length > 0) {
+        const res = await fetch('/api/sns/post-now', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: snsEditText, platforms: nonThreadPlatforms }),
+        });
+        const data = await res.json();
+        allResults.push(...(data.results || []));
+      }
+
+      // Threads: 메인 텍스트 발행 후 URL을 thread_items(댓글)로 추가
+      if (hasThreads) {
+        const threadItems = threadsUrl
+          ? [{ content: `🔗 블로그 전체보기\n${threadsUrl}` }]
+          : [];
+        const res = await fetch('/api/sns/post-now', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: snsTexts?.threads || snsEditText,
+            platforms: ['threads'],
+            thread_items: threadItems,
+          }),
+        });
+        const data = await res.json();
+        allResults.push(...(data.results || []));
+      }
+
+      setSnsPostResult(allResults);
     } catch (e) { alert(String(e)); }
     finally { setSnsPosting(false); }
   }
@@ -1141,6 +1205,34 @@ export default function BloggerPage() {
                     style={{ minHeight: '460px' }} sandbox="allow-same-origin" title="preview"/>
                 )}
 
+                {/* WordPress 크로스 포스팅 설정 */}
+                <div className="px-4 py-3 border-t border-gray-700 bg-gray-850">
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox" checked={wpEnabled} onChange={e => setWpEnabled(e.target.checked)} className="accent-blue-500 w-4 h-4"/>
+                      <span className="text-sm text-gray-300">🌐 <strong>blog.2days.kr</strong> 동시 발행</span>
+                    </label>
+                    <button onClick={() => setWpShowSettings(s => !s)} className="text-xs text-gray-500 hover:text-gray-300">⚙️ 설정</button>
+                  </div>
+                  {wpShowSettings && (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <input type="text" value={wpUrl} onChange={e => setWpUrl(e.target.value)}
+                        placeholder="https://blog.2days.kr"
+                        className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"/>
+                      <input type="text" value={wpUsername} onChange={e => setWpUsername(e.target.value)}
+                        placeholder="WordPress 사용자명"
+                        className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"/>
+                      <div className="flex gap-2">
+                        <input type="password" value={wpPassword} onChange={e => setWpPassword(e.target.value)}
+                          placeholder="앱 비밀번호"
+                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"/>
+                        <button onClick={() => { localStorage.setItem('blogger_wp_config', JSON.stringify({ wpUrl, wpUsername, wpPassword, wpEnabled })); setWpShowSettings(false); }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg">저장</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Publish bar */}
                 <div className="p-4 border-t border-gray-700 flex items-center gap-3 flex-wrap">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1152,8 +1244,21 @@ export default function BloggerPage() {
                     <span className="text-sm text-gray-300">임시저장</span>
                   </label>
                   {publishResult && (
-                    <div className={`flex-1 rounded-lg px-3 py-2 text-sm ${publishResult.error ? 'bg-red-900/40 text-red-300' : 'bg-green-900/40 text-green-300'}`}>
-                      {publishResult.error ? `오류: ${publishResult.error}` : <>발행 성공! {publishResult.url && <a href={publishResult.url} target="_blank" rel="noopener noreferrer" className="underline">블로그에서 보기 →</a>}</>}
+                    <div className={`flex-1 rounded-lg px-3 py-2 text-sm space-y-1 ${publishResult.error ? 'bg-red-900/40 text-red-300' : 'bg-green-900/40 text-green-300'}`}>
+                      {publishResult.error ? `오류: ${publishResult.error}` : (
+                        <>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span>✅ 블로거 발행!</span>
+                            {publishResult.url && <a href={publishResult.url} target="_blank" rel="noopener noreferrer" className="underline text-xs">보기 →</a>}
+                          </div>
+                          {publishResult.wpUrl && (
+                            <div className="flex items-center gap-2 flex-wrap text-blue-300">
+                              <span>✅ WordPress 발행!</span>
+                              <a href={publishResult.wpUrl} target="_blank" rel="noopener noreferrer" className="underline text-xs">보기 →</a>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                   <div className="ml-auto flex items-center gap-2">
@@ -1163,7 +1268,7 @@ export default function BloggerPage() {
                     </button>
                     <button onClick={handlePublish} disabled={publishing || !editTitle.trim() || !editContent.trim()}
                       className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2">
-                      {publishing ? <><Spinner /> 발행 중...</> : isDraft ? '💾 임시저장' : '🚀 블로거에 발행'}
+                      {publishing ? <><Spinner /> 발행 중...</> : isDraft ? '💾 임시저장' : wpEnabled ? '🚀 블로거+WP 발행' : '🚀 블로거에 발행'}
                     </button>
                   </div>
                 </div>

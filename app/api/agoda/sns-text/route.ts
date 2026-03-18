@@ -37,16 +37,22 @@ export async function POST(req: NextRequest) {
     title: string;
     cityName: string;
     hotels?: { hotelName: string; reviewScore: number; dailyRate: number; discountPercentage: number }[];
-    blogUrl?: string;
+    blogUrls?: string[];   // 발행된 블로그 URL 목록 (blogger, wordpress 등)
     travelStyle?: string;
   };
 
-  const { title, cityName, hotels = [], blogUrl = '', travelStyle = '커플' } = body;
+  const { title, cityName, hotels = [], blogUrls = [], travelStyle = '커플' } = body;
   if (!title) return NextResponse.json({ error: '제목이 필요합니다' }, { status: 400 });
 
   const hotelSummary = hotels.slice(0, 3).map(h =>
     `${h.hotelName} (리뷰 ${h.reviewScore}/10, 1박 ${Math.round(h.dailyRate).toLocaleString('ko-KR')}원${h.discountPercentage > 0 ? ` -${Math.round(h.discountPercentage)}%` : ''})`
   ).join(', ');
+
+  // 블로그 URL 정보
+  const urlNote = blogUrls.length > 0
+    ? `발행된 블로그 URL: ${blogUrls.join(', ')}`
+    : '블로그 URL: (발행 후 추가 예정)';
+  const primaryUrl = blogUrls[0] || '';
 
   const prompt = `너는 SNS 마케팅 전문가야. 여행 호텔 블로그 포스트를 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
 
@@ -54,16 +60,16 @@ export async function POST(req: NextRequest) {
 여행지: ${cityName}
 여행 스타일: ${travelStyle}
 호텔 정보: ${hotelSummary || cityName + ' 추천 호텔들'}
-블로그 링크: ${blogUrl || '링크 삽입 예정'}
+${urlNote}
 
-각 플랫폼 특성에 맞게 작성:
-- instagram: 감성적이고 이모지 풍부하게, 해시태그 10-15개 포함, 200자 내외
-- twitter: 임팩트 있게 짧게, 핵심만, 이모지 2-3개, 280자 이내, 해시태그 3개
-- facebook: 친근하고 상세하게, 이모지 적당히, 300자 내외, 해시태그 5개
-- threads: 인스타그램보다 덜 형식적, 대화체, 이모지 3-5개, 200자 내외
+[플랫폼별 작성 규칙]
+- instagram: 감성적이고 이모지 풍부하게, 해시태그 10-15개 포함, 200자 내외. URL은 "🔗 링크 : ${primaryUrl || '프로필링크 참조'}" 형태로 해시태그 앞에 추가
+- twitter: 임팩트 있고 짧게, 이모지 2-3개, 240자 이내. 본문 마지막에 URL 직접 포함 (${primaryUrl || '링크'})
+- facebook: 친근하고 상세하게, 이모지 적당히, 250자 내외. 본문 중간 자연스럽게 "👉 자세히 보기: ${primaryUrl || '링크'}" 포함
+- threads: 후킹성 텍스트만 200자 내외, URL 없이 (URL은 별도 댓글로 추가됨). 이모지 3-5개, 대화체
 
 반드시 아래 JSON만 출력 (마크다운 없이):
-{"instagram":"...","twitter":"...","facebook":"...","threads":"..."}`;
+{"instagram":"...","twitter":"...","facebook":"...","threads":"...","threadsUrl":"${primaryUrl}"}`;
 
   try {
     const openaiKey = await getSetting('OPENAI_API_KEY');
@@ -74,7 +80,7 @@ export async function POST(req: NextRequest) {
       text = await callGemini(prompt);
     }
 
-    let parsed: { instagram: string; twitter: string; facebook: string; threads: string };
+    let parsed: { instagram: string; twitter: string; facebook: string; threads: string; threadsUrl?: string };
     try {
       parsed = JSON.parse(text);
     } catch {
@@ -88,6 +94,7 @@ export async function POST(req: NextRequest) {
       twitter: parsed.twitter || '',
       facebook: parsed.facebook || '',
       threads: parsed.threads || '',
+      threadsUrl: primaryUrl,
     });
   } catch (err) {
     console.error('SNS text generate error:', err);
