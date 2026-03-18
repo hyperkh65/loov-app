@@ -28,6 +28,286 @@ type Tab = 'write' | 'coupang' | 'notion' | 'history' | 'status';
 type ContentType = 'product' | 'info';
 type ImageSource = 'pixabay' | 'pexels' | 'dalle' | 'upload';
 
+// ── Thumbnail Generator Component ─────────────────────────────────────────────
+interface ThumbnailGeneratorProps {
+  defaultTitle: string;
+  defaultKeyword: string;
+  onInsert: (imageUrl: string) => void;
+}
+
+function ThumbnailGenerator({ defaultTitle, defaultKeyword, onInsert }: ThumbnailGeneratorProps) {
+  const [bgQuery, setBgQuery] = useState('');
+  const [bgImages, setBgImages] = useState<{ id: number; url: string; thumb: string }[]>([]);
+  const [bgLoading, setBgLoading] = useState(false);
+  const [selectedBg, setSelectedBg] = useState('');
+  const [mainTitle, setMainTitle] = useState('');
+  const [subTitle, setSubTitle] = useState('');
+  const [colorScheme, setColorScheme] = useState<'dark' | 'blue' | 'green'>('dark');
+  const [generating, setGenerating] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef2 = useRef<HTMLInputElement>(null);
+
+  // Auto-fill from props
+  useEffect(() => {
+    if (defaultTitle && !mainTitle) {
+      // Split long title into main + sub
+      if (defaultTitle.length > 20) {
+        const mid = Math.ceil(defaultTitle.length * 0.6);
+        setMainTitle(defaultTitle.slice(0, mid));
+        setSubTitle(defaultTitle.slice(mid));
+      } else {
+        setMainTitle(defaultTitle);
+        setSubTitle(defaultKeyword);
+      }
+    }
+  }, [defaultTitle, defaultKeyword]); // eslint-disable-line
+
+  async function searchBgImages() {
+    const q = bgQuery || defaultKeyword || defaultTitle;
+    if (!q) return;
+    setBgLoading(true);
+    try {
+      const res = await fetch(`/api/shorts/images?q=${encodeURIComponent(q)}&source=pixabay&per_page=9`);
+      const data = await res.json();
+      setBgImages((data.images || []).map((img: { id: number; url: string; thumb: string }) => ({ id: img.id, url: img.url, thumb: img.thumb })));
+    } catch { /* ignore */ }
+    finally { setBgLoading(false); }
+  }
+
+  function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const lines: string[] = [];
+    let currentLine = '';
+    for (const char of text) {
+      const testLine = currentLine + char;
+      if (ctx.measureText(testLine).width > maxWidth && currentLine.length > 0) {
+        lines.push(currentLine);
+        currentLine = char;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+
+  async function generateThumbnail() {
+    const bgSrc = selectedBg;
+    if (!bgSrc || !mainTitle) { alert('배경 이미지와 제목을 입력해주세요.'); return; }
+
+    setGenerating(true);
+    try {
+      const canvas = canvasRef.current!;
+      canvas.width = 1080;
+      canvas.height = 1080;
+      const ctx = canvas.getContext('2d')!;
+
+      // 1. Load background image via proxy
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const proxyUrl = bgSrc.startsWith('http') ? `/api/proxy-image?url=${encodeURIComponent(bgSrc)}` : bgSrc;
+      img.src = proxyUrl;
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error('이미지 로드 실패'));
+        setTimeout(() => rej(new Error('이미지 로드 타임아웃')), 15000);
+      });
+
+      // Cover-fit draw
+      const scale = Math.max(1080 / img.naturalWidth, 1080 / img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+      ctx.drawImage(img, (1080 - w) / 2, (1080 - h) / 2, w, h);
+
+      // 2. Gradient overlay
+      const grad = ctx.createLinearGradient(0, 0, 0, 1080);
+      if (colorScheme === 'blue') {
+        grad.addColorStop(0, 'rgba(0,20,60,0.65)');
+        grad.addColorStop(1, 'rgba(0,10,40,0.75)');
+      } else if (colorScheme === 'green') {
+        grad.addColorStop(0, 'rgba(0,40,20,0.65)');
+        grad.addColorStop(1, 'rgba(0,20,10,0.75)');
+      } else {
+        grad.addColorStop(0, 'rgba(0,0,0,0.45)');
+        grad.addColorStop(0.5, 'rgba(0,0,0,0.62)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+      }
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1080, 1080);
+
+      // 3. Gold top bar
+      ctx.fillStyle = '#f0b429';
+      ctx.fillRect(0, 0, 1080, 10);
+
+      // 4. Main title
+      const fontSize = mainTitle.length <= 10 ? 110 : mainTitle.length <= 16 ? 95 : 80;
+      ctx.font = `bold ${fontSize}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "나눔고딕", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      const lines = wrapText(ctx, mainTitle, 940);
+      const lineHeight = fontSize * 1.25;
+      const totalTextH = lines.length * lineHeight;
+      const subH = subTitle ? 75 : 0;
+      const totalH = totalTextH + subH + (subTitle ? 40 : 0);
+      const startY = (1080 - totalH) / 2;
+
+      lines.forEach((line, i) => {
+        const y = startY + i * lineHeight + lineHeight / 2;
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.strokeText(line, 540, y);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(line, 540, y);
+      });
+
+      // 5. Subtitle
+      if (subTitle) {
+        const subY = startY + totalTextH + 50;
+        ctx.font = `bold 56px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif`;
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        ctx.strokeText(subTitle, 540, subY);
+        ctx.fillStyle = colorScheme === 'green' ? '#4ade80' : colorScheme === 'blue' ? '#60a5fa' : '#ffffff';
+        ctx.fillText(subTitle, 540, subY);
+      }
+
+      // 6. Thin bottom bar
+      ctx.fillStyle = '#f0b429';
+      ctx.fillRect(0, 1070, 1080, 10);
+
+      // Preview
+      const url = canvas.toDataURL('image/png');
+      setPreviewUrl(url);
+    } catch (e) {
+      alert('썸네일 생성 오류: ' + String(e));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleUploadAndInsert() {
+    if (!previewUrl) return;
+    setUploading(true);
+    try {
+      const res = await fetch(previewUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `thumbnail_${Date.now()}.png`, { type: 'image/png' });
+      const form = new FormData();
+      form.append('file', file);
+      const uploadRes = await fetch('/api/blogger/upload-image', { method: 'POST', body: form });
+      const data = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(data.error || '업로드 실패');
+      onInsert(data.url);
+    } catch {
+      // Fallback: insert data URL directly
+      onInsert(previewUrl);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="bg-gray-800 rounded-xl p-5 space-y-4 border border-gray-700">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-200">🖼 대표 이미지 자동 생성</h3>
+        <div className="flex gap-2">
+          {(['dark', 'blue', 'green'] as const).map(c => (
+            <button key={c} onClick={() => setColorScheme(c)}
+              className={`w-6 h-6 rounded-full border-2 transition-all ${colorScheme === c ? 'border-white scale-125' : 'border-transparent'} ${c === 'dark' ? 'bg-gray-800' : c === 'blue' ? 'bg-blue-800' : 'bg-green-800'}`}
+              title={c} />
+          ))}
+        </div>
+      </div>
+
+      {/* Background image search */}
+      <div>
+        <label className="text-xs text-gray-400 mb-1.5 block">배경 이미지 선택</label>
+        <div className="flex gap-2 mb-2">
+          <input type="text" value={bgQuery} onChange={e => setBgQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && searchBgImages()}
+            placeholder={defaultKeyword || '배경 이미지 검색어 (영어 권장)'}
+            className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+          />
+          <button onClick={searchBgImages} disabled={bgLoading}
+            className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-sm px-4 py-2 rounded-lg">
+            {bgLoading ? '...' : '검색'}
+          </button>
+          <button onClick={() => fileInputRef2.current?.click()}
+            className="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-3 py-2 rounded-lg" title="파일 업로드">
+            ⬆️
+          </button>
+        </div>
+        <input ref={fileInputRef2} type="file" accept="image/*" className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) { const reader = new FileReader(); reader.onload = ev => { if (ev.target?.result) setSelectedBg(ev.target.result as string); }; reader.readAsDataURL(f); }
+          }}
+        />
+        {bgImages.length > 0 && (
+          <div className="grid grid-cols-3 gap-1.5">
+            {bgImages.map(img => (
+              <button key={img.id} onClick={() => setSelectedBg(img.url)}
+                className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${selectedBg === img.url ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-transparent hover:border-gray-500'}`}>
+                <img src={img.thumb} alt="" className="w-full h-full object-cover"/>
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedBg && bgImages.length === 0 && (
+          <div className="text-xs text-green-400 mt-1">배경 이미지 선택됨</div>
+        )}
+      </div>
+
+      {/* Text inputs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-gray-400 mb-1 block">메인 제목 (크게 표시)</label>
+          <textarea value={mainTitle} onChange={e => setMainTitle(e.target.value)} rows={2}
+            placeholder="예: 월급만으로는&#10;답이 없다면?"
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 mb-1 block">서브 제목 (작게 표시, 선택)</label>
+          <textarea value={subTitle} onChange={e => setSubTitle(e.target.value)} rows={2}
+            placeholder="예: 월배당 ETF로 현금흐름 만들기"
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none"
+          />
+        </div>
+      </div>
+
+      <canvas ref={canvasRef} className="hidden"/>
+
+      <div className="flex gap-3">
+        <button onClick={generateThumbnail} disabled={generating || !selectedBg || !mainTitle}
+          className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm">
+          {generating ? '생성 중...' : '✨ 썸네일 생성'}
+        </button>
+      </div>
+
+      {/* Preview */}
+      {previewUrl && (
+        <div className="space-y-3">
+          <div className="text-xs text-gray-400">미리보기</div>
+          <img src={previewUrl} alt="thumbnail preview" className="w-full max-w-xs mx-auto rounded-xl border border-gray-600 block"/>
+          <div className="flex gap-2">
+            <a href={previewUrl} download={`thumbnail_${Date.now()}.png`}
+              className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium py-2.5 rounded-xl text-center transition-colors">
+              ⬇️ 다운로드
+            </a>
+            <button onClick={handleUploadAndInsert} disabled={uploading}
+              className="flex-1 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">
+              {uploading ? '업로드 중...' : '📎 글 맨 위에 삽입'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────
 export default function BloggerPage() {
   const searchParams = useSearchParams();
@@ -557,6 +837,16 @@ export default function BloggerPage() {
                 </div>
               </div>
             )}
+
+            {/* Thumbnail Generator - always shown in write tab */}
+            <ThumbnailGenerator
+              defaultTitle={editTitle || keyword}
+              defaultKeyword={keyword}
+              onInsert={(imageUrl) => {
+                const imgHtml = `<div style="text-align:center;margin:0 0 1.5em"><img src="${imageUrl}" alt="${editTitle}" style="max-width:100%;border-radius:8px;display:block;margin:0 auto"></div>\n`;
+                setEditContent(prev => imgHtml + prev);
+              }}
+            />
 
             {!generated && !editContent && (
               <div className="text-center py-16 text-gray-600">
