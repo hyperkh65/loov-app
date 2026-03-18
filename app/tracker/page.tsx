@@ -305,8 +305,10 @@ export default function TrackerPage() {
       form.append('sessionId', sessionIdRef.current);
       form.append('duration', String(durationSec));
 
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/tracking/voice', {
         method: 'POST',
+        headers: session ? { 'Authorization': `Bearer ${session.access_token}` } : {},
         body: form,
       });
 
