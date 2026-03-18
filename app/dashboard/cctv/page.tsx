@@ -101,8 +101,12 @@ export default function CCTVViewerPage() {
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         setStatus('idle');
-        setStatusMsg('카메라 연결 끊김');
+        setStatusMsg('카메라 연결 끊김 — 재연결 중...');
         stopRecording();
+        // 2초 후 자동 재연결
+        setTimeout(() => {
+          if (pcRef.current === pc) connect();
+        }, 2000);
       }
     };
 
