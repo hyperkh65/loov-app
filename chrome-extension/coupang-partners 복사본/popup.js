@@ -1,6 +1,6 @@
 const fields = ['notionApiKey', 'notionDatabaseId'];
 const DEFAULTS = {
-  notionApiKey: 'secret_ihjK120BXx6NWu8lCE01YAEZrS4LLUuoKBdQhpiogOc',
+  notionApiKey: '',
   notionDatabaseId: '3251f4ff-9a0e-811b-a5b1-e4ed9ab38dcd',
 };
 
