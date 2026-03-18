@@ -76,8 +76,10 @@ export async function POST(req: NextRequest) {
 
   // 제목 정제: 앞뒤 공백, null byte 제거, 500자 제한
   const cleanTitle = (title || '').replace(/\x00/g, '').trim().slice(0, 500);
-  // 본문 정제: null byte 제거
-  const cleanContent = (content || '').replace(/\x00/g, '');
+  // 본문 정제: null byte 제거 + data: URL 이미지 제거 (Blogger API가 거부함)
+  const cleanContent = (content || '')
+    .replace(/\x00/g, '')
+    .replace(/<img[^>]+src=["']data:[^"']+["'][^>]*\/?>/gi, '');
   // 라벨 정제: 특수문자/개행/null 제거, 100자 제한, 최대 5개
   const labels = (body.labels || [])
     .map((l: string) => l.replace(/[<>"'\x00\r\n]/g, '').trim().slice(0, 100))
