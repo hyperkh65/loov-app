@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 const BLOG_ID = '7951763866955162015';
@@ -15,22 +15,23 @@ interface HistoryPost {
 }
 interface BloggerPost { id: string; title: string; url: string; status: string; published: string; labels: string[]; }
 interface CoupangProduct {
-  productId: number; productName: string; productPrice: number;
-  productUrl: string; imageUrl?: string; discountRate?: number;
+  productId: number | string; productName: string; productPrice: number;
+  productUrl: string; productImage: string; discountRate?: number;
 }
 interface NotionPage { id: string; title: string; url: string; last_edited: string; }
-interface UserSettings { has_coupang: boolean; has_notion: boolean; }
+interface ImageResult { id: number; url: string; thumb: string; tags: string; author: string; }
 
-type Tab = 'write' | 'coupang' | 'notion' | 'history' | 'status' | 'settings';
+type Tab = 'write' | 'coupang' | 'notion' | 'history' | 'status';
 type ContentType = 'product' | 'info';
+type ImageSource = 'pixabay' | 'pexels' | 'dalle';
 
 export default function BloggerPage() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>('write');
-  const [status, setStatus] = useState<StatusData | null>(null);
+  const [blogStatus, setBlogStatus] = useState<StatusData | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
-  // Write tab
+  // ── Write tab ──────────────────────────────────────
   const [contentType, setContentType] = useState<ContentType>('product');
   const [keyword, setKeyword] = useState('');
   const [productInfo, setProductInfo] = useState('');
@@ -39,80 +40,97 @@ export default function BloggerPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editLabels, setEditLabels] = useState<string[]>([]);
+  const [showPreview, setShowPreview] = useState(true);
   const [isDraft, setIsDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ url?: string; error?: string } | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
 
-  // Coupang tab
+  // ── Image search ───────────────────────────────────
+  const [imageQuery, setImageQuery] = useState('');
+  const [imageSource, setImageSource] = useState<ImageSource>('pixabay');
+  const [images, setImages] = useState<ImageResult[]>([]);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const [featuredImage, setFeaturedImage] = useState('');
+  const [showImageSearch, setShowImageSearch] = useState(false);
+
+  // ── Coupang tab ────────────────────────────────────
   const [coupangKeyword, setCoupangKeyword] = useState('');
   const [coupangProducts, setCoupangProducts] = useState<CoupangProduct[]>([]);
   const [coupangLoading, setCoupangLoading] = useState(false);
   const [coupangError, setCoupangError] = useState('');
   const [selectedProducts, setSelectedProducts] = useState<CoupangProduct[]>([]);
+  const [hasCoupang, setHasCoupang] = useState<boolean | null>(null);
 
-  // Notion tab
+  // ── Notion tab ─────────────────────────────────────
   const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
   const [notionLoading, setNotionLoading] = useState(false);
   const [notionError, setNotionError] = useState('');
   const [importing, setImporting] = useState<string | null>(null);
+  const [notionContent, setNotionContent] = useState('');
+  const [hasNotion, setHasNotion] = useState<boolean | null>(null);
 
-  // History
+  // ── History / Status ───────────────────────────────
   const [history, setHistory] = useState<HistoryPost[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-
-  // Blog status
   const [blogPosts, setBlogPosts] = useState<BloggerPost[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
 
-  // Settings
-  const [userSettings, setUserSettings] = useState<UserSettings>({ has_coupang: false, has_notion: false });
-  const [settingsForm, setSettingsForm] = useState({ coupang_access_key: '', coupang_secret_key: '', notion_token: '' });
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsSaved, setSettingsSaved] = useState(false);
-
   const previewRef = useRef<HTMLIFrameElement>(null);
 
-  useEffect(() => { fetchStatus(); fetchUserSettings(); }, []);
+  // ── Init ───────────────────────────────────────────
   useEffect(() => {
-    if (searchParams.get('connected') === '1') fetchStatus();
+    fetchBlogStatus();
+    checkCoupang();
+    checkNotion();
+  }, []);
+
+  useEffect(() => {
+    if (searchParams.get('connected') === '1') fetchBlogStatus();
   }, [searchParams]);
 
-  // Update preview iframe
   useEffect(() => {
-    if (showPreview && previewRef.current) {
+    if (showPreview && previewRef.current && editContent) {
       const doc = previewRef.current.contentDocument;
       if (doc) {
         doc.open();
         doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-          body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.8; color: #333; }
-          h1,h2,h3 { color: #111; margin-top: 1.5em; }
-          h2 { border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; }
-          img { max-width: 100%; }
-          a { color: #4f46e5; }
-          pre { background: #f4f4f4; padding: 1em; border-radius: 4px; overflow-x: auto; }
-          blockquote { border-left: 4px solid #ccc; padding-left: 1em; color: #555; margin: 1em 0; }
-          ul, ol { padding-left: 1.5em; }
+          body{font-family:'Noto Sans KR',sans-serif;padding:20px;max-width:800px;margin:0 auto;line-height:1.8;color:#333}
+          h1,h2,h3{color:#111;margin-top:1.5em}
+          h2{border-bottom:2px solid #e5e7eb;padding-bottom:.3em}
+          img{max-width:100%}a{color:#4f46e5}
+          pre{background:#f4f4f4;padding:1em;border-radius:4px;overflow-x:auto}
+          blockquote{border-left:4px solid #ccc;padding-left:1em;color:#555;margin:1em 0}
+          ul,ol{padding-left:1.5em}.callout{background:#f0f4ff;border-left:4px solid #4f8ef7;padding:1em;border-radius:4px;margin:1em 0}
         </style></head><body>${editContent}</body></html>`);
         doc.close();
       }
     }
   }, [showPreview, editContent]);
 
-  async function fetchStatus() {
+  async function fetchBlogStatus() {
     setStatusLoading(true);
     try {
       const res = await fetch('/api/blogger/status');
-      setStatus(await res.json());
-    } catch { setStatus({ connected: false }); }
+      setBlogStatus(await res.json());
+    } catch { setBlogStatus({ connected: false }); }
     finally { setStatusLoading(false); }
   }
 
-  async function fetchUserSettings() {
+  async function checkCoupang() {
     try {
-      const res = await fetch('/api/blogger/settings');
-      if (res.ok) setUserSettings(await res.json());
-    } catch {}
+      const res = await fetch('/api/coupang/products?type=search&keyword=test');
+      // 400 = no key, 200 = has key (even if no results)
+      const data = await res.json();
+      setHasCoupang(!data.error?.includes('API 키'));
+    } catch { setHasCoupang(false); }
+  }
+
+  async function checkNotion() {
+    try {
+      const res = await fetch('/api/notion/settings');
+      const data = await res.json();
+      setHasNotion(data.hasApiKey === true);
+    } catch { setHasNotion(false); }
   }
 
   async function fetchHistory() {
@@ -131,8 +149,92 @@ export default function BloggerPage() {
     } catch {} finally { setPostsLoading(false); }
   }
 
-  async function handleGenerate() {
-    if (!keyword.trim()) return;
+  // ── Coupang search ─────────────────────────────────
+  async function handleCoupangSearch() {
+    if (!coupangKeyword.trim()) return;
+    setCoupangLoading(true);
+    setCoupangError('');
+    try {
+      const res = await fetch(`/api/coupang/products?type=search&keyword=${encodeURIComponent(coupangKeyword)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '검색 실패');
+      setCoupangProducts(data.products || []);
+    } catch (err) { setCoupangError(String(err)); }
+    finally { setCoupangLoading(false); }
+  }
+
+  function toggleProduct(product: CoupangProduct) {
+    setSelectedProducts(prev => {
+      const exists = prev.find(p => p.productId === product.productId);
+      return exists ? prev.filter(p => p.productId !== product.productId) : [...prev, product];
+    });
+  }
+
+  async function handleCoupangGenerate() {
+    if (!selectedProducts.length) { alert('상품을 먼저 선택해주세요.'); return; }
+    const kw = selectedProducts[0].productName.split(' ').slice(0, 3).join(' ');
+    setKeyword(kw);
+    setContentType('product');
+    // auto-set featured image from first product
+    if (selectedProducts[0].productImage && !featuredImage) {
+      setFeaturedImage(selectedProducts[0].productImage);
+    }
+    setActiveTab('write');
+    await generatePost('product', kw, selectedProducts, undefined, featuredImage || selectedProducts[0]?.productImage || '');
+  }
+
+  // ── Notion ─────────────────────────────────────────
+  async function handleNotionLoad() {
+    setNotionLoading(true);
+    setNotionError('');
+    setNotionPages([]);
+    try {
+      const res = await fetch('/api/notion/pages');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '조회 실패');
+      setNotionPages(data.pages || []);
+    } catch (err) { setNotionError(String(err)); }
+    finally { setNotionLoading(false); }
+  }
+
+  async function handleNotionImportAndGenerate(page: NotionPage) {
+    setImporting(page.id);
+    try {
+      const res = await fetch(`/api/notion/import?pageId=${page.id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '가져오기 실패');
+      setNotionContent(data.plainText || '');
+      setKeyword(page.title);
+      setContentType('info');
+      setActiveTab('write');
+      await generatePost('info', page.title, undefined, data.plainText || '', '');
+    } catch (err) { alert('노션 가져오기 오류: ' + String(err)); }
+    finally { setImporting(null); }
+  }
+
+  // ── Image search ───────────────────────────────────
+  async function handleImageSearch() {
+    const q = imageQuery || keyword || editTitle;
+    if (!q.trim()) return;
+    setImagesLoading(true);
+    setImages([]);
+    try {
+      const res = await fetch(`/api/shorts/images?q=${encodeURIComponent(q)}&source=${imageSource}&per_page=9`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '이미지 검색 실패');
+      setImages(data.images || []);
+    } catch (err) { alert('이미지 검색 오류: ' + String(err)); }
+    finally { setImagesLoading(false); }
+  }
+
+  // ── Generate ───────────────────────────────────────
+  async function generatePost(
+    type: ContentType,
+    kw: string,
+    products?: CoupangProduct[],
+    notionCtx?: string,
+    imgUrl?: string,
+  ) {
     setGenerating(true);
     setGenerated(null);
     setPublishResult(null);
@@ -140,7 +242,18 @@ export default function BloggerPage() {
       const res = await fetch('/api/blogger/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, contentType, productInfo, coupangProducts: selectedProducts }),
+        body: JSON.stringify({
+          keyword: kw,
+          contentType: type,
+          coupangProducts: products?.map(p => ({
+            productName: p.productName,
+            productPrice: p.productPrice,
+            productUrl: p.productUrl,
+            productImage: p.productImage,
+          })),
+          notionContent: notionCtx,
+          featuredImage: imgUrl,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '생성 실패');
@@ -151,6 +264,11 @@ export default function BloggerPage() {
       setShowPreview(true);
     } catch (err) { alert('AI 생성 오류: ' + String(err)); }
     finally { setGenerating(false); }
+  }
+
+  async function handleGenerate() {
+    if (!keyword.trim()) return;
+    await generatePost(contentType, keyword, selectedProducts.length ? selectedProducts : undefined, notionContent || undefined, featuredImage || undefined);
   }
 
   async function handlePublish() {
@@ -170,91 +288,6 @@ export default function BloggerPage() {
     finally { setPublishing(false); }
   }
 
-  async function handleCoupangSearch() {
-    if (!coupangKeyword.trim()) return;
-    setCoupangLoading(true);
-    setCoupangError('');
-    setCoupangProducts([]);
-    try {
-      const res = await fetch(`/api/coupang/search?keyword=${encodeURIComponent(coupangKeyword)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '검색 실패');
-      setCoupangProducts(data.products || []);
-    } catch (err) { setCoupangError(String(err)); }
-    finally { setCoupangLoading(false); }
-  }
-
-  function toggleProductSelect(product: CoupangProduct) {
-    setSelectedProducts(prev => {
-      const exists = prev.find(p => p.productId === product.productId);
-      if (exists) return prev.filter(p => p.productId !== product.productId);
-      return [...prev, product];
-    });
-  }
-
-  function insertProductHtml(product: CoupangProduct) {
-    const card = `\n<div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0;display:flex;align-items:center;gap:16px">
-  ${product.imageUrl ? `<img src="${product.imageUrl}" alt="${product.productName}" style="width:80px;height:80px;object-fit:contain;flex-shrink:0">` : ''}
-  <div>
-    <div style="font-weight:bold;margin-bottom:4px">${product.productName}</div>
-    <div style="color:#e53e3e;font-weight:bold;font-size:1.1em">${product.productPrice.toLocaleString()}원</div>
-    ${product.discountRate ? `<div style="color:#888;font-size:0.85em">${product.discountRate}% 할인</div>` : ''}
-    <a href="${product.productUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;background:#e53e3e;color:white;padding:6px 16px;border-radius:4px;text-decoration:none;font-size:0.85em">쿠팡에서 보기</a>
-  </div>
-</div>\n`;
-    setEditContent(prev => prev + card);
-    setActiveTab('write');
-  }
-
-  async function handleNotionLoad() {
-    setNotionLoading(true);
-    setNotionError('');
-    setNotionPages([]);
-    try {
-      const res = await fetch('/api/notion/pages');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '조회 실패');
-      setNotionPages(data.pages || []);
-    } catch (err) { setNotionError(String(err)); }
-    finally { setNotionLoading(false); }
-  }
-
-  async function handleNotionImport(page: NotionPage) {
-    setImporting(page.id);
-    try {
-      const res = await fetch(`/api/notion/import?pageId=${page.id}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '가져오기 실패');
-      setEditTitle(data.title || page.title);
-      setEditContent(data.content || '');
-      setEditLabels([]);
-      setGenerated({ title: data.title || page.title, content: data.content || '', metaDescription: '', labels: [] });
-      setShowPreview(true);
-      setActiveTab('write');
-    } catch (err) { alert('노션 가져오기 오류: ' + String(err)); }
-    finally { setImporting(null); }
-  }
-
-  async function handleSaveSettings() {
-    setSettingsSaving(true);
-    setSettingsSaved(false);
-    try {
-      const body: Record<string, string> = {};
-      if (settingsForm.coupang_access_key) body.coupang_access_key = settingsForm.coupang_access_key;
-      if (settingsForm.coupang_secret_key) body.coupang_secret_key = settingsForm.coupang_secret_key;
-      if (settingsForm.notion_token) body.notion_token = settingsForm.notion_token;
-      await fetch('/api/blogger/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      await fetchUserSettings();
-      setSettingsSaved(true);
-      setSettingsForm({ coupang_access_key: '', coupang_secret_key: '', notion_token: '' });
-      setTimeout(() => setSettingsSaved(false), 3000);
-    } catch {} finally { setSettingsSaving(false); }
-  }
-
   function handleTabChange(tab: Tab) {
     setActiveTab(tab);
     if (tab === 'history') fetchHistory();
@@ -263,27 +296,25 @@ export default function BloggerPage() {
 
   const connectedError = searchParams.get('error');
 
-  if (statusLoading) {
-    return <div className="flex items-center justify-center min-h-screen bg-gray-900"><div className="text-gray-400 text-sm">로딩 중...</div></div>;
-  }
+  if (statusLoading) return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-900">
+      <div className="text-gray-400 text-sm">로딩 중...</div>
+    </div>
+  );
 
-  if (!status?.connected) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-gray-800 rounded-2xl p-8 text-center">
-          <div className="text-5xl mb-4">📝</div>
-          <h1 className="text-xl font-bold text-white mb-2">Google 블로거 연동</h1>
-          <p className="text-gray-400 text-sm mb-6">Google Blogger에 AI 글을 자동으로 발행하려면 Google 계정을 연결하세요.</p>
-          {connectedError && (
-            <div className="mb-4 bg-red-900/40 border border-red-700 rounded-lg p-3 text-red-300 text-xs text-left">오류: {connectedError}</div>
-          )}
-          <a href="/api/blogger/connect" className="inline-block w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors">
-            Google Blogger 연결하기
-          </a>
-        </div>
+  if (!blogStatus?.connected) return (
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-gray-800 rounded-2xl p-8 text-center">
+        <div className="text-5xl mb-4">📝</div>
+        <h1 className="text-xl font-bold text-white mb-2">Google 블로거 연동</h1>
+        <p className="text-gray-400 text-sm mb-6">Google Blogger에 AI 글을 자동으로 발행하려면 Google 계정을 연결하세요.</p>
+        {connectedError && <div className="mb-4 bg-red-900/40 border border-red-700 rounded-lg p-3 text-red-300 text-xs">{connectedError}</div>}
+        <a href="/api/blogger/connect" className="inline-block w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors">
+          Google Blogger 연결하기
+        </a>
       </div>
-    );
-  }
+    </div>
+  );
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'write', label: '✍️ 글 작성' },
@@ -291,8 +322,14 @@ export default function BloggerPage() {
     { id: 'notion', label: '📄 노션' },
     { id: 'history', label: '📋 이력' },
     { id: 'status', label: '📊 현황' },
-    { id: 'settings', label: '⚙️ 설정' },
   ];
+
+  const Spinner = () => (
+    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+  );
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -300,99 +337,178 @@ export default function BloggerPage() {
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold">Google 블로거</h1>
-            <p className="text-gray-400 text-sm mt-1">AI 글 생성 · 쿠팡 파트너스 · 노션 연동</p>
+            <h1 className="text-2xl font-bold">Google 블로거 AI</h1>
+            <p className="text-gray-400 text-sm mt-1">수익형(쿠팡) · 지식형(노션) · AI 글 자동 발행</p>
           </div>
           <div className="flex items-center gap-3">
             {selectedProducts.length > 0 && (
-              <div className="text-xs bg-orange-900/50 border border-orange-700 text-orange-300 px-3 py-1.5 rounded-full">
-                쿠팡 {selectedProducts.length}개 선택됨
-              </div>
+              <span className="text-xs bg-orange-900/50 border border-orange-700 text-orange-300 px-3 py-1 rounded-full">
+                쿠팡 {selectedProducts.length}개 선택
+              </span>
             )}
-            {status.email && <div className="text-xs text-indigo-400">{status.email}</div>}
+            {notionContent && (
+              <span className="text-xs bg-purple-900/50 border border-purple-700 text-purple-300 px-3 py-1 rounded-full">
+                노션 연동됨
+              </span>
+            )}
+            {blogStatus.email && <div className="text-xs text-indigo-400">{blogStatus.email}</div>}
           </div>
         </div>
 
         {/* 탭 */}
         <div className="flex gap-1 bg-gray-800 rounded-xl p-1 mb-6 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          {TABS.map(tab => (
+            <button key={tab.id} onClick={() => handleTabChange(tab.id)}
+              className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === tab.id ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
+              }`}>
               {tab.label}
             </button>
           ))}
         </div>
 
-        {/* ===== 글 작성 탭 ===== */}
+        {/* ══════ 글 작성 탭 ══════ */}
         {activeTab === 'write' && (
           <div className="space-y-5">
             {/* 콘텐츠 타입 */}
             <div className="bg-gray-800 rounded-xl p-5">
-              <label className="block text-sm font-medium text-gray-300 mb-3">콘텐츠 타입</label>
+              <label className="block text-sm font-medium text-gray-300 mb-3">콘텐츠 유형</label>
               <div className="flex gap-3">
-                {(['product', 'info'] as ContentType[]).map((type) => (
-                  <button key={type} onClick={() => setContentType(type)}
-                    className={`flex-1 py-3 rounded-xl text-sm font-medium border transition-all ${
-                      contentType === type ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-gray-500'
-                    }`}>
-                    {type === 'product' ? '🛒 상품 리뷰' : '📖 정보성 글'}
-                  </button>
-                ))}
+                <button onClick={() => setContentType('product')}
+                  className={`flex-1 py-3 rounded-xl text-sm font-medium border transition-all ${contentType === 'product' ? 'bg-orange-600 border-orange-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-gray-500'}`}>
+                  🛒 수익형 (쿠팡 파트너스)
+                </button>
+                <button onClick={() => setContentType('info')}
+                  className={`flex-1 py-3 rounded-xl text-sm font-medium border transition-all ${contentType === 'info' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-gray-500'}`}>
+                  📖 지식형 (정보성)
+                </button>
               </div>
             </div>
 
-            {/* 입력 */}
+            {/* 키워드 + 생성 */}
             <div className="bg-gray-800 rounded-xl p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">키워드 *</label>
-                <input
-                  type="text" value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-                  placeholder={contentType === 'product' ? '예: 에어프라이어 추천, 다이슨 청소기' : '예: 갤럭시 S24 울트라 사용법'}
+                <input type="text" value={keyword} onChange={e => setKeyword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleGenerate()}
+                  placeholder={contentType === 'product' ? '예: 에어프라이어 추천, 다이슨 청소기 비교' : '예: 갤럭시 S24 사용법, 다이어트 식단'}
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm"
                 />
               </div>
-
               {contentType === 'product' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">상품 정보 (선택)</label>
-                  <textarea value={productInfo} onChange={(e) => setProductInfo(e.target.value)} rows={2}
+                  <label className="block text-sm font-medium text-gray-300 mb-2">상품 추가 정보 (선택)</label>
+                  <textarea value={productInfo} onChange={e => setProductInfo(e.target.value)} rows={2}
                     placeholder="가격, 특징 등 추가 정보"
                     className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm resize-none"
                   />
                 </div>
               )}
 
-              {/* 선택된 쿠팡 상품 표시 */}
+              {/* 선택된 쿠팡 상품 */}
               {selectedProducts.length > 0 && (
                 <div className="bg-orange-900/20 border border-orange-700/50 rounded-lg p-3">
-                  <div className="text-xs text-orange-300 font-medium mb-2">쿠팡 상품 {selectedProducts.length}개 포함됩니다</div>
+                  <div className="text-xs font-medium text-orange-300 mb-2">쿠팡 상품 {selectedProducts.length}개 포함</div>
                   <div className="flex flex-wrap gap-2">
                     {selectedProducts.map(p => (
-                      <span key={p.productId} className="inline-flex items-center gap-1 bg-orange-900/40 border border-orange-700 text-orange-300 text-xs px-2 py-1 rounded-full">
-                        {p.productName.length > 20 ? p.productName.slice(0, 20) + '…' : p.productName}
-                        <button onClick={() => toggleProductSelect(p)} className="hover:text-white ml-0.5">×</button>
+                      <span key={String(p.productId)} className="inline-flex items-center gap-1 bg-orange-900/40 border border-orange-700 text-orange-300 text-xs px-2 py-1 rounded-full">
+                        {p.productName.slice(0, 20)}{p.productName.length > 20 ? '…' : ''}
+                        <button onClick={() => toggleProduct(p)} className="hover:text-white ml-0.5">×</button>
                       </span>
                     ))}
                   </div>
                 </div>
               )}
 
+              {/* 노션 콘텐츠 */}
+              {notionContent && (
+                <div className="bg-purple-900/20 border border-purple-700/50 rounded-lg p-3 flex items-center justify-between">
+                  <span className="text-xs text-purple-300">노션 원고 연동됨 ({notionContent.length}자)</span>
+                  <button onClick={() => setNotionContent('')} className="text-xs text-purple-400 hover:text-purple-200">제거</button>
+                </div>
+              )}
+
+              {/* 대표 이미지 */}
+              {featuredImage && (
+                <div className="relative">
+                  <img src={featuredImage} alt="대표 이미지" className="w-full max-h-48 object-cover rounded-lg"/>
+                  <button onClick={() => setFeaturedImage('')}
+                    className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-xs px-2 py-1 rounded-lg">
+                    이미지 제거
+                  </button>
+                  <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">대표 이미지</div>
+                </div>
+              )}
+
+              {/* 이미지 검색 토글 */}
+              <div>
+                <button onClick={() => setShowImageSearch(s => !s)}
+                  className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
+                  {showImageSearch ? '▲ 이미지 검색 닫기' : '🖼 대표 이미지 선택/생성'}
+                </button>
+                {showImageSearch && (
+                  <div className="mt-3 space-y-3">
+                    <div className="flex gap-2">
+                      <input type="text" value={imageQuery} onChange={e => setImageQuery(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleImageSearch()}
+                        placeholder={keyword || '이미지 검색어'}
+                        className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                      />
+                      <select value={imageSource} onChange={e => setImageSource(e.target.value as ImageSource)}
+                        className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+                        <option value="pixabay">Pixabay</option>
+                        <option value="pexels">Pexels</option>
+                        <option value="dalle">DALL-E 생성</option>
+                      </select>
+                      <button onClick={handleImageSearch} disabled={imagesLoading}
+                        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+                        {imagesLoading ? '검색 중...' : '검색'}
+                      </button>
+                    </div>
+                    {/* 쿠팡 상품 이미지 */}
+                    {selectedProducts.filter(p => p.productImage).length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-2">쿠팡 상품 이미지</div>
+                        <div className="flex gap-2 flex-wrap">
+                          {selectedProducts.filter(p => p.productImage).map(p => (
+                            <button key={String(p.productId)} onClick={() => setFeaturedImage(p.productImage)}
+                              className={`relative rounded-lg overflow-hidden border-2 transition-all ${featuredImage === p.productImage ? 'border-indigo-500' : 'border-transparent'}`}>
+                              <img src={p.productImage} alt={p.productName} className="w-16 h-16 object-contain bg-white"/>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {images.length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-2">검색 결과 — 클릭하여 선택</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {images.map(img => (
+                            <button key={img.id} onClick={() => { setFeaturedImage(img.url); }}
+                              className={`relative rounded-lg overflow-hidden aspect-video border-2 transition-all ${featuredImage === img.url ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-transparent hover:border-gray-500'}`}>
+                              <img src={img.thumb} alt={img.tags} className="w-full h-full object-cover"/>
+                              {featuredImage === img.url && (
+                                <div className="absolute inset-0 bg-indigo-600/30 flex items-center justify-center">
+                                  <span className="text-white text-lg">✓</span>
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <button onClick={handleGenerate} disabled={generating || !keyword.trim()}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
-                {generating ? (
-                  <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>AI 생성 중...</>
-                ) : '✨ AI 글 생성'}
+                className={`w-full disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 ${contentType === 'product' ? 'bg-orange-600 hover:bg-orange-500' : 'bg-purple-600 hover:bg-purple-500'}`}>
+                {generating ? <><Spinner />{contentType === 'product' ? '수익형 글 생성 중...' : '지식형 글 생성 중...'}</> :
+                  contentType === 'product' ? '💰 수익형 AI 글 생성 (GPT-4o)' : '📚 지식형 AI 글 생성 (GPT-4o)'}
               </button>
             </div>
 
-            {/* 생성 결과 - Split View */}
+            {/* 생성 결과 — Split View */}
             {generated && (
               <div className="bg-gray-800 rounded-xl p-5 space-y-4">
                 <div className="flex items-center justify-between">
@@ -403,15 +519,13 @@ export default function BloggerPage() {
                   </button>
                 </div>
 
-                {/* 제목 */}
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">제목</label>
-                  <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                  <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)}
                     className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 text-sm"
                   />
                 </div>
 
-                {/* 라벨 */}
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">라벨/태그</label>
                   <div className="flex flex-wrap gap-2">
@@ -424,30 +538,23 @@ export default function BloggerPage() {
                   </div>
                 </div>
 
-                {/* Split View: 편집기 + 미리보기 */}
-                <div className={`${showPreview ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : ''}`}>
+                <div className={showPreview ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : ''}>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1.5">본문 (HTML)</label>
-                    <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)}
-                      rows={showPreview ? 20 : 16}
+                    <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                      rows={showPreview ? 22 : 16}
                       className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 text-xs font-mono resize-y"
                     />
                   </div>
                   {showPreview && (
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">미리보기</label>
-                      <iframe
-                        ref={previewRef}
-                        className="w-full rounded-lg border border-gray-600 bg-white"
-                        style={{ height: '480px' }}
-                        sandbox="allow-same-origin"
-                        title="preview"
-                      />
+                      <iframe ref={previewRef} className="w-full rounded-lg border border-gray-600 bg-white"
+                        style={{ height: '500px' }} sandbox="allow-same-origin" title="preview"/>
                     </div>
                   )}
                 </div>
 
-                {/* 메타 설명 */}
                 {generated.metaDescription && (
                   <div className="bg-gray-700/50 rounded-lg p-3">
                     <div className="text-xs text-gray-400 mb-1">메타 설명</div>
@@ -455,14 +562,13 @@ export default function BloggerPage() {
                   </div>
                 )}
 
-                {/* 발행 옵션 */}
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="radio" checked={!isDraft} onChange={() => setIsDraft(false)} className="accent-indigo-500"/>
                     <span className="text-sm text-gray-300">즉시 발행</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={isDraft} onChange={() => setIsDraft(true)} className="accent-indindo-500"/>
+                    <input type="radio" checked={isDraft} onChange={() => setIsDraft(true)} className="accent-indigo-500"/>
                     <span className="text-sm text-gray-300">임시저장</span>
                   </label>
                 </div>
@@ -478,35 +584,41 @@ export default function BloggerPage() {
 
                 <button onClick={handlePublish} disabled={publishing || !editTitle.trim() || !editContent.trim()}
                   className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
-                  {publishing ? (
-                    <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>발행 중...</>
-                  ) : isDraft ? '💾 임시저장' : '🚀 블로거에 발행'}
+                  {publishing ? <><Spinner />발행 중...</> : isDraft ? '💾 임시저장' : '🚀 블로거에 발행'}
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* ===== 쿠팡 파트너스 탭 ===== */}
+        {/* ══════ 쿠팡 탭 ══════ */}
         {activeTab === 'coupang' && (
           <div className="space-y-5">
-            {!userSettings.has_coupang ? (
+            {hasCoupang === false ? (
               <div className="bg-gray-800 rounded-xl p-8 text-center">
                 <div className="text-4xl mb-3">🛒</div>
-                <h3 className="text-lg font-semibold text-white mb-2">쿠팡 파트너스 API 키 필요</h3>
-                <p className="text-gray-400 text-sm mb-4">쿠팡 파트너스에서 Access Key와 Secret Key를 발급받아 설정 탭에서 입력하세요.</p>
-                <button onClick={() => setActiveTab('settings')} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-                  설정으로 이동 →
-                </button>
+                <h3 className="text-lg font-semibold text-white mb-2">쿠팡 파트너스 연결 필요</h3>
+                <p className="text-gray-400 text-sm mb-4">쿠팡 파트너스 API 키가 설정되지 않았습니다.</p>
+                <a href="/dashboard/coupang" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors inline-block">
+                  쿠팡 설정 페이지로 →
+                </a>
               </div>
             ) : (
               <>
                 <div className="bg-gray-800 rounded-xl p-5">
-                  <label className="block text-sm font-medium text-gray-300 mb-3">상품 검색</label>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-gray-200">상품 검색</h3>
+                    {selectedProducts.length > 0 && (
+                      <button onClick={handleCoupangGenerate} disabled={generating}
+                        className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                        {generating ? <><Spinner />생성 중...</> : `💰 ${selectedProducts.length}개 상품으로 수익형 글 생성`}
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-2">
-                    <input type="text" value={coupangKeyword} onChange={(e) => setCoupangKeyword(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleCoupangSearch()}
-                      placeholder="예: 에어프라이어, 다이슨 청소기"
+                    <input type="text" value={coupangKeyword} onChange={e => setCoupangKeyword(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleCoupangSearch()}
+                      placeholder="예: 에어프라이어, 무선청소기"
                       className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm"
                     />
                     <button onClick={handleCoupangSearch} disabled={coupangLoading || !coupangKeyword.trim()}
@@ -519,12 +631,18 @@ export default function BloggerPage() {
 
                 {selectedProducts.length > 0 && (
                   <div className="bg-orange-900/20 border border-orange-700/50 rounded-xl p-4">
-                    <div className="text-sm font-medium text-orange-300 mb-2">선택된 상품 ({selectedProducts.length}개) — AI 글 생성 시 포함됩니다</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-sm font-medium text-orange-300">선택된 상품 {selectedProducts.length}개</div>
+                      <button onClick={handleCoupangGenerate} disabled={generating}
+                        className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                        {generating ? <><Spinner />생성 중...</> : '💰 수익형 글 생성 (GPT-4o)'}
+                      </button>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {selectedProducts.map(p => (
-                        <span key={p.productId} className="inline-flex items-center gap-1 bg-orange-900/40 border border-orange-700 text-orange-300 text-xs px-2 py-1 rounded-full">
-                          {p.productName.length > 25 ? p.productName.slice(0, 25) + '…' : p.productName}
-                          <button onClick={() => toggleProductSelect(p)} className="hover:text-white">×</button>
+                        <span key={String(p.productId)} className="inline-flex items-center gap-1 bg-orange-900/40 border border-orange-700 text-orange-300 text-xs px-2 py-1 rounded-full">
+                          {p.productName.slice(0, 25)}{p.productName.length > 25 ? '…' : ''}
+                          <button onClick={() => toggleProduct(p)} className="hover:text-white">×</button>
                         </span>
                       ))}
                     </div>
@@ -532,34 +650,34 @@ export default function BloggerPage() {
                 )}
 
                 {coupangProducts.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {coupangProducts.map((product) => {
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {coupangProducts.map(product => {
                       const isSelected = selectedProducts.some(p => p.productId === product.productId);
                       return (
-                        <div key={product.productId} className={`bg-gray-800 rounded-xl p-4 border transition-all ${isSelected ? 'border-orange-500' : 'border-gray-700'}`}>
-                          <div className="flex gap-3">
-                            {product.imageUrl && (
-                              <img src={product.imageUrl} alt={product.productName}
-                                className="w-16 h-16 object-contain flex-shrink-0 bg-white rounded-lg"
+                        <div key={String(product.productId)} className={`bg-gray-800 rounded-xl p-4 border transition-all ${isSelected ? 'border-orange-500 bg-orange-900/10' : 'border-gray-700'}`}>
+                          <div className="flex gap-3 mb-3">
+                            {product.productImage && (
+                              <img src={product.productImage} alt={product.productName}
+                                className="w-20 h-20 object-contain flex-shrink-0 bg-white rounded-lg p-1"
                               />
                             )}
                             <div className="min-w-0 flex-1">
                               <div className="text-sm text-white font-medium line-clamp-2 mb-1">{product.productName}</div>
-                              <div className="text-orange-400 font-bold">{product.productPrice.toLocaleString()}원</div>
+                              <div className="text-orange-400 font-bold text-base">{product.productPrice.toLocaleString()}원</div>
                               {product.discountRate && product.discountRate > 0 && (
                                 <div className="text-xs text-green-400">{product.discountRate}% 할인</div>
                               )}
                             </div>
                           </div>
-                          <div className="flex gap-2 mt-3">
-                            <button onClick={() => toggleProductSelect(product)}
-                              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${isSelected ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
-                              {isSelected ? '✓ 선택됨' : 'AI 글에 포함'}
+                          <div className="flex gap-2">
+                            <button onClick={() => toggleProduct(product)}
+                              className={`flex-1 text-xs font-medium py-2 rounded-lg transition-colors ${isSelected ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
+                              {isSelected ? '✓ 선택됨' : '글에 포함'}
                             </button>
-                            <button onClick={() => insertProductHtml(product)}
-                              className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white transition-colors">
-                              편집기에 삽입
-                            </button>
+                            <a href={product.productUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded-lg transition-colors">
+                              보기 ↗
+                            </a>
                           </div>
                         </div>
                       );
@@ -571,27 +689,26 @@ export default function BloggerPage() {
           </div>
         )}
 
-        {/* ===== 노션 탭 ===== */}
+        {/* ══════ 노션 탭 ══════ */}
         {activeTab === 'notion' && (
           <div className="space-y-5">
-            {!userSettings.has_notion ? (
+            {hasNotion === false ? (
               <div className="bg-gray-800 rounded-xl p-8 text-center">
                 <div className="text-4xl mb-3">📄</div>
-                <h3 className="text-lg font-semibold text-white mb-2">Notion 연동 필요</h3>
-                <div className="text-gray-400 text-sm mb-4 text-left space-y-2">
-                  <p>1. <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline">notion.so/my-integrations</a> 에서 새 통합 생성</p>
-                  <p>2. 연결할 노션 페이지에서 통합 연결 (페이지 설정 → 연결)</p>
-                  <p>3. 발급받은 Secret 토큰을 설정 탭에 입력</p>
-                </div>
-                <button onClick={() => setActiveTab('settings')} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-                  설정으로 이동 →
-                </button>
+                <h3 className="text-lg font-semibold text-white mb-2">Notion 연결 필요</h3>
+                <p className="text-gray-400 text-sm mb-4">노션 API 키가 설정되지 않았습니다.</p>
+                <a href="/dashboard/notion" className="bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors inline-block">
+                  노션 설정 페이지로 →
+                </a>
               </div>
             ) : (
               <>
                 <div className="bg-gray-800 rounded-xl p-5">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-gray-200">노션 페이지 목록</h3>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-200">노션 페이지 가져오기</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">페이지를 선택하면 내용을 바탕으로 지식형 블로그 글을 AI가 작성합니다</p>
+                    </div>
                     <button onClick={handleNotionLoad} disabled={notionLoading}
                       className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-sm px-4 py-2 rounded-lg transition-colors">
                       {notionLoading ? '로딩 중...' : notionPages.length > 0 ? '새로고침' : '페이지 불러오기'}
@@ -599,24 +716,20 @@ export default function BloggerPage() {
                   </div>
                   {notionError && <div className="text-xs text-red-400 mb-3">{notionError}</div>}
                   {notionPages.length === 0 && !notionLoading && (
-                    <div className="text-center py-8 text-gray-500 text-sm">"페이지 불러오기"를 눌러 노션 페이지를 가져오세요.</div>
+                    <div className="text-center py-8 text-gray-500 text-sm">"페이지 불러오기"를 눌러주세요.</div>
                   )}
                   <div className="space-y-2">
-                    {notionPages.map((page) => (
+                    {notionPages.map(page => (
                       <div key={page.id} className="flex items-center justify-between gap-3 py-3 border-b border-gray-700/50 last:border-0">
                         <div className="min-w-0 flex-1">
                           <div className="text-sm text-white truncate">{page.title}</div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            최근 편집: {new Date(page.last_edited).toLocaleDateString('ko-KR')}
-                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">{new Date(page.last_edited).toLocaleDateString('ko-KR')}</div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <a href={page.url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-gray-300">
-                            열기 ↗
-                          </a>
-                          <button onClick={() => handleNotionImport(page)} disabled={importing === page.id}
-                            className="text-xs bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors">
-                            {importing === page.id ? '가져오는 중...' : '가져오기'}
+                          <a href={page.url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-gray-200">열기 ↗</a>
+                          <button onClick={() => handleNotionImportAndGenerate(page)} disabled={importing === page.id || generating}
+                            className="text-xs bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                            {importing === page.id ? <><Spinner />생성 중...</> : '📚 지식형 글 생성'}
                           </button>
                         </div>
                       </div>
@@ -628,7 +741,7 @@ export default function BloggerPage() {
           </div>
         )}
 
-        {/* ===== 발행 이력 탭 ===== */}
+        {/* ══════ 발행 이력 탭 ══════ */}
         {activeTab === 'history' && (
           <div className="space-y-3">
             {historyLoading ? (
@@ -636,33 +749,22 @@ export default function BloggerPage() {
             ) : history.length === 0 ? (
               <div className="text-center py-12 text-gray-500"><div className="text-3xl mb-3">📭</div><div className="text-sm">발행 이력이 없습니다.</div></div>
             ) : (
-              history.map((item) => (
+              history.map(item => (
                 <div key={item.id} className="bg-gray-800 rounded-xl p-4 flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${item.status === 'LIVE' ? 'bg-green-900/50 text-green-400 border border-green-700' : 'bg-yellow-900/50 text-yellow-400 border border-yellow-700'}`}>
                         {item.status || 'DRAFT'}
                       </span>
-                      {item.content_type && <span className="text-xs text-gray-500">{item.content_type === 'product' ? '상품 리뷰' : '정보성 글'}</span>}
+                      {item.content_type && <span className="text-xs text-gray-500">{item.content_type === 'product' ? '수익형' : '지식형'}</span>}
                     </div>
                     <div className="text-sm font-medium text-white truncate">{item.title || '(제목 없음)'}</div>
                     {item.keyword && <div className="text-xs text-gray-400 mt-0.5">키워드: {item.keyword}</div>}
-                    {item.labels && item.labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {item.labels.map((label, i) => (
-                          <span key={i} className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">{label}</span>
-                        ))}
-                      </div>
-                    )}
-                    <div className="text-xs text-gray-500 mt-1.5">
-                      {item.published_at ? new Date(item.published_at).toLocaleString('ko-KR') : new Date(item.created_at).toLocaleString('ko-KR')}
-                    </div>
+                    <div className="text-xs text-gray-500 mt-1">{item.published_at ? new Date(item.published_at).toLocaleString('ko-KR') : new Date(item.created_at).toLocaleString('ko-KR')}</div>
                   </div>
                   {item.blogger_url && (
                     <a href={item.blogger_url} target="_blank" rel="noopener noreferrer"
-                      className="flex-shrink-0 text-xs bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg transition-colors">
-                      보기 →
-                    </a>
+                      className="flex-shrink-0 text-xs bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg transition-colors">보기 →</a>
                   )}
                 </div>
               ))
@@ -670,133 +772,55 @@ export default function BloggerPage() {
           </div>
         )}
 
-        {/* ===== 블로그 현황 탭 ===== */}
+        {/* ══════ 블로그 현황 탭 ══════ */}
         {activeTab === 'status' && (
           <div className="space-y-5">
             <div className="bg-gray-800 rounded-xl p-5">
               <h3 className="text-sm font-semibold text-gray-300 mb-4">블로그 정보</h3>
-              {status.blog ? (
+              {blogStatus.blog ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-400">블로그 이름</span>
-                    <span className="text-sm text-white font-medium">{status.blog.name}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-400">URL</span>
-                    <a href={status.blog.url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-400 hover:text-indigo-300 underline">{status.blog.url}</a>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-400">총 포스트</span>
-                    <span className="text-sm text-white font-medium">{status.blog.postCount}개</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-400">Blog ID</span>
-                    <span className="text-xs text-gray-500 font-mono">{BLOG_ID}</span>
-                  </div>
+                  <div className="flex justify-between"><span className="text-sm text-gray-400">블로그 이름</span><span className="text-sm text-white">{blogStatus.blog.name}</span></div>
+                  <div className="flex justify-between"><span className="text-sm text-gray-400">URL</span><a href={blogStatus.blog.url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-400 underline">{blogStatus.blog.url}</a></div>
+                  <div className="flex justify-between"><span className="text-sm text-gray-400">총 포스트</span><span className="text-sm text-white">{blogStatus.blog.postCount}개</span></div>
                 </div>
-              ) : (
-                <div className="text-sm text-gray-500">블로그 정보를 불러오지 못했습니다.</div>
-              )}
+              ) : <div className="text-sm text-gray-500">정보를 불러오지 못했습니다.</div>}
             </div>
 
             <div className="bg-gray-800 rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-gray-300">최근 포스트</h3>
-                <button onClick={fetchBlogPosts} disabled={postsLoading} className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
-                  {postsLoading ? '로딩 중...' : '새로고침'}
-                </button>
+                <button onClick={fetchBlogPosts} disabled={postsLoading} className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50">{postsLoading ? '로딩 중...' : '새로고침'}</button>
               </div>
-              {postsLoading ? (
-                <div className="text-center py-6 text-gray-500 text-sm">로딩 중...</div>
-              ) : blogPosts.length === 0 ? (
-                <div className="text-center py-6 text-gray-500 text-sm">포스트가 없습니다.</div>
-              ) : (
-                <div className="space-y-2">
-                  {blogPosts.map((post) => (
-                    <div key={post.id} className="flex items-start justify-between gap-3 py-2 border-b border-gray-700/50 last:border-0">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm text-white truncate">{post.title}</div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${post.status === 'LIVE' ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}`}>{post.status}</span>
-                          {post.published && <span className="text-xs text-gray-500">{new Date(post.published).toLocaleDateString('ko-KR')}</span>}
+              {postsLoading ? <div className="text-center py-6 text-gray-500 text-sm">로딩 중...</div> :
+                blogPosts.length === 0 ? <div className="text-center py-6 text-gray-500 text-sm">포스트가 없습니다.</div> : (
+                  <div className="space-y-2">
+                    {blogPosts.map(post => (
+                      <div key={post.id} className="flex items-start justify-between gap-3 py-2 border-b border-gray-700/50 last:border-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm text-white truncate">{post.title}</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${post.status === 'LIVE' ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}`}>{post.status}</span>
+                            {post.published && <span className="text-xs text-gray-500">{new Date(post.published).toLocaleDateString('ko-KR')}</span>}
+                          </div>
                         </div>
+                        {post.url && <a href={post.url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-xs text-indigo-400 hover:text-indigo-300">보기 →</a>}
                       </div>
-                      {post.url && <a href={post.url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-xs text-indigo-400 hover:text-indigo-300">보기 →</a>}
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
             </div>
 
             <div className="bg-gray-800 rounded-xl p-5">
               <h3 className="text-sm font-semibold text-gray-300 mb-3">연결 관리</h3>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-                <span className="text-sm text-green-400">연결됨 · {status.email}</span>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-2 h-2 rounded-full bg-green-400"/>
+                <span className="text-sm text-green-400">연결됨 · {blogStatus.email}</span>
               </div>
-              <button onClick={async () => { if (!confirm('연결을 해제하시겠습니까?')) return; await fetch('/api/blogger/disconnect', { method: 'POST' }); setStatus({ connected: false }); }}
-                className="bg-red-900/40 hover:bg-red-900/70 border border-red-700 text-red-400 hover:text-red-300 text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+              <button onClick={async () => { if (!confirm('연결을 해제하시겠습니까?')) return; await fetch('/api/blogger/disconnect', { method: 'POST' }); setBlogStatus({ connected: false }); }}
+                className="bg-red-900/40 hover:bg-red-900/70 border border-red-700 text-red-400 text-sm px-4 py-2 rounded-lg transition-colors">
                 연결 해제
               </button>
             </div>
-          </div>
-        )}
-
-        {/* ===== 설정 탭 ===== */}
-        {activeTab === 'settings' && (
-          <div className="space-y-5">
-            {/* 쿠팡 파트너스 */}
-            <div className="bg-gray-800 rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-200">쿠팡 파트너스</h3>
-                {userSettings.has_coupang && <span className="text-xs bg-green-900/50 text-green-400 border border-green-700 px-2 py-0.5 rounded-full">연결됨</span>}
-              </div>
-              <div className="text-xs text-gray-400 space-y-1">
-                <p>쿠팡 파트너스 (partners.coupang.com) → 프로모션 → API 연동에서 키 발급</p>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">Access Key</label>
-                <input type="text" value={settingsForm.coupang_access_key}
-                  onChange={(e) => setSettingsForm(f => ({ ...f, coupang_access_key: e.target.value }))}
-                  placeholder={userSettings.has_coupang ? '새 키 입력 시 업데이트됩니다' : 'Access Key 입력'}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm font-mono"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">Secret Key</label>
-                <input type="password" value={settingsForm.coupang_secret_key}
-                  onChange={(e) => setSettingsForm(f => ({ ...f, coupang_secret_key: e.target.value }))}
-                  placeholder={userSettings.has_coupang ? '새 키 입력 시 업데이트됩니다' : 'Secret Key 입력'}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm font-mono"
-                />
-              </div>
-            </div>
-
-            {/* 노션 */}
-            <div className="bg-gray-800 rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-200">Notion 연동</h3>
-                {userSettings.has_notion && <span className="text-xs bg-green-900/50 text-green-400 border border-green-700 px-2 py-0.5 rounded-full">연결됨</span>}
-              </div>
-              <div className="text-xs text-gray-400 space-y-1">
-                <p>1. <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline">notion.so/my-integrations</a> 에서 통합 생성</p>
-                <p>2. 가져올 페이지에서 통합 연결 (페이지 우상단 ··· → 연결 → 통합 선택)</p>
-                <p>3. Internal Integration Secret 토큰 입력 (secret_로 시작)</p>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1.5">Notion Integration Token</label>
-                <input type="password" value={settingsForm.notion_token}
-                  onChange={(e) => setSettingsForm(f => ({ ...f, notion_token: e.target.value }))}
-                  placeholder={userSettings.has_notion ? '새 토큰 입력 시 업데이트됩니다' : 'secret_xxxxx...'}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm font-mono"
-                />
-              </div>
-            </div>
-
-            <button onClick={handleSaveSettings} disabled={settingsSaving || (!settingsForm.coupang_access_key && !settingsForm.coupang_secret_key && !settingsForm.notion_token)}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors">
-              {settingsSaving ? '저장 중...' : settingsSaved ? '✓ 저장 완료' : '설정 저장'}
-            </button>
           </div>
         )}
       </div>
