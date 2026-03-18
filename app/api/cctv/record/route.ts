@@ -34,18 +34,27 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET: 녹화 파일 목록
+// GET: 녹화 파일 목록 (python3 사용 — busybox find -printf 미지원 대응)
 export async function GET() {
   try {
-    // stat 방식: 파일명에 공백이 있어도 안전하게 파싱
     const result = await nasExec(
-      `find "${MOVIE_DIR}" -maxdepth 1 -type f \\( -name "*.webm" -o -name "*.mp4" -o -name "*.mkv" \\) -printf "%f\\t%s\\t%T@\\n" 2>/dev/null | sort -t$'\\t' -k3 -rn | head -100`
+      `python3 -c "
+import os, json
+d = '${MOVIE_DIR}'
+exts = ('.webm', '.mp4', '.mkv')
+files = []
+for f in os.listdir(d):
+    if not f.endswith(exts): continue
+    p = os.path.join(d, f)
+    try:
+        st = os.stat(p)
+        files.append({'name': f, 'size': st.st_size, 'modTime': int(st.st_mtime)})
+    except: pass
+files.sort(key=lambda x: -x['modTime'])
+print(json.dumps(files[:200]))
+"`
     );
-    const files = result.stdout.split('\n').filter(Boolean).map(line => {
-      const parts = line.split('\t');
-      if (parts.length < 3) return null;
-      return { name: parts[0].trim(), size: parseInt(parts[1]) || 0, modTime: Math.floor(parseFloat(parts[2])) || 0 };
-    }).filter(Boolean);
+    const files = JSON.parse(result.stdout.trim() || '[]');
     return NextResponse.json({ files });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
