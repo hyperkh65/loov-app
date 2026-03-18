@@ -123,18 +123,18 @@ function ThumbnailGenerator({ defaultTitle, defaultKeyword, onInsert }: Thumbnai
       // 2. Light dark overlay (투명도 낮게)
       const grad = ctx.createLinearGradient(0, 0, 0, 1080);
       if (colorScheme === 'blue') {
-        grad.addColorStop(0, 'rgba(0,10,40,0.30)');
-        grad.addColorStop(0.5, 'rgba(0,15,50,0.42)');
-        grad.addColorStop(1, 'rgba(0,10,40,0.35)');
+        grad.addColorStop(0, 'rgba(0,10,40,0.50)');
+        grad.addColorStop(0.5, 'rgba(0,15,50,0.65)');
+        grad.addColorStop(1, 'rgba(0,10,40,0.55)');
       } else if (colorScheme === 'green') {
-        grad.addColorStop(0, 'rgba(0,20,10,0.30)');
-        grad.addColorStop(0.5, 'rgba(0,25,15,0.42)');
-        grad.addColorStop(1, 'rgba(0,20,10,0.35)');
+        grad.addColorStop(0, 'rgba(0,20,10,0.50)');
+        grad.addColorStop(0.5, 'rgba(0,25,15,0.65)');
+        grad.addColorStop(1, 'rgba(0,20,10,0.55)');
       } else {
         // 다크: 중앙만 살짝 더 어둡게 (비네팅 효과)
-        grad.addColorStop(0, 'rgba(0,0,0,0.22)');
-        grad.addColorStop(0.5, 'rgba(0,0,0,0.38)');
-        grad.addColorStop(1, 'rgba(0,0,0,0.28)');
+        grad.addColorStop(0, 'rgba(0,0,0,0.48)');
+        grad.addColorStop(0.5, 'rgba(0,0,0,0.62)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.52)');
       }
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 1080, 1080);
@@ -396,7 +396,6 @@ export default function BloggerPage() {
   const [cpGenerating, setCpGenerating] = useState(false);
 
   // ── Notion tab state ───────────────────────────────────────────────────
-  const [ntApiKey, setNtApiKey] = useState('');
   const [ntDbId, setNtDbId] = useState('');
   const [ntShowSettings, setNtShowSettings] = useState(false);
   const [ntDatabases, setNtDatabases] = useState<NotionDB[]>([]);
@@ -420,7 +419,7 @@ export default function BloggerPage() {
       const cp = localStorage.getItem('blogger_cp_config');
       if (cp) { const p = JSON.parse(cp); setCpApiKey(p.apiKey || ''); setCpDbId(p.dbId || ''); }
       const nt = localStorage.getItem('blogger_nt_config');
-      if (nt) { const p = JSON.parse(nt); setNtApiKey(p.apiKey || ''); setNtDbId(p.dbId || ''); }
+      if (nt) { const p = JSON.parse(nt); setNtDbId(p.dbId || ''); }
     } catch { /* ignore */ }
   }, []);
 
@@ -430,8 +429,7 @@ export default function BloggerPage() {
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (ntApiKey && ntDbId) loadNotionItems();
-    else if (activeTab === 'notion') setNtShowSettings(true);
+    if (ntDbId) loadNotionItems();
   }, []); // eslint-disable-line
 
   useEffect(() => {
@@ -479,10 +477,9 @@ export default function BloggerPage() {
   }
 
   async function loadNotionDatabases() {
-    if (!ntApiKey) return;
     setNtDbLoading(true); setNtError('');
     try {
-      const res = await fetch(`/api/notion/databases?apiKey=${encodeURIComponent(ntApiKey)}`);
+      const res = await fetch('/api/notion/databases');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '조회 실패');
       setNtDatabases(data.databases || []);
@@ -491,10 +488,10 @@ export default function BloggerPage() {
   }
 
   async function loadNotionItems() {
-    if (!ntApiKey || !ntDbId) { setNtShowSettings(true); return; }
+    if (!ntDbId) { setNtShowSettings(true); return; }
     setNtItemsLoading(true); setNtError('');
     try {
-      const res = await fetch(`/api/notion/database-items?apiKey=${encodeURIComponent(ntApiKey)}&dbId=${encodeURIComponent(ntDbId)}`);
+      const res = await fetch(`/api/notion/database-items?dbId=${encodeURIComponent(ntDbId)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '조회 실패');
       setNtItems(data.items || []);
@@ -622,7 +619,7 @@ export default function BloggerPage() {
     if (tab === 'history') fetchHistory();
     if (tab === 'status') fetchBlogPosts();
     if (tab === 'coupang' && !cpProducts.length && cpApiKey && cpDbId) loadCoupangProducts();
-    if (tab === 'notion' && !ntItems.length && ntApiKey && ntDbId) loadNotionItems();
+    if (tab === 'notion' && !ntItems.length && ntDbId) loadNotionItems();
   }
 
   async function fetchHistory() {
@@ -1033,25 +1030,20 @@ export default function BloggerPage() {
             </div>
 
             {/* Settings */}
-            {(ntShowSettings || (!ntApiKey || !ntDbId)) && (
+            {(ntShowSettings || !ntDbId) && (
               <div className="mb-4 p-4 bg-gray-800 border border-gray-700 rounded-xl space-y-4">
                 <h3 className="text-sm font-semibold text-gray-300">노션 설정</h3>
+                <p className="text-xs text-gray-500">노션 API 키는 설정 페이지의 기존 연동 정보를 자동으로 사용합니다.</p>
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Notion Integration Token</label>
-                  <div className="flex gap-2">
-                    <input type="password" value={ntApiKey} onChange={e => setNtApiKey(e.target.value)}
-                      placeholder="secret_..."
-                      className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"/>
-                    <button onClick={loadNotionDatabases} disabled={!ntApiKey || ntDbLoading}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm rounded-lg">
-                      {ntDbLoading ? '⏳' : 'DB 조회'}
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-gray-400">데이터베이스 선택</label>
+                    <button onClick={loadNotionDatabases} disabled={ntDbLoading}
+                      className="px-3 py-1 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white text-xs rounded-lg">
+                      {ntDbLoading ? '⏳ 로딩...' : '🔄 DB 목록 불러오기'}
                     </button>
                   </div>
-                </div>
-                {ntDatabases.length > 0 && (
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">데이터베이스 선택</label>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {ntDatabases.length > 0 && (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto mt-2">
                       {ntDatabases.map(db => (
                         <button key={db.id} onClick={() => setNtDbId(db.id)}
                           className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${ntDbId === db.id ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
@@ -1060,21 +1052,19 @@ export default function BloggerPage() {
                         </button>
                       ))}
                     </div>
-                  </div>
-                )}
-                {ntDbId && (
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">또는 Database ID 직접 입력</label>
-                    <input type="text" value={ntDbId} onChange={e => setNtDbId(e.target.value)}
-                      placeholder="32자리 Database ID"
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"/>
-                  </div>
-                )}
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">또는 Database ID 직접 입력</label>
+                  <input type="text" value={ntDbId} onChange={e => setNtDbId(e.target.value)}
+                    placeholder="32자리 Database ID"
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"/>
+                </div>
                 <button onClick={() => {
-                  localStorage.setItem('blogger_nt_config', JSON.stringify({ apiKey: ntApiKey, dbId: ntDbId }));
+                  localStorage.setItem('blogger_nt_config', JSON.stringify({ dbId: ntDbId }));
                   setNtShowSettings(false);
                   loadNotionItems();
-                }} disabled={!ntApiKey || !ntDbId}
+                }} disabled={!ntDbId}
                   className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm rounded-lg">
                   💾 저장 &amp; 항목 불러오기
                 </button>
@@ -1085,7 +1075,7 @@ export default function BloggerPage() {
 
             {/* Items list */}
             {ntItemsLoading && <div className="text-center py-12 text-gray-400">⏳ 로딩중...</div>}
-            {!ntItemsLoading && ntItems.length === 0 && ntApiKey && ntDbId && (
+            {!ntItemsLoading && ntItems.length === 0 && ntDbId && (
               <div className="text-center py-12 text-gray-500">
                 <div className="text-3xl mb-2">📄</div>
                 <p className="text-sm">항목이 없거나 설정을 확인해주세요.</p>
