@@ -20,11 +20,11 @@ export async function POST(req: NextRequest) {
     sortBy?: string;
   };
 
-  const { cityId, minStars = 0, minReview = 7, maxResult = 10, currency = 'KRW', sortBy = 'AllGuestsReviewScore' } = body;
+  const { cityId, minStars = 0, minReview = 0, maxResult = 10, currency = 'KRW', sortBy = 'AllGuestsReviewScore' } = body;
   if (!cityId) return NextResponse.json({ error: 'cityId 필요' }, { status: 400 });
 
-  // 체크인: 30일 후, 체크아웃: 31일 후
-  const ci = new Date(); ci.setDate(ci.getDate() + 30);
+  // 체크인: 7일 후, 체크아웃: 8일 후
+  const ci = new Date(); ci.setDate(ci.getDate() + 7);
   const co = new Date(ci); co.setDate(co.getDate() + 1);
   const checkInDate = body.checkIn || ci.toISOString().split('T')[0];
   const checkOutDate = body.checkOut || co.toISOString().split('T')[0];
