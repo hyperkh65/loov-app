@@ -23,8 +23,37 @@ interface NotionProduct {
 interface NotionDB { id: string; title: string; url: string; last_edited: string; }
 interface NotionItem { id: string; title: string; url: string; coverUrl: string; last_edited: string; }
 interface ImageResult { id: number; url: string; thumb: string; tags: string; author: string; }
+interface AgodaHotel {
+  hotelId: number; hotelName: string; starRating: number; reviewScore: number; reviewCount: number;
+  currency: string; dailyRate: number; crossedOutRate: number; discountPercentage: number;
+  imageURL: string; landingURL: string; includeBreakfast: boolean; freeWifi: boolean;
+}
+interface AgodaCity { id: number; name: string; country: string; emoji: string; }
 
-type Tab = 'write' | 'coupang' | 'notion' | 'history' | 'status';
+const AGODA_CITIES: AgodaCity[] = [
+  { id: 17193, name: '발리 쿠타', country: '인도네시아', emoji: '🌴' },
+  { id: 9395,  name: '방콕', country: '태국', emoji: '🏮' },
+  { id: 9443,  name: '푸켓', country: '태국', emoji: '🏖️' },
+  { id: 9407,  name: '치앙마이', country: '태국', emoji: '🌸' },
+  { id: 10303, name: '도쿄', country: '일본', emoji: '🗼' },
+  { id: 10294, name: '오사카', country: '일본', emoji: '🏯' },
+  { id: 10285, name: '교토', country: '일본', emoji: '⛩️' },
+  { id: 10267, name: '후쿠오카', country: '일본', emoji: '🍜' },
+  { id: 10318, name: '삿포로', country: '일본', emoji: '⛄' },
+  { id: 6139,  name: '싱가포르', country: '싱가포르', emoji: '🦁' },
+  { id: 1746,  name: '홍콩', country: '홍콩', emoji: '🌆' },
+  { id: 9649,  name: '세부', country: '필리핀', emoji: '🏝️' },
+  { id: 14988, name: '호치민', country: '베트남', emoji: '🛵' },
+  { id: 14997, name: '다낭', country: '베트남', emoji: '🌊' },
+  { id: 15020, name: '나트랑', country: '베트남', emoji: '🏄' },
+  { id: 14977, name: '하노이', country: '베트남', emoji: '🎋' },
+  { id: 16655, name: '쿠알라룸푸르', country: '말레이시아', emoji: '🏙️' },
+  { id: 2371,  name: '두바이', country: 'UAE', emoji: '🌇' },
+  { id: 3956,  name: '파리', country: '프랑스', emoji: '🗺️' },
+  { id: 3797,  name: '뉴욕', country: '미국', emoji: '🗽' },
+];
+
+type Tab = 'write' | 'coupang' | 'notion' | 'agoda' | 'history' | 'status';
 type ContentType = 'product' | 'info';
 type ImageSource = 'pixabay' | 'pexels' | 'dalle' | 'upload';
 
@@ -405,6 +434,22 @@ export default function BloggerPage() {
   const [ntError, setNtError] = useState('');
   const [ntGenerating, setNtGenerating] = useState<string | null>(null);
 
+  // ── Agoda tab state ────────────────────────────────────────────────────
+  const [agCity, setAgCity] = useState<AgodaCity | null>(null);
+  const [agCustomCityId, setAgCustomCityId] = useState('');
+  const [agMinStars, setAgMinStars] = useState(0);
+  const [agMinReview, setAgMinReview] = useState(7);
+  const [agMaxResult, setAgMaxResult] = useState(10);
+  const [agSortBy, setAgSortBy] = useState('AllGuestsReviewScore');
+  const [agHotels, setAgHotels] = useState<AgodaHotel[]>([]);
+  const [agLoading, setAgLoading] = useState(false);
+  const [agError, setAgError] = useState('');
+  const [agCheckIn, setAgCheckIn] = useState('');
+  const [agCheckOut, setAgCheckOut] = useState('');
+  const [agSelected, setAgSelected] = useState<Set<number>>(new Set());
+  const [agTravelStyle, setAgTravelStyle] = useState('커플');
+  const [agGenerating, setAgGenerating] = useState(false);
+
   // ── History / Status ───────────────────────────────────────────────────
   const [history, setHistory] = useState<HistoryPost[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -614,6 +659,62 @@ export default function BloggerPage() {
     finally { setNtGenerating(null); }
   }
 
+  async function searchAgodaHotels() {
+    const cityId = agCity?.id || (agCustomCityId ? parseInt(agCustomCityId) : 0);
+    if (!cityId) { setAgError('도시를 선택하거나 City ID를 입력해주세요.'); return; }
+    setAgLoading(true); setAgError(''); setAgSelected(new Set());
+    try {
+      const res = await fetch('/api/agoda/hotels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cityId,
+          checkIn: agCheckIn || undefined,
+          checkOut: agCheckOut || undefined,
+          minStars: agMinStars,
+          minReview: agMinReview,
+          maxResult: agMaxResult,
+          sortBy: agSortBy,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '검색 실패');
+      setAgHotels(data.hotels || []);
+      if (data.checkIn) setAgCheckIn(data.checkIn);
+      if (data.checkOut) setAgCheckOut(data.checkOut);
+    } catch (e) { setAgError(String(e)); }
+    finally { setAgLoading(false); }
+  }
+
+  async function generateAgodaPost() {
+    const selectedHotels = agHotels.filter(h => agSelected.has(h.hotelId));
+    if (!selectedHotels.length) { alert('호텔을 1개 이상 선택해주세요.'); return; }
+    const city = agCity || (agCustomCityId ? { name: agCustomCityId, id: parseInt(agCustomCityId) } as AgodaCity : null);
+    if (!city) return;
+    setAgGenerating(true);
+    try {
+      const res = await fetch('/api/agoda/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cityName: city.name,
+          cityNameKo: city.name,
+          hotels: selectedHotels,
+          checkIn: agCheckIn,
+          checkOut: agCheckOut,
+          travelStyle: agTravelStyle,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '생성 실패');
+      setEditTitle(data.title || '');
+      setEditContent(data.content || '');
+      setKeyword(city.name + ' 호텔 추천');
+      setActiveTab('write');
+    } catch (e) { alert(String(e)); }
+    finally { setAgGenerating(false); }
+  }
+
   function handleTabChange(tab: Tab) {
     setActiveTab(tab);
     if (tab === 'history') fetchHistory();
@@ -755,6 +856,7 @@ export default function BloggerPage() {
             { id: 'write', label: '✍️ 글 작성' },
             { id: 'coupang', label: '🛒 쿠팡' },
             { id: 'notion', label: '📄 노션' },
+            { id: 'agoda', label: '🏨 아고다' },
             { id: 'history', label: '📋 이력' },
             { id: 'status', label: '📊 현황' },
           ] as { id: Tab; label: string }[]).map(tab => (
@@ -1099,6 +1201,238 @@ export default function BloggerPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══════ 아고다 탭 ══════ */}
+        {activeTab === 'agoda' && (
+          <div>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-lg font-bold">🏨 아고다 호텔 추천 블로그</h2>
+                <p className="text-sm text-gray-400 mt-0.5">도시 선택 → 호텔 검색 → AI 후기형 블로그 글 자동 생성</p>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-5">
+              {/* ── 왼쪽: 검색 ── */}
+              <div className="space-y-4">
+                {/* 인기 도시 그리드 */}
+                <div className="bg-gray-800 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">📍 인기 여행지 선택</h3>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {AGODA_CITIES.map(city => (
+                      <button key={city.id} onClick={() => { setAgCity(city); setAgCustomCityId(''); }}
+                        className={`flex flex-col items-center py-2 px-1 rounded-lg text-xs transition-colors ${agCity?.id === city.id ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                        <span className="text-base">{city.emoji}</span>
+                        <span className="mt-0.5 leading-tight text-center">{city.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3">
+                    <input type="text" value={agCustomCityId} onChange={e => { setAgCustomCityId(e.target.value); setAgCity(null); }}
+                      placeholder="또는 Agoda City ID 직접 입력 (예: 17193)"
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"/>
+                  </div>
+                </div>
+
+                {/* 필터 */}
+                <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-300">⚙️ 검색 필터</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">최소 별점</label>
+                      <select value={agMinStars} onChange={e => setAgMinStars(Number(e.target.value))}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500">
+                        <option value={0}>전체</option>
+                        <option value={3}>3성급 이상</option>
+                        <option value={4}>4성급 이상</option>
+                        <option value={5}>5성급</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">최소 리뷰점수</label>
+                      <select value={agMinReview} onChange={e => setAgMinReview(Number(e.target.value))}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500">
+                        <option value={0}>전체</option>
+                        <option value={7}>7.0 이상</option>
+                        <option value={8}>8.0 이상</option>
+                        <option value={9}>9.0 이상</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">정렬</label>
+                      <select value={agSortBy} onChange={e => setAgSortBy(e.target.value)}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500">
+                        <option value="AllGuestsReviewScore">리뷰 높은순</option>
+                        <option value="StarRatingDesc">별점 높은순</option>
+                        <option value="PriceAsc">가격 낮은순</option>
+                        <option value="PriceDesc">가격 높은순</option>
+                        <option value="Recommended">추천순</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-1 block">결과 수</label>
+                      <select value={agMaxResult} onChange={e => setAgMaxResult(Number(e.target.value))}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500">
+                        <option value={5}>5개</option>
+                        <option value={10}>10개</option>
+                        <option value={20}>20개</option>
+                        <option value={30}>30개</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button onClick={searchAgodaHotels} disabled={agLoading || (!agCity && !agCustomCityId)}
+                    className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
+                    {agLoading ? '⏳ 검색 중...' : '🔍 호텔 검색'}
+                  </button>
+                </div>
+
+                {agError && <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">{agError}</div>}
+
+                {/* 호텔 목록 */}
+                {agHotels.length > 0 && (
+                  <div className="bg-gray-800 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-300">호텔 목록 ({agHotels.length}개)</h3>
+                      <span className="text-xs text-gray-500">블로그에 포함할 호텔 선택 (최대 5개)</span>
+                    </div>
+                    <div className="space-y-2 max-h-[480px] overflow-y-auto">
+                      {agHotels.map(hotel => {
+                        const isSelected = agSelected.has(hotel.hotelId);
+                        const canSelect = isSelected || agSelected.size < 5;
+                        return (
+                          <button key={hotel.hotelId}
+                            onClick={() => {
+                              if (!canSelect && !isSelected) return;
+                              setAgSelected(prev => {
+                                const next = new Set(prev);
+                                isSelected ? next.delete(hotel.hotelId) : next.add(hotel.hotelId);
+                                return next;
+                              });
+                            }}
+                            className={`w-full text-left flex gap-3 p-3 rounded-xl border transition-colors ${isSelected ? 'border-orange-500 bg-orange-950/30' : canSelect ? 'border-gray-700 bg-gray-750 hover:border-gray-600' : 'border-gray-700 bg-gray-800 opacity-40 cursor-not-allowed'}`}>
+                            {hotel.imageURL && (
+                              <img src={hotel.imageURL} alt={hotel.hotelName}
+                                className="w-16 h-16 object-cover rounded-lg flex-shrink-0"/>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start gap-2">
+                                {isSelected && <span className="flex-shrink-0 text-xs bg-orange-600 text-white px-1.5 py-0.5 rounded">✓</span>}
+                                <span className="text-sm font-medium text-white leading-tight">{hotel.hotelName}</span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <span className="text-xs text-yellow-400">{'⭐'.repeat(Math.round(hotel.starRating))}</span>
+                                <span className="text-xs text-green-400">리뷰 {hotel.reviewScore}/10</span>
+                                <span className="text-xs text-gray-500">({hotel.reviewCount.toLocaleString()}개)</span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                {hotel.crossedOutRate > 0 && (
+                                  <span className="text-xs text-gray-500 line-through">{Math.round(hotel.crossedOutRate).toLocaleString()}원</span>
+                                )}
+                                <span className="text-xs font-semibold text-orange-400">1박 {Math.round(hotel.dailyRate).toLocaleString()}원</span>
+                                {hotel.discountPercentage > 0 && (
+                                  <span className="text-xs bg-red-700/60 text-red-300 px-1.5 py-0.5 rounded">-{Math.round(hotel.discountPercentage)}%</span>
+                                )}
+                              </div>
+                              <div className="flex gap-1.5 mt-1">
+                                {hotel.freeWifi && <span className="text-xs text-gray-400 bg-gray-700 px-1.5 py-0.5 rounded">WiFi</span>}
+                                {hotel.includeBreakfast && <span className="text-xs text-gray-400 bg-gray-700 px-1.5 py-0.5 rounded">조식</span>}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── 오른쪽: 블로그 생성 ── */}
+              <div className="space-y-4">
+                <div className="bg-gray-800 rounded-xl p-4 space-y-4">
+                  <h3 className="text-sm font-semibold text-gray-300">✍️ 블로그 글 생성</h3>
+
+                  {agSelected.size === 0 ? (
+                    <div className="text-center py-10 text-gray-500">
+                      <div className="text-4xl mb-3">🏨</div>
+                      <p className="text-sm">왼쪽에서 호텔을 검색하고<br/>블로그에 포함할 호텔을 선택해주세요.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-xs text-gray-400 mb-2">선택된 호텔 ({agSelected.size}개)</p>
+                        <div className="space-y-1">
+                          {agHotels.filter(h => agSelected.has(h.hotelId)).map(h => (
+                            <div key={h.hotelId} className="flex items-center gap-2 text-xs text-gray-300 bg-gray-700 rounded-lg px-3 py-2">
+                              <span className="text-orange-400">✓</span>
+                              <span className="flex-1 truncate">{h.hotelName}</span>
+                              <span className="text-yellow-400">⭐{h.starRating}</span>
+                              <span className="text-green-400">{h.reviewScore}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-gray-400 mb-1 block">여행 스타일</label>
+                        <div className="flex gap-2 flex-wrap">
+                          {['커플', '가족', '혼자', '친구', '비즈니스'].map(style => (
+                            <button key={style} onClick={() => setAgTravelStyle(style)}
+                              className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${agTravelStyle === style ? 'bg-orange-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                              {style}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button onClick={generateAgodaPost} disabled={agGenerating}
+                        className="w-full py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-semibold text-sm rounded-xl transition-colors">
+                        {agGenerating ? '⏳ AI 글 생성 중...' : '🤖 AI 호텔 후기 블로그 생성'}
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* 아고다 위젯 미리보기 */}
+                <div className="bg-gray-800 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">🔗 아고다 제휴 위젯 (블로그 삽입용)</h3>
+                  <p className="text-xs text-gray-500 mb-3">아래 코드를 블로그 포스트 하단에 추가하면 호텔 검색 위젯이 표시됩니다.</p>
+                  {agCity && (
+                    <div className="bg-gray-900 rounded-lg p-3 text-xs font-mono text-green-400 overflow-x-auto whitespace-pre-wrap break-all">
+{`<div id="adgshp_${agCity.id}"></div>
+<script src="//cdn0.agoda.net/images/sherpa/js/init-dynamic_v8.min.js"></script>
+<script>
+var stg=new Object();
+stg.crt="95206069999";stg.version="1.05";
+stg.id=stg.name="adgshp_${agCity.id}";
+stg.Width="300px";stg.Height="300px";
+stg.RefKey="JnczJ2ENKNu/pBK/YSDEJA==";
+stg.AutoScrollSpeed=3000;stg.AutoScrollToggle=true;
+stg.SearchboxShow=true;stg.DiscountedOnly=false;
+stg.Layout="squaredynamic";stg.Language="ko-kr";
+stg.ApiKey="8a74cef3-5ae2-4ad3-97af-b4628ce0795a";
+stg.Cid="1945810";stg.City="${agCity.id}";
+stg.Currency="KRW";stg.OverideConf=false;
+new AgdDynamic("adgshp_${agCity.id}").initialize(stg);
+</script>`}
+                    </div>
+                  )}
+                  {!agCity && <p className="text-xs text-gray-600">도시를 선택하면 위젯 코드가 표시됩니다.</p>}
+                </div>
+
+                {/* 안내 */}
+                <div className="bg-blue-950/30 border border-blue-800/50 rounded-xl p-4">
+                  <h3 className="text-xs font-semibold text-blue-300 mb-2">💡 수익화 팁</h3>
+                  <ul className="text-xs text-blue-400/80 space-y-1">
+                    <li>• AI 생성 글은 자동으로 글 작성 탭으로 이동합니다</li>
+                    <li>• 각 호텔 예약 링크에 CID(1959217)가 포함되어 수익 추적됩니다</li>
+                    <li>• 리뷰 점수 높은 호텔 위주로 선택하면 전환율이 높아집니다</li>
+                    <li>• 계절/이벤트별 검색어로 SEO 효과를 높이세요</li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </div>
         )}
