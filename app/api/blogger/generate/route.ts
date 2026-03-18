@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+interface CoupangProduct {
+  productName: string;
+  productPrice: number;
+  productUrl: string;
+  imageUrl?: string;
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -11,14 +18,23 @@ export async function POST(req: NextRequest) {
     keyword: string;
     contentType: 'product' | 'info';
     productInfo?: string;
+    coupangProducts?: CoupangProduct[];
   };
 
-  const { keyword, contentType, productInfo } = body;
+  const { keyword, contentType, productInfo, coupangProducts } = body;
   if (!keyword) {
     return NextResponse.json({ error: '키워드를 입력해주세요.' }, { status: 400 });
   }
 
-  const productContext = productInfo ? `\n상품 정보: ${productInfo}` : '';
+  let productContext = productInfo ? `\n상품 정보: ${productInfo}` : '';
+
+  if (coupangProducts && coupangProducts.length > 0) {
+    productContext += '\n\n쿠팡 파트너스 상품 목록 (글에 자연스럽게 링크 포함):\n';
+    productContext += coupangProducts.map(p =>
+      `- ${p.productName}: ${p.productPrice.toLocaleString()}원, 링크: ${p.productUrl}`
+    ).join('\n');
+    productContext += '\n\n위 상품들의 쿠팡 파트너스 링크를 글 내에 자연스럽게 포함하세요. 각 링크는 <a href="URL" target="_blank" rel="noopener noreferrer" style="color:#e53e3e;font-weight:bold">상품명</a> 형식으로 삽입하세요.';
+  }
 
   const prompt =
     contentType === 'product'
@@ -60,20 +76,12 @@ export async function POST(req: NextRequest) {
     const result = await model.generateContent(prompt);
     let text = result.response.text();
 
-    // ```json ... ``` 블록 제거
     text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
-    let parsed: {
-      title: string;
-      content: string;
-      metaDescription: string;
-      labels: string[];
-    };
-
+    let parsed: { title: string; content: string; metaDescription: string; labels: string[] };
     try {
       parsed = JSON.parse(text);
     } catch {
-      // JSON 파싱 실패 시 텍스트에서 추출 시도
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         return NextResponse.json({ error: 'AI 응답 파싱 실패', raw: text }, { status: 500 });
