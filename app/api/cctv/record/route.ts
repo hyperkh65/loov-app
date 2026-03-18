@@ -37,13 +37,14 @@ export async function POST(req: NextRequest) {
 // GET: 녹화 파일 목록
 export async function GET() {
   try {
+    // stat 방식: 파일명에 공백이 있어도 안전하게 파싱
     const result = await nasExec(
-      `ls -lt --time-style=+%s "${MOVIE_DIR}" 2>/dev/null | grep -v '^total' | head -50`
+      `find "${MOVIE_DIR}" -maxdepth 1 -type f \\( -name "*.webm" -o -name "*.mp4" -o -name "*.mkv" \\) -printf "%f\\t%s\\t%T@\\n" 2>/dev/null | sort -t$'\\t' -k3 -rn | head -100`
     );
     const files = result.stdout.split('\n').filter(Boolean).map(line => {
-      const m = line.match(/^([d\-])[rwxst+\-]{9}[\+@\.]?\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+(.+)$/);
-      if (!m) return null;
-      return { name: m[4].trim(), size: parseInt(m[2]) || 0, modTime: parseInt(m[3]) || 0 };
+      const parts = line.split('\t');
+      if (parts.length < 3) return null;
+      return { name: parts[0].trim(), size: parseInt(parts[1]) || 0, modTime: Math.floor(parseFloat(parts[2])) || 0 };
     }).filter(Boolean);
     return NextResponse.json({ files });
   } catch (e) {
