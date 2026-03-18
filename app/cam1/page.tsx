@@ -58,6 +58,7 @@ export default function Cam1Page() {
   const recChunksRef = useRef<Blob[]>([]);
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const tick = () => {
@@ -267,7 +268,6 @@ export default function Cam1Page() {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && isRecordingRef.current) {
-        // 돌아왔을 때 MediaRecorder가 죽어있으면 재시작
         if (mediaRecorderRef.current?.state === 'inactive' && localStreamRef.current) {
           startChunk(localStreamRef.current);
         }
@@ -275,6 +275,22 @@ export default function Cam1Page() {
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [startChunk]);
+
+  // 녹화 watchdog: 10초마다 체크, 녹화 중이어야 하는데 멈췄으면 재시작
+  useEffect(() => {
+    watchdogRef.current = setInterval(() => {
+      if (isRecordingRef.current && localStreamRef.current) {
+        const state = mediaRecorderRef.current?.state;
+        if (state === 'inactive') {
+          console.warn('[cam1] watchdog: recorder inactive, restarting');
+          startChunk(localStreamRef.current);
+        }
+      }
+    }, 10_000);
+    return () => {
+      if (watchdogRef.current) clearInterval(watchdogRef.current);
+    };
   }, [startChunk]);
 
   // ── 잠금화면 ──────────────────────────────────────────
