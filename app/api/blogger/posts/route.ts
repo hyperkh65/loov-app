@@ -72,7 +72,12 @@ export async function POST(req: NextRequest) {
     contentType?: string;
   };
 
-  const { title, content, labels = [], isDraft = false } = body;
+  const { title, content, isDraft = false } = body;
+  // Blogger label 제한: 각 200자 이하, 최대 20개, 특수문자 제거
+  const labels = (body.labels || [])
+    .map((l: string) => l.replace(/[<>"']/g, '').trim().slice(0, 200))
+    .filter((l: string) => l.length > 0)
+    .slice(0, 20);
 
   if (!title || !content) {
     return NextResponse.json({ error: '제목과 본문은 필수입니다.' }, { status: 400 });
@@ -80,10 +85,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const postPayload: Record<string, unknown> = {
-      kind: 'blogger#post',
-      title,
+      title: title.slice(0, 500),
       content,
-      labels,
+      ...(labels.length > 0 ? { labels } : {}),
     };
 
     const publishParam = isDraft ? '?isDraft=true' : '';
