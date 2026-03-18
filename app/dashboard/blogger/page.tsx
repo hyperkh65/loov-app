@@ -28,30 +28,32 @@ interface AgodaHotel {
   currency: string; dailyRate: number; crossedOutRate: number; discountPercentage: number;
   imageURL: string; landingURL: string; includeBreakfast: boolean; freeWifi: boolean;
 }
-interface AgodaCity { id: number; name: string; country: string; emoji: string; }
+interface AgodaCity { id: number; name: string; nameEn: string; country: string; emoji: string; }
+interface SnsConnection { platform: string; platform_display_name: string; platform_username: string; is_active: boolean; }
+interface SnsTexts { instagram: string; twitter: string; facebook: string; threads: string; }
 
 const AGODA_CITIES: AgodaCity[] = [
-  { id: 17193, name: '발리', country: '인도네시아', emoji: '🌴' },
-  { id: 9395,  name: '방콕', country: '태국', emoji: '🏮' },
-  { id: 16056, name: '푸켓', country: '태국', emoji: '🏖️' },
-  { id: 7401,  name: '치앙마이', country: '태국', emoji: '🌸' },
-  { id: 5085,  name: '도쿄', country: '일본', emoji: '🗼' },
-  { id: 9590,  name: '오사카', country: '일본', emoji: '🏯' },
-  { id: 1784,  name: '교토', country: '일본', emoji: '⛩️' },
-  { id: 16527, name: '후쿠오카', country: '일본', emoji: '🍜' },
-  { id: 3435,  name: '삿포로', country: '일본', emoji: '⛄' },
-  { id: 4064,  name: '싱가포르', country: '싱가포르', emoji: '🦁' },
-  { id: 16808, name: '홍콩', country: '홍콩', emoji: '🌆' },
-  { id: 4001,  name: '세부', country: '필리핀', emoji: '🏝️' },
-  { id: 1622,  name: '마닐라', country: '필리핀', emoji: '🇵🇭' },
-  { id: 13170, name: '호치민', country: '베트남', emoji: '🛵' },
-  { id: 16440, name: '다낭', country: '베트남', emoji: '🌊' },
-  { id: 2679,  name: '나트랑', country: '베트남', emoji: '🏄' },
-  { id: 2758,  name: '하노이', country: '베트남', emoji: '🎋' },
-  { id: 14524, name: '쿠알라룸푸르', country: '말레이시아', emoji: '🏙️' },
-  { id: 2994,  name: '두바이', country: 'UAE', emoji: '🌇' },
-  { id: 15470, name: '파리', country: '프랑스', emoji: '🗺️' },
-  { id: 318,   name: '뉴욕', country: '미국', emoji: '🗽' },
+  { id: 17193, name: '발리',      nameEn: 'Bali',          country: '인도네시아', emoji: '🌴' },
+  { id: 9395,  name: '방콕',      nameEn: 'Bangkok',       country: '태국',       emoji: '🏮' },
+  { id: 16056, name: '푸켓',      nameEn: 'Phuket',        country: '태국',       emoji: '🏖️' },
+  { id: 7401,  name: '치앙마이',  nameEn: 'Chiang Mai',    country: '태국',       emoji: '🌸' },
+  { id: 5085,  name: '도쿄',      nameEn: 'Tokyo',         country: '일본',       emoji: '🗼' },
+  { id: 9590,  name: '오사카',    nameEn: 'Osaka',         country: '일본',       emoji: '🏯' },
+  { id: 1784,  name: '교토',      nameEn: 'Kyoto',         country: '일본',       emoji: '⛩️' },
+  { id: 16527, name: '후쿠오카',  nameEn: 'Fukuoka',       country: '일본',       emoji: '🍜' },
+  { id: 3435,  name: '삿포로',    nameEn: 'Sapporo',       country: '일본',       emoji: '⛄' },
+  { id: 4064,  name: '싱가포르',  nameEn: 'Singapore',     country: '싱가포르',   emoji: '🦁' },
+  { id: 16808, name: '홍콩',      nameEn: 'Hong Kong',     country: '홍콩',       emoji: '🌆' },
+  { id: 4001,  name: '세부',      nameEn: 'Cebu',          country: '필리핀',     emoji: '🏝️' },
+  { id: 1622,  name: '마닐라',    nameEn: 'Manila',        country: '필리핀',     emoji: '🇵🇭' },
+  { id: 13170, name: '호치민',    nameEn: 'Ho Chi Minh',   country: '베트남',     emoji: '🛵' },
+  { id: 16440, name: '다낭',      nameEn: 'Da Nang',       country: '베트남',     emoji: '🌊' },
+  { id: 2679,  name: '나트랑',    nameEn: 'Nha Trang',     country: '베트남',     emoji: '🏄' },
+  { id: 2758,  name: '하노이',    nameEn: 'Hanoi',         country: '베트남',     emoji: '🎋' },
+  { id: 14524, name: '쿠알라룸푸르', nameEn: 'Kuala Lumpur', country: '말레이시아', emoji: '🏙️' },
+  { id: 2994,  name: '두바이',    nameEn: 'Dubai',         country: 'UAE',        emoji: '🌇' },
+  { id: 15470, name: '파리',      nameEn: 'Paris',         country: '프랑스',     emoji: '🗺️' },
+  { id: 318,   name: '뉴욕',      nameEn: 'New York',      country: '미국',       emoji: '🗽' },
 ];
 
 type Tab = 'write' | 'coupang' | 'notion' | 'agoda' | 'history' | 'status';
@@ -451,6 +453,17 @@ export default function BloggerPage() {
   const [agTravelStyle, setAgTravelStyle] = useState('커플');
   const [agGenerating, setAgGenerating] = useState(false);
 
+  // ── SNS ────────────────────────────────────────────────────────────────
+  const [snsModal, setSnsModal] = useState(false);
+  const [snsLoading, setSnsLoading] = useState(false);
+  const [snsTexts, setSnsTexts] = useState<SnsTexts | null>(null);
+  const [snsConnections, setSnsConnections] = useState<SnsConnection[]>([]);
+  const [snsActivePlatform, setSnsActivePlatform] = useState<keyof SnsTexts>('instagram');
+  const [snsEditText, setSnsEditText] = useState('');
+  const [snsSelectedPlatforms, setSnsSelectedPlatforms] = useState<string[]>([]);
+  const [snsPosting, setSnsPosting] = useState(false);
+  const [snsPostResult, setSnsPostResult] = useState<{ platform: string; success: boolean; error?: string }[] | null>(null);
+
   // ── History / Status ───────────────────────────────────────────────────
   const [history, setHistory] = useState<HistoryPost[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -700,6 +713,7 @@ export default function BloggerPage() {
         body: JSON.stringify({
           cityName: city.name,
           cityNameKo: city.name,
+          cityNameEn: (city as AgodaCity).nameEn || city.name,
           hotels: selectedHotels,
           checkIn: agCheckIn,
           checkOut: agCheckOut,
@@ -714,6 +728,59 @@ export default function BloggerPage() {
       setActiveTab('write');
     } catch (e) { alert(String(e)); }
     finally { setAgGenerating(false); }
+  }
+
+  async function loadSnsConnections() {
+    try {
+      const data = await (await fetch('/api/sns/connections')).json();
+      setSnsConnections((data || []).filter((c: SnsConnection) => c.is_active));
+    } catch { /* ignore */ }
+  }
+
+  async function openSnsModal() {
+    if (!editTitle && !editContent) { alert('먼저 블로그 글을 생성해주세요.'); return; }
+    setSnsModal(true);
+    setSnsTexts(null);
+    setSnsPostResult(null);
+    setSnsEditText('');
+    await loadSnsConnections();
+    setSnsLoading(true);
+    try {
+      const res = await fetch('/api/agoda/sns-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle,
+          cityName: agCity?.name || keyword,
+          hotels: agHotels.filter(h => agSelected.has(h.hotelId)).map(h => ({
+            hotelName: h.hotelName, reviewScore: h.reviewScore,
+            dailyRate: h.dailyRate, discountPercentage: h.discountPercentage,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '생성 실패');
+      setSnsTexts(data);
+      setSnsEditText(data.instagram || '');
+      setSnsActivePlatform('instagram');
+    } catch (e) { alert(String(e)); }
+    finally { setSnsLoading(false); }
+  }
+
+  async function publishToSns() {
+    if (!snsSelectedPlatforms.length) { alert('발행할 SNS를 선택해주세요.'); return; }
+    if (!snsEditText.trim()) { alert('발행할 텍스트가 없습니다.'); return; }
+    setSnsPosting(true); setSnsPostResult(null);
+    try {
+      const res = await fetch('/api/sns/post-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: snsEditText, platforms: snsSelectedPlatforms }),
+      });
+      const data = await res.json();
+      setSnsPostResult(data.results || []);
+    } catch (e) { alert(String(e)); }
+    finally { setSnsPosting(false); }
   }
 
   function handleTabChange(tab: Tab) {
@@ -837,6 +904,120 @@ export default function BloggerPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SNS 발행 모달 */}
+      {snsModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-700">
+              <div>
+                <h3 className="font-bold text-white text-lg">📱 SNS 공유</h3>
+                <p className="text-xs text-gray-400 mt-0.5">AI가 플랫폼별 후킹성 멘트를 생성했습니다</p>
+              </div>
+              <button onClick={() => setSnsModal(false)} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {snsLoading ? (
+                <div className="text-center py-16">
+                  <div className="text-4xl mb-3 animate-bounce">✨</div>
+                  <p className="text-gray-400 text-sm">AI가 후킹성 멘트를 생성 중입니다...</p>
+                </div>
+              ) : snsTexts ? (
+                <>
+                  {/* 플랫폼 탭 */}
+                  <div>
+                    <div className="flex gap-1.5 mb-3">
+                      {([
+                        { key: 'instagram', label: '📸 인스타', color: 'from-pink-600 to-purple-600' },
+                        { key: 'twitter',   label: '🐦 X/트위터', color: 'from-blue-500 to-sky-400' },
+                        { key: 'facebook',  label: '👥 페이스북', color: 'from-blue-700 to-blue-500' },
+                        { key: 'threads',   label: '🧵 스레드', color: 'from-gray-600 to-gray-500' },
+                      ] as { key: keyof SnsTexts; label: string; color: string }[]).map(p => (
+                        <button key={p.key}
+                          onClick={() => { setSnsActivePlatform(p.key); setSnsEditText(snsTexts[p.key]); }}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${snsActivePlatform === p.key ? `bg-gradient-to-r ${p.color} text-white` : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      value={snsEditText}
+                      onChange={e => setSnsEditText(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-200 focus:outline-none focus:border-pink-500 resize-none"
+                      rows={8}
+                    />
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-xs text-gray-600">{snsEditText.length}자</span>
+                      <button onClick={() => setSnsEditText(snsTexts[snsActivePlatform])}
+                        className="text-xs text-gray-500 hover:text-gray-300">↩ 원본으로</button>
+                    </div>
+                  </div>
+
+                  {/* 플랫폼 선택 */}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-300 mb-2">발행할 플랫폼 선택</p>
+                    {snsConnections.length === 0 ? (
+                      <div className="bg-yellow-950/30 border border-yellow-700/50 rounded-xl p-4 text-center">
+                        <p className="text-yellow-400 text-sm">연결된 SNS가 없습니다.</p>
+                        <a href="/dashboard/sns" className="text-xs text-yellow-300 underline mt-1 block">SNS 연결하러 가기 →</a>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {snsConnections.map(conn => {
+                          const isSelected = snsSelectedPlatforms.includes(conn.platform);
+                          const platformEmoji = conn.platform === 'instagram' ? '📸' : conn.platform === 'twitter' ? '🐦' : conn.platform === 'facebook' ? '👥' : conn.platform === 'threads' ? '🧵' : '📱';
+                          return (
+                            <button key={conn.platform}
+                              onClick={() => setSnsSelectedPlatforms(prev =>
+                                isSelected ? prev.filter(p => p !== conn.platform) : [...prev, conn.platform]
+                              )}
+                              className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isSelected ? 'border-pink-500 bg-pink-950/30' : 'border-gray-700 bg-gray-750 hover:border-gray-600'}`}>
+                              <span className="text-xl">{platformEmoji}</span>
+                              <div className="min-w-0 text-left">
+                                <div className="text-xs font-semibold text-white capitalize">{conn.platform}</div>
+                                <div className="text-xs text-gray-400 truncate">@{conn.platform_username || conn.platform_display_name}</div>
+                              </div>
+                              {isSelected && <span className="ml-auto text-pink-400 text-lg">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 발행 결과 */}
+                  {snsPostResult && (
+                    <div className="space-y-2">
+                      {snsPostResult.map(r => (
+                        <div key={r.platform} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm ${r.success ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'}`}>
+                          <span>{r.success ? '✅' : '❌'}</span>
+                          <span className="capitalize font-medium">{r.platform}</span>
+                          <span className="text-xs">{r.success ? '발행 완료!' : r.error}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+
+            {/* Footer */}
+            {snsTexts && !snsLoading && (
+              <div className="p-4 border-t border-gray-700 flex gap-3">
+                <button onClick={() => setSnsModal(false)} className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-xl transition-colors">
+                  닫기
+                </button>
+                <button onClick={publishToSns} disabled={snsPosting || snsSelectedPlatforms.length === 0}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 disabled:opacity-50 text-white font-semibold text-sm rounded-xl transition-all">
+                  {snsPosting ? '⏳ 발행 중...' : `🚀 ${snsSelectedPlatforms.length > 0 ? snsSelectedPlatforms.length + '개 ' : ''}SNS에 발행`}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -975,10 +1156,16 @@ export default function BloggerPage() {
                       {publishResult.error ? `오류: ${publishResult.error}` : <>발행 성공! {publishResult.url && <a href={publishResult.url} target="_blank" rel="noopener noreferrer" className="underline">블로그에서 보기 →</a>}</>}
                     </div>
                   )}
-                  <button onClick={handlePublish} disabled={publishing || !editTitle.trim() || !editContent.trim()}
-                    className="ml-auto bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2">
-                    {publishing ? <><Spinner /> 발행 중...</> : isDraft ? '💾 임시저장' : '🚀 블로거에 발행'}
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button onClick={openSnsModal} disabled={!editTitle.trim() && !editContent.trim()}
+                      className="bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 disabled:opacity-40 text-white font-semibold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 text-sm">
+                      📱 SNS 공유
+                    </button>
+                    <button onClick={handlePublish} disabled={publishing || !editTitle.trim() || !editContent.trim()}
+                      className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2">
+                      {publishing ? <><Spinner /> 발행 중...</> : isDraft ? '💾 임시저장' : '🚀 블로거에 발행'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
