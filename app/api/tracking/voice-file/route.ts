@@ -33,15 +33,21 @@ export async function GET(req: NextRequest) {
     const buffer = Buffer.from(result.stdout.trim(), 'base64');
     const isMP4 = nasPath.endsWith('.mp4');
     const contentType = isMP4 ? 'audio/mp4' : 'audio/webm';
+    const fileExt = isMP4 ? 'mp4' : 'webm';
 
-    return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(buffer.length),
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-store',
-      },
-    });
+    const download = searchParams.get('download');
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'Content-Length': String(buffer.length),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-store',
+    };
+    if (download === '1') {
+      const timestamp = nasPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? Date.now().toString();
+      headers['Content-Disposition'] = `attachment; filename="voice-memo-${timestamp}.${fileExt}"`;
+    }
+
+    return new NextResponse(buffer, { headers });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

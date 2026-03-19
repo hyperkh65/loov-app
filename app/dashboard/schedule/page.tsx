@@ -119,12 +119,29 @@ function AddEventModal({ onClose, defaultDate }: { onClose: () => void; defaultD
 }
 
 export default function SchedulePage() {
-  const { scheduleEvents, removeScheduleEvent, employees } = useStore();
+  const { scheduleEvents, addScheduleEvent, removeScheduleEvent, employees } = useStore();
   const [showAdd, setShowAdd] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
+
+  // Sync DB events into Zustand store on mount
+  useEffect(() => {
+    fetch('/api/schedule/events')
+      .then((r) => r.ok ? r.json() : { events: [] })
+      .then((data: { events?: ScheduleEvent[] }) => {
+        const dbEvents: ScheduleEvent[] = data.events ?? [];
+        const storeIds = new Set(scheduleEvents.map((e) => e.id));
+        for (const event of dbEvents) {
+          if (!storeIds.has(event.id)) {
+            addScheduleEvent(event);
+          }
+        }
+      })
+      .catch(console.warn);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Google Calendar 상태
   const [googleConnected, setGoogleConnected] = useState(false);
