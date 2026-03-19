@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSetting } from '@/lib/get-setting';
+import { checkAndIncrementUsage } from '@/lib/ai-usage';
 
 const ROLE_CONTEXT: Record<string, string> = {
   '영업팀장': '고객 발굴, 영업 전략, 제안서 작성, CRM 관리, 계약 협상 전문가.',
@@ -23,6 +24,15 @@ const ROLE_CONTEXT: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
+    // AI 사용량 체크 (마스터는 무제한)
+    const usage = await checkAndIncrementUsage();
+    if (!usage.allowed) {
+      return NextResponse.json(
+        { error: `일일 AI 사용 한도(${usage.limit}회)에 도달했습니다. 내일 다시 이용하거나 플랜을 업그레이드하세요.`, limitReached: true },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
 
     // 두 가지 API 형식 지원 (기존 + 새 대시보드)
