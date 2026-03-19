@@ -209,8 +209,9 @@ async function runSync(
       let cursor: string | undefined;
       do {
         await delay(350);
-        const queryRes: any = await notion.databases.query({
-          database_id: dbId,
+        // v5: databases.query 없음 → dataSources.query 사용
+        const queryRes: any = await (notion as any).dataSources.query({
+          data_source_id: dbId,
           start_cursor: cursor,
           page_size: 100,
         });
