@@ -225,11 +225,11 @@ async function runSync(
         await delay(350);
         let queryRes: any;
         try {
-          queryRes = await (notion as any).dataSources.query({
-            data_source_id: dbId,
-            start_cursor: cursor,
-            page_size: 100,
-          });
+          queryRes = await notion.request({
+            path: `databases/${dbId}/query`,
+            method: 'POST',
+            body: { start_cursor: cursor, page_size: 100 },
+          } as any);
         } catch (e: any) {
           const msg = `DB 쿼리 실패 (${dbId}): ${e?.message || e}`;
           console.error(msg);
