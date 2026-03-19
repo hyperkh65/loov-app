@@ -43,6 +43,17 @@ interface RouteData {
   };
 }
 
+interface SummaryResult {
+  summary: string;
+  scheduleItems: {
+    title: string;
+    date: string;
+    time: string;
+    type: string;
+    description: string;
+  }[];
+}
+
 export default function TrackingDashboardPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +79,14 @@ export default function TrackingDashboardPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const leafletRef = useRef<any>(null);
+
+  // New state for summarize / schedule features
+  const [summaryProvider, setSummaryProvider] = useState<'gemini' | 'gpt'>('gemini');
+  const [summaries, setSummaries] = useState<Record<string, SummaryResult>>({});
+  const [summarizing, setSummarizing] = useState<string | null>(null);
+  const [savedScheduleIds, setSavedScheduleIds] = useState<Set<string>>(new Set());
+  // Retry transcription
+  const [retrying, setRetrying] = useState<string | null>(null);
 
   const isToday = (() => {
     const now = new Date();
@@ -295,6 +314,78 @@ export default function TrackingDashboardPage() {
     return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
+  // Retry transcription
+  const handleRetry = async (memo: VoiceMemo) => {
+    setRetrying(memo.id);
+    try {
+      const res = await fetch('/api/tracking/voice/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memoId: memo.id }),
+      });
+      const data = await res.json();
+      if (data.transcript && routeData) {
+        setRouteData({
+          ...routeData,
+          voiceMemos: routeData.voiceMemos.map((m) =>
+            m.id === memo.id ? { ...m, transcript: data.transcript } : m
+          ),
+        });
+        // Update selectedMemo if it's the same
+        if (selectedMemo?.id === memo.id) {
+          setSelectedMemo({ ...memo, transcript: data.transcript });
+        }
+      }
+    } catch (e) {
+      console.error('Retry error', e);
+    } finally {
+      setRetrying(null);
+    }
+  };
+
+  // Summarize memo
+  const handleSummarize = async (memo: VoiceMemo) => {
+    setSummarizing(memo.id);
+    try {
+      const res = await fetch('/api/tracking/voice/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: memo.transcript, provider: summaryProvider, memoId: memo.id }),
+      });
+      const data = await res.json();
+      setSummaries(prev => ({ ...prev, [memo.id]: data }));
+    } catch (e) {
+      console.error('Summarize error', e);
+    } finally {
+      setSummarizing(null);
+    }
+  };
+
+  // Save schedule item
+  const handleSaveSchedule = async (item: SummaryResult['scheduleItems'][number]) => {
+    const event = {
+      id: crypto.randomUUID(),
+      title: item.title,
+      description: item.description || '',
+      date: item.date || new Date().toISOString().slice(0, 10),
+      time: item.time || undefined,
+      type: item.type || 'other',
+      assignedEmployeeIds: [],
+      isAllDay: !item.time,
+      color: undefined,
+    };
+    try {
+      await fetch('/api/schedule/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      });
+      setSavedScheduleIds(prev => new Set([...prev, event.id]));
+    } catch (e) {
+      console.error('Save schedule error', e);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
       {/* Top bar */}
@@ -406,9 +497,20 @@ export default function TrackingDashboardPage() {
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-mono text-cyan-400">{formatMemoTime(memo.created_at)}</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {memo.duration_sec && <span className="text-xs text-white/30">{memo.duration_sec}초</span>}
-                    {/* 재생 버튼 */}
+
+                    {/* Download button */}
+                    <a
+                      href={`/api/tracking/voice-file?path=${encodeURIComponent(memo.nas_path)}&download=1`}
+                      download
+                      onClick={e => e.stopPropagation()}
+                      className="w-6 h-6 rounded-full bg-slate-600/50 hover:bg-slate-600 flex items-center justify-center text-[10px] text-white/60 transition-colors"
+                    >
+                      ⬇
+                    </a>
+
+                    {/* Play button */}
                     <button
                       onClick={e => {
                         e.stopPropagation();
@@ -431,12 +533,85 @@ export default function TrackingDashboardPage() {
                     </button>
                   </div>
                 </div>
+
                 <div className={`text-xs text-white/60 leading-relaxed ${selectedMemo?.id === memo.id ? '' : 'line-clamp-2'}`}>
                   {memo.transcript || '(변환 없음)'}
                 </div>
+
+                {/* Retry transcription button — only if transcript missing or failed */}
+                {(!memo.transcript || memo.transcript === '(음성 변환 실패)') && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleRetry(memo);
+                    }}
+                    disabled={retrying === memo.id}
+                    className="mt-1.5 text-[10px] px-2 py-0.5 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/40 disabled:opacity-50 transition-colors"
+                  >
+                    {retrying === memo.id ? '재전사 중...' : '🔄 재전사'}
+                  </button>
+                )}
+
                 {memo.lat && memo.lng && (
                   <div className="text-[10px] text-white/20 font-mono mt-1">
                     {memo.lat.toFixed(4)}, {memo.lng.toFixed(4)}
+                  </div>
+                )}
+
+                {/* Summarize section — only shown when memo is expanded */}
+                {selectedMemo?.id === memo.id && memo.transcript && !memo.transcript.includes('변환 실패') && (
+                  <div className="mt-2 pt-2 border-t border-slate-700/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setSummaryProvider(p => p === 'gemini' ? 'gpt' : 'gemini');
+                        }}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-white/50 hover:text-white/80"
+                      >
+                        {summaryProvider === 'gemini' ? '🟣 Gemini' : '🟢 GPT'}
+                      </button>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          handleSummarize(memo);
+                        }}
+                        disabled={summarizing === memo.id}
+                        className="text-[10px] px-2 py-0.5 rounded bg-purple-600/30 text-purple-300 hover:bg-purple-600/50 disabled:opacity-50"
+                      >
+                        {summarizing === memo.id ? '요약 중...' : '✨ 요약'}
+                      </button>
+                    </div>
+
+                    {summaries[memo.id] && (
+                      <div>
+                        <p className="text-[11px] text-white/70 leading-relaxed mb-2">
+                          {summaries[memo.id].summary}
+                        </p>
+                        {summaries[memo.id].scheduleItems.map((item, idx) => (
+                          <div key={idx} className="mb-1.5 p-2 bg-slate-800 rounded text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <span className="text-white/80 font-medium">{item.title}</span>
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  handleSaveSchedule(item);
+                                }}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-600/30 text-cyan-300 hover:bg-cyan-600/50"
+                              >
+                                📅 저장
+                              </button>
+                            </div>
+                            {item.date && (
+                              <div className="text-white/40 mt-0.5">{item.date} {item.time}</div>
+                            )}
+                            {item.description && (
+                              <div className="text-white/40 mt-0.5">{item.description}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
