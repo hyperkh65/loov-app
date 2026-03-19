@@ -254,6 +254,12 @@ function BlockRenderer({ block }: { block: NotionBlock }) {
 export default function NotionMirrorPage() {
   const [activeTab, setActiveTab] = useState<'sync' | 'pages' | 'databases'>('sync');
 
+  // Token settings
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenStatus, setTokenStatus] = useState<{ hasToken: boolean; tokenPreview: string } | null>(null);
+  const [tokenSaving, setTokenSaving] = useState(false);
+  const [showTokenInput, setShowTokenInput] = useState(false);
+
   // Sync tab state
   const [pageUrl, setPageUrl] = useState('https://www.notion.so/YnK-131c999644708011a105c4ec67ef49ea');
   const [syncLoading, setSyncLoading] = useState(false);
@@ -275,6 +281,35 @@ export default function NotionMirrorPage() {
   const [selectedDb, setSelectedDb] = useState<NotionDatabase | null>(null);
   const [dbItems, setDbItems] = useState<DatabaseItem[]>([]);
   const [dbItemsLoading, setDbItemsLoading] = useState(false);
+
+  // ─── Token settings ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/notion/mirror/settings').then(r => r.json()).then(setTokenStatus).catch(() => {});
+  }, []);
+
+  async function handleSaveToken() {
+    if (!tokenInput.trim()) return;
+    setTokenSaving(true);
+    try {
+      const res = await fetch('/api/notion/mirror/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: tokenInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error); return; }
+      setTokenStatus({ hasToken: true, tokenPreview: `${tokenInput.trim().slice(0, 12)}••••••••••` });
+      setTokenInput('');
+      setShowTokenInput(false);
+    } catch (e) { alert(String(e)); }
+    finally { setTokenSaving(false); }
+  }
+
+  async function handleDeleteToken() {
+    if (!confirm('토큰을 삭제할까요?')) return;
+    await fetch('/api/notion/mirror/settings', { method: 'DELETE' });
+    setTokenStatus({ hasToken: false, tokenPreview: '' });
+  }
 
   // ─── Fetch latest job on mount ──────────────────────────────────────────────
   const fetchLatestJob = useCallback(async () => {
@@ -491,6 +526,39 @@ export default function NotionMirrorPage() {
         {/* ── Tab: 동기화 ───────────────────────────────────────────────── */}
         {activeTab === 'sync' && (
           <div className="max-w-2xl space-y-6">
+            {/* Token Settings */}
+            <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-slate-300">🔑 Notion 미러 전용 토큰</h2>
+                {tokenStatus?.hasToken && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-emerald-400">● 설정됨</span>
+                    <button onClick={() => setShowTokenInput(v => !v)} className="text-xs text-slate-400 hover:text-white">변경</button>
+                    <button onClick={handleDeleteToken} className="text-xs text-red-400 hover:text-red-300">삭제</button>
+                  </div>
+                )}
+              </div>
+              {tokenStatus?.hasToken && !showTokenInput ? (
+                <div className="font-mono text-xs text-slate-400 bg-slate-800 px-3 py-2 rounded-lg">{tokenStatus.tokenPreview}</div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={tokenInput}
+                    onChange={e => setTokenInput(e.target.value)}
+                    placeholder="secret_xxxxxxxx 또는 ntn_xxxxxxxx"
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    onKeyDown={e => e.key === 'Enter' && handleSaveToken()}
+                  />
+                  <button onClick={handleSaveToken} disabled={tokenSaving || !tokenInput.trim()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-lg font-medium">
+                    {tokenSaving ? '저장 중...' : '저장'}
+                  </button>
+                </div>
+              )}
+              <p className="text-xs text-slate-500 mt-2">Notion → 설정 → 내 연결 → API 통합에서 발급. 이 워크스페이스 전용 토큰을 입력하세요.</p>
+            </div>
+
             {/* URL Input */}
             <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-5">
               <h2 className="text-sm font-semibold text-slate-300 mb-3">루트 페이지 URL</h2>

@@ -276,17 +276,20 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // Get Notion token
+  // Get Notion token — mirror 전용 토큰 우선, 없으면 일반 notion_config 사용
   const { data: settings } = await supabase
     .from('bossai_company_settings')
-    .select('notion_config')
+    .select('notion_config, notion_mirror_config')
     .eq('user_id', user.id)
     .single();
 
-  const config = settings?.notion_config as { apiKey?: string } | null;
-  if (!config?.apiKey) {
+  const mirrorConfig = settings?.notion_mirror_config as { apiKey?: string } | null;
+  const generalConfig = settings?.notion_config as { apiKey?: string } | null;
+  const apiKey = mirrorConfig?.apiKey || generalConfig?.apiKey;
+
+  if (!apiKey) {
     return NextResponse.json(
-      { error: 'Notion API 키를 먼저 설정해주세요.' },
+      { error: 'Notion 미러 토큰을 먼저 설정해주세요. (동기화 탭 상단 토큰 설정)' },
       { status: 400 }
     );
   }
@@ -315,7 +318,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Fire and forget
-  runSync(user.id, config.apiKey, job.id, pageId, fullSync).catch(console.error);
+  runSync(user.id, apiKey, job.id, pageId, fullSync).catch(console.error);
 
   return NextResponse.json({ jobId: job.id, status: 'pending' });
 }
