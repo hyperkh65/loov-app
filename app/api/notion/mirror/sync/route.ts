@@ -305,7 +305,8 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (jobError || !job) {
-    return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
+    console.error('notion job insert error:', jobError);
+    return NextResponse.json({ error: 'Failed to create job', detail: jobError?.message }, { status: 500 });
   }
 
   // Fire and forget
