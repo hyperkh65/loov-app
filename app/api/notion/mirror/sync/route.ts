@@ -47,6 +47,7 @@ async function runSync(
     let pagesCount = 0;
     let blocksCount = 0;
     let filesCount = 0;
+    const errors: string[] = [];
 
     // Get existing pages for incremental sync
     let existingPagesMap: Record<string, string> = {};
@@ -66,8 +67,10 @@ async function runSync(
       let page: any;
       try {
         page = await notion.pages.retrieve({ page_id: pgId });
-      } catch (e) {
-        console.error(`Failed to retrieve page ${pgId}:`, e);
+      } catch (e: any) {
+        const msg = `페이지 조회 실패 (${pgId}): ${e?.message || e}`;
+        console.error(msg);
+        errors.push(msg);
         return;
       }
 
@@ -182,8 +185,10 @@ async function runSync(
       let db: any;
       try {
         db = await notion.databases.retrieve({ database_id: dbId });
-      } catch (e) {
-        console.error(`Failed to retrieve database ${dbId}:`, e);
+      } catch (e: any) {
+        const msg = `DB 조회 실패 (${dbId}): ${e?.message || e}`;
+        console.error(msg);
+        errors.push(msg);
         return;
       }
 
@@ -204,8 +209,8 @@ async function runSync(
       let cursor: string | undefined;
       do {
         await delay(350);
-        const queryRes: any = await (notion as any).dataSources.query({
-          data_source_id: dbId,
+        const queryRes: any = await notion.databases.query({
+          database_id: dbId,
           start_cursor: cursor,
           page_size: 100,
         });
@@ -246,7 +251,7 @@ async function runSync(
       .update({
         status: 'done',
         finished_at: new Date().toISOString(),
-        result: { pagesCount, blocksCount, filesCount },
+        result: { pagesCount, blocksCount, filesCount, errors },
       })
       .eq('id', jobId);
   } catch (err: any) {
