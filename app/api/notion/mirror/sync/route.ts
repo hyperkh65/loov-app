@@ -172,10 +172,24 @@ async function runSync(
 
       pagesCount++;
 
-      // Find child databases in blocks and sync them
+      // Find child databases in blocks and sync them (에러 격리)
       const dbBlocks = blocks.filter((b: any) => b.type === 'child_database');
       for (const dbBlock of dbBlocks) {
-        await syncDatabase(dbBlock.id);
+        try {
+          await syncDatabase(dbBlock.id);
+        } catch (e: any) {
+          errors.push(`DB 동기화 실패 (${dbBlock.id}): ${e?.message || e}`);
+        }
+      }
+
+      // Find child pages in blocks and sync them recursively (에러 격리)
+      const childPageBlocks = blocks.filter((b: any) => b.type === 'child_page');
+      for (const cpBlock of childPageBlocks) {
+        try {
+          await syncPage(cpBlock.id);
+        } catch (e: any) {
+          errors.push(`하위 페이지 동기화 실패 (${cpBlock.id}): ${e?.message || e}`);
+        }
       }
     }
 
@@ -209,37 +223,46 @@ async function runSync(
       let cursor: string | undefined;
       do {
         await delay(350);
-        // v5: databases.query 없음 → dataSources.query 사용
-        const queryRes: any = await (notion as any).dataSources.query({
-          data_source_id: dbId,
-          start_cursor: cursor,
-          page_size: 100,
-        });
-
-        for (const item of queryRes.results as any[]) {
-          const itemTitle = getPageTitle(item);
-          const itemCover = getPageCover(item);
-          const itemIcon = getPageIcon(item);
-
-          // Upsert database item
-          await supabase.from('bossai_notion_database_items').upsert({
-            id: item.id,
-            user_id: userId,
-            database_id: dbId,
-            page_id: item.id,
-            title: itemTitle,
-            properties: item.properties || {},
-            cover: itemCover,
-            icon: itemIcon,
-            last_edited_time: item.last_edited_time,
-            synced_at: new Date().toISOString(),
+        let queryRes: any;
+        try {
+          queryRes = await (notion as any).dataSources.query({
+            data_source_id: dbId,
+            start_cursor: cursor,
+            page_size: 100,
           });
-
-          // Also sync the page itself
-          await syncPage(item.id, dbId);
+        } catch (e: any) {
+          const msg = `DB 쿼리 실패 (${dbId}): ${e?.message || e}`;
+          console.error(msg);
+          errors.push(msg);
+          break;
         }
 
-        cursor = queryRes.has_more ? queryRes.next_cursor : undefined;
+        for (const item of queryRes.results as any[]) {
+          try {
+            const itemTitle = getPageTitle(item);
+            const itemCover = getPageCover(item);
+            const itemIcon = getPageIcon(item);
+
+            await supabase.from('bossai_notion_database_items').upsert({
+              id: item.id,
+              user_id: userId,
+              database_id: dbId,
+              page_id: item.id,
+              title: itemTitle,
+              properties: item.properties || {},
+              cover: itemCover,
+              icon: itemIcon,
+              last_edited_time: item.last_edited_time,
+              synced_at: new Date().toISOString(),
+            });
+
+            await syncPage(item.id, dbId);
+          } catch (e: any) {
+            errors.push(`DB 아이템 처리 실패 (${item.id}): ${e?.message || e}`);
+          }
+        }
+
+        cursor = queryRes?.has_more ? queryRes.next_cursor : undefined;
       } while (cursor);
     }
 

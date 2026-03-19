@@ -8,7 +8,7 @@ interface SyncJob {
   id: string;
   type: string;
   status: 'pending' | 'running' | 'done' | 'failed';
-  result?: { pagesCount?: number; blocksCount?: number; filesCount?: number };
+  result?: { pagesCount?: number; blocksCount?: number; filesCount?: number; errors?: string[] };
   error_message?: string;
   started_at?: string;
   finished_at?: string;
@@ -647,6 +647,19 @@ export default function NotionMirrorPage() {
                       </div>
                     ))}
                   </div>
+                )}
+
+                {currentJob.status === 'done' && currentJob.result?.errors && currentJob.result.errors.length > 0 && (
+                  <details className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                    <summary className="text-xs font-semibold text-yellow-400 cursor-pointer">
+                      ⚠️ 일부 항목 오류 ({currentJob.result.errors.length}건) — 클릭해서 보기
+                    </summary>
+                    <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                      {currentJob.result.errors.map((err, i) => (
+                        <div key={i} className="text-xs text-yellow-300 font-mono break-all border-b border-yellow-500/10 pb-1">{err}</div>
+                      ))}
+                    </div>
+                  </details>
                 )}
 
                 {currentJob.status === 'failed' && currentJob.error_message && (
