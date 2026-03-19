@@ -2,26 +2,26 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-interface DiskInfo { size: string; used: string; avail: string; pct: string; mount: string; }
+interface DiskInfo { size: string; used: string; avail: string; pct: string; }
 interface FileItem { size: string; name: string; }
 interface DbDetail { timestamp: string; totalSize: string; files: FileItem[]; }
 interface WebStatus { lastSync: string | null; size: string; }
+interface UsbStatus { web: WebStatus; db: string[]; }
+
+interface NasData {
+  db: { backups: string[]; latestDetail: DbDetail | null };
+  web: WebStatus;
+  webPkg?: WebStatus | null;
+  usb?: UsbStatus | null;
+  disk: DiskInfo | null;
+  usbDisk?: DiskInfo | null;
+  latestLog: string;
+  schedule: string;
+}
 
 interface BackupData {
-  db: {
-    nas: string[];
-    usb: string[];
-    latestDetail: DbDetail | null;
-  };
-  web: {
-    nas: WebStatus;
-    usb: WebStatus;
-  };
-  disk: {
-    nas: DiskInfo | null;
-    usb: DiskInfo | null;
-  };
-  latestLog: string;
+  hy64: NasData;
+  days2: NasData;
 }
 
 function formatTs(ts: string) {
@@ -29,14 +29,14 @@ function formatTs(ts: string) {
 }
 
 function DiskBar({ disk, label, icon }: { disk: DiskInfo | null; label: string; icon: string }) {
-  if (!disk) return null;
+  if (!disk) return <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 text-slate-500 text-sm">디스크 정보 없음</div>;
   const pct = parseInt(disk.pct);
   const color = pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-yellow-500' : 'bg-emerald-500';
   return (
     <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xl">{icon}</span>
-        <span className="font-semibold text-white">{label}</span>
+        <span className="font-semibold text-white text-sm">{label}</span>
         <span className="text-xs text-slate-400 ml-auto">{disk.pct} 사용</span>
       </div>
       <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
@@ -51,17 +51,163 @@ function DiskBar({ disk, label, icon }: { disk: DiskInfo | null; label: string; 
   );
 }
 
+function DbList({ backups, latestDetail }: { backups: string[]; latestDetail: DbDetail | null }) {
+  const [showFiles, setShowFiles] = useState(false);
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span>🗄️</span>
+        <span className="font-semibold text-white">DB 백업</span>
+        <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">{backups.length} / 5개</span>
+      </div>
+      {backups.length === 0 ? (
+        <div className="text-slate-500 text-sm text-center py-3">백업 없음</div>
+      ) : (
+        <div className="space-y-1.5">
+          {backups.map((ts, i) => (
+            <div key={ts} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${i === 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-700/50'}`}>
+              <span>{i === 0 ? '✅' : '📦'}</span>
+              <span className="font-mono">{formatTs(ts)}</span>
+              {i === 0 && latestDetail && <span className="ml-auto text-slate-400">{latestDetail.totalSize}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {latestDetail && latestDetail.files.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-slate-700">
+          <button onClick={() => setShowFiles(!showFiles)} className="text-xs text-indigo-400 hover:text-indigo-300">
+            {showFiles ? '▲ 접기' : `▼ DB 목록 (${latestDetail.files.length}개)`}
+          </button>
+          {showFiles && (
+            <div className="mt-2 max-h-40 overflow-y-auto space-y-0.5">
+              {latestDetail.files.map((f, i) => (
+                <div key={i} className="flex justify-between text-xs font-mono px-2 py-0.5 hover:bg-slate-700 rounded text-slate-400">
+                  <span>{f.name}</span><span>{f.size}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WebMirror({ web, label, webPkg }: { web: WebStatus; label: string; webPkg?: WebStatus | null }) {
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span>📁</span>
+        <span className="font-semibold text-white">웹파일 미러 (rsync 증분)</span>
+      </div>
+      <div className="space-y-2">
+        <div className={`rounded-lg p-3 border ${web.lastSync ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-slate-700 border-slate-600'}`}>
+          <div className="text-xs font-semibold text-white">📂 {label}/web</div>
+          {web.lastSync ? (
+            <div className="flex justify-between mt-1">
+              <span className="text-xs text-emerald-300 font-mono">{web.lastSync}</span>
+              <span className="text-sm font-bold text-white">{web.size}</span>
+            </div>
+          ) : <div className="text-xs text-slate-500 mt-1">미동기화 (첫 실행 필요)</div>}
+        </div>
+        {webPkg && (
+          <div className={`rounded-lg p-3 border ${webPkg.lastSync ? 'bg-purple-500/10 border-purple-500/20' : 'bg-slate-700 border-slate-600'}`}>
+            <div className="text-xs font-semibold text-white">📂 web_packages/wordpress</div>
+            {webPkg.lastSync ? (
+              <div className="flex justify-between mt-1">
+                <span className="text-xs text-purple-300 font-mono">{webPkg.lastSync}</span>
+                <span className="text-sm font-bold text-white">{webPkg.size}</span>
+              </div>
+            ) : <div className="text-xs text-slate-500 mt-1">미동기화</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NasPanel({ data, nasName, target, onBackup }: {
+  data: NasData; nasName: string; target: string; onBackup: (t: string) => void;
+}) {
+  const [showLog, setShowLog] = useState(false);
+  return (
+    <div className="space-y-4">
+      {/* 스케줄 */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
+        <span className="text-lg">🕑</span>
+        <div>
+          <div className="text-sm font-semibold text-white">자동 백업 스케줄</div>
+          <div className="text-xs text-slate-400">{data.schedule} 매일 자동 실행</div>
+        </div>
+        <button onClick={() => onBackup(target)}
+          className="ml-auto px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-medium transition-colors">
+          ▶ 지금 백업
+        </button>
+      </div>
+
+      {/* 디스크 */}
+      <div className={`grid gap-3 ${data.usbDisk !== undefined ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <DiskBar disk={data.disk} label={`${nasName} (volume1)`} icon="🖥️" />
+        {data.usbDisk !== undefined && <DiskBar disk={data.usbDisk ?? null} label="외장하드 (USB)" icon="💿" />}
+      </div>
+
+      {/* DB + 웹 */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <DbList backups={data.db.backups} latestDetail={data.db.latestDetail} />
+        <WebMirror web={data.web} label={nasName} webPkg={data.webPkg} />
+      </div>
+
+      {/* USB (hy64만) */}
+      {data.usb && (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span>💿</span>
+            <span className="font-semibold text-white">외장하드 (USB) 백업</span>
+            <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
+              DB {data.usb.db.length} / 5개
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {data.usb.db.length === 0 ? (
+              <div className="text-slate-500 text-sm text-center py-2">USB DB 백업 없음</div>
+            ) : data.usb.db.map((ts, i) => (
+              <div key={ts} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${i === 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-700/50'}`}>
+                <span>{i === 0 ? '✅' : '📦'}</span>
+                <span className="font-mono">{formatTs(ts)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-xs text-slate-400">
+            웹파일: {data.usb.web.lastSync ? `${data.usb.web.lastSync} (${data.usb.web.size})` : '미동기화'}
+          </div>
+        </div>
+      )}
+
+      {/* 로그 */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <button onClick={() => setShowLog(!showLog)}
+          className="w-full flex items-center justify-between p-4 hover:bg-slate-700 transition-colors text-sm">
+          <div className="flex items-center gap-2"><span>📋</span><span className="font-semibold">최근 백업 로그</span></div>
+          <span className="text-slate-400">{showLog ? '▲' : '▼'}</span>
+        </button>
+        {showLog && (
+          <pre className="p-4 text-xs text-slate-300 font-mono bg-slate-900/50 max-h-56 overflow-y-auto whitespace-pre-wrap border-t border-slate-700">
+            {data.latestLog || '로그 없음'}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function BackupPage() {
   const [data, setData] = useState<BackupData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [backing, setBacking] = useState(false);
-  const [showLog, setShowLog] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
+  const [tab, setTab] = useState<'hy64' | '2days'>('hy64');
   const [error, setError] = useState('');
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       const res = await fetch('/api/nas/backup');
       const json = await res.json();
@@ -69,71 +215,50 @@ export default function BackupPage() {
       setData(json);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '오류 발생');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleBackup = async () => {
-    if (!confirm('지금 바로 백업을 실행할까요?\n(DB 전체 덤프 + 웹파일 증분 rsync)')) return;
-    setBacking(true);
-    try {
-      const res = await fetch('/api/nas/backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'backup' }),
-      });
-      const json = await res.json();
-      if (json.ok) {
-        alert('백업이 시작됐어요!\n완료까지 수 분~수십 분 소요됩니다 (웹파일 첫 실행 시 수백 GB).');
-        setTimeout(() => fetchData(), 10000);
-      }
-    } finally {
-      setBacking(false);
-    }
+  const handleBackup = async (target: string) => {
+    if (!confirm(`${target} NAS 백업을 지금 실행할까요?`)) return;
+    const res = await fetch('/api/nas/backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'backup', target }),
+    });
+    const json = await res.json();
+    if (json.ok) { alert('백업이 시작됐어요!'); setTimeout(fetchData, 10000); }
   };
+
+  const tabs = [
+    { key: 'hy64', label: 'hy64 (hy64.synology.me)', icon: '🖥️' },
+    { key: '2days', label: '2days (2days.kr)', icon: '🖥️' },
+  ] as const;
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
-
-        {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold">💾 백업 관리</h1>
-            <p className="text-sm text-slate-400 mt-1">시놀로지 NAS + 외장하드 자동 백업</p>
+            <p className="text-sm text-slate-400 mt-1">시놀로지 NAS 2대 백업 현황</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={fetchData} disabled={loading}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors">
-              {loading ? '⏳' : '🔄'} 새로고침
-            </button>
-            <button onClick={handleBackup} disabled={backing}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium transition-colors">
-              {backing ? '⏳ 실행중...' : '▶ 지금 백업'}
-            </button>
-          </div>
+          <button onClick={fetchData} disabled={loading}
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors">
+            {loading ? '⏳' : '🔄'} 새로고침
+          </button>
         </div>
 
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm">❌ {error}</div>
-        )}
+        {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm">❌ {error}</div>}
 
-        {/* 백업 전략 설명 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {[
-            { icon: '🗄️', title: 'DB 백업', desc: '매일 02:30 전체 덤프', sub: '5개 보관 (NAS + USB)' },
-            { icon: '📁', title: '웹파일 백업', desc: '첫 회 전체 → 이후 증분', sub: 'rsync 변경파일만' },
-            { icon: '💿', title: 'USB 동기화', desc: '백업 후 자동 미러링', sub: '외장하드 항상 최신 유지' },
-          ].map(s => (
-            <div key={s.title} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <div className="text-2xl mb-2">{s.icon}</div>
-              <div className="font-semibold text-white">{s.title}</div>
-              <div className="text-sm text-slate-300 mt-1">{s.desc}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{s.sub}</div>
-            </div>
+        {/* 탭 */}
+        <div className="flex gap-2 bg-slate-800 p-1 rounded-xl border border-slate-700">
+          {tabs.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${tab === t.key ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+              {t.icon} {t.label}
+            </button>
           ))}
         </div>
 
@@ -144,114 +269,11 @@ export default function BackupPage() {
           </div>
         )}
 
-        {data && (
-          <>
-            {/* 디스크 사용량 */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <DiskBar disk={data.disk.nas} label="시놀로지 NAS" icon="🖥️" />
-              <DiskBar disk={data.disk.usb} label="외장하드 (USB)" icon="💿" />
-            </div>
-
-            {/* 웹파일 미러 상태 */}
-            <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xl">📁</span>
-                <span className="font-semibold text-white">웹파일 미러 (rsync 증분)</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: '🖥️ NAS', info: data.web.nas },
-                  { label: '💿 USB', info: data.web.usb },
-                ].map(({ label, info }) => (
-                  <div key={label} className={`rounded-lg p-3 border ${info.lastSync ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-slate-700 border-slate-600'}`}>
-                    <div className="text-sm font-semibold text-white">{label}</div>
-                    {info.lastSync ? (
-                      <>
-                        <div className="text-xs text-slate-400 mt-1">최종 동기화</div>
-                        <div className="text-xs text-emerald-300 font-mono">{info.lastSync}</div>
-                        <div className="text-sm font-bold text-white mt-1">{info.size}</div>
-                      </>
-                    ) : (
-                      <div className="text-xs text-slate-500 mt-1">미동기화 (첫 실행 필요)</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* DB 백업 현황 */}
-            <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xl">🗄️</span>
-                <span className="font-semibold text-white">DB 백업 목록</span>
-              </div>
-              <div className="grid md:grid-cols-2 gap-4">
-                {[
-                  { label: '🖥️ NAS', backups: data.db.nas, color: 'bg-blue-500/20 text-blue-300' },
-                  { label: '💿 USB', backups: data.db.usb, color: 'bg-emerald-500/20 text-emerald-300' },
-                ].map(({ label, backups, color }) => (
-                  <div key={label}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-slate-300">{label}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>{backups.length} / 5개</span>
-                    </div>
-                    {backups.length === 0 ? (
-                      <div className="text-xs text-slate-500 text-center py-4">백업 없음</div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {backups.map((ts, i) => (
-                          <div key={ts} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${i === 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-700/50'}`}>
-                            <span>{i === 0 ? '✅' : '📦'}</span>
-                            <span className="font-mono text-xs">{formatTs(ts)}</span>
-                            {i === 0 && <span className="ml-auto text-xs text-emerald-400">최신</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* 최신 DB 상세 */}
-              {data.db.latestDetail && (
-                <div className="mt-4 pt-4 border-t border-slate-700">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-slate-400">최신 DB 백업 내용 ({data.db.latestDetail.totalSize})</span>
-                    <button onClick={() => setShowFiles(!showFiles)} className="text-xs text-indigo-400 hover:text-indigo-300">
-                      {showFiles ? '▲ 접기' : '▼ 파일 목록'}
-                    </button>
-                  </div>
-                  {showFiles && (
-                    <div className="max-h-48 overflow-y-auto space-y-0.5">
-                      {data.db.latestDetail.files.map((f, i) => (
-                        <div key={i} className="flex justify-between text-xs font-mono px-2 py-1 hover:bg-slate-700 rounded text-slate-400">
-                          <span>{f.name}</span>
-                          <span className="text-slate-300">{f.size}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 최근 로그 */}
-            <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-              <button onClick={() => setShowLog(!showLog)}
-                className="w-full flex items-center justify-between p-4 hover:bg-slate-700 transition-colors">
-                <div className="flex items-center gap-2">
-                  <span>📋</span>
-                  <span className="font-semibold">최근 백업 로그</span>
-                </div>
-                <span className="text-slate-400">{showLog ? '▲' : '▼'}</span>
-              </button>
-              {showLog && (
-                <pre className="p-4 text-xs text-slate-300 font-mono bg-slate-900/50 max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-slate-700">
-                  {data.latestLog || '로그 없음'}
-                </pre>
-              )}
-            </div>
-          </>
+        {data && tab === 'hy64' && (
+          <NasPanel data={data.hy64} nasName="hy64" target="hy64" onBackup={handleBackup} />
+        )}
+        {data && tab === '2days' && (
+          <NasPanel data={data.days2} nasName="2days" target="2days" onBackup={handleBackup} />
         )}
       </div>
     </div>

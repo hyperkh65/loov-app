@@ -90,3 +90,33 @@ export async function n8nQuery(sql: string): Promise<SSHResult> {
 export async function n8nCli(args: string): Promise<SSHResult> {
   return nasExec(`/usr/local/bin/docker exec n8n-1-redeploy n8n ${args}`);
 }
+
+/** 2days.kr NAS SSH 명령 실행 */
+export function nas2daysExec(command: string): Promise<SSHResult> {
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    let stdout = '';
+    let stderr = '';
+
+    conn.on('ready', () => {
+      conn.exec(command, (err: any, stream: any) => {
+        if (err) { conn.end(); return reject(err); }
+        stream.on('data', (d: Buffer) => { stdout += d.toString(); });
+        stream.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+        stream.on('close', (code: number) => {
+          conn.end();
+          resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code });
+        });
+      });
+    });
+
+    conn.on('error', reject);
+    conn.connect({
+      host: process.env.NAS2_SSH_HOST || '2days.kr',
+      port: parseInt(process.env.NAS2_SSH_PORT || '22'),
+      username: process.env.NAS2_SSH_USER || 'urjent',
+      password: process.env.NAS2_SSH_PASSWORD || 'Fpahs60577##7759',
+      readyTimeout: 15000,
+    });
+  });
+}
