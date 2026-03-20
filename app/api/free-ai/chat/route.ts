@@ -157,7 +157,7 @@ async function streamLocalOllama(
 }
 
 export async function POST(req: NextRequest) {
-  const { messages, model, ollamaUrl, ollamaModel } = await req.json();
+  const { messages, model, ollamaUrl, ollamaModel, clientOllamaKey, clientOpenrouterKey } = await req.json();
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -166,8 +166,8 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 
       let success = false;
-      // 공식 문서 기준: env var = OLLAMA_API_KEY, host = https://ollama.com
-      const ollamaCloudKey = process.env.OLLAMA_API_KEY;
+      // 클라이언트 키 우선, 없으면 서버 env var 사용
+      const ollamaCloudKey = clientOllamaKey || process.env.OLLAMA_API_KEY;
 
       // 1. Ollama Cloud (공식 클라우드) - 최우선
       if (!success && ollamaCloudKey) {
@@ -203,11 +203,12 @@ export async function POST(req: NextRequest) {
       }
 
       // 4. OpenRouter 무료 모델 폴백
-      if (!success && process.env.OPENROUTER_API_KEY) {
+      const openrouterKey = clientOpenrouterKey || process.env.OPENROUTER_API_KEY;
+      if (!success && openrouterKey) {
         for (const m of OPENROUTER_FREE_MODELS) {
           success = await streamOpenAI(
             'https://openrouter.ai/api/v1/chat/completions',
-            process.env.OPENROUTER_API_KEY,
+            openrouterKey,
             m.id, messages, 'OpenRouter', m.name, m.emoji, send,
             { 'HTTP-Referer': 'https://loov.co.kr', 'X-Title': 'LOOV Free AI' },
           );
@@ -216,7 +217,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (!success) {
-        send({ error: 'OLLAMA_CLOUD_API_KEY 또는 OPENROUTER_API_KEY 환경변수를 설정해주세요.' });
+        send({ error: '왼쪽 사이드바 🔑 API 키 설정에서 Ollama Cloud 또는 OpenRouter 키를 입력해주세요.' });
       }
 
       send({ done: true });
