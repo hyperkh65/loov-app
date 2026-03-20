@@ -186,6 +186,7 @@ export async function postToFacebookWithMedia(
   accessToken: string,
   content: string,
   mediaUrls?: string[],
+  linkUrl?: string,
 ): Promise<{ id: string }> {
   const pagesRes = await fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`);
   if (!pagesRes.ok) throw new Error('Facebook 페이지 목록 조회 실패');
@@ -223,10 +224,13 @@ export async function postToFacebookWithMedia(
     if (!res.ok) throw new Error(`Facebook 멀티 사진 포스팅 실패: ${await res.text()}`);
     return { id: (await res.json()).id };
   } else {
+    // 텍스트 전용 (링크 있으면 link 파라미터로 미리보기 카드 생성)
+    const body: Record<string, unknown> = { message: content, access_token: pageToken };
+    if (linkUrl) body.link = linkUrl;
     const res = await fetch(`https://graph.facebook.com/v18.0/${pageId}/feed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: content, access_token: pageToken }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`Facebook 포스팅 실패: ${await res.text()}`);
     return { id: (await res.json()).id };
@@ -375,9 +379,26 @@ export async function postCommentOnOwnPost(
       return replyToTwitterComment(accessToken, postId, content, mediaUrls);
 
     case 'threads': {
-      // 스레드: reply_to_id로 답글
+      // 스레드: reply_to_id로 답글 (이미지 있으면 함께 첨부)
       let containerBody: Record<string, unknown>;
-      if (mediaUrls?.length === 1) {
+      if (mediaUrls && mediaUrls.length > 1) {
+        // 다중 이미지: 캐러셀 댓글
+        const childIds: string[] = [];
+        for (const url of mediaUrls.slice(0, 10)) {
+          const cr = await fetch(`https://graph.threads.net/v1.0/${platformUserId}/threads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_type: 'IMAGE', image_url: url, is_carousel_item: true, access_token: accessToken }),
+          });
+          if (!cr.ok) continue;
+          const { id: childId } = await cr.json();
+          const ready = await waitThreadsContainerFinished(childId, accessToken);
+          if (ready) childIds.push(childId);
+        }
+        containerBody = childIds.length > 1
+          ? { media_type: 'CAROUSEL', children: childIds.join(','), text: content.substring(0, 500), reply_to_id: postId, access_token: accessToken }
+          : { media_type: 'TEXT', text: content.substring(0, 500), reply_to_id: postId, access_token: accessToken };
+      } else if (mediaUrls?.length === 1) {
         const isVideo = isVideoUrl(mediaUrls[0]);
         containerBody = {
           media_type: isVideo ? 'VIDEO' : 'IMAGE',

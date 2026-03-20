@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '상품명과 플랫폼은 필수입니다' }, { status: 400 });
 
   const allImages: string[] = (imageUrls || []).filter(Boolean).slice(0, 5);
-  const commentText = `👉 구매링크\n${affiliateUrl || ''}\n\n${COUPANG_DISCLOSURE}`;
+  const threadsCommentText = `👉 구매링크\n${affiliateUrl || ''}\n\n${COUPANG_DISCLOSURE}`;
 
   const results: { platform: string; success: boolean; content?: string; error?: string }[] = [];
   const postIds: Record<string, string> = {};
@@ -100,27 +100,47 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const content = (preGenerated as Record<string, string> | undefined)?.[platform]
+      let baseContent = (preGenerated as Record<string, string> | undefined)?.[platform]
         || await generateHookContent(productName, price || 0, firstReview || '', platform, aiApiKey);
-      generatedContent[platform] = content;
+
+      // Facebook: 본문에 링크 + 공시 직접 포함 (댓글 X)
+      if (platform === 'facebook' && affiliateUrl) {
+        baseContent = `${baseContent}\n\n👉 구매링크\n${affiliateUrl}\n\n${COUPANG_DISCLOSURE}`;
+      }
+
+      generatedContent[platform] = baseContent;
 
       const { id: platformPostId } = await postToPlatformWithMedia(
-        platform, conn.access_token, conn.platform_user_id || '', content, allImages,
+        platform, conn.access_token, conn.platform_user_id || '', baseContent, allImages,
       );
       postIds[platform] = platformPostId;
 
-      if (affiliateUrl) {
+      // Threads: 수익링크 + 사진을 댓글로 달기
+      if (platform === 'threads' && affiliateUrl) {
         try {
           await postCommentOnOwnPost(
             platform, conn.access_token, conn.platform_user_id || '',
-            platformPostId, commentText,
+            platformPostId, threadsCommentText,
+            allImages.slice(0, 1), // 첫 번째 사진을 댓글에 함께 첨부
+          );
+        } catch (e) {
+          console.warn(`[threads] 댓글 달기 실패:`, e);
+        }
+      }
+
+      // Twitter / Instagram / LinkedIn: 기존대로 텍스트 댓글
+      if (['twitter', 'instagram', 'linkedin'].includes(platform) && affiliateUrl) {
+        try {
+          await postCommentOnOwnPost(
+            platform, conn.access_token, conn.platform_user_id || '',
+            platformPostId, `👉 구매링크\n${affiliateUrl}\n\n${COUPANG_DISCLOSURE}`,
           );
         } catch (e) {
           console.warn(`[${platform}] 댓글 달기 실패:`, e);
         }
       }
 
-      results.push({ platform, success: true, content });
+      results.push({ platform, success: true, content: baseContent });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({ platform, success: false, error: message });
