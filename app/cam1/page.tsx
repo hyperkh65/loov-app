@@ -57,6 +57,7 @@ export default function Cam1Page() {
   const noSleepVideoRef = useRef<HTMLVideoElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioKeepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recChunksRef = useRef<Blob[]>([]);
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -245,7 +246,21 @@ export default function Cam1Page() {
       src.connect(gain);
       gain.connect(keepAliveCtx.destination);
       keepAliveCtx.resume().catch(() => {});
+      // 5초마다 resume 시도 (iOS가 suspended로 만들어도 복구)
+      audioKeepAliveRef.current = setInterval(() => {
+        if (keepAliveCtx.state === 'suspended') keepAliveCtx.resume().catch(() => {});
+      }, 5_000);
     } catch { /* ignore */ }
+
+    // 스트림 트랙 ended 감지 → 카메라 재시작 (iOS가 강제 종료한 경우)
+    stream.getTracks().forEach(track => {
+      track.addEventListener('ended', () => {
+        console.warn('[cam1] track ended, restarting camera');
+        if (isRecordingRef.current) {
+          startCamera().catch(console.error);
+        }
+      });
+    });
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -296,6 +311,7 @@ export default function Cam1Page() {
   const stopCamera = useCallback(() => {
     stopRecording();
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    if (audioKeepAliveRef.current) clearInterval(audioKeepAliveRef.current);
     localStreamRef.current?.getTracks().forEach(t => t.stop());
     pcRef.current?.close();
     channelRef.current?.unsubscribe();
@@ -312,21 +328,35 @@ export default function Cam1Page() {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && isRecordingRef.current) {
-        // AudioContext 재개 (iOS 백그라운드 후 suspended 상태 복구)
+        // AudioContext 재개
         audioCtxRef.current?.resume().catch(() => {});
-        // WakeLock 재요청 (화면 잠금 해제 후 재활성화)
+        // WakeLock 재요청
         requestWakeLock();
         // noSleep 비디오 재생 재개
         noSleepVideoRef.current?.play().catch(() => {});
+        // Supabase 채널 재구독 (WebSocket 끊겼을 수 있음)
+        const ch = channelRef.current;
+        if (ch) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const state = (ch as any).state ?? (ch as any).socket?.connectionState?.();
+            if (state === 'closed' || state === 'errored') {
+              ch.subscribe();
+            }
+          } catch { ch.subscribe(); }
+        }
         // MediaRecorder 재시작
         if (mediaRecorderRef.current?.state === 'inactive' && localStreamRef.current) {
-          startChunk(localStreamRef.current);
+          // 스트림 트랙이 살아있는지 확인
+          const alive = localStreamRef.current.getTracks().every(t => t.readyState === 'live');
+          if (alive) startChunk(localStreamRef.current);
+          else startCamera().catch(console.error); // 트랙 죽었으면 전체 재시작
         }
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [startChunk]);
+  }, [startChunk, startCamera]);
 
   // 녹화 watchdog: 10초마다 체크, 녹화 중이어야 하는데 멈췄으면 재시작
   useEffect(() => {
