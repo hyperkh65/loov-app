@@ -78,6 +78,8 @@ export default function TrackerPage() {
   const waveformTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const isVoiceRecordingRef = useRef(false);
+  const voiceStartRef = useRef<number>(0);       // 녹음 시작 시각 (ms)
+  const voiceMimeTypeRef = useRef<string>('');    // 실제 MIME 타입
 
   // Clock
   useEffect(() => {
@@ -282,15 +284,6 @@ export default function TrackerPage() {
     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   };
 
-  const stopVoiceRecording = useCallback(async () => {
-    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
-    isVoiceRecordingRef.current = false; setIsVoiceRecording(false);
-    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
-    if (voiceMaxTimerRef.current) clearTimeout(voiceMaxTimerRef.current);
-    if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
-    mediaRecorderRef.current.stop();
-  }, []);
-
   const uploadVoiceMemo = useCallback(async (blob: Blob, durationSec: number, actualMimeType?: string) => {
     try {
       const ext = (actualMimeType || '').includes('mp4') ? 'mp4' : 'webm';
@@ -313,6 +306,33 @@ export default function TrackerPage() {
     } catch (e) { console.error('voice upload error', e); }
   }, []);
 
+  const stopVoiceRecording = useCallback(async () => {
+    isVoiceRecordingRef.current = false;
+    setIsVoiceRecording(false);
+    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    if (voiceMaxTimerRef.current) clearTimeout(voiceMaxTimerRef.current);
+    if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
+
+    if (!mediaRecorderRef.current) return;
+
+    if (mediaRecorderRef.current.state === 'recording') {
+      // 정상 중단 → onstop이 자동으로 업로드 처리
+      mediaRecorderRef.current.stop();
+    } else if (mediaRecorderRef.current.state === 'inactive' && voiceChunksRef.current.length > 0) {
+      // iOS가 이미 recorder를 inactive로 만들었지만 청크가 남은 경우 → 직접 업로드
+      const chunks = [...voiceChunksRef.current];
+      voiceChunksRef.current = [];
+      const mimeType = voiceMimeTypeRef.current || 'audio/mp4';
+      const blob = new Blob(chunks, { type: mimeType });
+      const durationSec = voiceStartRef.current
+        ? Math.round((Date.now() - voiceStartRef.current) / 1000)
+        : 0;
+      uploadVoiceMemo(blob, durationSec, mimeType);
+      setVoiceElapsed(0);
+      setWaveform(Array(20).fill(4));
+    }
+  }, [uploadVoiceMemo]);
+
   const startVoiceRecording = useCallback(async () => {
     if (isVoiceRecordingRef.current) { stopVoiceRecording(); return; }
     try {
@@ -323,16 +343,21 @@ export default function TrackerPage() {
       mediaRecorderRef.current = mr;
       voiceChunksRef.current = [];
       const recStart = Date.now();
+      voiceStartRef.current = recStart;
       isVoiceRecordingRef.current = true; setIsVoiceRecording(true); setVoiceElapsed(0);
       // 실제 녹음 mimeType (iOS는 audio/mp4)
       const actualMimeType = mr.mimeType || mimeType || 'audio/mp4';
+      voiceMimeTypeRef.current = actualMimeType;
       mr.ondataavailable = (e) => { if (e.data.size > 0) voiceChunksRef.current.push(e.data); };
       mr.onstop = () => {
         const durationSec = Math.round((Date.now() - recStart) / 1000);
-        const blob = new Blob(voiceChunksRef.current, { type: actualMimeType });
+        const chunks = [...voiceChunksRef.current];
         voiceChunksRef.current = [];
         stream.getTracks().forEach(t => t.stop());
-        uploadVoiceMemo(blob, durationSec, actualMimeType);
+        if (chunks.length > 0) {
+          const blob = new Blob(chunks, { type: actualMimeType });
+          uploadVoiceMemo(blob, durationSec, actualMimeType);
+        }
         setVoiceElapsed(0); setWaveform(Array(20).fill(4));
       };
       mr.start(500);
