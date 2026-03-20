@@ -78,8 +78,10 @@ export default function TrackerPage() {
   const waveformTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const isVoiceRecordingRef = useRef(false);
-  const voiceStartRef = useRef<number>(0);       // 녹음 시작 시각 (ms)
-  const voiceMimeTypeRef = useRef<string>('');    // 실제 MIME 타입
+  const voiceStartRef = useRef<number>(0);
+  const voiceMimeTypeRef = useRef<string>('');
+  const voiceLastDataRef = useRef<number>(0);     // 마지막 ondataavailable 시각
+  const voiceWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null); // 녹음 생존 감시
 
   // Clock
   useEffect(() => {
@@ -226,7 +228,7 @@ export default function TrackerPage() {
       audioCtxRef.current = ctx;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      gain.gain.value = 0.001;
+      gain.gain.value = 0.02; // iOS가 무음으로 판단하지 않도록 (거의 안들림)
       osc.connect(gain); gain.connect(ctx.destination);
       osc.start(); ctx.resume().catch(() => {});
       // 5초마다 resume (iOS suspended 상태 자동 복구)
@@ -312,6 +314,7 @@ export default function TrackerPage() {
     if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
     if (voiceMaxTimerRef.current) clearTimeout(voiceMaxTimerRef.current);
     if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
+    if (voiceWatchdogRef.current) clearInterval(voiceWatchdogRef.current);
 
     if (!mediaRecorderRef.current) return;
 
@@ -348,7 +351,55 @@ export default function TrackerPage() {
       // 실제 녹음 mimeType (iOS는 audio/mp4)
       const actualMimeType = mr.mimeType || mimeType || 'audio/mp4';
       voiceMimeTypeRef.current = actualMimeType;
-      mr.ondataavailable = (e) => { if (e.data.size > 0) voiceChunksRef.current.push(e.data); };
+      voiceLastDataRef.current = Date.now();
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          voiceChunksRef.current.push(e.data);
+          voiceLastDataRef.current = Date.now();
+        }
+      };
+
+      // watchdog: 20초 동안 데이터 없으면 recorder가 죽은 것 → 재시작
+      voiceWatchdogRef.current = setInterval(() => {
+        if (!isVoiceRecordingRef.current) return;
+        const silent = Date.now() - voiceLastDataRef.current > 20_000;
+        const dead = mediaRecorderRef.current?.state === 'inactive';
+        if (silent || dead) {
+          console.warn('[tracker] voice recorder dead, restarting');
+          // 지금까지 모은 청크 먼저 업로드
+          if (voiceChunksRef.current.length > 0) {
+            const chunks = [...voiceChunksRef.current];
+            voiceChunksRef.current = [];
+            const blob = new Blob(chunks, { type: voiceMimeTypeRef.current || 'audio/mp4' });
+            const dur = Math.round((Date.now() - voiceStartRef.current) / 1000);
+            uploadVoiceMemo(blob, dur, voiceMimeTypeRef.current);
+          }
+          // 마이크 재획득 후 새 recorder 시작
+          navigator.mediaDevices.getUserMedia({ audio: true }).then(newStream => {
+            const newMr = new MediaRecorder(newStream);
+            const newMime = newMr.mimeType || 'audio/mp4';
+            voiceMimeTypeRef.current = newMime;
+            voiceStartRef.current = Date.now();
+            voiceChunksRef.current = [];
+            voiceLastDataRef.current = Date.now();
+            newMr.ondataavailable = (e) => {
+              if (e.data.size > 0) { voiceChunksRef.current.push(e.data); voiceLastDataRef.current = Date.now(); }
+            };
+            newMr.onstop = () => {
+              const chunks = [...voiceChunksRef.current]; voiceChunksRef.current = [];
+              newStream.getTracks().forEach(t => t.stop());
+              if (chunks.length > 0) {
+                const blob = new Blob(chunks, { type: newMime });
+                uploadVoiceMemo(blob, Math.round((Date.now() - voiceStartRef.current) / 1000), newMime);
+              }
+              setVoiceElapsed(0); setWaveform(Array(20).fill(4));
+            };
+            newMr.start(1000);
+            mediaRecorderRef.current = newMr;
+          }).catch(() => { stopVoiceRecording(); });
+        }
+      }, 20_000);
+
       mr.onstop = () => {
         const durationSec = Math.round((Date.now() - recStart) / 1000);
         const chunks = [...voiceChunksRef.current];
