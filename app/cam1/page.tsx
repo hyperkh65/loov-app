@@ -63,6 +63,7 @@ export default function Cam1Page() {
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastDataRef = useRef<number>(0); // 마지막 ondataavailable 시각
 
   useEffect(() => {
     const tick = () => {
@@ -164,12 +165,21 @@ export default function Cam1Page() {
     mediaRecorderRef.current = mr;
     recChunksRef.current = [];
     const startTs = Date.now();
+    lastDataRef.current = Date.now();
 
-    mr.ondataavailable = (e) => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
+    mr.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        recChunksRef.current.push(e.data);
+        lastDataRef.current = Date.now();
+      }
+    };
     mr.onstop = () => {
-      const blob = new Blob(recChunksRef.current, { type: mimeType || 'video/webm' });
+      const chunks = [...recChunksRef.current];
       recChunksRef.current = [];
-      flushChunk(blob, startTs, ext);
+      if (chunks.length > 0) {
+        const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+        flushChunk(blob, startTs, ext);
+      }
       if (isRecordingRef.current) startChunk(stream);
     };
 
@@ -242,7 +252,7 @@ export default function Cam1Page() {
       audioCtxRef.current = keepAliveCtx;
       const src = keepAliveCtx.createMediaStreamSource(stream);
       const gain = keepAliveCtx.createGain();
-      gain.gain.value = 0.001; // 거의 무음이지만 0이 아님
+      gain.gain.value = 0.02; // iOS가 무음으로 판단 안하도록 (거의 안들림)
       src.connect(gain);
       gain.connect(keepAliveCtx.destination);
       keepAliveCtx.resume().catch(() => {});
@@ -358,21 +368,31 @@ export default function Cam1Page() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [startChunk, startCamera]);
 
-  // 녹화 watchdog: 10초마다 체크, 녹화 중이어야 하는데 멈췄으면 재시작
+  // 녹화 watchdog: 15초마다 체크
   useEffect(() => {
     watchdogRef.current = setInterval(() => {
-      if (isRecordingRef.current && localStreamRef.current) {
-        const state = mediaRecorderRef.current?.state;
-        if (state === 'inactive') {
-          console.warn('[cam1] watchdog: recorder inactive, restarting');
-          startChunk(localStreamRef.current);
-        }
+      if (!isRecordingRef.current) return;
+
+      const stream = localStreamRef.current;
+      const recState = mediaRecorderRef.current?.state;
+      const tracksAlive = stream?.getTracks().every(t => t.readyState === 'live') ?? false;
+      const dataSilent = Date.now() - lastDataRef.current > 20_000; // 20초 데이터 없음
+
+      if (!tracksAlive) {
+        // 스트림 트랙 자체가 죽음 → 카메라 전체 재시작
+        console.warn('[cam1] watchdog: stream tracks dead, restarting camera');
+        startCamera().catch(console.error);
+      } else if (recState === 'inactive' || dataSilent) {
+        // Recorder만 죽음 → chunk 재시작
+        console.warn('[cam1] watchdog: recorder dead/silent, restarting chunk');
+        if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
+        startChunk(stream!);
       }
-    }, 10_000);
+    }, 15_000);
     return () => {
       if (watchdogRef.current) clearInterval(watchdogRef.current);
     };
-  }, [startChunk]);
+  }, [startChunk, startCamera]);
 
   // ── 잠금화면 ──────────────────────────────────────────
   if (phase === 'lock') {
