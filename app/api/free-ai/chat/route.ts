@@ -22,6 +22,51 @@ const OPENROUTER_FREE_MODELS = [
 
 export const maxDuration = 30;
 
+// Ollama Cloud 네이티브 스트리밍 (https://ollama.com/api/chat + Bearer 인증)
+async function streamOllamaCloud(
+  apiKey: string,
+  modelName: string,
+  messages: object[],
+  providerName: string,
+  displayName: string,
+  emoji: string,
+  send: (data: object) => void,
+): Promise<boolean> {
+  try {
+    const res = await fetch('https://ollama.com/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model: modelName, messages, stream: true }),
+    });
+    if (!res.ok || !res.body) return false;
+
+    send({ provider: providerName, model: displayName, emoji });
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const j = JSON.parse(line);
+          if (j.message?.content) send({ chunk: j.message.content });
+          if (j.done) return true;
+        } catch {}
+      }
+    }
+    return true;
+  } catch { return false; }
+}
+
 // OpenAI 호환 스트리밍 (Ollama Cloud + OpenRouter 공용)
 async function streamOpenAI(
   url: string,
@@ -121,31 +166,25 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 
       let success = false;
-      const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY;
+      // 공식 문서 기준: env var = OLLAMA_API_KEY, host = https://ollama.com
+      const ollamaCloudKey = process.env.OLLAMA_API_KEY;
 
       // 1. Ollama Cloud (공식 클라우드) - 최우선
       if (!success && ollamaCloudKey) {
         const targetModel = model && OLLAMA_CLOUD_MODELS.find(m => m.id === model)
           ? model : OLLAMA_CLOUD_MODELS[0].id;
         const info = OLLAMA_CLOUD_MODELS.find(m => m.id === targetModel) || OLLAMA_CLOUD_MODELS[0];
-        success = await streamOpenAI(
-          'https://api.ollama.com/v1/chat/completions',
-          ollamaCloudKey,
-          targetModel,
-          messages,
-          'Ollama Cloud',
-          info.name,
-          info.emoji,
-          send,
-        );
+
+        // Ollama Cloud는 네이티브 /api/chat 형식 + Authorization 헤더
+        success = await streamOllamaCloud(ollamaCloudKey, targetModel, messages,
+          'Ollama Cloud', info.name, info.emoji, send);
+
         // 선택 모델 실패 시 다른 모델로 폴백
         if (!success) {
           for (const m of OLLAMA_CLOUD_MODELS) {
             if (m.id === targetModel) continue;
-            success = await streamOpenAI(
-              'https://api.ollama.com/v1/chat/completions',
-              ollamaCloudKey, m.id, messages, 'Ollama Cloud', m.name, m.emoji, send,
-            );
+            success = await streamOllamaCloud(ollamaCloudKey, m.id, messages,
+              'Ollama Cloud', m.name, m.emoji, send);
             if (success) break;
           }
         }
@@ -199,7 +238,7 @@ export async function GET() {
     ollamaCloudModels: OLLAMA_CLOUD_MODELS,
     openrouterModels: OPENROUTER_FREE_MODELS,
     configured: {
-      ollamaCloud: !!process.env.OLLAMA_CLOUD_API_KEY,
+      ollamaCloud: !!process.env.OLLAMA_API_KEY,
       openrouter: !!process.env.OPENROUTER_API_KEY,
       localOllama: !!process.env.OLLAMA_BASE_URL,
     },
