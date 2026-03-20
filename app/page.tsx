@@ -3,36 +3,54 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 
-// ─── Animation Constants ───────────────────────────────────────────────────
-const SPRING = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
+// ─── Style Constants ────────────────────────────────────────────────────────
+const gradientText: React.CSSProperties = {
+  background: 'linear-gradient(135deg, #00D4FF 0%, #8B5CF6 50%, #EC4899 100%)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+};
 
-// ─── Hooks ─────────────────────────────────────────────────────────────────
+const glassCard: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.03)',
+  backdropFilter: 'blur(20px)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: '24px',
+};
+
+const neonBtn: React.CSSProperties = {
+  background: 'linear-gradient(135deg, #00D4FF, #8B5CF6)',
+  boxShadow: '0 0 30px rgba(0,212,255,0.4), 0 4px 20px rgba(0,0,0,0.3)',
+  border: 'none',
+  color: 'white',
+  fontWeight: 700,
+  padding: '14px 32px',
+  borderRadius: '12px',
+  cursor: 'pointer',
+  transition: 'all 0.3s ease',
+  fontSize: '16px',
+  letterSpacing: '0.02em',
+};
+
+// ─── Hooks ──────────────────────────────────────────────────────────────────
 function useScrollReveal(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } },
       { threshold }
     );
     observer.observe(el);
     return () => observer.disconnect();
   }, [threshold]);
-
   return { ref, visible };
 }
 
 function useCountUp(target: number, duration = 2000, active = false) {
   const [count, setCount] = useState(0);
-
   useEffect(() => {
     if (!active) return;
     const start = performance.now();
@@ -45,1403 +63,887 @@ function useCountUp(target: number, duration = 2000, active = false) {
     };
     requestAnimationFrame(tick);
   }, [active, target, duration]);
-
   return count;
 }
 
-// ─── Reveal Wrapper ────────────────────────────────────────────────────────
-function Reveal({
-  children,
-  delay = 0,
-  direction = 'up',
-  className = '',
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  direction?: 'up' | 'down' | 'left' | 'right' | 'scale';
-  className?: string;
-}) {
-  const { ref, visible } = useScrollReveal();
+// ─── CSS Keyframes ───────────────────────────────────────────────────────────
+const CSS = `
+  @keyframes float { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-15px)} }
+  @keyframes glow { 0%,100%{box-shadow:0 0 20px rgba(0,212,255,0.5)} 50%{box-shadow:0 0 40px rgba(0,212,255,0.8),0 0 80px rgba(0,212,255,0.3)} }
+  @keyframes gradientShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  @keyframes marquee { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+  @keyframes shimmer { 0%{transform:translateX(-100%) skewX(-15deg)} 100%{transform:translateX(200%) skewX(-15deg)} }
+  @keyframes ripple { 0%{transform:scale(0.5);opacity:1} 100%{transform:scale(3);opacity:0} }
+  @keyframes fadeInChar { from{opacity:0;transform:translateY(20px) scale(0.8)} to{opacity:1;transform:translateY(0) scale(1)} }
+  @keyframes typing { from{width:0} to{width:100%} }
+  @keyframes cursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
+  @keyframes countUp { from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
+  @keyframes slideInLeft { from{transform:translateX(-60px);opacity:0} to{transform:translateX(0);opacity:1} }
+  @keyframes explodeIn { 0%{transform:scale(0) rotate(-10deg);opacity:0} 70%{transform:scale(1.1) rotate(2deg)} 100%{transform:scale(1) rotate(0);opacity:1} }
+  @keyframes rotateBorder { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(0.95)} }
+  @keyframes pingRipple { 0%{transform:scale(1);opacity:0.8} 100%{transform:scale(2.5);opacity:0} }
+  @keyframes wordCycle { 0%,20%{opacity:1;transform:translateY(0)} 25%,45%{opacity:0;transform:translateY(-30px)} 50%,70%{opacity:0;transform:translateY(30px)} 75%,100%{opacity:1;transform:translateY(0)} }
+  @keyframes navGlow { 0%,100%{border-bottom-color:rgba(0,212,255,0.1)} 50%{border-bottom-color:rgba(0,212,255,0.4)} }
+  @keyframes heroGradient { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  @keyframes ctaGrad { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  @keyframes coinSpin { 0%{transform:rotateY(0deg)} 100%{transform:rotateY(360deg)} }
+  @keyframes chartGrow { from{stroke-dashoffset:300} to{stroke-dashoffset:0} }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(40px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes scaleIn { from{opacity:0;transform:scale(0.8)} to{opacity:1;transform:scale(1)} }
+  @keyframes glowPulse { 0%,100%{text-shadow:0 0 10px rgba(0,212,255,0.5)} 50%{text-shadow:0 0 30px rgba(0,212,255,1),0 0 60px rgba(139,92,246,0.5)} }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #000; overflow-x: hidden; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0A0A0A; }
+  ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #00D4FF, #8B5CF6); border-radius: 2px; }
+`;
 
-  const getHiddenTransform = () => {
-    switch (direction) {
-      case 'up': return 'translateY(40px)';
-      case 'down': return 'translateY(-40px)';
-      case 'left': return 'translateX(-40px)';
-      case 'right': return 'translateX(40px)';
-      case 'scale': return 'scale(0.85)';
-      default: return 'translateY(40px)';
-    }
-  };
-
-  return (
-    <div
-      ref={ref}
-      className={className}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'none' : getHiddenTransform(),
-        transition: `opacity 0.7s ease ${delay}ms, transform 0.7s ${SPRING} ${delay}ms`,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ─── Typewriter ────────────────────────────────────────────────────────────
-const CYCLE_WORDS = ['영업을', '회계를', '마케팅을', '모든 업무를'];
-
-function Typewriter() {
-  const [wordIdx, setWordIdx] = useState(0);
-  const [displayed, setDisplayed] = useState('');
-  const [deleting, setDeleting] = useState(false);
-
+// ─── Nav ─────────────────────────────────────────────────────────────────────
+function Nav() {
+  const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
-    const word = CYCLE_WORDS[wordIdx];
-    let timeout: ReturnType<typeof setTimeout>;
-
-    if (!deleting && displayed.length < word.length) {
-      timeout = setTimeout(() => setDisplayed(word.slice(0, displayed.length + 1)), 80);
-    } else if (!deleting && displayed.length === word.length) {
-      timeout = setTimeout(() => setDeleting(true), 1800);
-    } else if (deleting && displayed.length > 0) {
-      timeout = setTimeout(() => setDisplayed(displayed.slice(0, -1)), 50);
-    } else if (deleting && displayed.length === 0) {
-      setDeleting(false);
-      setWordIdx((i) => (i + 1) % CYCLE_WORDS.length);
-    }
-
-    return () => clearTimeout(timeout);
-  }, [displayed, deleting, wordIdx]);
+    const handleScroll = () => setScrolled(window.scrollY > 40);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   return (
-    <span style={{ borderRight: '3px solid #000', paddingRight: '4px', minWidth: '2ch', display: 'inline-block' }}>
-      {displayed}
-    </span>
-  );
-}
-
-// ─── Floating Dots Background ──────────────────────────────────────────────
-function FloatingDots() {
-  const dots = Array.from({ length: 64 }, (_, i) => i);
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        overflow: 'hidden',
-        pointerEvents: 'none',
-        zIndex: 0,
-      }}
-    >
-      {dots.map((i) => {
-        const col = i % 8;
-        const row = Math.floor(i / 8);
-        return (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              width: 4,
-              height: 4,
-              borderRadius: '50%',
-              background: '#000',
-              opacity: 0.07,
-              left: `${(col + 1) * 12}%`,
-              top: `${(row + 1) * 12}%`,
-              animation: `floatDot 3s ease-in-out ${(i * 120) % 2400}ms infinite`,
+    <nav style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
+      background: scrolled ? 'rgba(0,0,0,0.92)' : 'rgba(0,0,0,0.6)',
+      backdropFilter: 'blur(24px)',
+      borderBottom: `1px solid ${scrolled ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.08)'}`,
+      transition: 'all 0.4s ease',
+      boxShadow: scrolled ? '0 4px 40px rgba(0,212,255,0.1)' : 'none',
+      animation: 'navGlow 3s ease-in-out infinite',
+    }}>
+      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 24px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Link href="/" style={{ textDecoration: 'none' }}>
+          <span style={{
+            fontSize: '28px', fontWeight: 900, letterSpacing: '-0.02em',
+            ...gradientText,
+            filter: scrolled ? 'drop-shadow(0 0 12px rgba(0,212,255,0.6))' : 'none',
+            transition: 'filter 0.4s ease',
+          }}>LOOV</span>
+        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <Link href="/dashboard" style={{
+            color: 'rgba(255,255,255,0.7)', textDecoration: 'none', fontSize: '14px',
+            fontWeight: 500, letterSpacing: '0.02em', transition: 'color 0.2s',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#00D4FF')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
+          >로그인</Link>
+          <Link href="/dashboard" style={{ textDecoration: 'none' }}>
+            <button style={{
+              ...neonBtn, padding: '10px 24px', fontSize: '14px',
+              animation: 'glow 2s ease-in-out infinite',
             }}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Chat Demo ─────────────────────────────────────────────────────────────
-const chatMessages = [
-  { role: 'user', text: '이번 주 인스타그램 콘텐츠 3개 만들어줘' },
-  { role: 'ai', text: '피드·스토리·릴스 각 1편 준비했습니다 ✅' },
-  { role: 'user', text: '제안서도 같이' },
-  { role: 'ai', text: '즉시 작성 시작합니다 →' },
-];
-
-function ChatDemo({ active }: { active: boolean }) {
-  const [visibleCount, setVisibleCount] = useState(0);
-
-  useEffect(() => {
-    if (!active) return;
-    setVisibleCount(0);
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    chatMessages.forEach((_, i) => {
-      timers.push(setTimeout(() => setVisibleCount(i + 1), i * 800 + 300));
-    });
-    return () => timers.forEach(clearTimeout);
-  }, [active]);
-
-  return (
-    <div
-      style={{
-        background: '#fff',
-        border: '1px solid #E5E5E5',
-        borderRadius: 16,
-        padding: '24px',
-        maxWidth: 380,
-        width: '100%',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, borderBottom: '1px solid #E5E5E5', paddingBottom: 12 }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#000', animation: 'pulse 2s infinite' }} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#000' }}>AI 직원</span>
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px) scale(1.04)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 50px rgba(0,212,255,0.7), 0 8px 30px rgba(0,0,0,0.4)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = ''; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 30px rgba(0,212,255,0.4), 0 4px 20px rgba(0,0,0,0.3)'; }}
+            >무료 시작</button>
+          </Link>
+        </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 160 }}>
-        {chatMessages.slice(0, visibleCount).map((msg, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'flex',
-              justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              animation: `slideRight 0.4s ${SPRING}`,
-            }}
-          >
-            <div
-              style={{
-                maxWidth: '78%',
-                padding: '10px 14px',
-                borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                background: msg.role === 'user' ? '#000' : '#F9F9F9',
-                color: msg.role === 'user' ? '#fff' : '#000',
-                border: msg.role === 'ai' ? '1px solid #E5E5E5' : 'none',
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              {msg.text}
-            </div>
+    </nav>
+  );
+}
+
+// ─── Hero ─────────────────────────────────────────────────────────────────────
+const HERO_WORDS = ['AI 영업팀장', 'AI 회계담당', 'AI 마케터', 'AI 전략가'];
+const MARQUEE_ITEMS = ['AI 채팅', 'ERP', 'SNS 자동화', '쿠팡 파트너스', 'WordPress', 'CCTV', '위치추적', 'Gemini', 'Claude', 'ChatGPT', 'n8n 자동화', 'AI 인사이트'];
+
+function Hero() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef<number>(0);
+  const mouseRef = useRef<{ x: number; y: number }>({ x: -9999, y: -9999 });
+  const [wordIndex, setWordIndex] = useState(0);
+  const [heroVisible, setHeroVisible] = useState(false);
+
+  useEffect(() => {
+    setHeroVisible(true);
+    const interval = setInterval(() => setWordIndex(i => (i + 1) % HERO_WORDS.length), 2800);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    type Particle = { x: number; y: number; vx: number; vy: number; size: number; hue: number };
+    const particles: Particle[] = [];
+    for (let i = 0; i < 90; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: (Math.random() - 0.5) * 0.6,
+        size: Math.random() * 2.5 + 0.5,
+        hue: Math.random() > 0.5 ? 195 : 270,
+      });
+    }
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const mx = mouseRef.current.x;
+      const my = mouseRef.current.y;
+
+      particles.forEach(p => {
+        const dx = mx - p.x;
+        const dy = my - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 150 && dist > 0) {
+          const force = (150 - dist) / 150 * 0.8;
+          p.vx -= (dx / dist) * force;
+          p.vy -= (dy / dist) * force;
+        }
+        p.vx *= 0.995;
+        p.vy *= 0.995;
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${p.hue},100%,60%,0.7)`;
+        ctx.fill();
+      });
+
+      particles.forEach((p, i) => {
+        for (let j = i + 1; j < particles.length; j++) {
+          const q = particles[j];
+          const d = Math.sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
+          if (d < 130) {
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(q.x, q.y);
+            const alpha = 0.18 * (1 - d / 130);
+            ctx.strokeStyle = `rgba(0,212,255,${alpha})`;
+            ctx.lineWidth = 0.6;
+            ctx.stroke();
+          }
+        }
+      });
+
+      animRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+
+    const handleResize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    const handleMouse = (e: MouseEvent) => { mouseRef.current = { x: e.clientX, y: e.clientY }; };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('mousemove', handleMouse);
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouse);
+    };
+  }, []);
+
+  const word = HERO_WORDS[wordIndex];
+
+  return (
+    <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,212,255,0.08) 0%, transparent 70%), radial-gradient(ellipse 60% 50% at 80% 100%, rgba(139,92,246,0.08) 0%, transparent 70%), #000' }}>
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
+
+      {/* Ambient orbs */}
+      <div style={{ position: 'absolute', width: '600px', height: '600px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 70%)', top: '-100px', left: '-100px', animation: 'float 8s ease-in-out infinite', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', width: '500px', height: '500px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%)', bottom: '-100px', right: '-50px', animation: 'float 10s ease-in-out infinite reverse', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', width: '300px', height: '300px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(236,72,153,0.05) 0%, transparent 70%)', top: '40%', left: '60%', animation: 'float 7s ease-in-out infinite 2s', pointerEvents: 'none' }} />
+
+      <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', padding: '0 24px', maxWidth: '1000px' }}>
+        {/* Badge */}
+        <div style={{
+          opacity: heroVisible ? 1 : 0,
+          transform: heroVisible ? 'translateY(0)' : 'translateY(20px)',
+          transition: 'all 0.8s cubic-bezier(0.34,1.56,0.64,1)',
+          display: 'inline-flex', alignItems: 'center', gap: '8px',
+          border: '1px solid rgba(0,212,255,0.4)',
+          borderRadius: '100px', padding: '6px 18px', marginBottom: '40px',
+          background: 'rgba(0,212,255,0.05)',
+          boxShadow: '0 0 20px rgba(0,212,255,0.15)',
+          animation: heroVisible ? 'glow 2.5s ease-in-out infinite' : 'none',
+        }}>
+          <span style={{ color: '#00D4FF', fontSize: '12px', fontWeight: 700, letterSpacing: '0.15em' }}>✦ AI POWERED</span>
+          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#39FF14', boxShadow: '0 0 8px #39FF14', animation: 'pulse 1.5s ease-in-out infinite', display: 'inline-block' }} />
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', letterSpacing: '0.1em' }}>LIVE</span>
+        </div>
+
+        {/* Headline */}
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ fontSize: 'clamp(32px, 6vw, 72px)', fontWeight: 200, color: 'rgba(255,255,255,0.85)', letterSpacing: '-0.02em', lineHeight: 1.1,
+            opacity: heroVisible ? 1 : 0, transform: heroVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'all 1s ease 0.1s' }}>
+            당신의 회사에
+          </div>
+
+          <div style={{ minHeight: 'clamp(80px, 14vw, 160px)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            opacity: heroVisible ? 1 : 0, transition: 'opacity 0.5s ease 0.3s' }}>
+            <span key={wordIndex} style={{
+              fontSize: 'clamp(52px, 11vw, 130px)', fontWeight: 900, letterSpacing: '-0.04em',
+              ...gradientText,
+              display: 'inline-block',
+              animation: 'scaleIn 0.5s cubic-bezier(0.34,1.56,0.64,1)',
+              filter: 'drop-shadow(0 0 30px rgba(0,212,255,0.5))',
+            }}>{word}</span>
+          </div>
+
+          <div style={{ fontSize: 'clamp(32px, 6vw, 72px)', fontWeight: 200, color: 'rgba(255,255,255,0.85)', letterSpacing: '-0.02em', lineHeight: 1.1,
+            opacity: heroVisible ? 1 : 0, transform: heroVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'all 1s ease 0.4s' }}>
+            이 생겼습니다
+          </div>
+        </div>
+
+        {/* Sub */}
+        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 'clamp(14px, 2vw, 17px)', letterSpacing: '0.04em', marginBottom: '48px',
+          opacity: heroVisible ? 1 : 0, transform: heroVisible ? 'translateY(0)' : 'translateY(20px)', transition: 'all 1s ease 0.6s' }}>
+          ChatGPT · Gemini · Claude 기반&nbsp;|&nbsp;6개 모델 · 12개 플랫폼 · 24시간 자동화
+        </p>
+
+        {/* CTAs */}
+        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '80px',
+          opacity: heroVisible ? 1 : 0, transform: heroVisible ? 'translateY(0)' : 'translateY(20px)', transition: 'all 1s ease 0.8s' }}>
+          <Link href="/dashboard" style={{ textDecoration: 'none' }}>
+            <button style={{ ...neonBtn, padding: '16px 40px', fontSize: '17px', animation: 'glow 2s ease-in-out infinite' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-3px) scale(1.05)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 60px rgba(0,212,255,0.7), 0 10px 40px rgba(0,0,0,0.5)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = ''; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 30px rgba(0,212,255,0.4), 0 4px 20px rgba(0,0,0,0.3)'; }}
+            >무료로 시작 →</button>
+          </Link>
+          <button style={{ ...glassCard, border: '1px solid rgba(255,255,255,0.2)', color: 'white', padding: '16px 40px', fontSize: '17px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.3s ease', borderRadius: '12px' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,212,255,0.4)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-3px)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.2)'; (e.currentTarget as HTMLButtonElement).style.transform = ''; }}
+          >데모 보기 ▶</button>
+        </div>
+      </div>
+
+      {/* Marquee */}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, overflow: 'hidden', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.5)', padding: '14px 0' }}>
+        <div style={{ display: 'flex', animation: 'marquee 20s linear infinite', width: 'max-content' }}>
+          {[...MARQUEE_ITEMS, ...MARQUEE_ITEMS].map((item, i) => (
+            <span key={i} style={{ whiteSpace: 'nowrap', padding: '0 32px', color: 'rgba(255,255,255,0.35)', fontSize: '13px', letterSpacing: '0.1em', fontWeight: 500 }}>
+              {item} <span style={{ color: '#00D4FF', opacity: 0.6 }}>✦</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Feature Chat Demo ────────────────────────────────────────────────────────
+function ChatDemo({ visible }: { visible: boolean }) {
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([]);
+  const [typing, setTyping] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    const seq = [
+      { delay: 300, role: 'user' as const, text: '이번 달 매출 분석해줘' },
+      { delay: 1200, role: 'ai' as const, text: '분석 중...' },
+      { delay: 2400, role: 'ai' as const, text: '📊 이번 달 매출은 전월 대비 **+23%** 상승했습니다. 주요 원인은 SNS 자동화 캠페인 효과입니다.' },
+      { delay: 4000, role: 'user' as const, text: '다음 달 예측은?' },
+      { delay: 5200, role: 'ai' as const, text: '🔮 현재 트렌드 기반 예측: 월 매출 **+18~31%** 성장 예상. 추가 자동화 설정을 권장합니다.' },
+    ];
+    seq.forEach(({ delay, role, text }) => {
+      setTimeout(() => {
+        if (role === 'ai') setTyping(true);
+        setTimeout(() => {
+          setTyping(false);
+          setMessages(prev => [...prev, { role, text }]);
+        }, role === 'ai' ? 600 : 0);
+      }, delay);
+    });
+  }, [visible]);
+
+  return (
+    <div style={{ ...glassCard, padding: '20px', minHeight: '320px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 0 40px rgba(0,212,255,0.1), inset 0 0 40px rgba(0,212,255,0.02)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#39FF14', boxShadow: '0 0 8px #39FF14', animation: 'pulse 2s ease-in-out infinite' }} />
+        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', letterSpacing: '0.08em' }}>AI 어시스턴트 · 온라인</span>
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', animation: 'fadeUp 0.4s ease' }}>
+            <div style={{
+              maxWidth: '75%', padding: '10px 14px', borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', fontSize: '13px', lineHeight: 1.5,
+              background: m.role === 'user' ? 'linear-gradient(135deg, #00D4FF, #8B5CF6)' : 'rgba(255,255,255,0.06)',
+              color: 'white', border: m.role === 'ai' ? '1px solid rgba(255,255,255,0.08)' : 'none',
+              boxShadow: m.role === 'user' ? '0 0 20px rgba(0,212,255,0.3)' : 'none',
+            }}>{m.text}</div>
           </div>
         ))}
-        {visibleCount > 0 && visibleCount < chatMessages.length && (
-          <div style={{ display: 'flex', gap: 4, paddingLeft: 4 }}>
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: '#999',
-                  animation: `typingDot 1s ease-in-out ${i * 200}ms infinite`,
-                }}
-              />
-            ))}
+        {typing && (
+          <div style={{ display: 'flex', gap: '5px', padding: '10px 14px', background: 'rgba(255,255,255,0.06)', borderRadius: '16px 16px 16px 4px', width: 'fit-content', border: '1px solid rgba(255,255,255,0.08)' }}>
+            {[0, 1, 2].map(i => <span key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#00D4FF', display: 'inline-block', animation: `pulse 1s ease-in-out infinite ${i * 0.2}s` }} />)}
           </div>
         )}
       </div>
+      <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 14px', color: 'rgba(255,255,255,0.2)', fontSize: '13px' }}>메시지를 입력하세요...</div>
+        <button style={{ ...neonBtn, padding: '10px 16px', fontSize: '13px', borderRadius: '10px' }}>전송</button>
+      </div>
     </div>
   );
 }
 
-// ─── ERP Demo ──────────────────────────────────────────────────────────────
-const erpStats = [
-  { label: '이번달 매출', value: '₩4,250만', bar: 85 },
-  { label: '진행중 리드', value: '23건', bar: 60 },
-  { label: 'SNS 노출', value: '14.2만', bar: 72 },
-];
-
-function ERPDemo({ active }: { active: boolean }) {
+// ─── ERP Demo ─────────────────────────────────────────────────────────────────
+function ERPDemo({ visible }: { visible: boolean }) {
+  const kpis = [
+    { label: '월 매출', value: '₩84.2M', change: '+23%', color: '#00D4FF' },
+    { label: '신규 고객', value: '1,247', change: '+8%', color: '#8B5CF6' },
+    { label: '전환율', value: '18.4%', change: '+3.2%', color: '#EC4899' },
+    { label: 'ROI', value: '340%', change: '+41%', color: '#39FF14' },
+  ];
+  const bars = [45, 62, 38, 78, 55, 90, 67];
   return (
-    <div
-      style={{
-        background: '#fff',
-        border: '1px solid #E5E5E5',
-        borderRadius: 16,
-        padding: '24px',
-        maxWidth: 380,
-        width: '100%',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-      }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#666', marginBottom: 16 }}>실시간 현황</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {erpStats.map((stat, i) => (
-          <div
-            key={i}
-            style={{
-              opacity: active ? 1 : 0,
-              transform: active ? 'none' : 'translateY(16px)',
-              transition: `opacity 0.5s ease ${i * 200 + 200}ms, transform 0.5s ${SPRING} ${i * 200 + 200}ms`,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: '#666' }}>{stat.label}</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#000' }}>{stat.value}</span>
-            </div>
-            <div style={{ height: 6, background: '#F0F0F0', borderRadius: 3, overflow: 'hidden' }}>
-              <div
-                style={{
-                  height: '100%',
-                  background: '#000',
-                  borderRadius: 3,
-                  width: active ? `${stat.bar}%` : '0%',
-                  transition: `width 1s ${SPRING} ${i * 200 + 400}ms`,
-                }}
-              />
-            </div>
+    <div style={{ ...glassCard, padding: '20px', transform: 'perspective(800px) rotateY(-6deg) rotateX(3deg)', boxShadow: '0 0 60px rgba(139,92,246,0.15), 30px 30px 60px rgba(0,0,0,0.5), inset 0 0 30px rgba(139,92,246,0.02)', transition: 'transform 0.5s ease' }}
+      onMouseEnter={e => (e.currentTarget.style.transform = 'perspective(800px) rotateY(-2deg) rotateX(1deg) scale(1.02)')}
+      onMouseLeave={e => (e.currentTarget.style.transform = 'perspective(800px) rotateY(-6deg) rotateX(3deg)')}>
+      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', letterSpacing: '0.12em', marginBottom: '16px' }}>📊 ERP DASHBOARD · LIVE</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+        {kpis.map((k, i) => (
+          <div key={i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px', border: `1px solid ${k.color}22` }}>
+            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.35)', marginBottom: '4px', letterSpacing: '0.08em' }}>{k.label}</div>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: k.color, lineHeight: 1, animation: visible ? 'countUp 0.8s ease forwards' : 'none', animationDelay: `${i * 0.1}s` }}>{k.value}</div>
+            <div style={{ fontSize: '10px', color: '#39FF14', marginTop: '4px' }}>{k.change}</div>
           </div>
+        ))}
+      </div>
+      <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: '10px', marginBottom: '8px', letterSpacing: '0.08em' }}>주간 매출 추이</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '60px' }}>
+        {bars.map((h, i) => (
+          <div key={i} style={{ flex: 1, background: `linear-gradient(to top, #00D4FF, #8B5CF6)`, borderRadius: '4px 4px 0 0', height: visible ? `${h}%` : '0%', transition: `height 0.8s cubic-bezier(0.34,1.56,0.64,1) ${0.1 + i * 0.08}s`, boxShadow: `0 0 8px rgba(0,212,255,0.4)` }} />
         ))}
       </div>
     </div>
   );
 }
 
-// ─── SNS Demo ──────────────────────────────────────────────────────────────
-const platforms = ['Instagram', 'Threads', 'Facebook', 'Twitter', 'LinkedIn', 'YouTube'];
-
-function SNSDemo({ active }: { active: boolean }) {
+// ─── SNS Demo ─────────────────────────────────────────────────────────────────
+function SNSDemo({ visible }: { visible: boolean }) {
+  const platforms = [
+    { name: 'Instagram', color: '#E1306C', icon: '📸' },
+    { name: 'YouTube', color: '#FF0000', icon: '▶' },
+    { name: 'TikTok', color: '#69C9D0', icon: '♪' },
+    { name: 'Twitter X', color: '#1DA1F2', icon: '𝕏' },
+    { name: 'Facebook', color: '#1877F2', icon: '𝙛' },
+    { name: 'LinkedIn', color: '#0A66C2', icon: 'in' },
+  ];
   return (
-    <div
-      style={{
-        background: '#fff',
-        border: '1px solid #E5E5E5',
-        borderRadius: 16,
-        padding: '24px',
-        maxWidth: 380,
-        width: '100%',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-        perspective: '800px',
-        transform: active ? 'rotateX(0deg)' : 'rotateX(8deg)',
-        transition: `transform 0.8s ${SPRING}`,
-      }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#666', marginBottom: 16 }}>발행 현황</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+    <div style={{ ...glassCard, padding: '20px', boxShadow: '0 0 40px rgba(236,72,153,0.1)' }}>
+      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', letterSpacing: '0.12em', marginBottom: '16px' }}>🚀 SNS AUTO-POST · 6 PLATFORMS</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
         {platforms.map((p, i) => (
-          <div
-            key={p}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 12px',
-              background: '#F9F9F9',
-              borderRadius: 8,
-              border: '1px solid #E5E5E5',
-              opacity: active ? 1 : 0,
-              transform: active ? 'none' : 'scale(0.85)',
-              transition: `opacity 0.4s ease ${i * 150 + 200}ms, transform 0.4s ${SPRING} ${i * 150 + 200}ms`,
-            }}
-          >
-            <span style={{ fontSize: 11, color: '#000', fontWeight: 600 }}>{p}</span>
-            {active && i < 4 && (
-              <span
-                style={{
-                  marginLeft: 'auto',
-                  fontSize: 10,
-                  color: '#000',
-                  opacity: active ? 1 : 0,
-                  transition: `opacity 0.3s ease ${i * 150 + 600}ms`,
-                }}
-              >
-                ✓
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-      <div style={{ height: 6, background: '#F0F0F0', borderRadius: 3, overflow: 'hidden' }}>
-        <div
-          style={{
-            height: '100%',
-            background: '#000',
-            borderRadius: 3,
-            width: active ? '66%' : '0%',
-            transition: `width 1.2s ${SPRING} 400ms`,
-          }}
-        />
-      </div>
-      <div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>4/6 플랫폼 발행 완료</div>
-    </div>
-  );
-}
-
-// ─── Coupang Demo ──────────────────────────────────────────────────────────
-function CoupangDemo({ active }: { active: boolean }) {
-  return (
-    <div style={{ maxWidth: 380, width: '100%', position: 'relative' }}>
-      <div
-        style={{
-          background: '#fff',
-          border: '1px solid #E5E5E5',
-          borderRadius: 16,
-          padding: '20px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          opacity: active ? 1 : 0,
-          transform: active ? 'none' : 'translateY(20px)',
-          transition: `opacity 0.5s ease, transform 0.5s ${SPRING}`,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <div style={{ width: 56, height: 56, background: '#F0F0F0', borderRadius: 10, flexShrink: 0 }} />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>프리미엄 블루투스 이어폰</div>
-            <div style={{ color: '#666', fontSize: 13, marginTop: 2 }}>₩89,000</div>
-            <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>파트너스 수수료 3%</div>
-          </div>
-        </div>
-      </div>
-      <div style={{ position: 'relative', marginTop: 16, height: 100 }}>
-        {[0, 1, 2].map((i) => {
-          const angles = [-35, 0, 35];
-          return (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: '50%',
-                width: 120,
-                height: 60,
-                background: '#fff',
-                border: '1px solid #E5E5E5',
-                borderRadius: 10,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 11,
-                fontWeight: 600,
-                color: '#000',
-                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-                transformOrigin: 'center bottom',
-                transform: active
-                  ? `translateX(-50%) rotate(${angles[i]}deg) translateY(${i === 1 ? 20 : 0}px)`
-                  : 'translateX(-50%) rotate(0deg)',
-                opacity: active ? 0.9 : 0,
-                transition: `all 0.6s ${SPRING} ${(i + 1) * 200}ms`,
-              }}
-            >
-              {['인스타', '블로그', '트위터'][i]}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Blog Demo ─────────────────────────────────────────────────────────────
-const blogText = 'AI가 자동으로 작성하는 SEO 최적화 블로그 포스트입니다. 키워드 분석부터 내용 구성, 이미지 생성까지 모두 자동화됩니다...';
-
-function BlogDemo({ active }: { active: boolean }) {
-  const [typed, setTyped] = useState('');
-
-  useEffect(() => {
-    if (!active) { setTyped(''); return; }
-    let i = 0;
-    const interval = setInterval(() => {
-      if (i < blogText.length) {
-        setTyped(blogText.slice(0, ++i));
-      } else {
-        clearInterval(interval);
-      }
-    }, 30);
-    return () => clearInterval(interval);
-  }, [active]);
-
-  return (
-    <div
-      style={{
-        background: '#fff',
-        border: '1px solid #E5E5E5',
-        borderRadius: 16,
-        padding: '24px',
-        maxWidth: 380,
-        width: '100%',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-      }}
-    >
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        {['#', 'B', 'I'].map((b) => (
-          <div key={b} style={{ width: 28, height: 28, background: '#F0F0F0', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{b}</div>
-        ))}
-        <div style={{ flex: 1, height: 28, background: '#F0F0F0', borderRadius: 6 }} />
-      </div>
-      <div
-        style={{
-          background: '#F9F9F9',
-          borderRadius: 10,
-          padding: '16px',
-          minHeight: 100,
-          border: '1px solid #E5E5E5',
-        }}
-      >
-        <div style={{ width: '60%', height: 12, background: '#E5E5E5', borderRadius: 4, marginBottom: 10 }} />
-        <div style={{ fontSize: 13, lineHeight: 1.7, color: '#333' }}>
-          {typed}
-          {active && typed.length < blogText.length && (
-            <span style={{ borderRight: '2px solid #000', animation: 'pulse 1s infinite' }}>&nbsp;</span>
-          )}
-        </div>
-      </div>
-      <div
-        style={{
-          marginTop: 12,
-          height: 60,
-          background: '#F0F0F0',
-          borderRadius: 10,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 12,
-          color: '#999',
-          opacity: active && typed.length > 40 ? 1 : 0,
-          transition: 'opacity 0.5s ease',
-        }}
-      >
-        AI 이미지 생성중...
-      </div>
-    </div>
-  );
-}
-
-// ─── CCTV Demo ─────────────────────────────────────────────────────────────
-function CCTVDemo({ active }: { active: boolean }) {
-  return (
-    <div
-      style={{
-        background: '#000',
-        borderRadius: 32,
-        padding: '32px 24px',
-        maxWidth: 200,
-        width: '100%',
-        aspectRatio: '9/16',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        border: '3px solid #333',
-        position: 'relative',
-        boxShadow: '0 4px 32px rgba(0,0,0,0.2)',
-        opacity: active ? 1 : 0,
-        transform: active ? 'none' : 'scale(0.9)',
-        transition: `opacity 0.5s ease, transform 0.5s ${SPRING}`,
-      }}
-    >
-      <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
-      <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>잠금 화면</div>
-      <div
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: '50%',
-          border: '2px solid #333',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginTop: 16,
-        }}
-      >
-        <span style={{ fontSize: 22 }}>📷</span>
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          top: 16,
-          right: 16,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          opacity: active ? 1 : 0,
-          transition: 'opacity 0.5s ease 0.8s',
-        }}
-      >
-        <div
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: '#fff',
-            animation: active ? 'pulse 1.5s infinite' : 'none',
-          }}
-        />
-        <span style={{ color: '#fff', fontSize: 9 }}>REC</span>
-      </div>
-    </div>
-  );
-}
-
-// ─── Feature Section ───────────────────────────────────────────────────────
-interface FeatureSectionProps {
-  index: number;
-  title: string;
-  subtitle: string;
-  description: string;
-  demo: React.ReactNode;
-  flip?: boolean;
-}
-
-function FeatureSection({ index, title, subtitle, description, demo, flip }: FeatureSectionProps) {
-  const { ref, visible } = useScrollReveal(0.2);
-
-  return (
-    <div
-      ref={ref}
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '80px 24px',
-        scrollSnapAlign: 'start',
-        background: index % 2 === 0 ? '#fff' : '#FAFAFA',
-        borderBottom: '1px solid #E5E5E5',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1000,
-          width: '100%',
-          display: 'flex',
-          flexDirection: flip ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          gap: 80,
-          flexWrap: 'wrap',
-        }}
-      >
-        {/* Text */}
-        <div style={{ flex: '1 1 300px' }}>
-          <div
-            style={{
-              display: 'inline-block',
-              padding: '4px 12px',
-              background: '#000',
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 600,
-              borderRadius: 4,
-              marginBottom: 20,
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(16px)',
-              transition: `opacity 0.5s ease 100ms, transform 0.5s ${SPRING} 100ms`,
-            }}
-          >
-            {subtitle}
-          </div>
-          <h2
-            style={{
-              fontSize: 'clamp(26px, 4vw, 44px)',
-              fontWeight: 800,
-              lineHeight: 1.2,
-              letterSpacing: '-0.02em',
-              color: '#000',
-              marginBottom: 20,
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(24px)',
-              transition: `opacity 0.6s ease 200ms, transform 0.6s ${SPRING} 200ms`,
-            }}
-          >
-            {title}
-          </h2>
-          <p
-            style={{
-              fontSize: 16,
-              color: '#555',
-              lineHeight: 1.7,
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'none' : 'translateY(20px)',
-              transition: `opacity 0.6s ease 350ms, transform 0.6s ${SPRING} 350ms`,
-            }}
-          >
-            {description}
-          </p>
-        </div>
-        {/* Demo */}
-        <div
-          style={{
-            flex: '1 1 300px',
-            display: 'flex',
-            justifyContent: 'center',
+          <div key={i} style={{
+            background: `${p.color}11`, border: `1px solid ${p.color}44`, borderRadius: '14px', padding: '16px 12px', textAlign: 'center',
+            boxShadow: visible ? `0 0 20px ${p.color}22` : 'none',
+            animation: visible ? `explodeIn 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards ${0.05 + i * 0.08}s` : 'none',
             opacity: visible ? 1 : 0,
-            transform: visible ? 'none' : `translateX(${flip ? '-40px' : '40px'})`,
-            transition: `opacity 0.7s ease 300ms, transform 0.7s ${SPRING} 300ms`,
+            transform: visible ? 'scale(1)' : 'scale(0)',
+            transition: 'box-shadow 0.3s ease',
           }}
-        >
-          {demo}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Counter ───────────────────────────────────────────────────────────────
-interface StatCounterProps {
-  target: number;
-  suffix: string;
-  label: string;
-  active: boolean;
-  delay: number;
-}
-
-function StatCounter({ target, suffix, label, active, delay }: StatCounterProps) {
-  const count = useCountUp(target, 2000, active);
-
-  return (
-    <div
-      style={{
-        textAlign: 'center',
-        opacity: active ? 1 : 0,
-        transform: active ? 'none' : 'translateY(24px)',
-        transition: `opacity 0.6s ease ${delay}ms, transform 0.6s ${SPRING} ${delay}ms`,
-      }}
-    >
-      <div style={{ fontSize: 'clamp(40px, 7vw, 72px)', fontWeight: 900, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1 }}>
-        {count}{suffix}
-      </div>
-      <div style={{ fontSize: 14, color: '#666', marginTop: 8 }}>{label}</div>
-    </div>
-  );
-}
-
-// ─── Integration Card ──────────────────────────────────────────────────────
-function IntegrationCard({ name, delay }: { name: string; delay: number }) {
-  const [hovered, setHovered] = useState(false);
-  const { ref, visible } = useScrollReveal(0.1);
-
-  return (
-    <div
-      ref={ref}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        padding: '20px',
-        border: `1px solid ${hovered ? '#000' : '#E5E5E5'}`,
-        borderRadius: 12,
-        textAlign: 'center',
-        fontSize: 14,
-        fontWeight: 600,
-        cursor: 'default',
-        background: hovered ? '#000' : '#fff',
-        color: hovered ? '#fff' : '#000',
-        transform: visible
-          ? hovered
-            ? 'perspective(400px) rotateX(-4deg) rotateY(4deg) translateY(-4px)'
-            : 'none'
-          : 'translateY(20px)',
-        opacity: visible ? 1 : 0,
-        transition: `all 0.3s ${SPRING} ${delay}ms, opacity 0.5s ease ${delay}ms`,
-        boxShadow: hovered ? '0 8px 24px rgba(0,0,0,0.15)' : 'none',
-      }}
-    >
-      {name}
-    </div>
-  );
-}
-
-// ─── Pricing Card ──────────────────────────────────────────────────────────
-interface PricingCardProps {
-  name: string;
-  price: string;
-  period?: string;
-  features: string[];
-  highlighted?: boolean;
-  delay: number;
-}
-
-function PricingCard({ name, price, period = '/월', features, highlighted, delay }: PricingCardProps) {
-  const { ref, visible } = useScrollReveal(0.1);
-
-  return (
-    <div
-      ref={ref}
-      style={{
-        flex: '1 1 200px',
-        maxWidth: 240,
-        padding: '32px 24px',
-        border: highlighted ? '2px solid #000' : '1px solid #E5E5E5',
-        borderRadius: 16,
-        background: highlighted ? '#000' : '#fff',
-        color: highlighted ? '#fff' : '#000',
-        opacity: visible ? 1 : 0,
-        transform: visible ? (highlighted ? 'translateY(-8px)' : 'none') : 'translateY(32px)',
-        transition: `opacity 0.6s ease ${delay}ms, transform 0.6s ${SPRING} ${delay}ms`,
-      }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 600, color: highlighted ? '#999' : '#666', marginBottom: 8 }}>{name}</div>
-      <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.03em', marginBottom: 4 }}>
-        {price}
-        <span style={{ fontSize: 13, fontWeight: 400, opacity: 0.6 }}>{period}</span>
-      </div>
-      <div style={{ height: 1, background: highlighted ? '#333' : '#E5E5E5', margin: '20px 0' }} />
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {features.map((f) => (
-          <li key={f} style={{ fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8, opacity: highlighted ? 0.9 : 0.8 }}>
-            <span style={{ flexShrink: 0 }}>✓</span>
-            {f}
-          </li>
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 30px ${p.color}55`; (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.05)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 20px ${p.color}22`; (e.currentTarget as HTMLDivElement).style.transform = ''; }}
+          >
+            <div style={{ fontSize: '24px', marginBottom: '6px' }}>{p.icon}</div>
+            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}>{p.name}</div>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#39FF14', margin: '6px auto 0', boxShadow: '0 0 6px #39FF14', animation: 'pulse 2s infinite' }} />
+          </div>
         ))}
-      </ul>
-      <Link
-        href="/dashboard"
-        style={{
-          display: 'block',
-          marginTop: 24,
-          padding: '12px',
-          textAlign: 'center',
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 600,
-          background: highlighted ? '#fff' : '#000',
-          color: highlighted ? '#000' : '#fff',
-          textDecoration: 'none',
-          transition: 'opacity 0.2s',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-      >
-        시작하기
-      </Link>
+      </div>
+      <div style={{ marginTop: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>다음 자동 게시</div>
+        <div style={{ fontSize: '13px', color: '#00D4FF', fontWeight: 600 }}>오늘 오후 7:00 · AI 생성 컨텐츠 ✦ 6개 채널 동시</div>
+      </div>
     </div>
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────
-export default function HomePage() {
-  const [scrolled, setScrolled] = useState(false);
-
-  const statsRef = useRef<HTMLDivElement>(null);
-  const [statsVisible, setStatsVisible] = useState(false);
-
-  const feat1Ref = useRef<HTMLDivElement>(null);
-  const feat2Ref = useRef<HTMLDivElement>(null);
-  const feat3Ref = useRef<HTMLDivElement>(null);
-  const feat4Ref = useRef<HTMLDivElement>(null);
-  const feat5Ref = useRef<HTMLDivElement>(null);
-  const feat6Ref = useRef<HTMLDivElement>(null);
-
-  const [feat1Active, setFeat1Active] = useState(false);
-  const [feat2Active, setFeat2Active] = useState(false);
-  const [feat3Active, setFeat3Active] = useState(false);
-  const [feat4Active, setFeat4Active] = useState(false);
-  const [feat5Active, setFeat5Active] = useState(false);
-  const [feat6Active, setFeat6Active] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  const makeObs = useCallback(
-    (setter: (v: boolean) => void) =>
-      new IntersectionObserver(([e]) => { if (e.isIntersecting) setter(true); }, { threshold: 0.25 }),
-    []
+// ─── Coupang Demo ─────────────────────────────────────────────────────────────
+function CoupangDemo({ visible }: { visible: boolean }) {
+  return (
+    <div style={{ ...glassCard, padding: '20px', position: 'relative', overflow: 'hidden', boxShadow: '0 0 40px rgba(57,255,20,0.08)' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, transparent 40%, rgba(57,255,20,0.03) 100%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: 0, left: '-100%', width: '60%', height: '100%', background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)', animation: visible ? 'shimmer 3s ease-in-out infinite 1s' : 'none', pointerEvents: 'none' }} />
+      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', letterSpacing: '0.12em', marginBottom: '16px' }}>🛒 쿠팡 파트너스 AI</div>
+      <div style={{ display: 'flex', gap: '14px', marginBottom: '16px' }}>
+        <div style={{ width: '80px', height: '80px', borderRadius: '14px', background: 'linear-gradient(135deg, #1A1A2E, #16213E)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', flexShrink: 0, animation: 'float 4s ease-in-out infinite' }}>📱</div>
+        <div>
+          <div style={{ color: 'white', fontSize: '14px', fontWeight: 600, marginBottom: '6px' }}>갤럭시 S25 Ultra</div>
+          <div style={{ color: '#EC4899', fontSize: '18px', fontWeight: 800, marginBottom: '4px' }}>₩1,450,000</div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <span style={{ background: 'rgba(57,255,20,0.15)', border: '1px solid rgba(57,255,20,0.3)', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', color: '#39FF14' }}>커미션 3%</span>
+            <span style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.3)', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', color: '#00D4FF' }}>AI 추천</span>
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(57,255,20,0.05)', border: '1px solid rgba(57,255,20,0.2)', borderRadius: '12px', padding: '12px 16px' }}>
+        <div>
+          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', marginBottom: '2px' }}>예상 월 수익</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#39FF14', animation: visible ? 'glowPulse 2s ease-in-out infinite' : 'none' }}>₩284,000</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          {['↑ 15%', '↑ 8%', '↑ 23%'].map((v, i) => (
+            <div key={i} style={{ fontSize: '12px', color: '#39FF14', opacity: visible ? 1 : 0, transform: visible ? 'translateX(0)' : 'translateX(20px)', transition: `all 0.5s ease ${0.5 + i * 0.15}s` }}>{v}</div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
+}
 
-  useEffect(() => {
-    const pairs: [React.RefObject<HTMLDivElement | null>, (v: boolean) => void][] = [
-      [statsRef, setStatsVisible],
-      [feat1Ref, setFeat1Active],
-      [feat2Ref, setFeat2Active],
-      [feat3Ref, setFeat3Active],
-      [feat4Ref, setFeat4Active],
-      [feat5Ref, setFeat5Active],
-      [feat6Ref, setFeat6Active],
-    ];
-    const observers = pairs.map(([ref, setter]) => {
-      const obs = makeObs(setter);
-      if (ref.current) obs.observe(ref.current);
-      return obs;
-    });
-    return () => observers.forEach((o) => o.disconnect());
-  }, [makeObs]);
+// ─── WordPress Demo ───────────────────────────────────────────────────────────
+function WordPressDemo({ visible }: { visible: boolean }) {
+  const lines = [
+    { text: '# AI가 작성한 SEO 블로그 포스트', color: '#8B5CF6' },
+    { text: '', color: '' },
+    { text: '## 2026년 마케팅 트렌드 완벽 분석', color: '#00D4FF' },
+    { text: '', color: '' },
+    { text: '올해 디지털 마케팅의 핵심은...', color: 'rgba(255,255,255,0.7)' },
+    { text: '**AI 자동화**와 **개인화**입니다.', color: 'rgba(255,255,255,0.7)' },
+    { text: '', color: '' },
+    { text: '> 키워드 최적화 완료 ✓', color: '#39FF14' },
+    { text: '> SEO 점수: 94/100 ✓', color: '#39FF14' },
+  ];
 
   return (
-    <>
-      {/* Global Styles */}
-      <style>{`
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: smooth; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: #fff; color: #000; }
-        a { text-decoration: none; color: inherit; }
-
-        @keyframes floatDot {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-12px); }
-        }
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(32px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes springIn {
-          0% { opacity: 0; transform: scale(0.85); }
-          70% { transform: scale(1.04); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes typingDot {
-          0%, 60%, 100% { transform: translateY(0); }
-          30% { transform: translateY(-6px); }
-        }
-        @keyframes slideRight {
-          from { transform: translateX(-40px); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes countUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes barGrow {
-          from { width: 0; }
-          to { width: var(--bar-w); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-        @keyframes arrowBounce {
-          0%, 100% { transform: translateY(0) translateX(-50%); }
-          50% { transform: translateY(8px) translateX(-50%); }
-        }
-
-        @media (max-width: 768px) {
-          .feat-snap-wrap { scroll-snap-type: none !important; }
-        }
-      `}</style>
-
-      {/* ── NAV ── */}
-      <nav
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 200,
-          height: 60,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 32px',
-          background: scrolled ? 'rgba(255,255,255,0.92)' : 'transparent',
-          backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          WebkitBackdropFilter: scrolled ? 'blur(12px)' : 'none',
-          borderBottom: scrolled ? '1px solid #E5E5E5' : '1px solid transparent',
-          transition: 'background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease',
-        }}
-      >
-        <Link href="/" style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.05em', color: '#000' }}>
-          LOOV
-        </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Link
-            href="/login"
-            style={{ fontSize: 14, fontWeight: 500, color: '#000', padding: '8px 14px', borderRadius: 8, transition: 'background 0.2s' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#F5F5F5')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            로그인
-          </Link>
-          <Link
-            href="/dashboard"
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: '#fff',
-              background: '#000',
-              padding: '9px 20px',
-              borderRadius: 8,
-              transition: 'opacity 0.2s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-          >
-            무료 시작
-          </Link>
-        </div>
-      </nav>
-
-      {/* ── HERO ── */}
-      <section
-        style={{
-          position: 'relative',
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          background: '#fff',
-          paddingTop: 60,
-        }}
-      >
-        <FloatingDots />
-        <div
-          style={{
-            position: 'relative',
-            zIndex: 1,
-            textAlign: 'center',
-            padding: '40px 24px',
-            maxWidth: 820,
-            width: '100%',
-          }}
-        >
-          <div style={{ animation: 'fadeUp 0.8s cubic-bezier(0.34,1.56,0.64,1) 0.1s both' }}>
-            <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.15em', color: '#888', marginBottom: 32, textTransform: 'uppercase' }}>
-              AI 비즈니스 자동화 플랫폼
-            </p>
-          </div>
-
-          <h1
-            style={{
-              fontSize: 'clamp(32px, 8vw, 80px)',
-              fontWeight: 900,
-              lineHeight: 1.1,
-              letterSpacing: '-0.03em',
-              color: '#000',
-              animation: 'fadeUp 0.8s cubic-bezier(0.34,1.56,0.64,1) 0.25s both',
-            }}
-          >
-            AI 직원팀이
-          </h1>
-
-          <h1
-            style={{
-              fontSize: 'clamp(32px, 8vw, 80px)',
-              fontWeight: 900,
-              lineHeight: 1.1,
-              letterSpacing: '-0.03em',
-              color: '#000',
-              minHeight: '1.15em',
-              animation: 'fadeUp 0.8s cubic-bezier(0.34,1.56,0.64,1) 0.38s both',
-            }}
-          >
-            <Typewriter />
-          </h1>
-
-          <h1
-            style={{
-              fontSize: 'clamp(32px, 8vw, 80px)',
-              fontWeight: 900,
-              lineHeight: 1.1,
-              letterSpacing: '-0.03em',
-              color: '#000',
-              marginBottom: 36,
-              animation: 'fadeUp 0.8s cubic-bezier(0.34,1.56,0.64,1) 0.51s both',
-            }}
-          >
-            처리합니다
-          </h1>
-
-          <p
-            style={{
-              fontSize: 'clamp(14px, 2vw, 18px)',
-              color: '#555',
-              lineHeight: 1.6,
-              marginBottom: 48,
-              animation: 'fadeUp 0.8s cubic-bezier(0.34,1.56,0.64,1) 0.66s both',
-            }}
-          >
-            ChatGPT·Gemini·Claude 기반 AI 팀이 대표님 회사를 운영합니다
-          </p>
-
-          <div
-            style={{
-              display: 'flex',
-              gap: 12,
-              justifyContent: 'center',
-              flexWrap: 'wrap',
-              animation: 'fadeUp 0.8s cubic-bezier(0.34,1.56,0.64,1) 0.8s both',
-            }}
-          >
-            <Link
-              href="/dashboard"
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                color: '#fff',
-                background: '#000',
-                padding: '16px 40px',
-                borderRadius: 10,
-                transition: 'opacity 0.2s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-            >
-              무료로 시작
-            </Link>
-            <button
-              style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: '#000',
-                background: 'transparent',
-                padding: '16px 40px',
-                borderRadius: 10,
-                border: '1.5px solid #000',
-                cursor: 'pointer',
-                transition: 'background 0.2s, color 0.2s',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#000'; (e.currentTarget as HTMLButtonElement).style.color = '#fff'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#000'; }}
-            >
-              데모 보기
-            </button>
-          </div>
-        </div>
-
-        {/* Scroll Arrow */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 32,
-            left: '50%',
-            animation: 'arrowBounce 2s ease-in-out infinite',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <span style={{ fontSize: 10, color: '#bbb', letterSpacing: '0.12em', fontWeight: 600 }}>SCROLL</span>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3L8 13M3 8L8 13L13 8" stroke="#ccc" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-      </section>
-
-      {/* ── FEATURES ── */}
-      <div className="feat-snap-wrap" style={{ scrollSnapType: 'y mandatory' }}>
-
-        <div ref={feat1Ref}>
-          <FeatureSection
-            index={0}
-            subtitle="AI 직원 채팅"
-            title="대화 한 줄이 업무가 됩니다"
-            description="자연어로 명령하면 AI 직원이 즉시 실행합니다. 콘텐츠 제작, 문서 작성, 일정 관리까지 채팅 한 번으로 처리됩니다."
-            demo={<ChatDemo active={feat1Active} />}
-          />
-        </div>
-
-        <div ref={feat2Ref}>
-          <FeatureSection
-            index={1}
-            subtitle="스마트 ERP"
-            title="AI가 운영하는 ERP"
-            description="매출, 리드, SNS 성과를 실시간으로 추적하고 분석합니다. AI가 이상 징후를 감지하고 개선 방안을 제안합니다."
-            demo={<ERPDemo active={feat2Active} />}
-            flip
-          />
-        </div>
-
-        <div ref={feat3Ref}>
-          <FeatureSection
-            index={2}
-            subtitle="SNS 자동화"
-            title="한 번 작성, 6개 플랫폼 동시 발행"
-            description="콘텐츠를 한 번 만들면 Instagram, Threads, Facebook, Twitter, LinkedIn, YouTube에 자동으로 최적화하여 발행합니다."
-            demo={<SNSDemo active={feat3Active} />}
-          />
-        </div>
-
-        <div ref={feat4Ref}>
-          <FeatureSection
-            index={3}
-            subtitle="쿠팡 파트너스"
-            title="잠자는 동안도 수익링크가 퍼집니다"
-            description="AI가 트렌드 상품을 발굴하고 파트너스 링크를 생성하여 SNS 전 채널에 자동 배포합니다. 수익이 자동화됩니다."
-            demo={<CoupangDemo active={feat4Active} />}
-            flip
-          />
-        </div>
-
-        <div ref={feat5Ref}>
-          <FeatureSection
-            index={4}
-            subtitle="WordPress / 블로그"
-            title="AI가 쓰고, AI가 올립니다"
-            description="키워드만 입력하면 SEO 최적화된 블로그 포스트를 자동 작성하고, 이미지 생성 후 WordPress에 직접 업로드합니다."
-            demo={<BlogDemo active={feat5Active} />}
-          />
-        </div>
-
-        <div ref={feat6Ref}>
-          <FeatureSection
-            index={5}
-            subtitle="CCTV & 트래커"
-            title="숨겨진 보안 카메라"
-            description="스마트폰을 보안 카메라로 전환합니다. 원격 모니터링, 움직임 감지, 실시간 알림까지 비즈니스 보안을 완성합니다."
-            demo={<CCTVDemo active={feat6Active} />}
-            flip
-          />
-        </div>
-
+    <div style={{ ...glassCard, padding: '0', overflow: 'hidden', boxShadow: '0 0 40px rgba(139,92,246,0.1)' }}>
+      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        {['#FF5F57', '#FEBC2E', '#28C840'].map((c, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: c }} />)}
+        <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: '11px', marginLeft: '8px', fontFamily: 'monospace' }}>ai-blog-generator.ts</span>
       </div>
+      <div style={{ padding: '16px', fontFamily: 'monospace', fontSize: '12px', lineHeight: 1.8, minHeight: '200px' }}>
+        {lines.map((line, i) => (
+          <div key={i} style={{ color: line.color || 'transparent', opacity: visible ? 1 : 0, transition: `opacity 0.3s ease ${0.2 + i * 0.15}s`, minHeight: '20px' }}>
+            {line.text}
+            {i === lines.length - 1 && visible && <span style={{ display: 'inline-block', width: '2px', height: '14px', background: '#00D4FF', marginLeft: '2px', verticalAlign: 'middle', animation: 'blink 1s step-end infinite' }} />}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-      {/* ── STATS ── */}
-      <section
-        ref={statsRef}
-        style={{
-          background: '#000',
-          padding: '100px 24px',
-          display: 'flex',
-          justifyContent: 'center',
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 900,
-            width: '100%',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-            gap: 48,
-          }}
-        >
-          <StatCounter target={6} suffix="개" label="AI 모델 지원" active={statsVisible} delay={0} />
-          <StatCounter target={12} suffix="개" label="플랫폼 연동" active={statsVisible} delay={200} />
-          <StatCounter target={5} suffix="분" label="설정 완료" active={statsVisible} delay={400} />
-          <StatCounter target={24} suffix="시간" label="자동 운영" active={statsVisible} delay={600} />
+// ─── CCTV Demo ────────────────────────────────────────────────────────────────
+function CCTVDemo({ visible }: { visible: boolean }) {
+  return (
+    <div style={{ ...glassCard, padding: '20px', boxShadow: '0 0 40px rgba(255,0,0,0.08)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', letterSpacing: '0.12em' }}>📡 CCTV & 트래커</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#FF3333', boxShadow: '0 0 8px #FF3333', animation: 'pulse 1s ease-in-out infinite' }} />
+          <span style={{ color: '#FF3333', fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em' }}>REC</span>
         </div>
-      </section>
-
-      {/* ── INTEGRATIONS ── */}
-      <section style={{ padding: '100px 24px', background: '#fff' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <Reveal>
-            <h2
-              style={{
-                fontSize: 'clamp(26px, 4vw, 44px)',
-                fontWeight: 800,
-                letterSpacing: '-0.02em',
-                textAlign: 'center',
-                marginBottom: 12,
-                color: '#000',
-              }}
-            >
-              연결하면 자동화됩니다
-            </h2>
-          </Reveal>
-          <Reveal delay={150}>
-            <p style={{ textAlign: 'center', color: '#666', fontSize: 16, marginBottom: 60 }}>
-              익숙한 서비스를 연결하면 AI가 모든 것을 처리합니다
-            </p>
-          </Reveal>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-              gap: 12,
-            }}
-          >
-            {[
-              '네이버 블로그', 'Instagram', 'YouTube', 'WordPress',
-              'Google Calendar', 'Notion', 'Coupang', 'n8n',
-              'Threads', 'Facebook',
-            ].map((name, i) => (
-              <IntegrationCard key={name} name={name} delay={i * 60} />
+      </div>
+      <div style={{ background: '#0A0A0A', borderRadius: '14px', padding: '16px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '14px', position: 'relative', overflow: 'hidden', minHeight: '130px' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 50%, rgba(0,212,255,0.04) 0%, transparent 70%)' }} />
+        <div style={{ color: 'rgba(255,255,255,0.15)', fontSize: '10px', marginBottom: '12px', letterSpacing: '0.1em' }}>CAM-01 · 정문 입구</div>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80px', position: 'relative' }}>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#00D4FF', boxShadow: '0 0 20px rgba(0,212,255,0.8)', zIndex: 2 }}>
+            {[1, 2, 3].map(i => (
+              <div key={i} style={{ position: 'absolute', inset: `-${i * 14}px`, borderRadius: '50%', border: '1px solid rgba(0,212,255,0.4)', animation: visible ? `pingRipple 2s ease-out infinite ${i * 0.5}s` : 'none' }} />
             ))}
           </div>
         </div>
-      </section>
-
-      {/* ── PRICING ── */}
-      <section style={{ padding: '100px 24px', background: '#FAFAFA', borderTop: '1px solid #E5E5E5', borderBottom: '1px solid #E5E5E5' }}>
-        <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-          <Reveal>
-            <h2
-              style={{
-                fontSize: 'clamp(26px, 4vw, 44px)',
-                fontWeight: 800,
-                letterSpacing: '-0.02em',
-                textAlign: 'center',
-                marginBottom: 12,
-                color: '#000',
-              }}
-            >
-              심플한 요금제
-            </h2>
-          </Reveal>
-          <Reveal delay={150}>
-            <p style={{ textAlign: 'center', color: '#666', fontSize: 16, marginBottom: 60 }}>
-              지금 무료로 시작하고 필요할 때 업그레이드하세요
-            </p>
-          </Reveal>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start' }}>
-            <PricingCard
-              name="무료"
-              price="₩0"
-              period=""
-              features={[
-                'AI 채팅 월 50회',
-                '기본 ERP 대시보드',
-                'SNS 월 10건 발행',
-                '1개 플랫폼 연동',
-              ]}
-              delay={0}
-            />
-            <PricingCard
-              name="베이직"
-              price="₩29,000"
-              features={[
-                'AI 채팅 무제한',
-                '전체 ERP 기능',
-                'SNS 월 100건 발행',
-                '3개 플랫폼 연동',
-                '이메일 지원',
-              ]}
-              delay={150}
-            />
-            <PricingCard
-              name="스타터"
-              price="₩59,000"
-              features={[
-                '모든 베이직 기능',
-                'SNS 무제한 발행',
-                '6개 플랫폼 연동',
-                '쿠팡 파트너스 자동화',
-                '블로그 자동 발행',
-                '우선 지원',
-              ]}
-              highlighted
-              delay={300}
-            />
-            <PricingCard
-              name="프로"
-              price="₩99,000"
-              features={[
-                '모든 스타터 기능',
-                'CCTV 트래커 기능',
-                '다중 워크스페이스',
-                'API 접근 권한',
-                'n8n 자동화 연동',
-                '전담 매니저',
-              ]}
-              delay={450}
-            />
+        <div style={{ color: '#00D4FF', fontSize: '10px', textAlign: 'center', marginTop: '8px' }}>위치 추적 활성 · GPS 정확도 99.8%</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        {[{ label: '활성 카메라', value: '12', color: '#00D4FF' }, { label: '알림', value: '3', color: '#EC4899' }, { label: '추적 기기', value: '7', color: '#8B5CF6' }, { label: '이상 감지', value: '0', color: '#39FF14' }].map((s, i) => (
+          <div key={i} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px', border: `1px solid ${s.color}22` }}>
+            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '2px' }}>{s.label}</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: s.color }}>{s.value}</div>
           </div>
-        </div>
-      </section>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-      {/* ── CTA ── */}
-      <section
-        style={{
-          background: '#000',
-          padding: '120px 24px',
-          textAlign: 'center',
-        }}
-      >
-        <Reveal>
-          <h2
-            style={{
-              fontSize: 'clamp(28px, 5vw, 56px)',
-              fontWeight: 900,
-              letterSpacing: '-0.03em',
-              color: '#fff',
-              lineHeight: 1.15,
-              marginBottom: 20,
-            }}
-          >
-            지금 바로 AI 팀을
-            <br />
-            채용하세요
+// ─── Feature Section ──────────────────────────────────────────────────────────
+type FeatureConfig = {
+  num: string;
+  title: string;
+  desc: string;
+  bullets: string[];
+  accentColor: string;
+  demo: (visible: boolean) => React.ReactNode;
+};
+
+function FeatureSection({ feature, reverse }: { feature: FeatureConfig; reverse?: boolean }) {
+  const { ref, visible } = useScrollReveal(0.12);
+  return (
+    <section ref={ref} style={{ padding: '100px 24px', background: '#000', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', gap: '60px', alignItems: 'center', flexDirection: reverse ? 'row-reverse' : 'row', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 380px', opacity: visible ? 1 : 0, transform: visible ? 'translateX(0)' : `translateX(${reverse ? '60px' : '-60px'})`, transition: 'all 0.9s cubic-bezier(0.34,1.56,0.64,1)' }}>
+          <div style={{ fontSize: 'clamp(64px, 10vw, 120px)', fontWeight: 900, lineHeight: 1, marginBottom: '16px', opacity: 0.12, ...gradientText }}>{feature.num}</div>
+          <h3 style={{ fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: 800, color: 'white', marginBottom: '16px', letterSpacing: '-0.02em', marginTop: '-20px' }}>{feature.title}</h3>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '16px', lineHeight: 1.7, marginBottom: '28px' }}>{feature.desc}</p>
+          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {feature.bullets.map((b, i) => (
+              <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', color: 'rgba(255,255,255,0.65)', fontSize: '14px', opacity: visible ? 1 : 0, transform: visible ? 'translateX(0)' : 'translateX(-20px)', transition: `all 0.6s ease ${0.3 + i * 0.1}s` }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: feature.accentColor, boxShadow: `0 0 8px ${feature.accentColor}`, marginTop: '6px', flexShrink: 0 }} />
+                {b}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div style={{ flex: '1 1 380px', opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(40px)', transition: 'all 0.9s cubic-bezier(0.34,1.56,0.64,1) 0.15s' }}>
+          {feature.demo(visible)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Stats Section ────────────────────────────────────────────────────────────
+function StatCounter({ value, suffix, label, color, delay, active }: { value: number; suffix: string; label: string; color: string; delay: number; active: boolean }) {
+  const count = useCountUp(value, 2200, active);
+  return (
+    <div style={{ textAlign: 'center', padding: '20px', opacity: active ? 1 : 0, transform: active ? 'translateY(0)' : 'translateY(40px)', transition: `all 0.8s cubic-bezier(0.34,1.56,0.64,1) ${delay}s` }}>
+      <div style={{ fontSize: 'clamp(56px, 9vw, 96px)', fontWeight: 900, lineHeight: 1, color, textShadow: `0 0 40px ${color}80`, letterSpacing: '-0.04em', animation: active ? 'glowPulse 3s ease-in-out infinite' : 'none' }}>
+        {count}{suffix}
+      </div>
+      <div style={{ width: '60px', height: '2px', background: `linear-gradient(90deg, transparent, ${color}, transparent)`, margin: '12px auto', boxShadow: `0 0 10px ${color}` }} />
+      <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '14px', letterSpacing: '0.08em' }}>{label}</div>
+    </div>
+  );
+}
+
+function StatsSection() {
+  const { ref, visible } = useScrollReveal(0.2);
+  const stats = [
+    { value: 6, suffix: '', label: 'AI 모델', color: '#00D4FF', delay: 0 },
+    { value: 12, suffix: '', label: '통합 플랫폼', color: '#8B5CF6', delay: 0.1 },
+    { value: 5, suffix: '분', label: '설정 시간', color: '#EC4899', delay: 0.2 },
+    { value: 24, suffix: '/7', label: '자동 운영', color: '#39FF14', delay: 0.3 },
+  ];
+  return (
+    <section ref={ref} style={{ padding: '100px 24px', background: '#000', borderTop: '1px solid rgba(255,255,255,0.04)', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 80% 50% at 50% 50%, rgba(0,212,255,0.04) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: '70px' }}>
+          <h2 style={{ fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 900, color: 'white', letterSpacing: '-0.03em', marginBottom: '12px', opacity: visible ? 1 : 0, transition: 'opacity 0.8s ease' }}>숫자로 증명하는 <span style={gradientText}>LOOV</span></h2>
+          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '16px', opacity: visible ? 1 : 0, transition: 'opacity 0.8s ease 0.2s' }}>진짜 성과, 진짜 자동화</p>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0' }}>
+          {stats.map((s, i) => <StatCounter key={i} {...s} active={visible} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Integrations ─────────────────────────────────────────────────────────────
+function IntegrationCard({ name, icon, color }: { name: string; icon: string; color: string }) {
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [hovered, setHovered] = useState(false);
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientY - rect.top - rect.height / 2) / rect.height * 20;
+    const y = -(e.clientX - rect.left - rect.width / 2) / rect.width * 20;
+    setTilt({ x, y });
+  }, []);
+  return (
+    <div
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setTilt({ x: 0, y: 0 }); }}
+      style={{
+        ...glassCard, padding: '24px', textAlign: 'center', cursor: 'default',
+        transform: hovered ? `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale(1.06)` : 'perspective(600px) rotateX(0) rotateY(0) scale(1)',
+        border: hovered ? `1px solid ${color}66` : '1px solid rgba(255,255,255,0.07)',
+        boxShadow: hovered ? `0 0 30px ${color}33, 0 20px 40px rgba(0,0,0,0.5)` : '0 4px 20px rgba(0,0,0,0.2)',
+        transition: 'all 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+      }}>
+      <div style={{ fontSize: '32px', marginBottom: '10px', filter: hovered ? `drop-shadow(0 0 12px ${color})` : 'none', transition: 'filter 0.3s ease' }}>{icon}</div>
+      <div style={{ color: hovered ? color : 'rgba(255,255,255,0.5)', fontSize: '12px', fontWeight: 600, letterSpacing: '0.06em', transition: 'color 0.3s ease' }}>{name}</div>
+      {hovered && <div style={{ width: '20px', height: '2px', background: color, boxShadow: `0 0 8px ${color}`, margin: '8px auto 0', borderRadius: '1px' }} />}
+    </div>
+  );
+}
+
+function IntegrationsSection() {
+  const { ref, visible } = useScrollReveal(0.12);
+  const integrations = [
+    { name: 'ChatGPT', icon: '🤖', color: '#10B981' },
+    { name: 'Gemini', icon: '✨', color: '#8B5CF6' },
+    { name: 'Claude', icon: '🧠', color: '#EC4899' },
+    { name: 'n8n', icon: '⚡', color: '#F97316' },
+    { name: 'Supabase', icon: '🗄️', color: '#3ECF8E' },
+    { name: 'WordPress', icon: '📝', color: '#21759B' },
+    { name: 'Instagram', icon: '📸', color: '#E1306C' },
+    { name: 'YouTube', icon: '▶', color: '#FF0000' },
+    { name: 'Google', icon: '📅', color: '#4285F4' },
+    { name: 'Coupang', icon: '🛒', color: '#C0392B' },
+  ];
+  return (
+    <section ref={ref} style={{ padding: '100px 24px', background: 'linear-gradient(180deg, #000 0%, #050508 100%)', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: '60px', opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)', transition: 'all 0.8s ease' }}>
+          <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: '12px' }}>
+            <span style={{ color: 'white' }}>모든 도구가 </span><span style={gradientText}>하나로</span>
           </h2>
-        </Reveal>
-        <Reveal delay={200}>
-          <p style={{ color: '#666', fontSize: 16, marginBottom: 48 }}>
-            신용카드 없이 5분 안에 시작할 수 있습니다
+          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '16px' }}>10개 이상의 플랫폼을 단일 대시보드에서</p>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px' }}>
+          {integrations.map((item, i) => (
+            <div key={i} style={{ opacity: visible ? 1 : 0, transform: visible ? 'scale(1)' : 'scale(0.8)', transition: `all 0.5s cubic-bezier(0.34,1.56,0.64,1) ${0.05 + i * 0.05}s` }}>
+              <IntegrationCard {...item} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Pricing ──────────────────────────────────────────────────────────────────
+type PlanConfig = {
+  name: string;
+  price: string;
+  period: string;
+  desc: string;
+  features: string[];
+  cta: string;
+  highlight?: boolean;
+  color: string;
+};
+
+function PricingCard({ plan, delay, visible }: { plan: PlanConfig; delay: number; visible: boolean }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative', borderRadius: '24px', padding: plan.highlight ? '2px' : '0',
+        background: plan.highlight ? 'linear-gradient(135deg, #00D4FF, #8B5CF6, #EC4899)' : 'transparent',
+        animation: plan.highlight ? 'gradientShift 3s ease-in-out infinite' : 'none',
+        backgroundSize: plan.highlight ? '200% 200%' : 'auto',
+        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(40px)',
+        transition: `all 0.7s cubic-bezier(0.34,1.56,0.64,1) ${delay}s`,
+        boxShadow: plan.highlight && hovered ? '0 0 60px rgba(0,212,255,0.3)' : 'none',
+      }}>
+      {plan.highlight && <div style={{ position: 'absolute', top: '-12px', left: '50%', transform: 'translateX(-50%)', background: 'linear-gradient(135deg, #00D4FF, #8B5CF6)', borderRadius: '100px', padding: '4px 16px', fontSize: '11px', fontWeight: 700, color: 'white', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>⭐ 가장 인기</div>}
+      <div style={{ ...glassCard, borderRadius: '22px', padding: '32px', background: plan.highlight ? 'rgba(5,5,15,0.95)' : 'rgba(255,255,255,0.03)', border: plan.highlight ? 'none' : `1px solid rgba(255,255,255,0.08)`, transform: hovered ? 'scale(1.02)' : 'scale(1)', transition: 'transform 0.3s ease' }}>
+        <div style={{ color: plan.color, fontSize: '12px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '8px' }}>{plan.name}</div>
+        <div style={{ marginBottom: '4px' }}>
+          <span style={{ fontSize: '42px', fontWeight: 900, color: 'white', letterSpacing: '-0.03em' }}>{plan.price}</span>
+          <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '14px', marginLeft: '4px' }}>{plan.period}</span>
+        </div>
+        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', marginBottom: '24px', lineHeight: 1.5 }}>{plan.desc}</p>
+        <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.06)', marginBottom: '20px' }} />
+        <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '28px' }}>
+          {plan.features.map((f, i) => (
+            <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>
+              <span style={{ color: plan.color, fontSize: '14px' }}>✓</span> {f}
+            </li>
+          ))}
+        </ul>
+        <Link href="/dashboard" style={{ textDecoration: 'none', display: 'block' }}>
+          <button style={plan.highlight ? { ...neonBtn, width: '100%', justifyContent: 'center' } : { background: 'rgba(255,255,255,0.06)', border: `1px solid rgba(255,255,255,0.12)`, color: 'white', width: '100%', padding: '14px 24px', borderRadius: '12px', cursor: 'pointer', fontSize: '14px', fontWeight: 600, transition: 'all 0.3s ease' }}
+            onMouseEnter={e => { if (!plan.highlight) { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLButtonElement).style.borderColor = plan.color; } }}
+            onMouseLeave={e => { if (!plan.highlight) { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.12)'; } }}
+          >{plan.cta}</button>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function PricingSection() {
+  const { ref, visible } = useScrollReveal(0.1);
+  const plans: PlanConfig[] = [
+    { name: 'FREE', price: '₩0', period: '/월', desc: '소규모 비즈니스 시작용', features: ['AI 채팅 50회/월', 'ERP 기본 기능', '1개 SNS 연동', '커뮤니티 접근'], cta: '무료로 시작', color: '#8B5CF6' },
+    { name: 'STARTER', price: '₩29,000', period: '/월', desc: '성장하는 1인 기업을 위한', features: ['AI 채팅 무제한', '모든 ERP 기능', '6개 SNS 자동화', '쿠팡 파트너스', 'WordPress AI 블로그', '우선 지원'], cta: '지금 시작하기', highlight: true, color: '#00D4FF' },
+    { name: 'PRO', price: '₩79,000', period: '/월', desc: '팀과 함께 스케일업', features: ['Starter 전체 포함', 'CCTV & 위치추적', 'n8n 고급 자동화', 'Google Calendar', 'AI 인사이트', '전담 매니저'], cta: 'Pro 시작하기', color: '#EC4899' },
+    { name: 'ENTERPRISE', price: '문의', period: '', desc: '대규모 조직 맞춤형', features: ['Pro 전체 포함', '커스텀 AI 모델', '온프레미스 배포', 'SLA 보장', '전용 서버', '화이트라벨'], cta: '영업팀 문의', color: '#39FF14' },
+  ];
+  return (
+    <section ref={ref} style={{ padding: '100px 24px', background: '#000', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: '70px', opacity: visible ? 1 : 0, transition: 'opacity 0.8s ease' }}>
+          <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: '12px' }}>
+            <span style={gradientText}>투명한 가격</span><span style={{ color: 'white' }}>으로 시작</span>
+          </h2>
+          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '16px' }}>약정 없음 · 언제든 변경 · 14일 환불 보장</p>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', alignItems: 'start' }}>
+          {plans.map((p, i) => <PricingCard key={i} plan={p} delay={i * 0.1} visible={visible} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── CTA Section ──────────────────────────────────────────────────────────────
+function CTASection() {
+  const { ref, visible } = useScrollReveal(0.2);
+  return (
+    <section ref={ref} style={{ padding: '120px 24px', background: 'linear-gradient(135deg, #0D1117 0%, #1a0533 30%, #0c1a3d 60%, #0D1117 100%)', position: 'relative', overflow: 'hidden', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(0,212,255,0.12), rgba(139,92,246,0.15), rgba(236,72,153,0.1))', backgroundSize: '400% 400%', animation: 'ctaGrad 6s ease-in-out infinite', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: '20%', left: '10%', width: '400px', height: '400px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,212,255,0.1) 0%, transparent 70%)', animation: 'float 8s ease-in-out infinite', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: '10%', right: '10%', width: '300px', height: '300px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(236,72,153,0.1) 0%, transparent 70%)', animation: 'float 6s ease-in-out infinite reverse', pointerEvents: 'none' }} />
+      <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center', position: 'relative', zIndex: 2 }}>
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(40px)', transition: 'all 0.9s cubic-bezier(0.34,1.56,0.64,1)' }}>
+          <h2 style={{ fontSize: 'clamp(36px, 6vw, 64px)', fontWeight: 900, color: 'white', letterSpacing: '-0.03em', marginBottom: '20px', lineHeight: 1.1 }}>
+            지금 AI 팀을<br /><span style={gradientText}>채용하세요</span>
+          </h2>
+          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '18px', marginBottom: '48px', lineHeight: 1.6 }}>
+            5분 안에 설정 완료. 신용카드 불필요.<br />AI가 당신의 회사를 24시간 운영합니다.
           </p>
-        </Reveal>
-        <Reveal delay={360}>
-          <Link
-            href="/dashboard"
-            style={{
-              display: 'inline-block',
-              fontSize: 16,
-              fontWeight: 700,
-              color: '#000',
-              background: '#fff',
-              padding: '18px 52px',
-              borderRadius: 10,
-              transition: 'opacity 0.2s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-          >
-            무료로 시작하기
-          </Link>
-        </Reveal>
-      </section>
-
-      {/* ── FOOTER ── */}
-      <footer style={{ background: '#000', borderTop: '1px solid #1a1a1a', padding: '56px 32px 40px' }}>
-        <div
-          style={{
-            maxWidth: 960,
-            margin: '0 auto',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            flexWrap: 'wrap',
-            gap: 40,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: '-0.05em', color: '#fff', marginBottom: 10 }}>
-              LOOV
-            </div>
-            <p style={{ color: '#555', fontSize: 13, lineHeight: 1.7, maxWidth: 220 }}>
-              AI 기반 비즈니스 자동화 플랫폼으로<br />대표님의 회사를 운영합니다.
-            </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link href="/dashboard" style={{ textDecoration: 'none' }}>
+              <button style={{ background: 'rgba(255,255,255,0.95)', color: '#000', fontWeight: 800, padding: '18px 48px', borderRadius: '14px', border: 'none', cursor: 'pointer', fontSize: '17px', letterSpacing: '0.02em', transition: 'all 0.3s ease', boxShadow: '0 0 40px rgba(255,255,255,0.3)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-3px) scale(1.04)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 60px rgba(255,255,255,0.5)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = ''; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(255,255,255,0.3)'; }}
+              >무료로 시작하기 →</button>
+            </Link>
+            <Link href="/dashboard" style={{ textDecoration: 'none' }}>
+              <button style={{ background: 'rgba(255,255,255,0.08)', color: 'white', fontWeight: 600, padding: '18px 40px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', fontSize: '17px', transition: 'all 0.3s ease' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.15)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.4)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.25)'; }}
+              >데모 예약</button>
+            </Link>
           </div>
+          <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '13px', marginTop: '24px' }}>
+            이미 <span style={{ color: '#00D4FF' }}>1,200+</span> 기업이 LOOV로 운영 중
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-          <div style={{ display: 'flex', gap: 56, flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ color: '#fff', fontSize: 12, fontWeight: 700, marginBottom: 16, letterSpacing: '0.06em', textTransform: 'uppercase' }}>서비스</div>
-              {['AI 채팅', 'ERP', 'SNS 자동화', '블로그', 'CCTV'].map((l) => (
-                <div key={l} style={{ marginBottom: 10 }}>
-                  <Link
-                    href="/dashboard"
-                    style={{ color: '#555', fontSize: 13, transition: 'color 0.2s' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#555')}
-                  >
-                    {l}
-                  </Link>
-                </div>
-              ))}
-            </div>
-            <div>
-              <div style={{ color: '#fff', fontSize: 12, fontWeight: 700, marginBottom: 16, letterSpacing: '0.06em', textTransform: 'uppercase' }}>회사</div>
-              {['소개', '블로그', '지원', '이용약관', '개인정보처리방침'].map((l) => (
-                <div key={l} style={{ marginBottom: 10 }}>
-                  <Link
-                    href="/"
-                    style={{ color: '#555', fontSize: 13, transition: 'color 0.2s' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#555')}
-                  >
-                    {l}
-                  </Link>
-                </div>
+// ─── Footer ───────────────────────────────────────────────────────────────────
+function Footer() {
+  return (
+    <footer style={{ background: '#000', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '60px 24px 40px' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '40px', marginBottom: '48px' }}>
+          <div style={{ maxWidth: '280px' }}>
+            <div style={{ fontSize: '28px', fontWeight: 900, ...gradientText, marginBottom: '12px', letterSpacing: '-0.02em' }}>LOOV</div>
+            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px', lineHeight: 1.7 }}>AI로 당신의 비즈니스를 자동화합니다. ChatGPT, Gemini, Claude 기반의 올인원 AI 플랫폼.</p>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+              {['📸', '🐦', '📺', '💼'].map((icon, i) => (
+                <div key={i} style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '16px', transition: 'all 0.2s ease' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,212,255,0.1)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(0,212,255,0.3)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.04)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.08)'; }}
+                >{icon}</div>
               ))}
             </div>
           </div>
+          {[
+            { title: '제품', items: ['AI 채팅', 'ERP', 'SNS 자동화', '쿠팡 파트너스', 'WordPress AI'] },
+            { title: '지원', items: ['시작 가이드', '문서', 'API', '커뮤니티', '문의하기'] },
+            { title: '회사', items: ['소개', '블로그', '채용', '파트너', '법적 고지'] },
+          ].map((col, i) => (
+            <div key={i}>
+              <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '16px' }}>{col.title}</div>
+              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {col.items.map((item, j) => (
+                  <li key={j}><Link href="#" style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px', textDecoration: 'none', transition: 'color 0.2s' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = '#00D4FF')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
+                  >{item}</Link></li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '28px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+          <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '12px' }}>© 2026 LOOV Inc. All rights reserved.</span>
+          <div style={{ display: 'flex', gap: '24px' }}>
+            {['개인정보처리방침', '이용약관', '쿠키 정책'].map((item, i) => (
+              <Link key={i} href="#" style={{ color: 'rgba(255,255,255,0.2)', fontSize: '12px', textDecoration: 'none', transition: 'color 0.2s' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.5)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.2)')}
+              >{item}</Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
 
-        <div
-          style={{
-            maxWidth: 960,
-            margin: '40px auto 0',
-            paddingTop: 24,
-            borderTop: '1px solid #1a1a1a',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 8,
-          }}
-        >
-          <span style={{ color: '#444', fontSize: 12 }}>© 2026 LOOV. All rights reserved.</span>
-          <span style={{ color: '#444', fontSize: 12 }}>AI가 만드는 더 나은 비즈니스</span>
-        </div>
-      </footer>
+// ─── Main Page ────────────────────────────────────────────────────────────────
+export default function HomePage() {
+  const features: FeatureConfig[] = [
+    {
+      num: '01',
+      title: 'AI 직원 채팅',
+      desc: 'ChatGPT, Gemini, Claude 중 원하는 AI를 선택해 업무 지시를 내리세요. 매출 분석, 고객 응대, 콘텐츠 생성을 자동화합니다.',
+      bullets: ['6가지 AI 모델 선택', '실시간 스트리밍 응답', '대화 히스토리 저장', 'AI 툴킷 연동'],
+      accentColor: '#00D4FF',
+      demo: (v) => <ChatDemo visible={v} />,
+    },
+    {
+      num: '02',
+      title: 'ERP 대시보드',
+      desc: '매출, 고객, 재고, 회계를 하나의 화면에서. AI가 이상 징후를 실시간 감지하고 인사이트를 제공합니다.',
+      bullets: ['실시간 KPI 모니터링', 'AI 예측 분석', '칸반/테이블 뷰 전환', '모바일 최적화'],
+      accentColor: '#8B5CF6',
+      demo: (v) => <ERPDemo visible={v} />,
+    },
+    {
+      num: '03',
+      title: 'SNS 자동화',
+      desc: 'Instagram, YouTube, TikTok, Twitter, Facebook, LinkedIn — AI가 콘텐츠를 생성하고 최적 시간에 자동 게시합니다.',
+      bullets: ['6개 플랫폼 동시 게시', 'AI 콘텐츠 자동 생성', '최적 게시 시간 분석', '해시태그 자동 추천'],
+      accentColor: '#EC4899',
+      demo: (v) => <SNSDemo visible={v} />,
+    },
+    {
+      num: '04',
+      title: '쿠팡 파트너스',
+      desc: 'AI가 트렌드 상품을 분석하고 고수익 파트너스 링크를 자동 생성. SNS와 블로그에 자동으로 배포합니다.',
+      bullets: ['AI 상품 추천 분석', '자동 링크 생성/배포', '수익 실시간 추적', '카테고리별 최적화'],
+      accentColor: '#39FF14',
+      demo: (v) => <CoupangDemo visible={v} />,
+    },
+    {
+      num: '05',
+      title: 'WordPress AI 블로그',
+      desc: 'SEO 최적화 블로그 포스트를 AI가 자동 작성하고 WordPress에 바로 발행. 오가닉 트래픽을 자동으로 키웁니다.',
+      bullets: ['SEO 점수 자동 최적화', '키워드 분석 & 적용', '자동 발행 스케줄링', '멀티 언어 지원'],
+      accentColor: '#8B5CF6',
+      demo: (v) => <WordPressDemo visible={v} />,
+    },
+    {
+      num: '06',
+      title: 'CCTV & 트래커',
+      desc: '사무소, 매장, 배송 차량을 실시간 모니터링. AI가 이상 상황을 즉시 감지하고 알림을 발송합니다.',
+      bullets: ['다중 카메라 실시간', 'GPS 위치 추적', 'AI 이상 감지 알림', '모바일 원격 접근'],
+      accentColor: '#FF4444',
+      demo: (v) => <CCTVDemo visible={v} />,
+    },
+  ];
+
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      <div style={{ background: '#000', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', color: 'white' }}>
+        <Nav />
+        <Hero />
+        {features.map((f, i) => <FeatureSection key={i} feature={f} reverse={i % 2 === 1} />)}
+        <StatsSection />
+        <IntegrationsSection />
+        <PricingSection />
+        <CTASection />
+        <Footer />
+      </div>
     </>
   );
 }
