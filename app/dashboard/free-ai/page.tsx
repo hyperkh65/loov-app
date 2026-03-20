@@ -2,13 +2,25 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-const FREE_MODELS = [
-  { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B', emoji: '🦙', desc: 'Meta AI · 빠른 응답' },
-  { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B', emoji: '🌪️', desc: 'Mistral AI · 유럽산 AI' },
-  { id: 'google/gemma-2-9b-it:free', name: 'Gemma 2 9B', emoji: '💎', desc: 'Google · 대화 특화' },
-  { id: 'qwen/qwen-2-7b-instruct:free', name: 'Qwen 2 7B', emoji: '🔮', desc: 'Alibaba · 다국어 강점' },
-  { id: 'microsoft/phi-3-mini-128k-instruct:free', name: 'Phi-3 Mini', emoji: '⚡', desc: 'Microsoft · 초경량' },
+const OLLAMA_CLOUD_MODELS = [
+  { id: 'qwen3.5',          name: 'Qwen 3.5',       emoji: '🔮', desc: '멀티모달 · vision · thinking', badge: 'CLOUD' },
+  { id: 'qwen3',            name: 'Qwen 3',          emoji: '🔮', desc: 'Alibaba · 다국어 강점',        badge: 'CLOUD' },
+  { id: 'qwen3-coder-next', name: 'Qwen 3 Coder',   emoji: '💻', desc: '코딩 특화 · agentic',          badge: 'CLOUD' },
+  { id: 'llama3.3',         name: 'Llama 3.3',       emoji: '🦙', desc: 'Meta AI · 범용',               badge: 'CLOUD' },
+  { id: 'mistral',          name: 'Mistral',          emoji: '🌪️', desc: '유럽산 · 빠른 응답',           badge: 'CLOUD' },
+  { id: 'gemma3',           name: 'Gemma 3',          emoji: '💎', desc: 'Google · 경량 고성능',         badge: 'CLOUD' },
+  { id: 'deepseek-r1',      name: 'DeepSeek R1',      emoji: '🧠', desc: '추론 특화 · 사고과정 표시',    badge: 'CLOUD' },
+  { id: 'phi4',             name: 'Phi 4',            emoji: '⚡', desc: 'Microsoft · 초경량',           badge: 'CLOUD' },
 ];
+
+const OPENROUTER_MODELS = [
+  { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B', emoji: '🦙', desc: 'Meta AI', badge: 'FREE' },
+  { id: 'mistralai/mistral-7b-instruct:free',    name: 'Mistral 7B',   emoji: '🌪️', desc: 'Mistral', badge: 'FREE' },
+  { id: 'google/gemma-2-9b-it:free',             name: 'Gemma 2 9B',   emoji: '💎', desc: 'Google',  badge: 'FREE' },
+  { id: 'qwen/qwen-2-7b-instruct:free',          name: 'Qwen 2 7B',    emoji: '🔮', desc: 'Alibaba', badge: 'FREE' },
+];
+
+const ALL_MODELS = [...OLLAMA_CLOUD_MODELS, ...OPENROUTER_MODELS];
 
 interface Message {
   id: string;
@@ -23,7 +35,7 @@ export default function FreeAIPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(FREE_MODELS[0].id);
+  const [selectedModel, setSelectedModel] = useState(OLLAMA_CLOUD_MODELS[0].id);
   const [currentProvider, setCurrentProvider] = useState<string>('');
   const [currentModel, setCurrentModel] = useState<string>('');
   const [currentEmoji, setCurrentEmoji] = useState<string>('');
@@ -152,17 +164,39 @@ export default function FreeAIPage() {
 
         {/* Model list */}
         <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-          <div className="px-1 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-            OpenRouter 무료 모델
+          <div className="px-1 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+            ☁️ Ollama Cloud
           </div>
-          {FREE_MODELS.map(m => (
+          {OLLAMA_CLOUD_MODELS.map(m => (
             <button
               key={m.id}
               onClick={() => { setSelectedModel(m.id); setShowSidebar(false); }}
               className={`w-full text-left px-3 py-2.5 rounded-xl transition-all ${
-                selectedModel === m.id
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-800'
+                selectedModel === m.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{m.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm truncate">{m.name}</div>
+                  <div className={`text-[10px] truncate ${selectedModel === m.id ? 'text-indigo-200' : 'text-slate-500'}`}>{m.desc}</div>
+                </div>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                  selectedModel === m.id ? 'bg-white/20 text-white' : 'bg-sky-500/20 text-sky-400'
+                }`}>CLOUD</span>
+              </div>
+            </button>
+          ))}
+
+          <div className="px-1 mt-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
+            🔄 OpenRouter 폴백
+          </div>
+          {OPENROUTER_MODELS.map(m => (
+            <button
+              key={m.id}
+              onClick={() => { setSelectedModel(m.id); setShowSidebar(false); }}
+              className={`w-full text-left px-3 py-2.5 rounded-xl transition-all ${
+                selectedModel === m.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -242,7 +276,8 @@ export default function FreeAIPage() {
               <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">무료</span>
             </h1>
             <p className="text-xs text-slate-400 truncate">
-              {FREE_MODELS.find(m => m.id === selectedModel)?.name || 'AI 모델'} · OpenRouter 무료 티어
+              {ALL_MODELS.find(m => m.id === selectedModel)?.name || 'AI 모델'} ·{' '}
+              {OLLAMA_CLOUD_MODELS.find(m => m.id === selectedModel) ? 'Ollama Cloud' : 'OpenRouter'}
             </p>
           </div>
           {messages.length > 0 && (
