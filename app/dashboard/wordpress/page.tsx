@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // ── 타입 ──────────────────────────────────────────────────────────────────────
 
@@ -36,122 +36,254 @@ function injectBodyImages(html: string, urls: string[]): string {
   });
 }
 
-// ── 헬퍼: 썸네일 생성 (클라이언트 Canvas) ─────────────────────────────────────
+// ── 헬퍼: 텍스트 줄바꿈 ────────────────────────────────────────────────────────
 
-const THUMB_THEMES = [
-  { mid: '#0d2d6b', edge: '#020b1f', accent: '#60a5fa', bar: '#3b82f6' },
-  { mid: '#0a2a5c', edge: '#010a18', accent: '#7dd3fc', bar: '#0ea5e9' },
-  { mid: '#0f3460', edge: '#03045e', accent: '#90e0ef', bar: '#0077b6' },
-  { mid: '#1a3a6b', edge: '#0a1628', accent: '#93c5fd', bar: '#2563eb' },
-  { mid: '#0c2461', edge: '#061233', accent: '#bfdbfe', bar: '#1d4ed8' },
-  { mid: '#023e8a', edge: '#03045e', accent: '#ade8f4', bar: '#0096c7' },
-];
+function wrapTextWp(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  let cur = '';
+  for (const ch of text) {
+    const test = cur + ch;
+    if (ctx.measureText(test).width > maxWidth && cur.length > 0) { lines.push(cur); cur = ch; }
+    else cur = test;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
 
-function generateThumbnailFile(title: string): Promise<File> {
-  return new Promise((resolve) => {
+// ── 헬퍼: Blogger 스타일 대표이미지 생성 (배경이미지 + 오버레이) ────────────────
+
+async function generateBloggerThumbFile(
+  mainTitle: string,
+  subTitle: string,
+  bgSrc: string,
+  colorScheme: 'dark' | 'blue' | 'green' = 'dark',
+): Promise<File> {
+  return new Promise(async (resolve, reject) => {
     const canvas = document.createElement('canvas');
-    canvas.width = 1080;
-    canvas.height = 1080;
+    canvas.width = 1080; canvas.height = 1080;
     const ctx = canvas.getContext('2d')!;
-    const W = 1080, H = 1080;
 
-    const theme = THUMB_THEMES[Math.floor(Math.random() * THUMB_THEMES.length)];
-
-    // 방사형 배경 (진한 파란색 계열)
-    const bg = ctx.createRadialGradient(W / 2, H * 0.42, 80, W / 2, H / 2, W * 0.82);
-    bg.addColorStop(0, theme.mid);
-    bg.addColorStop(0.6, theme.edge);
-    bg.addColorStop(1, theme.edge);
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-
-    // 비네트 (사방 어둡게)
-    const vig = ctx.createRadialGradient(W / 2, H / 2, 200, W / 2, H / 2, W * 0.78);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.72)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, W, H);
-
-    // 중앙 블루 글로우
-    const glow = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, 460);
-    glow.addColorStop(0, theme.accent + '18');
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, W, H);
-
-    // 상단 바 (파란색 그라디언트)
-    const topBar = ctx.createLinearGradient(0, 0, W, 0);
-    topBar.addColorStop(0, 'rgba(0,0,0,0)');
-    topBar.addColorStop(0.2, theme.bar);
-    topBar.addColorStop(0.5, theme.accent);
-    topBar.addColorStop(0.8, theme.bar);
-    topBar.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = topBar;
-    ctx.fillRect(0, 0, W, 6);
-
-    // 하단 바
-    ctx.fillStyle = topBar;
-    ctx.fillRect(0, H - 6, W, 6);
-
-    // 상단 장식 박스 (반투명 흰색 테두리 라인)
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(52, 52, W - 104, H - 104);
-
-    // 내부 중앙 수평 구분선 (상/하)
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(100, 280); ctx.lineTo(W - 100, 280); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(100, H - 280); ctx.lineTo(W - 100, H - 280); ctx.stroke();
-
-    // 좌우 액센트 세로선
-    ctx.strokeStyle = theme.accent + '40';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(80, 120); ctx.lineTo(80, H - 120); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(W - 80, 120); ctx.lineTo(W - 80, H - 120); ctx.stroke();
-
-    // 제목 텍스트
-    const fontSize = title.length > 16 ? 78 : title.length > 10 ? 90 : 100;
-    const lineH = fontSize * 1.3;
-    ctx.font = `900 ${fontSize}px "Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-
-    // 줄바꿈 처리
-    const maxW = 880;
-    const words = title.split(' ');
-    const lines: string[] = [];
-    let cur = '';
-    for (const w of words) {
-      const test = cur ? `${cur} ${w}` : w;
-      if (ctx.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; }
-      else cur = test;
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = bgSrc.startsWith('http') ? `/api/proxy-image?url=${encodeURIComponent(bgSrc)}` : bgSrc;
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error('배경 이미지 로드 실패'));
+        setTimeout(() => rej(new Error('타임아웃')), 15000);
+      });
+      const scale = Math.max(1080 / img.naturalWidth, 1080 / img.naturalHeight);
+      ctx.drawImage(img, (1080 - img.naturalWidth * scale) / 2, (1080 - img.naturalHeight * scale) / 2, img.naturalWidth * scale, img.naturalHeight * scale);
+    } catch {
+      // 배경 이미지 실패 시 진한 그라디언트
+      const bg = ctx.createLinearGradient(0, 0, 0, 1080);
+      bg.addColorStop(0, '#0d1b2a'); bg.addColorStop(1, '#0a0f1e');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, 1080, 1080);
     }
-    if (cur) lines.push(cur);
 
-    const totalH = lines.length * lineH;
-    const startY = (H - totalH) / 2 + lineH / 2;
+    // 오버레이
+    const grad = ctx.createLinearGradient(0, 0, 0, 1080);
+    if (colorScheme === 'blue') {
+      grad.addColorStop(0, 'rgba(0,10,40,0.50)'); grad.addColorStop(0.5, 'rgba(0,15,50,0.65)'); grad.addColorStop(1, 'rgba(0,10,40,0.55)');
+    } else if (colorScheme === 'green') {
+      grad.addColorStop(0, 'rgba(0,20,10,0.50)'); grad.addColorStop(0.5, 'rgba(0,25,15,0.65)'); grad.addColorStop(1, 'rgba(0,20,10,0.55)');
+    } else {
+      grad.addColorStop(0, 'rgba(0,0,0,0.48)'); grad.addColorStop(0.5, 'rgba(0,0,0,0.62)'); grad.addColorStop(1, 'rgba(0,0,0,0.52)');
+    }
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, 1080, 1080);
 
-    // 파란 글로우 외곽선
-    ctx.strokeStyle = theme.accent + 'bb';
-    ctx.lineWidth = 4;
-    ctx.shadowColor = theme.accent;
-    ctx.shadowBlur = 30;
-    ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-    lines.forEach((line, i) => ctx.strokeText(line, W / 2, startY + i * lineH));
+    // 비네팅
+    const vig = ctx.createRadialGradient(540, 540, 300, 540, 540, 760);
+    vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = vig; ctx.fillRect(0, 0, 1080, 1080);
 
-    // 흰색 텍스트
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0,10,40,0.95)';
-    ctx.shadowBlur = 24;
-    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 3;
-    lines.forEach((line, i) => ctx.fillText(line, W / 2, startY + i * lineH));
+    // 골드 바
+    ctx.fillStyle = '#f0b429'; ctx.fillRect(0, 0, 1080, 10); ctx.fillRect(0, 1070, 1080, 10);
+
+    // 텍스트 렌더 헬퍼
+    const drawText = (text: string, x: number, y: number, size: number) => {
+      ctx.font = `bold ${size}px "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif`;
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = 45; ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      for (let i = 0; i < 6; i++) ctx.fillText(text, x, y); ctx.restore();
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,1)'; ctx.shadowBlur = 18; ctx.fillStyle = 'rgba(20,20,20,0.8)';
+      for (let i = 0; i < 3; i++) ctx.fillText(text, x, y); ctx.restore();
+      ctx.save(); ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.fillText(text, x, y); ctx.restore();
+    };
+
+    // 메인 제목
+    const fontSize = mainTitle.length <= 8 ? 120 : mainTitle.length <= 14 ? 100 : mainTitle.length <= 20 ? 86 : 72;
+    ctx.font = `bold ${fontSize}px "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const lines = wrapTextWp(ctx, mainTitle, 960);
+    const lh = fontSize * 1.3;
+    const subH = subTitle ? 80 : 0;
+    const totalH = lines.length * lh + subH + (subTitle ? 30 : 0);
+    const startY = (1080 - totalH) / 2;
+    lines.forEach((line, i) => drawText(line, 540, startY + i * lh + lh / 2, fontSize));
+
+    // 서브 제목
+    if (subTitle) {
+      const subY = startY + lines.length * lh + 45;
+      const subColor = colorScheme === 'green' ? '#86efac' : colorScheme === 'blue' ? '#93c5fd' : '#e2e8f0';
+      ctx.font = `bold 54px "Apple SD Gothic Neo","Malgun Gothic",sans-serif`;
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = 30; ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      for (let i = 0; i < 5; i++) ctx.fillText(subTitle, 540, subY); ctx.restore();
+      ctx.save(); ctx.shadowBlur = 0; ctx.fillStyle = subColor; ctx.fillText(subTitle, 540, subY); ctx.restore();
+    }
 
     canvas.toBlob((blob) => {
-      resolve(new File([blob!], `thumb_${Date.now()}.png`, { type: 'image/png' }));
+      if (!blob) return reject(new Error('canvas blob 실패'));
+      resolve(new File([blob], `thumb_${Date.now()}.png`, { type: 'image/png' }));
     }, 'image/png');
   });
+}
+
+// ── 수동 대표이미지 생성기 컴포넌트 ──────────────────────────────────────────────
+
+interface WpThumbnailGeneratorProps {
+  defaultTitle: string;
+  onSetAsFeatured: (file: File, previewUrl: string) => void;
+}
+
+function WpThumbnailGenerator({ defaultTitle, onSetAsFeatured }: WpThumbnailGeneratorProps) {
+  const [bgQuery, setBgQuery] = useState('');
+  const [bgImages, setBgImages] = useState<{ id: number; url: string; thumb: string }[]>([]);
+  const [bgLoading, setBgLoading] = useState(false);
+  const [selectedBg, setSelectedBg] = useState('');
+  const [mainTitle, setMainTitle] = useState('');
+  const [subTitle, setSubTitle] = useState('');
+  const [colorScheme, setColorScheme] = useState<'dark' | 'blue' | 'green'>('dark');
+  const [generating, setGenerating] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (defaultTitle && !mainTitle) {
+      if (defaultTitle.length > 20) {
+        const mid = Math.ceil(defaultTitle.length * 0.6);
+        setMainTitle(defaultTitle.slice(0, mid));
+        setSubTitle(defaultTitle.slice(mid));
+      } else {
+        setMainTitle(defaultTitle);
+      }
+    }
+  }, [defaultTitle]); // eslint-disable-line
+
+  async function searchBg() {
+    const q = bgQuery || defaultTitle;
+    if (!q) return;
+    setBgLoading(true);
+    try {
+      const res = await fetch(`/api/shorts/images?q=${encodeURIComponent(q)}&source=pixabay&per_page=9`);
+      const data = await res.json();
+      setBgImages((data.images || []).map((img: { id: number; url: string; thumb: string }) => ({ id: img.id, url: img.url, thumb: img.thumb })));
+    } finally { setBgLoading(false); }
+  }
+
+  async function handleGenerate() {
+    if (!selectedBg || !mainTitle) { alert('배경 이미지와 메인 제목을 입력하세요.'); return; }
+    setGenerating(true);
+    try {
+      const file = await generateBloggerThumbFile(mainTitle, subTitle, selectedBg, colorScheme);
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      // 숨김 canvas에 미리보기도 렌더 (canvasRef 활용)
+      if (canvasRef.current) {
+        const img = new Image(); img.src = url;
+        img.onload = () => { const c = canvasRef.current!; const ctx = c.getContext('2d')!; c.width = 1080; c.height = 1080; ctx.drawImage(img, 0, 0); };
+      }
+    } catch (e) { alert('생성 오류: ' + String(e)); }
+    finally { setGenerating(false); }
+  }
+
+  return (
+    <div className="border border-orange-200 bg-orange-50 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-bold text-orange-700">🖼️ 대표이미지 생성기</span>
+        <div className="flex gap-1.5">
+          {(['dark', 'blue', 'green'] as const).map(c => (
+            <button key={c} onClick={() => setColorScheme(c)}
+              className={`w-5 h-5 rounded-full border-2 transition-all ${colorScheme === c ? 'border-orange-500 scale-125' : 'border-transparent'} ${c === 'dark' ? 'bg-gray-800' : c === 'blue' ? 'bg-blue-800' : 'bg-green-800'}`} />
+          ))}
+        </div>
+      </div>
+
+      {/* 배경 이미지 검색 */}
+      <div>
+        <div className="flex gap-2 mb-2">
+          <input type="text" value={bgQuery} onChange={e => setBgQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && searchBg()}
+            placeholder={defaultTitle || '배경 이미지 검색 (영어 권장)'}
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-400 bg-white" />
+          <button onClick={searchBg} disabled={bgLoading}
+            className="bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-xl">
+            {bgLoading ? '...' : '검색'}
+          </button>
+          <button onClick={() => fileInputRef.current?.click()}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded-xl" title="직접 업로드">⬆️</button>
+        </div>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) { const r = new FileReader(); r.onload = ev => { if (ev.target?.result) setSelectedBg(ev.target.result as string); }; r.readAsDataURL(f); }
+          }} />
+        {bgImages.length > 0 && (
+          <div className="grid grid-cols-3 gap-1.5">
+            {bgImages.map(img => (
+              <button key={img.id} onClick={() => setSelectedBg(img.url)}
+                className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${selectedBg === img.url ? 'border-orange-500 ring-2 ring-orange-400' : 'border-transparent hover:border-gray-300'}`}>
+                <img src={img.thumb} alt="" className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedBg && bgImages.length === 0 && <p className="text-xs text-green-600 mt-1">✅ 배경 이미지 선택됨</p>}
+      </div>
+
+      {/* 제목 입력 */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">메인 제목 (크게)</label>
+          <textarea value={mainTitle} onChange={e => setMainTitle(e.target.value)} rows={2}
+            placeholder="예: 월급만으론&#10;부족하다면?" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-400 resize-none bg-white" />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">서브 제목 (작게, 선택)</label>
+          <textarea value={subTitle} onChange={e => setSubTitle(e.target.value)} rows={2}
+            placeholder="예: 월배당 ETF 전략" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-400 resize-none bg-white" />
+        </div>
+      </div>
+
+      <canvas ref={canvasRef} className="hidden" />
+
+      <button onClick={handleGenerate} disabled={generating || !selectedBg || !mainTitle}
+        className="w-full bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+        {generating ? '생성 중...' : '✨ 대표이미지 생성'}
+      </button>
+
+      {previewUrl && (
+        <div className="space-y-2">
+          <img src={previewUrl} alt="preview" className="w-full max-w-[200px] mx-auto rounded-xl border border-orange-200 block" />
+          <div className="flex gap-2">
+            <a href={previewUrl} download={`wp_thumb_${Date.now()}.png`}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2 rounded-xl text-center transition-colors">
+              ⬇️ 다운로드
+            </a>
+            <button onClick={async () => {
+              const res = await fetch(previewUrl);
+              const blob = await res.blob();
+              const file = new File([blob], `wp_thumb_${Date.now()}.png`, { type: 'image/png' });
+              onSetAsFeatured(file, previewUrl);
+            }}
+              className="flex-1 bg-orange-500 hover:bg-orange-400 text-white text-sm font-semibold py-2 rounded-xl transition-colors">
+              ★ 대표이미지로 설정
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
@@ -194,6 +326,9 @@ export default function WordPressPage() {
   const [autoStep, setAutoStep] = useState('');
   const [snsHook, setSnsHook] = useState('');
   const [snsResults, setSnsResults] = useState<{ platform: string; success: boolean; error?: string }[] | null>(null);
+
+  // 대표이미지 생성기
+  const [showThumbGen, setShowThumbGen] = useState(false);
 
   // 이미지
   const [imageFiles, setImageFiles] = useState<File[]>([]);
@@ -292,8 +427,16 @@ export default function WordPressPage() {
     setTags((genData.tags as string[] | undefined)?.join(', ') || tags);
     setSnsHook((genData.snsHook as string) || '');
 
+    setAutoStep('🖼️ 배경 이미지 검색 중...');
+    let bgUrl = '';
+    try {
+      const bgRes = await fetch(`/api/shorts/images?q=${encodeURIComponent(thumbTitle)}&source=pixabay&per_page=3`);
+      const bgData = await bgRes.json();
+      bgUrl = bgData.images?.[0]?.url || '';
+    } catch { /* 실패 시 단색 배경 */ }
+
     setAutoStep('🖼️ 대표이미지 생성 중...');
-    const thumbFile = await generateThumbnailFile(thumbTitle);
+    const thumbFile = await generateBloggerThumbFile(thumbTitle, '', bgUrl, 'dark');
 
     // 썸네일을 첫 번째 이미지로 설정
     setImageFiles((prev) => [thumbFile, ...prev.filter((_, i) => i !== 0)]);
@@ -484,11 +627,34 @@ export default function WordPressPage() {
                     <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="맛집, 추천 (쉼표 구분)" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
                   </div>
                   <div className="col-span-2">
-                    <label className="text-xs font-semibold text-gray-500 block mb-1.5">
-                      이미지 선택 <span className="font-normal text-gray-400 ml-1">① 대표이미지, ②③… 소제목 순서 자동 배치</span>
-                    </label>
+                    {/* 대표이미지 생성기 토글 */}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-semibold text-gray-500">
+                        이미지 선택 <span className="font-normal text-gray-400 ml-1">① 대표이미지, ②③… 소제목 순서 자동 배치</span>
+                      </label>
+                      <button onClick={() => setShowThumbGen(v => !v)}
+                        className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${showThumbGen ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-600 hover:bg-orange-200'}`}>
+                        🖼️ 대표이미지 생성기
+                      </button>
+                    </div>
+                    {showThumbGen && (
+                      <div className="mb-3">
+                        <WpThumbnailGenerator
+                          defaultTitle={title}
+                          onSetAsFeatured={(file, previewUrl) => {
+                            setImageFiles(prev => [file, ...prev.filter((_, i) => i !== 0)]);
+                            setImagePreviews(prev => {
+                              const rest = prev.filter((_, i) => i !== 0);
+                              return [previewUrl, ...rest];
+                            });
+                            resetUpload();
+                            setShowThumbGen(false);
+                          }}
+                        />
+                      </div>
+                    )}
                     <label className="flex items-center gap-2 cursor-pointer border-2 border-dashed border-gray-200 rounded-xl px-4 py-3 hover:border-indigo-300 transition-colors">
-                      <span className="text-sm">🖼️</span><span className="text-sm text-gray-400">이미지 파일 선택 (여러 개 가능)</span>
+                      <span className="text-sm">🖼️</span><span className="text-sm text-gray-400">이미지 파일 직접 선택 (여러 개 가능)</span>
                       <input type="file" multiple accept="image/*" onChange={handleImagesChange} className="hidden" />
                     </label>
                     {imagePreviews.length > 0 && (
