@@ -970,11 +970,22 @@ export default function SettingsPage() {
               {googleConnected ? `연결됨 — ${googleEmail}` : '미연결'}
             </div>
 
-            {googleMsg && (
+            {googleMsg && googleMsg === '__TOKEN_EXPIRED__' ? (
+              <div className="px-4 py-3 rounded-xl text-sm bg-amber-50 border border-amber-200 text-amber-800 space-y-2">
+                <div className="font-semibold">⚠️ Google 인증이 만료되었습니다</div>
+                <div className="text-xs text-amber-600">Google OAuth 토큰이 만료됐습니다 (테스트 앱은 7일마다 만료). 재연결이 필요합니다.</div>
+                <button
+                  onClick={() => { window.location.href = '/api/google/connect'; }}
+                  className="w-full py-2 rounded-lg font-bold text-sm bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center justify-center gap-2"
+                >
+                  🔄 Google 재연결
+                </button>
+              </div>
+            ) : googleMsg ? (
               <div className={`px-4 py-3 rounded-xl text-sm ${
                 googleMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
               }`}>{googleMsg}</div>
-            )}
+            ) : null}
 
             {/* 연결/해제 */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
@@ -1027,7 +1038,12 @@ export default function SettingsPage() {
                               if (data.exported !== undefined) parts.push(`내보냄 ${data.exported}건`);
                               setGoogleMsg(`✅ 동기화 완료 — ${parts.join(', ')}`);
                             } else {
-                              setGoogleMsg(`오류: ${data.error || '동기화 실패'}`);
+                              const isTokenError = data.error?.includes('Token refresh failed') || data.error?.includes('token');
+                              if (isTokenError) {
+                                setGoogleMsg('__TOKEN_EXPIRED__');
+                              } else {
+                                setGoogleMsg(`오류: ${data.error || '동기화 실패'}`);
+                              }
                             }
                           } finally {
                             setGoogleSyncing(false);
