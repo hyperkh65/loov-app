@@ -61,6 +61,7 @@ export default function TrackerPage() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const noSleepVideoRef = useRef<HTMLVideoElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioKeepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string>(generateSessionId());
   const sessionStartRef = useRef<number>(0);
   const watchIdRef = useRef<number | null>(null);
@@ -226,6 +227,10 @@ export default function TrackerPage() {
       gain.gain.value = 0.001;
       osc.connect(gain); gain.connect(ctx.destination);
       osc.start(); ctx.resume().catch(() => {});
+      // 5초마다 resume (iOS suspended 상태 자동 복구)
+      audioKeepAliveRef.current = setInterval(() => {
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      }, 5_000);
     } catch { /* ignore */ }
 
     if (navigator.geolocation) {
@@ -243,7 +248,7 @@ export default function TrackerPage() {
   useEffect(() => {
     const handle = () => {
       if (document.visibilityState === 'visible' && phase === 'active') {
-        // AudioContext 재개 (iOS 백그라운드 후 suspended 복구)
+        // AudioContext 즉시 재개
         audioCtxRef.current?.resume().catch(() => {});
         // WakeLock 재요청
         requestWakeLock();
@@ -265,6 +270,7 @@ export default function TrackerPage() {
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
       wakeLockRef.current?.release();
+      if (audioKeepAliveRef.current) clearInterval(audioKeepAliveRef.current);
       if (noSleepVideoRef.current) { noSleepVideoRef.current.pause(); noSleepVideoRef.current.remove(); }
       audioCtxRef.current?.close().catch(() => {});
     };
