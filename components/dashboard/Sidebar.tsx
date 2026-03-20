@@ -13,6 +13,7 @@ const NAV_GROUPS = [
       { href: '/dashboard',           icon: '🏠', label: '대시보드' },
       { href: '/dashboard/directives', icon: '📋', label: '대표 지시사항' },
       { href: '/dashboard/chat',       icon: '💬', label: '채팅 센터' },
+      { href: '/dashboard/free-ai',    icon: '🆓', label: '무료AI 체험하기' },
       { href: '/dashboard/schedule',   icon: '📅', label: '스케줄' },
     ],
   },
