@@ -59,6 +59,8 @@ export default function TrackerPage() {
   const [waveform, setWaveform] = useState<number[]>(Array(20).fill(4));
 
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const noSleepVideoRef = useRef<HTMLVideoElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const sessionIdRef = useRef<string>(generateSessionId());
   const sessionStartRef = useRef<number>(0);
   const watchIdRef = useRef<number | null>(null);
@@ -138,6 +140,27 @@ export default function TrackerPage() {
     } catch { /* ignore */ }
   };
 
+  // iOS Safari용 화면 잠금 방지: 1×1 canvas stream을 video로 재생
+  const startNoSleep = () => {
+    try {
+      if (noSleepVideoRef.current) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = 1; canvas.height = 1;
+      const ctx2d = canvas.getContext('2d');
+      if (ctx2d) ctx2d.fillRect(0, 0, 1, 1);
+      const stream = canvas.captureStream(1);
+      const vid = document.createElement('video');
+      vid.setAttribute('playsinline', '');
+      vid.setAttribute('loop', '');
+      vid.muted = true;
+      vid.srcObject = stream;
+      vid.style.cssText = 'position:fixed;width:1px;height:1px;top:-1px;left:-1px;opacity:0.01;pointer-events:none;z-index:-1';
+      document.body.appendChild(vid);
+      noSleepVideoRef.current = vid;
+      vid.play().catch(() => {});
+    } catch { /* ignore */ }
+  };
+
   const handleClockTap = () => {
     const next = clockTaps + 1;
     setClockTaps(next);
@@ -189,6 +212,7 @@ export default function TrackerPage() {
 
   const startTracking = useCallback(async () => {
     await requestWakeLock();
+    startNoSleep();
     requestFullscreen();
     sessionStartRef.current = Date.now();
     sessionIdRef.current = generateSessionId();
@@ -196,6 +220,7 @@ export default function TrackerPage() {
     // AudioContext keep-alive
     try {
       const ctx = new AudioContext();
+      audioCtxRef.current = ctx;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       gain.gain.value = 0.001;
@@ -218,12 +243,18 @@ export default function TrackerPage() {
   useEffect(() => {
     const handle = () => {
       if (document.visibilityState === 'visible' && phase === 'active') {
+        // AudioContext 재개 (iOS 백그라운드 후 suspended 복구)
+        audioCtxRef.current?.resume().catch(() => {});
+        // WakeLock 재요청
+        requestWakeLock();
+        // noSleep 비디오 재생 재개
+        noSleepVideoRef.current?.play().catch(() => {});
+        // GPS 재시작
         if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = navigator.geolocation.watchPosition(
           sendLocation, (e) => console.error(e),
           { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
         );
-        requestWakeLock();
       }
     };
     document.addEventListener('visibilitychange', handle);
@@ -234,6 +265,8 @@ export default function TrackerPage() {
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
       wakeLockRef.current?.release();
+      if (noSleepVideoRef.current) { noSleepVideoRef.current.pause(); noSleepVideoRef.current.remove(); }
+      audioCtxRef.current?.close().catch(() => {});
     };
   }, []);
 

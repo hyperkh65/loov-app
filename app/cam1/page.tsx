@@ -54,6 +54,9 @@ export default function Cam1Page() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const channelRef = useRef<any>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const noSleepVideoRef = useRef<HTMLVideoElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recChunksRef = useRef<Blob[]>([]);
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,6 +80,35 @@ export default function Cam1Page() {
         wakeLockRef.current = await (navigator as Navigator & { wakeLock: { request: (t: string) => Promise<WakeLockSentinel> } }).wakeLock.request('screen');
       }
     } catch { /* ignore */ }
+  };
+
+  // iOS Safari용 화면 잠금 방지: 1×1 canvas stream을 video로 재생
+  const startNoSleep = () => {
+    try {
+      if (noSleepVideoRef.current) return; // 이미 실행 중
+      const canvas = document.createElement('canvas');
+      canvas.width = 1; canvas.height = 1;
+      const ctx2d = canvas.getContext('2d');
+      if (ctx2d) ctx2d.fillRect(0, 0, 1, 1);
+      const stream = canvas.captureStream(1);
+      const vid = document.createElement('video');
+      vid.setAttribute('playsinline', '');
+      vid.setAttribute('loop', '');
+      vid.muted = true;
+      vid.srcObject = stream;
+      vid.style.cssText = 'position:fixed;width:1px;height:1px;top:-1px;left:-1px;opacity:0.01;pointer-events:none;z-index:-1';
+      document.body.appendChild(vid);
+      noSleepVideoRef.current = vid;
+      vid.play().catch(() => {});
+    } catch { /* ignore */ }
+  };
+
+  const stopNoSleep = () => {
+    if (noSleepVideoRef.current) {
+      noSleepVideoRef.current.pause();
+      noSleepVideoRef.current.remove();
+      noSleepVideoRef.current = null;
+    }
   };
 
   // iOS Safari는 webm 미지원 → mp4 우선 시도
@@ -189,6 +221,7 @@ export default function Cam1Page() {
 
   const startCamera = useCallback(async () => {
     await requestWakeLock();
+    startNoSleep();
     requestFullscreen();
 
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -205,6 +238,7 @@ export default function Cam1Page() {
     // iOS 백그라운드 방지: 오디오를 극소 볼륨으로 출력 (페이지 살아있게)
     try {
       const keepAliveCtx = new AudioContext();
+      audioCtxRef.current = keepAliveCtx;
       const src = keepAliveCtx.createMediaStreamSource(stream);
       const gain = keepAliveCtx.createGain();
       gain.gain.value = 0.001; // 거의 무음이지만 0이 아님
@@ -251,25 +285,40 @@ export default function Cam1Page() {
     await pc.setLocalDescription(offer);
     ch.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });
 
+    // Supabase 채널 heartbeat (25초마다 ping → WebSocket 연결 유지)
+    heartbeatRef.current = setInterval(() => {
+      ch.send({ type: 'broadcast', event: 'cam-ping', payload: { ts: Date.now() } });
+    }, 25_000);
+
     startRecording(stream);
   }, [startRecording]);
 
   const stopCamera = useCallback(() => {
     stopRecording();
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     localStreamRef.current?.getTracks().forEach(t => t.stop());
     pcRef.current?.close();
     channelRef.current?.unsubscribe();
     wakeLockRef.current?.release();
+    stopNoSleep();
+    audioCtxRef.current?.close().catch(() => {});
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     setIsStreaming(false);
     setViewerConnected(false);
     setPhase('lock');
   }, [stopRecording]);
 
-  // iOS 백그라운드에서 돌아왔을 때 MediaRecorder 재시작
+  // iOS 백그라운드에서 돌아왔을 때 재시작
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && isRecordingRef.current) {
+        // AudioContext 재개 (iOS 백그라운드 후 suspended 상태 복구)
+        audioCtxRef.current?.resume().catch(() => {});
+        // WakeLock 재요청 (화면 잠금 해제 후 재활성화)
+        requestWakeLock();
+        // noSleep 비디오 재생 재개
+        noSleepVideoRef.current?.play().catch(() => {});
+        // MediaRecorder 재시작
         if (mediaRecorderRef.current?.state === 'inactive' && localStreamRef.current) {
           startChunk(localStreamRef.current);
         }
