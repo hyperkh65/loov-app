@@ -45,8 +45,16 @@ export default function FreeAIPage() {
   const [ollamaUrl, setOllamaUrl] = useState('');
   const [ollamaModel, setOllamaModel] = useState('llama3.2');
   const [showSidebar, setShowSidebar] = useState(false);
+  const [ollamaApiKey, setOllamaApiKey] = useState('');
+  const [openrouterApiKey, setOpenrouterApiKey] = useState('');
+  const [showApiKeys, setShowApiKeys] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setOllamaApiKey(localStorage.getItem('freeai_ollama_key') || '');
+    setOpenrouterApiKey(localStorage.getItem('freeai_openrouter_key') || '');
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -78,6 +86,8 @@ export default function FreeAIPage() {
           model: selectedModel,
           ollamaUrl: ollamaUrl || undefined,
           ollamaModel: ollamaModel || undefined,
+          clientOllamaKey: ollamaApiKey || undefined,
+          clientOpenrouterKey: openrouterApiKey || undefined,
         }),
       });
 
@@ -239,8 +249,48 @@ export default function FreeAIPage() {
           </div>
         </div>
 
-        {/* Settings toggle */}
-        <div className="p-3 border-t border-slate-700/50">
+        {/* API Key settings */}
+        <div className="p-3 border-t border-slate-700/50 space-y-1">
+          <button
+            onClick={() => setShowApiKeys(!showApiKeys)}
+            className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2"
+          >
+            <span>🔑</span>
+            <span>API 키 설정</span>
+            <span className="ml-auto">{showApiKeys ? '▲' : '▼'}</span>
+          </button>
+          {showApiKeys && (
+            <div className="space-y-2 px-1">
+              <div>
+                <label className="text-[10px] text-slate-500 px-1 mb-1 block">☁️ Ollama Cloud Key</label>
+                <input
+                  type="password"
+                  placeholder="ollama cloud api key..."
+                  value={ollamaApiKey}
+                  onChange={e => {
+                    setOllamaApiKey(e.target.value);
+                    localStorage.setItem('freeai_ollama_key', e.target.value);
+                  }}
+                  className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 px-1 mb-1 block">🔄 OpenRouter Key</label>
+                <input
+                  type="password"
+                  placeholder="sk-or-..."
+                  value={openrouterApiKey}
+                  onChange={e => {
+                    setOpenrouterApiKey(e.target.value);
+                    localStorage.setItem('freeai_openrouter_key', e.target.value);
+                  }}
+                  className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="text-[10px] text-slate-600 px-1">키는 브라우저에만 저장됩니다</div>
+            </div>
+          )}
+
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2"
