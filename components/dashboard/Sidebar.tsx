@@ -66,6 +66,7 @@ const NAV_GROUPS = [
   {
     label: '자동화',
     items: [
+      { href: '/dashboard/x-collect',  icon: '🐦', label: 'X 수집 / SNS 발행' },
       { href: '/dashboard/automation', icon: '🤖', label: 'n8n 자동화 관리' },
       { href: '/dashboard/nas',        icon: '🖥️', label: '시놀로지 NAS' },
       { href: '/dashboard/cctv',       icon: '📷', label: 'CCTV 뷰어' },
