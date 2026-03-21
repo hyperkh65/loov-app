@@ -19,7 +19,7 @@ function isVideoUrl(url: string): boolean {
 
 /** Threads child 컨테이너가 FINISHED 될 때까지 폴링 (최대 30초) */
 async function waitThreadsContainerFinished(containerId: string, accessToken: string): Promise<boolean> {
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 3000));
     try {
       const res = await fetch(
@@ -131,6 +131,8 @@ export async function postToThreadsWithMedia(
 ): Promise<{ id: string }> {
   let containerBody: Record<string, unknown>;
 
+  let needsWait = false;
+
   if (mediaUrls?.length === 1) {
     const isVideo = isVideoUrl(mediaUrls[0]);
     containerBody = {
@@ -139,25 +141,38 @@ export async function postToThreadsWithMedia(
       text: content.substring(0, 500),
       access_token: accessToken,
     };
+    // 영상은 반드시 처리 완료 대기 필요
+    needsWait = isVideo;
   } else if (mediaUrls && mediaUrls.length > 1) {
     const childIds: string[] = [];
     for (const url of mediaUrls.slice(0, 10)) {
+      const isVideo = isVideoUrl(url);
       const cr = await fetch(`https://graph.threads.net/v1.0/${userId}/threads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ media_type: 'IMAGE', image_url: url, is_carousel_item: true, access_token: accessToken }),
+        body: JSON.stringify({
+          media_type: isVideo ? 'VIDEO' : 'IMAGE',
+          [isVideo ? 'video_url' : 'image_url']: url,
+          is_carousel_item: true,
+          access_token: accessToken,
+        }),
       });
       if (!cr.ok) continue;
       const { id: childId } = await cr.json();
-      // Threads 스펙상 child 컨테이너가 FINISHED 상태가 될 때까지 대기 필요
       const ready = await waitThreadsContainerFinished(childId, accessToken);
       if (ready) childIds.push(childId);
     }
     if (childIds.length === 0) {
-      // 이미지가 모두 실패하면 텍스트로 폴백
       containerBody = { media_type: 'TEXT', text: content.substring(0, 500), access_token: accessToken };
     } else if (childIds.length === 1) {
-      containerBody = { media_type: 'IMAGE', image_url: mediaUrls[0], text: content.substring(0, 500), access_token: accessToken };
+      const isVideo = isVideoUrl(mediaUrls[0]);
+      containerBody = {
+        media_type: isVideo ? 'VIDEO' : 'IMAGE',
+        [isVideo ? 'video_url' : 'image_url']: mediaUrls[0],
+        text: content.substring(0, 500),
+        access_token: accessToken,
+      };
+      needsWait = isVideo;
     } else {
       containerBody = { media_type: 'CAROUSEL', children: childIds.join(','), text: content.substring(0, 500), access_token: accessToken };
     }
@@ -172,6 +187,12 @@ export async function postToThreadsWithMedia(
   });
   if (!createRes.ok) throw new Error(`Threads 컨테이너 생성 실패: ${await createRes.text()}`);
   const { id: containerId } = await createRes.json();
+
+  // 영상은 Threads 서버가 처리 완료할 때까지 대기 (필수)
+  if (needsWait) {
+    const ready = await waitThreadsContainerFinished(containerId, accessToken);
+    if (!ready) throw new Error('Threads 영상 처리 타임아웃 (30초 초과) — 잠시 후 재시도하세요');
+  }
 
   const publishRes = await fetch(`https://graph.threads.net/v1.0/${userId}/threads_publish`, {
     method: 'POST',
