@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import type { Platform } from '@/lib/sns/platforms';
 
+// 영상 처리 대기 시간 때문에 최대 120초 허용
+export const maxDuration = 120;
+
 interface ThreadItem {
   content: string;
   media_urls?: string[];
