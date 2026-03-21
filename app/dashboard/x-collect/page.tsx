@@ -187,17 +187,17 @@ export default function XCollectPage() {
     setAiLoading(true);
     setEditedText('');
 
-    const prompt = `다음 X(트위터) 게시물을 SNS 발행용으로 한국어로 번역/재작성해줘.
+    const prompt = `다음 X(트위터) 게시물 내용을 SNS 발행용으로 한국어로 번역/재작성해줘.
 
-제목: ${selectedPage.title}
-URL: ${selectedPage.url}
+원문 내용: ${selectedPage.title}
 
 조건:
 - 자연스러운 한국어, 짧고 임팩트있게
 - 해시태그 3~5개
-- 이모지 활용
-- 마지막에 원본 URL 포함
-- 글자수 300자 이내`;
+- 이모지 적극 활용
+- URL 링크는 절대 포함하지 마
+- 글자수 200자 이내
+- 텍스트만 출력, 부연설명 없이`;
 
     try {
       const res = await fetch('/api/free-ai/chat', {
