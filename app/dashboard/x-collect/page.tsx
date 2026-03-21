@@ -20,24 +20,23 @@ interface NotionPage {
   title: string;
   url: string;
   coverUrl?: string;
-  created_time?: string;
-  properties?: Record<string, unknown>;
+  last_edited?: string;
+}
+
+interface MediaItem {
+  type: 'image' | 'video';
+  url: string;
 }
 
 interface SnsConnection {
   platform: string;
   platform_display_name: string;
-  platform_avatar: string | null;
   is_active: boolean;
 }
 
 const PLATFORM_ICONS: Record<string, string> = {
-  twitter: '𝕏',
-  instagram: '📸',
-  facebook: '📘',
-  threads: '🧵',
-  linkedin: '💼',
-  youtube: '▶️',
+  twitter: '𝕏', instagram: '📸', facebook: '📘',
+  threads: '🧵', linkedin: '💼', youtube: '▶️',
 };
 
 const COUNT_OPTIONS = [
@@ -47,7 +46,7 @@ const COUNT_OPTIONS = [
   { label: '전체', value: 0 },
 ];
 
-const OLLAMA_MODELS = [
+const AI_MODELS = [
   { id: 'qwen3', name: 'Qwen 3', emoji: '🔮' },
   { id: 'llama3.3', name: 'Llama 3.3', emoji: '🦙' },
   { id: 'mistral', name: 'Mistral', emoji: '🌪️' },
@@ -72,14 +71,16 @@ export default function XCollectPage() {
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pages, setPages] = useState<NotionPage[]>([]);
   const [selectedPage, setSelectedPage] = useState<NotionPage | null>(null);
+  const [pageMedia, setPageMedia] = useState<MediaItem[]>([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState<string[]>([]); // 선택된 미디어 URL
   const [aiModel, setAiModel] = useState('qwen3');
   const [aiLoading, setAiLoading] = useState(false);
-  const [generatedText, setGeneratedText] = useState('');
   const [editedText, setEditedText] = useState('');
   const [connections, setConnections] = useState<SnsConnection[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState<string>('');
+  const [publishResult, setPublishResult] = useState('');
   const [ollamaKey, setOllamaKey] = useState('');
 
   useEffect(() => {
@@ -88,7 +89,7 @@ export default function XCollectPage() {
     loadConnections();
   }, []);
 
-  // ── 작업 목록 ───────────────────────────────────────────────
+  // ── 수집 작업 ─────────────────────────────────────────────
   const loadJobs = async () => {
     setJobsLoading(true);
     try {
@@ -98,7 +99,6 @@ export default function XCollectPage() {
     setJobsLoading(false);
   };
 
-  // ── 수집 시작 ────────────────────────────────────────────────
   const startCollect = async () => {
     if (!username.trim()) return;
     setCollecting(true);
@@ -139,7 +139,7 @@ export default function XCollectPage() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  // ── SNS 연결 목록 ────────────────────────────────────────────
+  // ── SNS 연결 ──────────────────────────────────────────────
   const loadConnections = async () => {
     try {
       const res = await fetch('/api/sns/connections');
@@ -147,12 +147,13 @@ export default function XCollectPage() {
     } catch {}
   };
 
-  // ── Notion 페이지 가져오기 ───────────────────────────────────
+  // ── Notion 페이지 목록 ────────────────────────────────────
   const loadPages = async () => {
     if (!dbId.trim()) return;
     setPagesLoading(true);
     setPages([]);
     setSelectedPage(null);
+    setPageMedia([]);
     try {
       const res = await fetch(`/api/notion/database-items?dbId=${dbId.trim()}`);
       const data = await res.json();
@@ -164,23 +165,39 @@ export default function XCollectPage() {
     setPagesLoading(false);
   };
 
-  // ── AI 글 생성 ──────────────────────────────────────────────
+  // ── 페이지 선택 → 블록(미디어) 로드 ─────────────────────
+  const selectPage = async (page: NotionPage) => {
+    setSelectedPage(page);
+    setPageMedia([]);
+    setSelectedMedia([]);
+    setEditedText('');
+    setPublishResult('');
+    setMediaLoading(true);
+    try {
+      const res = await fetch(`/api/notion/page-blocks?pageId=${page.id}`);
+      const data = await res.json();
+      if (res.ok) setPageMedia(data.media || []);
+    } catch {}
+    setMediaLoading(false);
+  };
+
+  // ── AI 글 생성 ───────────────────────────────────────────
   const generatePost = useCallback(async () => {
     if (!selectedPage) return;
     setAiLoading(true);
-    setGeneratedText('');
     setEditedText('');
 
-    const prompt = `다음 X(트위터) 게시물 내용을 SNS 발행용으로 번역/재작성해줘.
-원문 제목: ${selectedPage.title}
-원본 URL: ${selectedPage.url}
+    const prompt = `다음 X(트위터) 게시물을 SNS 발행용으로 한국어로 번역/재작성해줘.
+
+제목: ${selectedPage.title}
+URL: ${selectedPage.url}
 
 조건:
-- 한국어로 자연스럽게 번역
-- SNS 특성에 맞게 짧고 임팩트있게
-- 해시태그 3~5개 추가
-- 원본 URL 맨 마지막에 추가
-- 이모지 활용해서 시각적으로 매력있게`;
+- 자연스러운 한국어, 짧고 임팩트있게
+- 해시태그 3~5개
+- 이모지 활용
+- 마지막에 원본 URL 포함
+- 글자수 300자 이내`;
 
     try {
       const res = await fetch('/api/free-ai/chat', {
@@ -207,18 +224,17 @@ export default function XCollectPage() {
           if (!line.startsWith('data: ')) continue;
           try {
             const j = JSON.parse(line.slice(6));
-            if (j.chunk) { full += j.chunk; setGeneratedText(full); }
+            if (j.chunk) { full += j.chunk; setEditedText(full); }
           } catch {}
         }
       }
-      setEditedText(full);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'AI 오류');
     }
     setAiLoading(false);
   }, [selectedPage, aiModel, ollamaKey]);
 
-  // ── SNS 발행 ─────────────────────────────────────────────────
+  // ── SNS 발행 (미디어 첨부 포함) ──────────────────────────
   const publish = async () => {
     if (!editedText.trim() || !selectedPlatforms.length) return;
     setPublishing(true);
@@ -227,12 +243,16 @@ export default function XCollectPage() {
       const res = await fetch('/api/sns/post-now', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: editedText, platforms: selectedPlatforms }),
+        body: JSON.stringify({
+          content: editedText,
+          platforms: selectedPlatforms,
+          media_urls: selectedMedia.length ? selectedMedia : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const results: { platform: string; success: boolean }[] = data.results || [];
-      setPublishResult(results.map((r) => `${r.platform}: ${r.success ? '성공' : '실패'}`).join(' | '));
+      setPublishResult(results.map((r) => `${r.platform}: ${r.success ? '✅' : '❌'}`).join(' '));
     } catch (e: unknown) {
       setPublishResult(`오류: ${e instanceof Error ? e.message : '알 수 없음'}`);
     }
@@ -242,6 +262,9 @@ export default function XCollectPage() {
   const togglePlatform = (p: string) =>
     setSelectedPlatforms(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
 
+  const toggleMedia = (url: string) =>
+    setSelectedMedia(prev => prev.includes(url) ? prev.filter(x => x !== url) : [...prev, url]);
+
   const statusColor = (s: string) =>
     s === 'running' ? 'text-amber-400' : s === 'done' ? 'text-emerald-400' : 'text-red-400';
   const statusLabel = (s: string) =>
@@ -250,10 +273,9 @@ export default function XCollectPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
-        {/* 헤더 */}
         <div className="mb-6">
-          <h1 className="text-2xl font-black text-white">X 수집 / SNS 발행</h1>
-          <p className="text-sm text-slate-400 mt-1">X(트위터) 영상 수집 → Notion → AI 번역 → SNS 자동 발행</p>
+          <h1 className="text-2xl font-black">X 수집 / SNS 발행</h1>
+          <p className="text-sm text-slate-400 mt-1">X 영상 수집 → Notion → AI 번역 → SNS 자동 발행</p>
         </div>
 
         {/* 탭 */}
@@ -271,10 +293,9 @@ export default function XCollectPage() {
           ))}
         </div>
 
-        {/* ── Tab 1: X 수집 ─────────────────────────────────────── */}
+        {/* ── Tab 1: X 수집 ─────────────────────────────────── */}
         {tab === 'collect' && (
           <div className="space-y-4">
-            {/* 수집 폼 */}
             <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
               <h2 className="text-base font-bold mb-4">수집 설정</h2>
               <div className="space-y-4">
@@ -316,7 +337,7 @@ export default function XCollectPage() {
               </div>
             </div>
 
-            {/* 진행 중인 작업 */}
+            {/* 진행 중 */}
             {activeJob && (
               <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-3">
@@ -327,62 +348,52 @@ export default function XCollectPage() {
                 </div>
                 <div className="text-sm text-slate-300 mb-2">@{activeJob.username}</div>
                 {activeJob.status === 'running' && (
-                  <div className="flex gap-1 mb-3">
-                    {[0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"
-                        style={{ animationDelay: `${i * 0.15}s` }}
-                      />
+                  <div className="flex items-center gap-2 mb-3">
+                    {[0,1,2].map((i) => (
+                      <div key={i} className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"
+                        style={{ animationDelay: `${i * 0.15}s` }} />
                     ))}
-                    <span className="text-xs text-slate-400 ml-2">수집 중...</span>
+                    <span className="text-xs text-slate-400">수집 중...</span>
                   </div>
                 )}
-                {(activeJob.uploaded !== undefined || activeJob.skipped !== undefined) && (
-                  <div className="flex gap-4 text-xs text-slate-400 mb-3">
+                {activeJob.uploaded !== undefined && (
+                  <div className="flex gap-4 text-xs mb-3">
                     <span className="text-emerald-400">업로드 {activeJob.uploaded ?? 0}</span>
-                    <span>스킵 {activeJob.skipped ?? 0}</span>
+                    <span className="text-slate-400">스킵 {activeJob.skipped ?? 0}</span>
                     <span className="text-red-400">실패 {activeJob.failed ?? 0}</span>
                   </div>
                 )}
                 {activeJob.logs && activeJob.logs.length > 0 && (
                   <div className="bg-slate-800 rounded-xl p-3 font-mono text-xs text-slate-300 max-h-48 overflow-y-auto">
                     {activeJob.logs.slice(-20).map((log, i) => (
-                      <div key={i} className="leading-relaxed">{log}</div>
+                      <div key={i}>{log}</div>
                     ))}
                   </div>
                 )}
               </div>
             )}
 
-            {/* 작업 히스토리 */}
+            {/* 히스토리 */}
             <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-bold">작업 내역</h2>
-                <button
-                  onClick={loadJobs}
-                  disabled={jobsLoading}
-                  className="text-xs text-slate-400 hover:text-white transition-colors"
-                >
+                <button onClick={loadJobs} disabled={jobsLoading} className="text-xs text-slate-400 hover:text-white">
                   {jobsLoading ? '로딩...' : '새로고침'}
                 </button>
               </div>
               {jobs.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-4">아직 작업이 없습니다</p>
+                <p className="text-sm text-slate-500 text-center py-4">아직 작업 없음</p>
               ) : (
                 <div className="space-y-2">
                   {jobs.map((job) => (
-                    <div
-                      key={job.job_id}
-                      className="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3"
-                    >
+                    <div key={job.job_id} className="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3">
                       <div>
                         <span className="text-sm font-medium">@{job.username}</span>
                         <span className="text-xs text-slate-500 ml-2">{job.job_id.slice(0, 14)}</span>
                       </div>
                       <div className="flex items-center gap-3">
                         {job.uploaded !== undefined && (
-                          <span className="text-xs text-emerald-400">{job.uploaded}개 업로드</span>
+                          <span className="text-xs text-emerald-400">{job.uploaded}개</span>
                         )}
                         <span className={`text-xs font-bold ${statusColor(job.status)}`}>
                           {statusLabel(job.status)}
@@ -396,18 +407,18 @@ export default function XCollectPage() {
           </div>
         )}
 
-        {/* ── Tab 2: Notion → SNS ───────────────────────────────── */}
+        {/* ── Tab 2: Notion → SNS ──────────────────────────────── */}
         {tab === 'notion-sns' && (
           <div className="space-y-4">
-            {/* Notion DB 설정 */}
+            {/* DB 설정 */}
             <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
-              <h2 className="text-base font-bold mb-4">Notion DB 연결</h2>
+              <h2 className="text-base font-bold mb-4">Notion DB</h2>
               <div className="flex gap-2">
                 <input
                   value={dbId}
                   onChange={(e) => setDbId(e.target.value)}
                   placeholder="Notion DB ID"
-                  className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+                  className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
                 />
                 <button
                   onClick={loadPages}
@@ -417,145 +428,185 @@ export default function XCollectPage() {
                   {pagesLoading ? '로딩...' : '불러오기'}
                 </button>
               </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Notion 설정에서 API 키를 등록해야 합니다 (/dashboard/notion-mirror)
-              </p>
             </div>
 
-            {/* 페이지 목록 */}
+            {/* 2열 레이아웃: 페이지 목록 | 미디어 + 에디터 */}
             {pages.length > 0 && (
-              <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
-                <h2 className="text-base font-bold mb-4">수집된 게시물 ({pages.length}개)</h2>
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {pages.map((page) => (
-                    <button
-                      key={page.id}
-                      onClick={() => { setSelectedPage(page); setGeneratedText(''); setEditedText(''); setPublishResult(''); }}
-                      className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                        selectedPage?.id === page.id
-                          ? 'bg-indigo-600/30 border border-indigo-500/50'
-                          : 'bg-slate-800 hover:bg-slate-700'
-                      }`}
-                    >
-                      {page.coverUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={page.coverUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate">{page.title || '제목 없음'}</div>
-                        {page.url && <div className="text-xs text-slate-500 truncate">{page.url}</div>}
-                      </div>
-                      {selectedPage?.id === page.id && (
-                        <span className="text-indigo-400 text-xs flex-shrink-0">선택됨</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* AI 번역/생성 */}
-            {selectedPage && (
-              <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
-                <h2 className="text-base font-bold mb-4">AI SNS 글 생성</h2>
-
-                <div className="mb-4">
-                  <div className="text-xs text-slate-400 mb-1">선택된 게시물</div>
-                  <div className="bg-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-300 truncate">
-                    {selectedPage.title}
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <label className="text-xs text-slate-400 mb-2 block">AI 모델</label>
-                  <div className="flex flex-wrap gap-2">
-                    {OLLAMA_MODELS.map((m) => (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* 페이지 목록 */}
+                <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
+                  <h2 className="text-base font-bold mb-3">게시물 목록 ({pages.length})</h2>
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                    {pages.map((page) => (
                       <button
-                        key={m.id}
-                        onClick={() => setAiModel(m.id)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                          aiModel === m.id
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                        key={page.id}
+                        onClick={() => selectPage(page)}
+                        className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                          selectedPage?.id === page.id
+                            ? 'bg-indigo-600/30 border border-indigo-500/50'
+                            : 'bg-slate-800 hover:bg-slate-700'
                         }`}
                       >
-                        {m.emoji} {m.name}
+                        {page.coverUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={page.coverUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center text-lg flex-shrink-0">🎬</div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium truncate">{page.title || '제목 없음'}</div>
+                        </div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <button
-                  onClick={generatePost}
-                  disabled={aiLoading}
-                  className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-xl text-sm font-bold transition-all mb-4"
-                >
-                  {aiLoading ? 'AI 생성 중...' : 'SNS 글 생성'}
-                </button>
+                {/* 미디어 + 에디터 */}
+                <div className="space-y-4">
+                  {selectedPage && (
+                    <>
+                      {/* 미디어 미리보기 */}
+                      <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
+                        <div className="flex items-center justify-between mb-3">
+                          <h2 className="text-base font-bold">미디어 선택</h2>
+                          {selectedMedia.length > 0 && (
+                            <span className="text-xs text-indigo-400">{selectedMedia.length}개 선택됨</span>
+                          )}
+                        </div>
 
-                {(generatedText || editedText) && (
-                  <div>
-                    <label className="text-xs text-slate-400 mb-1 block">생성된 글 (편집 가능)</label>
-                    <textarea
-                      value={editedText || generatedText}
-                      onChange={(e) => setEditedText(e.target.value)}
-                      rows={8}
-                      className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
-                    />
-                    <div className="text-xs text-slate-500 text-right mt-1">
-                      {(editedText || generatedText).length}자
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* SNS 발행 */}
-            {(editedText || generatedText) && (
-              <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
-                <h2 className="text-base font-bold mb-4">SNS 발행</h2>
-
-                {connections.filter((c) => c.is_active).length === 0 ? (
-                  <div className="text-sm text-slate-400 text-center py-4">
-                    연결된 SNS 계정이 없습니다.{' '}
-                    <a href="/dashboard/sns" className="text-indigo-400 hover:underline">SNS 관리</a>에서 연결하세요.
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {connections.filter((c) => c.is_active).map((conn) => (
-                        <button
-                          key={conn.platform}
-                          onClick={() => togglePlatform(conn.platform)}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
-                            selectedPlatforms.includes(conn.platform)
-                              ? 'bg-indigo-600 text-white'
-                              : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
-                          }`}
-                        >
-                          <span>{PLATFORM_ICONS[conn.platform] || '🌐'}</span>
-                          <span>{conn.platform_display_name || conn.platform}</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={publish}
-                      disabled={publishing || !selectedPlatforms.length || !(editedText || generatedText).trim()}
-                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold transition-all"
-                    >
-                      {publishing ? '발행 중...' : `${selectedPlatforms.length}개 플랫폼에 발행`}
-                    </button>
-
-                    {publishResult && (
-                      <div className={`mt-3 text-sm text-center font-medium ${
-                        publishResult.includes('오류') ? 'text-red-400' : 'text-emerald-400'
-                      }`}>
-                        {publishResult}
+                        {mediaLoading ? (
+                          <div className="text-sm text-slate-400 text-center py-4">로딩 중...</div>
+                        ) : pageMedia.length === 0 ? (
+                          <div className="text-sm text-slate-500 text-center py-4">미디어 없음</div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2">
+                            {pageMedia.map((item, i) => (
+                              <button
+                                key={i}
+                                onClick={() => toggleMedia(item.url)}
+                                className={`relative rounded-xl overflow-hidden border-2 transition-all ${
+                                  selectedMedia.includes(item.url)
+                                    ? 'border-indigo-500'
+                                    : 'border-transparent'
+                                }`}
+                              >
+                                {item.type === 'image' ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={item.url} alt="" className="w-full h-28 object-cover" />
+                                ) : (
+                                  <div className="w-full h-28 bg-slate-800 flex flex-col items-center justify-center gap-1">
+                                    <span className="text-3xl">🎬</span>
+                                    <span className="text-xs text-slate-400">영상</span>
+                                  </div>
+                                )}
+                                {selectedMedia.includes(item.url) && (
+                                  <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+                                    <span className="text-white text-xs font-bold">✓</span>
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </>
-                )}
+
+                      {/* AI 생성 */}
+                      <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
+                        <h2 className="text-base font-bold mb-3">AI SNS 글 생성</h2>
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {AI_MODELS.map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => setAiModel(m.id)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                aiModel === m.id
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                              }`}
+                            >
+                              {m.emoji} {m.name}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={generatePost}
+                          disabled={aiLoading}
+                          className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-xl text-sm font-bold mb-3 transition-all"
+                        >
+                          {aiLoading ? 'AI 생성 중...' : 'SNS 글 생성'}
+                        </button>
+                        {editedText && (
+                          <>
+                            <textarea
+                              value={editedText}
+                              onChange={(e) => setEditedText(e.target.value)}
+                              rows={6}
+                              className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+                            />
+                            <div className="text-xs text-slate-500 text-right mt-1">{editedText.length}자</div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* SNS 발행 */}
+                      {editedText && (
+                        <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
+                          <h2 className="text-base font-bold mb-3">SNS 발행</h2>
+                          {connections.filter((c) => c.is_active).length === 0 ? (
+                            <p className="text-sm text-slate-400 text-center py-2">
+                              <a href="/dashboard/sns" className="text-indigo-400 hover:underline">SNS 관리</a>에서 계정을 연결하세요
+                            </p>
+                          ) : (
+                            <>
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {connections.filter((c) => c.is_active).map((conn) => (
+                                  <button
+                                    key={conn.platform}
+                                    onClick={() => togglePlatform(conn.platform)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                                      selectedPlatforms.includes(conn.platform)
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                                    }`}
+                                  >
+                                    <span>{PLATFORM_ICONS[conn.platform] || '🌐'}</span>
+                                    <span>{conn.platform_display_name || conn.platform}</span>
+                                  </button>
+                                ))}
+                              </div>
+                              {selectedMedia.length > 0 && (
+                                <div className="text-xs text-indigo-400 mb-3">
+                                  📎 미디어 {selectedMedia.length}개 첨부됨
+                                </div>
+                              )}
+                              <button
+                                onClick={publish}
+                                disabled={publishing || !selectedPlatforms.length}
+                                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold transition-all"
+                              >
+                                {publishing ? '발행 중...' : `${selectedPlatforms.length || '플랫폼 선택'} 발행`}
+                              </button>
+                              {publishResult && (
+                                <div className={`mt-2 text-sm text-center font-medium ${
+                                  publishResult.includes('오류') ? 'text-red-400' : 'text-emerald-400'
+                                }`}>
+                                  {publishResult}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {!selectedPage && (
+                    <div className="bg-slate-900 rounded-2xl p-8 border border-slate-700/50 flex flex-col items-center justify-center text-center">
+                      <div className="text-4xl mb-3">👈</div>
+                      <p className="text-sm text-slate-400">왼쪽에서 게시물을 선택하면<br />미디어와 AI 글 생성이 표시됩니다</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
