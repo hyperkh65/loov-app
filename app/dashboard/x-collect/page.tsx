@@ -75,7 +75,10 @@ export default function XCollectPage() {
   // ── Tab 2: SNS 발행 ────────────────────────────────────────
   const [filterUsername, setFilterUsername] = useState('');
   const [videos, setVideos] = useState<XVideo[]>([]);
+  const [videosTotal, setVideosTotal] = useState(0);
+  const [videosOffset, setVideosOffset] = useState(0);
   const [videosLoading, setVideosLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<XVideo | null>(null);
   const [aiModel, setAiModel] = useState('qwen3');
   const [aiLoading, setAiLoading] = useState(false);
@@ -155,13 +158,35 @@ export default function XCollectPage() {
   // ── 영상 목록 (Supabase) ──────────────────────────────────
   const loadVideos = async (uname?: string) => {
     setVideosLoading(true);
+    setVideosOffset(0);
     try {
-      const params = new URLSearchParams({ limit: '100' });
+      const params = new URLSearchParams({ offset: '0' });
       if (uname) params.set('username', uname);
       const res = await fetch(`/api/x-videos?${params}`);
-      if (res.ok) setVideos(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setVideos(data.items || []);
+        setVideosTotal(data.total || 0);
+      }
     } catch {}
     setVideosLoading(false);
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    const nextOffset = videosOffset + 20;
+    try {
+      const params = new URLSearchParams({ offset: String(nextOffset) });
+      if (filterUsername) params.set('username', filterUsername);
+      const res = await fetch(`/api/x-videos?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setVideos(prev => [...prev, ...(data.items || [])]);
+        setVideosTotal(data.total || 0);
+        setVideosOffset(nextOffset);
+      }
+    } catch {}
+    setLoadingMore(false);
   };
 
   // ── AI 글 생성 ───────────────────────────────────────────
@@ -401,7 +426,7 @@ export default function XCollectPage() {
               {videos.length === 0 ? (
                 <div className="text-center py-8">
                   <div className="text-3xl mb-2">🎬</div>
-                  <p className="text-sm text-slate-500">수집된 영상이 없습니다<br />X 수집 탭에서 먼저 수집하세요</p>
+                  <p className="text-sm text-slate-500">수집된 미디어가 없습니다<br />X 수집 탭에서 먼저 수집하세요</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[600px] overflow-y-auto">
@@ -433,6 +458,19 @@ export default function XCollectPage() {
                       </div>
                     </button>
                   ))}
+                  {/* 더 보기 버튼 */}
+                  {videos.length < videosTotal && (
+                    <button
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                      className="w-full py-2.5 mt-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-xl text-sm text-slate-300 font-semibold transition-all border border-slate-700"
+                    >
+                      {loadingMore ? '로딩 중...' : `더 보기 (${videos.length}/${videosTotal}개)`}
+                    </button>
+                  )}
+                  {videos.length > 0 && videos.length >= videosTotal && (
+                    <p className="text-center text-xs text-slate-500 py-2">전체 {videosTotal}개 로드됨</p>
+                  )}
                 </div>
               )}
             </div>
