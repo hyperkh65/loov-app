@@ -71,6 +71,7 @@ export default function AutoServicePage() {
     custom_keywords: [], last_run_at: null, last_run_status: null, last_run_count: 0,
   });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
   const [customKwInput, setCustomKwInput] = useState('');
   const [runningNow, setRunningNow] = useState(false);
   const [runResult, setRunResult] = useState<{ generated: number; keywords: string[] } | null>(null);
@@ -136,7 +137,10 @@ export default function AutoServicePage() {
   // 설정 저장
   const saveSettings = async (newSettings: Partial<AutoSettings>) => {
     setSavingSettings(true);
+    setSettingsError('');
     const merged = { ...autoSettings, ...newSettings };
+    // 낙관적 업데이트 (즉시 UI 반영)
+    setAutoSettings(merged);
     const res = await fetch('/api/auto-service/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -145,6 +149,14 @@ export default function AutoServicePage() {
     if (res.ok) {
       const saved = await res.json();
       setAutoSettings(saved);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      const msg = err.error || '설정 저장 실패';
+      setSettingsError(msg.includes('does not exist') || msg.includes('relation')
+        ? 'Supabase에 테이블이 없습니다. SQL Editor에서 bossai_auto_settings 테이블을 생성해주세요.'
+        : msg);
+      // 실패 시 원래 상태로 복원
+      setAutoSettings(prev => ({ ...prev, ...autoSettings }));
     }
     setSavingSettings(false);
   };
@@ -295,7 +307,7 @@ export default function AutoServicePage() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">자동 실행</h2>
-                <p className="text-sm text-gray-500 mt-0.5">6시간마다 트렌딩 키워드를 수집하여 자동으로 블로그 초안을 생성합니다</p>
+                <p className="text-sm text-gray-500 mt-0.5">매일 오전 9시마다 트렌딩 키워드를 수집하여 자동으로 블로그 초안을 생성합니다</p>
               </div>
               <button
                 onClick={() => saveSettings({ enabled: !autoSettings.enabled })}
@@ -305,11 +317,17 @@ export default function AutoServicePage() {
               </button>
             </div>
 
-            {autoSettings.enabled && (
+            {settingsError && (
+              <div className="mt-4 p-3 bg-red-50 rounded-xl text-sm text-red-700 border border-red-200">
+                ⚠️ {settingsError}
+              </div>
+            )}
+
+            {autoSettings.enabled && !settingsError && (
               <div className="mt-4 p-3 bg-blue-50 rounded-xl text-sm text-blue-700 flex items-center gap-2">
                 <span className="text-lg">🟢</span>
                 <div>
-                  <strong>자동실행 활성화됨</strong> — 매 6시간마다 최대 {autoSettings.max_per_run}개 글 자동 생성
+                  <strong>자동실행 활성화됨</strong> — 매일 오전 9시 최대 {autoSettings.max_per_run}개 글 자동 생성
                   {autoSettings.last_run_at && (
                     <span className="block text-xs text-blue-500 mt-0.5">
                       마지막 실행: {new Date(autoSettings.last_run_at).toLocaleString('ko-KR')}
