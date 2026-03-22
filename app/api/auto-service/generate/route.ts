@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { generateText } from '@/lib/auto-blog-ai';
 
 export const maxDuration = 120;
 
@@ -23,36 +24,8 @@ async function searchNaver(type: 'news' | 'blog', query: string) {
   } catch { return []; }
 }
 
-
-async function callOllamaCloud(prompt: string, model: string): Promise<string> {
-  const apiKey = process.env.OLLAMA_API_KEY;
-  if (!apiKey) throw new Error('OLLAMA_API_KEY 없음');
-
-  const res = await fetch('https://ollama.com/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      stream: false,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Ollama API 오류: ${err}`);
-  }
-
-  const data = await res.json();
-  return data.message?.content || '';
-}
-
 function buildPrompt(keyword: string, newsItems: {title:string;description:string}[], blogItems: {title:string;description:string}[]): string {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
-
   const sources = [
     ...newsItems.map((n, i) => `[뉴스${i+1}] ${n.title}\n${n.description}`),
     ...blogItems.map((b, i) => `[블로그${i+1}] ${b.title}\n${b.description}`),
@@ -117,7 +90,7 @@ HTML 형식 (반드시 이 구조 그대로):
 (마지막 키워드 나열:)
 <p data-ke-size="size16"><span style="background-color: #fafafa; color: #333333; text-align: start;">[키워드1], [키워드2], [키워드3], ... (10개)</span></p>
 
-중요: HTML 외 다른 텍스트, 마크다운, 설명문 절대 금지. ===TITLE=== 등 섹션 구분자만 허용.`;
+중요: HTML 외 다른 텍스트, 마크다운, 설명문 절대 금지.`;
 }
 
 function parseAiOutput(raw: string) {
@@ -126,14 +99,12 @@ function parseAiOutput(raw: string) {
     const match = raw.match(re);
     return match ? match[1].trim() : '';
   };
-
-  const title = extract('TITLE');
-  const meta = extract('META');
-  const content = extract('CONTENT');
-  const keywordsRaw = extract('KEYWORDS');
-  const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
-
-  return { title, meta_description: meta, content, keywords };
+  return {
+    title: extract('TITLE'),
+    meta_description: extract('META'),
+    content: extract('CONTENT'),
+    keywords: extract('KEYWORDS').split(',').map(k => k.trim()).filter(Boolean),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -141,7 +112,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { keyword, ai_model = 'qwen3' } = await req.json();
+  const { keyword, ai_model = 'qwen3', clientOllamaKey, clientOpenrouterKey } = await req.json();
   if (!keyword?.trim()) return NextResponse.json({ error: '키워드를 입력하세요' }, { status: 400 });
 
   // 1. 뉴스/블로그 수집
@@ -155,11 +126,11 @@ export async function POST(req: NextRequest) {
     ...blogItems.map((b: {title:string;description:string;link:string}) => ({ type: 'blog', ...b })),
   ];
 
-  // 2. AI 글 생성
+  // 2. AI 글 생성 (Ollama → OpenRouter 자동 폴백, 무료AI 페이지 저장 키 사용)
   const prompt = buildPrompt(keyword, newsItems, blogItems);
   let rawOutput: string;
   try {
-    rawOutput = await callOllamaCloud(prompt, ai_model);
+    rawOutput = await generateText(prompt, ai_model, clientOllamaKey, clientOpenrouterKey);
   } catch (err) {
     return NextResponse.json({ error: `AI 생성 실패: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }
@@ -169,10 +140,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
   }
 
-  // 3. 대표 이미지 — SVG 썸네일 자동 생성 (Blogger 스타일: 그라디언트 배경 + 제목 텍스트)
+  // 3. SVG 썸네일 자동 생성 (Blogger 스타일)
   const imageUrl = await generateAndUploadThumbnail(title, keyword);
 
-  // 4. 글자 수 계산 (HTML 태그 제거)
+  // 4. 글자 수 계산
   const wordCount = content.replace(/<[^>]+>/g, '').length;
 
   // 5. DB 저장
@@ -195,6 +166,5 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
   return NextResponse.json({ item: data, keywords, word_count: wordCount });
 }
