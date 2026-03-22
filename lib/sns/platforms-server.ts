@@ -36,23 +36,79 @@ async function waitThreadsContainerFinished(containerId: string, accessToken: st
   return false;
 }
 
-// ── Twitter 미디어 업로드 (v1.1 simple upload) ────────
+// ── Twitter 미디어 업로드 (영상: INIT→APPEND→FINALIZE 청크, 이미지: simple) ──
 
 export async function uploadMediaToTwitter(accessToken: string, mediaUrl: string): Promise<string> {
-  const { buffer } = await downloadMedia(mediaUrl);
-  const form = new URLSearchParams();
-  form.append('media_data', buffer.toString('base64'));
+  const { buffer, contentType } = await downloadMedia(mediaUrl);
+  const isVideo = contentType.startsWith('video/') || isVideoUrl(mediaUrl);
 
-  const res = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+  if (!isVideo) {
+    // 이미지: simple base64 업로드
+    const form = new URLSearchParams();
+    form.append('media_data', buffer.toString('base64'));
+    const res = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    if (!res.ok) throw new Error(`Twitter 이미지 업로드 실패: ${await res.text()}`);
+    return (await res.json()).media_id_string;
+  }
+
+  // 영상: INIT → APPEND → FINALIZE 청크 업로드
+  const totalBytes = buffer.length;
+  const mediaType = contentType || 'video/mp4';
+
+  // INIT
+  const initRes = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: form.toString(),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      command: 'INIT', total_bytes: String(totalBytes),
+      media_type: mediaType, media_category: 'tweet_video',
+    }).toString(),
   });
-  if (!res.ok) throw new Error(`Twitter 미디어 업로드 실패: ${await res.text()}`);
-  return (await res.json()).media_id_string;
+  if (!initRes.ok) throw new Error(`Twitter 영상 INIT 실패: ${await initRes.text()}`);
+  const { media_id_string: mediaId } = await initRes.json();
+
+  // APPEND (5MB 청크)
+  const CHUNK = 5 * 1024 * 1024;
+  for (let seg = 0; seg * CHUNK < totalBytes; seg++) {
+    const chunk = buffer.slice(seg * CHUNK, (seg + 1) * CHUNK);
+    const form = new FormData();
+    form.append('command', 'APPEND');
+    form.append('media_id', mediaId);
+    form.append('segment_index', String(seg));
+    form.append('media', new Blob([chunk], { type: mediaType }));
+    const appendRes = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+    });
+    if (!appendRes.ok) throw new Error(`Twitter 영상 APPEND 실패: ${await appendRes.text()}`);
+  }
+
+  // FINALIZE
+  const finalRes = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ command: 'FINALIZE', media_id: mediaId }).toString(),
+  });
+  if (!finalRes.ok) throw new Error(`Twitter 영상 FINALIZE 실패: ${await finalRes.text()}`);
+
+  // 처리 완료 대기
+  let processing = (await finalRes.json()).processing_info;
+  while (processing?.state === 'pending' || processing?.state === 'in_progress') {
+    await new Promise(r => setTimeout(r, (processing.check_after_secs || 3) * 1000));
+    const statusRes = await fetch(
+      `https://upload.twitter.com/1.1/media/upload.json?command=STATUS&media_id=${mediaId}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    processing = (await statusRes.json()).processing_info;
+  }
+  if (processing?.state === 'failed') throw new Error('Twitter 영상 처리 실패');
+
+  return mediaId;
 }
 
 // ── LinkedIn 미디어 업로드 ─────────────────────────────
@@ -216,14 +272,39 @@ export async function postToFacebookWithMedia(
   const pageId = pages?.[0]?.id || 'me';
 
   if (mediaUrls?.length === 1) {
-    const res = await fetch(`https://graph.facebook.com/v18.0/${pageId}/photos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: mediaUrls[0], message: content, access_token: pageToken, published: true }),
-    });
-    if (!res.ok) throw new Error(`Facebook 사진 포스팅 실패: ${await res.text()}`);
-    return { id: (await res.json()).id };
+    const url = mediaUrls[0];
+    if (isVideoUrl(url)) {
+      // 영상: /videos 엔드포인트 (file_url로 직접 전달)
+      const res = await fetch(`https://graph.facebook.com/v18.0/${pageId}/videos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_url: url, description: content, access_token: pageToken, published: true }),
+      });
+      if (!res.ok) throw new Error(`Facebook 영상 포스팅 실패: ${await res.text()}`);
+      return { id: (await res.json()).id };
+    } else {
+      // 이미지: /photos 엔드포인트
+      const res = await fetch(`https://graph.facebook.com/v18.0/${pageId}/photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, message: content, access_token: pageToken, published: true }),
+      });
+      if (!res.ok) throw new Error(`Facebook 사진 포스팅 실패: ${await res.text()}`);
+      return { id: (await res.json()).id };
+    }
   } else if (mediaUrls && mediaUrls.length > 1) {
+    // 영상이 포함되어 있으면 첫 번째 영상만 단독 포스팅
+    const videoUrl = mediaUrls.find(u => isVideoUrl(u));
+    if (videoUrl) {
+      const res = await fetch(`https://graph.facebook.com/v18.0/${pageId}/videos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_url: videoUrl, description: content, access_token: pageToken, published: true }),
+      });
+      if (!res.ok) throw new Error(`Facebook 영상 포스팅 실패: ${await res.text()}`);
+      return { id: (await res.json()).id };
+    }
+    // 이미지만: 멀티 사진 포스팅
     const photoIds: string[] = [];
     for (const url of mediaUrls.slice(0, 10)) {
       const pr = await fetch(`https://graph.facebook.com/v18.0/${pageId}/photos`, {
