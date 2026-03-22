@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 
 export const maxDuration = 120;
 
@@ -22,18 +23,6 @@ async function searchNaver(type: 'news' | 'blog', query: string) {
   } catch { return []; }
 }
 
-async function searchPixabay(query: string): Promise<string | null> {
-  const apiKey = process.env.PIXABAY_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const res = await fetch(
-      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&lang=ko&image_type=photo&per_page=5&safesearch=true&min_width=800`
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.hits?.[0]?.webformatURL || null;
-  } catch { return null; }
-}
 
 async function callOllamaCloud(prompt: string, model: string): Promise<string> {
   const apiKey = process.env.OLLAMA_API_KEY;
@@ -180,8 +169,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
   }
 
-  // 3. 대표 이미지 검색
-  const imageUrl = await searchPixabay(keyword);
+  // 3. 대표 이미지 — SVG 썸네일 자동 생성 (Blogger 스타일: 그라디언트 배경 + 제목 텍스트)
+  const imageUrl = await generateAndUploadThumbnail(title, keyword);
 
   // 4. 글자 수 계산 (HTML 태그 제거)
   const wordCount = content.replace(/<[^>]+>/g, '').length;
