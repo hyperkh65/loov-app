@@ -194,8 +194,31 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 - HTML 태그 외 마크다운, 설명문, 대괄호 최종 출력에 절대 포함 금지`;
 }
 
-async function searchInlineImages(query: string, count = 3): Promise<string[]> {
-  // 1순위: Google Custom Search (설정 페이지에서 입력한 키)
+async function searchInlineImages(query: string, count = 3): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
+  // 1순위: 네이버 이미지 검색
+  // displayUrls: item.link (원본, 브라우저 로드용)
+  // thumbUrl: item.thumbnail (CDN URL, 서버 fetch 가능 → 대표이미지 배경용)
+  const naverClientId = process.env.NAVER_CLIENT_ID;
+  const naverClientSecret = process.env.NAVER_CLIENT_SECRET;
+  if (naverClientId && naverClientSecret) {
+    try {
+      const res = await fetch(
+        `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count + 3}&sort=sim`,
+        { headers: { 'X-Naver-Client-Id': naverClientId, 'X-Naver-Client-Secret': naverClientSecret } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
+        if (items.length > 0) {
+          return {
+            displayUrls: items.slice(0, count).map((item: { link: string }) => item.link),
+            thumbUrl: items[0].thumbnail as string | undefined,
+          };
+        }
+      }
+    } catch { /* fallthrough */ }
+  }
+  // 2순위: Google Custom Search
   const [googleKey, googleCx] = await Promise.all([
     getSetting('GOOGLE_SEARCH_API_KEY'),
     getSetting('GOOGLE_SEARCH_CX'),
@@ -203,37 +226,36 @@ async function searchInlineImages(query: string, count = 3): Promise<string[]> {
   if (googleKey && googleCx) {
     try {
       const res = await fetch(
-        `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCx}&q=${encodeURIComponent(query)}&searchType=image&num=${Math.min(count, 10)}&safe=active&imgSize=large`
+        `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCx}&q=${encodeURIComponent(query)}&searchType=image&num=${Math.min(count, 10)}&safe=active`
       );
       if (res.ok) {
         const data = await res.json();
-        const urls = (data.items || []).slice(0, count).map((item: { link: string }) => item.link);
-        if (urls.length > 0) return urls;
+        const items = data.items || [];
+        if (items.length > 0) {
+          const urls = items.slice(0, count).map((item: { link: string }) => item.link);
+          return { displayUrls: urls, thumbUrl: urls[0] };
+        }
       }
     } catch { /* fallthrough */ }
   }
-  // 2순위: Pixabay (설정 페이지에서 입력한 키)
+  // 3순위: Pixabay (한글 검색만, 폴백 없음)
   const pixabayKey = await getSetting('PIXABAY_API_KEY');
   if (pixabayKey) {
     try {
       const res = await fetch(
-        `https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
+        `https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count + 3}&safesearch=true&min_width=600`
       );
       if (res.ok) {
         const data = await res.json();
         const hits = data.hits || [];
-        if (hits.length > 0) return hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
-      }
-      const fallbackRes = await fetch(
-        `https://pixabay.com/api/?key=${pixabayKey}&q=nature+background&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
-      );
-      if (fallbackRes.ok) {
-        const data = await fallbackRes.json();
-        return (data.hits || []).slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+        if (hits.length > 0) {
+          const urls = hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+          return { displayUrls: urls, thumbUrl: urls[0] };
+        }
       }
     } catch { /* skip */ }
   }
-  return [];
+  return { displayUrls: [], thumbUrl: undefined };
 }
 
 function extractH2Title(h2Tag: string): string {
@@ -310,12 +332,12 @@ async function generateArticleForUser(
 
     if (!title || !rawContent) return false;
 
-    // Google/Pixabay 이미지 검색 + 본문 삽입
-    const inlineImages = await searchInlineImages(keyword, 3);
+    // 이미지 검색 + 본문 삽입
+    const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
     const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
 
-    // SVG 썸네일 자동 생성 (첫 번째 인라인 이미지를 배경으로 사용)
-    const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', inlineImages[0]);
+    // SVG 썸네일 생성 (Naver CDN thumbnail URL을 배경으로, 실패시 그라디언트)
+    const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
     const wordCount = content.replace(/<[^>]+>/g, '').length;
 
     await supabase.from('bossai_auto_articles').insert({

@@ -95,7 +95,7 @@ export default function AutoServicePage() {
   const [editModel, setEditModel] = useState('qwen3');
   const [savingEdit, setSavingEdit] = useState(false);
   // 이미지 편집
-  const [imgSearchTab, setImgSearchTab] = useState<'google' | 'pixabay' | 'sns' | 'upload'>('google');
+  const [imgSearchTab, setImgSearchTab] = useState<'naver' | 'google' | 'pixabay' | 'sns' | 'upload'>('naver');
   const [imgQuery, setImgQuery] = useState('');
   const [imgResults, setImgResults] = useState<{ url: string; thumb: string; author: string; caption?: string }[]>([]);
   const [imgLoading, setImgLoading] = useState(false);
@@ -106,6 +106,7 @@ export default function AutoServicePage() {
   const [thumbColor, setThumbColor] = useState<'blue' | 'dark' | 'green'>('blue');
   const [thumbGenerating, setThumbGenerating] = useState(false);
   const [thumbRepUrl, setThumbRepUrl] = useState<string | null>(null);
+  const [thumbBgUrl, setThumbBgUrl] = useState<string | null>(null); // 배경이미지 URL
 
   // 발행 모달
   const [publishArticle, setPublishArticle] = useState<Article | null>(null);
@@ -237,12 +238,14 @@ export default function AutoServicePage() {
     setEditModel(article.ai_model || 'qwen3');
     setPublishResult(null);
     setImgResults([]);
+    setImgSearchTab('naver');
     setReplacingImgSrc(null);
     setImgQuery(article.keyword || '');
     setThumbTitle(article.title);
     setThumbKeyword(article.keyword || '');
     setThumbColor('blue');
     setThumbRepUrl(article.representative_image_url);
+    setThumbBgUrl(null);
   };
 
   // 콘텐츠에서 img src 목록 추출
@@ -251,8 +254,8 @@ export default function AutoServicePage() {
     return [...new Set(matches.map(m => m[1]))];
   };
 
-  // 이미지 검색 (Google, Pixabay, SNS)
-  const searchImages = async (tab: 'google' | 'pixabay' | 'sns', q: string) => {
+  // 이미지 검색 (Naver, Google, Pixabay, SNS)
+  const searchImages = async (tab: 'naver' | 'google' | 'pixabay' | 'sns', q: string) => {
     setImgLoading(true);
     setImgResults([]);
     const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
@@ -755,6 +758,14 @@ export default function AutoServicePage() {
                       </div>
                     </div>
                   </div>
+                  {thumbBgUrl && (
+                    <div className="flex items-center gap-2 mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={thumbBgUrl} alt="배경" className="w-10 h-10 object-cover rounded" />
+                      <span className="text-xs text-blue-700 flex-1">배경이미지 선택됨</span>
+                      <button onClick={() => setThumbBgUrl(null)} className="text-xs text-red-500 hover:text-red-700">✕ 제거</button>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button onClick={async () => {
                       if (!previewArticle) return;
@@ -762,7 +773,7 @@ export default function AutoServicePage() {
                       const res = await fetch('/api/auto-service/thumbnail', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ article_id: previewArticle.id, title: thumbTitle, keyword: thumbKeyword, color_scheme: thumbColor }),
+                        body: JSON.stringify({ article_id: previewArticle.id, title: thumbTitle, keyword: thumbKeyword, color_scheme: thumbColor, bg_image_url: thumbBgUrl || undefined }),
                       });
                       const data = await res.json();
                       if (data.url) {
@@ -822,8 +833,8 @@ export default function AutoServicePage() {
                 </div>
 
                 {/* 이미지 검색 탭 */}
-                <div className="flex gap-1 mb-3 border-b border-gray-200">
-                  {([['google', '🔍 구글'], ['pixabay', '📸 픽사베이'], ['sns', '🐦 SNS'], ['upload', '📁 업로드']] as ['google'|'pixabay'|'sns'|'upload', string][]).map(([t, label]) => (
+                <div className="flex gap-1 mb-3 border-b border-gray-200 flex-wrap">
+                  {([['naver', '🟢 네이버'], ['google', '🔍 구글'], ['pixabay', '📸 픽사베이'], ['sns', '🐦 SNS'], ['upload', '📁 업로드']] as ['naver'|'google'|'pixabay'|'sns'|'upload', string][]).map(([t, label]) => (
                     <button key={t} onClick={() => { setImgSearchTab(t); setImgResults([]); }}
                       className={`px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${imgSearchTab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`}>
                       {label}
@@ -834,10 +845,10 @@ export default function AutoServicePage() {
                 {imgSearchTab !== 'upload' && (
                   <div className="flex gap-2 mb-3">
                     <input value={imgQuery} onChange={e => setImgQuery(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && searchImages(imgSearchTab as 'google'|'pixabay'|'sns', imgQuery)}
+                      onKeyDown={e => e.key === 'Enter' && searchImages(imgSearchTab as 'naver'|'google'|'pixabay'|'sns', imgQuery)}
                       placeholder={imgSearchTab === 'sns' ? '계정 이름 검색...' : `${previewArticle.keyword} 이미지 검색...`}
                       className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
-                    <button onClick={() => searchImages(imgSearchTab as 'google'|'pixabay'|'sns', imgQuery || previewArticle.keyword)}
+                    <button onClick={() => searchImages(imgSearchTab as 'naver'|'google'|'pixabay'|'sns', imgQuery || previewArticle.keyword)}
                       disabled={imgLoading}
                       className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">
                       {imgLoading ? '...' : '검색'}
@@ -861,19 +872,37 @@ export default function AutoServicePage() {
                 )}
 
                 {imgResults.length > 0 && (
-                  <div className="grid grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto">
-                    {imgResults.map((img, i) => (
-                      <div key={i} onClick={() => replacingImgSrc ? replaceImage(replacingImgSrc, img.url) : alert('먼저 위에서 교체할 이미지를 클릭하세요')}
-                        className="relative cursor-pointer rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 group">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={img.thumb || img.url} alt={img.author} className="w-full h-20 object-cover" />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-all">
-                          <span className="text-white text-xs font-bold opacity-0 group-hover:opacity-100">교체</span>
+                  <>
+                    {!replacingImgSrc && (
+                      <p className="text-xs text-gray-500 mb-2">
+                        이미지 클릭: <span className="text-blue-600 font-medium">대표이미지 배경으로 사용</span> | 본문 이미지 교체하려면 위에서 이미지 먼저 클릭
+                      </p>
+                    )}
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto">
+                      {imgResults.map((img, i) => (
+                        <div key={i} onClick={() => {
+                          if (replacingImgSrc) {
+                            replaceImage(replacingImgSrc, img.url);
+                          } else {
+                            setThumbBgUrl(img.url);
+                          }
+                        }}
+                          className={`relative cursor-pointer rounded-lg overflow-hidden border-2 hover:border-blue-400 group transition-all ${thumbBgUrl === img.url ? 'border-yellow-400 ring-2 ring-yellow-200' : 'border-gray-200'}`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img.thumb || img.url} alt={img.author} className="w-full h-20 object-cover" />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-all">
+                            <span className="text-white text-xs font-bold opacity-0 group-hover:opacity-100">
+                              {replacingImgSrc ? '교체' : '배경 사용'}
+                            </span>
+                          </div>
+                          {thumbBgUrl === img.url && (
+                            <div className="absolute top-1 right-1 bg-yellow-400 text-xs px-1 rounded font-bold">배경</div>
+                          )}
+                          <p className="text-xs text-gray-400 truncate px-1 py-0.5">{img.caption || img.author}</p>
                         </div>
-                        <p className="text-xs text-gray-400 truncate px-1 py-0.5">{img.caption || img.author}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </>
                 )}
 
                 {/* 저장 버튼 */}

@@ -101,6 +101,28 @@ async function searchSnsImages(query: string, limit = 12) {
   }));
 }
 
+// 네이버 이미지 검색
+async function searchNaver(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+  try {
+    const res = await fetch(
+      `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count}&sort=sim`,
+      { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.items || [])
+      .filter((item: { link: string }) => item.link?.startsWith('http'))
+      .map((item: { link: string; thumbnail: string; title: string }) => ({
+        url: item.link,
+        thumb: item.thumbnail || item.link,
+        author: item.title?.replace(/<[^>]+>/g, '') || '네이버',
+      }));
+  } catch { return []; }
+}
+
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -109,11 +131,16 @@ export async function GET(req: NextRequest) {
   const action = req.nextUrl.searchParams.get('action');
   const q = req.nextUrl.searchParams.get('q') || '';
 
+  if (action === 'naver') {
+    const images = await searchNaver(q);
+    return NextResponse.json({ images });
+  }
+
   if (action === 'google') {
     const images = await searchGoogle(q);
-    // Google 없으면 Pixabay로 폴백
     if (images.length === 0) {
-      const fallback = await searchPixabay(q);
+      // Google 없으면 네이버로 폴백
+      const fallback = await searchNaver(q);
       return NextResponse.json({ images: fallback, fallback: true });
     }
     return NextResponse.json({ images });
@@ -129,7 +156,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ images });
   }
 
-  return NextResponse.json({ error: 'action 필요 (google|pixabay|sns)' }, { status: 400 });
+  return NextResponse.json({ error: 'action 필요 (naver|google|pixabay|sns)' }, { status: 400 });
 }
 
 // 사용자 파일 업로드 → Supabase Storage
