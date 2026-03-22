@@ -47,38 +47,117 @@ function buildPrompt(keyword: string, news: {title:string;description:string}[],
     ...blogs.map((b, i) => `[블로그${i+1}] ${b.title}\n${b.description}`),
   ].join('\n\n');
 
-  return `당신은 SEO 최적화 블로그 글 전문 작성가입니다. 구글 애드센스 수익 최적화에 맞게 글을 작성하세요.
+  return `당신은 대한민국 최고의 SEO 블로그 전문 작가입니다. 구글 애드센스 승인 및 수익 극대화에 최적화된 글을 작성합니다.
 
 포커스 키워드: "${keyword}"
 오늘 날짜: ${today}
 
 참고 자료:
-${sources || '(참고 자료 없음)'}
+${sources || '(참고 자료 없음 - 전문 지식으로 풍부하게 작성)'}
 
-아래 형식으로 정확히 출력하세요:
+## 작성 지침 (필수 준수)
+- 분량: 순수 텍스트 기준 최소 3500자 이상 (HTML 태그 제외)
+- 톤앤매너: 친근하고 유쾌하며 유익한 전문가 느낌 — 딱딱하지 않고 읽는 재미가 있어야 함
+- 각 단락은 최소 4-5문장으로 풍부하게 작성
+- 포커스 키워드는 제목, 소제목, 본문에 자연스럽게 반복 삽입
+- 독자가 끝까지 읽고 싶게 만드는 흥미로운 사례, 통계, 비유 활용
+- 각 H2 섹션은 6문장 이상, 충분히 깊이 있게 서술
+
+## 출력 형식 (정확히 이 순서대로, 다른 텍스트 절대 추가 금지)
 
 ===TITLE===
-(SEO 제목: 포커스 키워드를 앞부분에 포함, 30-60자)
+${keyword}에 관한 SEO 최적화 제목 (30-60자, 키워드를 앞부분에)
 ===META===
-(메타 설명: 포커스 키워드 포함, 120-160자)
+${keyword}를 포함한 메타 설명 (120-160자, 클릭을 유도하는 문장)
 ===CONTENT===
-(아래 HTML 형식으로 3000자 이상)
-===KEYWORDS===
-(관련 키워드 10개, 쉼표로 구분)
+<p data-ke-size="size16"><span style="background-color: #fafafa; color: #333333; text-align: start;">${keyword} - ${today}, 지금 이 순간 많은 사람들이 궁금해하는 바로 그 주제입니다. [2문장의 흥미로운 도입부를 작성하세요]</span></p>
+<p data-ke-size="size16">[배경과 맥락을 설명하는 3-4문장 단락. 왜 이 주제가 중요한지, 최신 트렌드와 연결]</p>
+<p data-ke-size="size16">[이 글에서 무엇을 배울 수 있는지 안내하는 단락. 독자의 기대감을 높이는 3문장]</p>
+<div style="background-color: #f5f5f5; padding: 15px; border-radius: 8px; font-style: italic; margin-bottom: 25px; font-size: 15px;"><b>${keyword}란?</b> [핵심 개념 정의 및 이 글의 핵심 내용을 2-3문장으로 요약]</div>
+<h3 style="margin-bottom: 15px;" data-ke-size="size23"><b><span style="background-color: #fafafa; color: #333333; text-align: start;">${keyword} 완벽 가이드: 알아두면 인생이 바뀌는 핵심 정보</span></b></h3>
 
-HTML 형식:
-<p data-ke-size="size16"><span style="background-color: #fafafa; color: #333333; text-align: start;">[제목] [날짜], [도입부 2문장]</span></p>
-<p data-ke-size="size16">[도입 2단락]</p>
-<div style="background-color: #f5f5f5; padding: 15px; border-radius: 8px; font-style: italic; margin-bottom: 25px; font-size: 15px;"><b>[제목]</b> [요약]</div>
-<h3 style="margin-bottom: 15px;" data-ke-size="size23"><b><span style="background-color: #fafafa; color: #333333;">[제목]</span></b></h3>
-(H2 섹션 5-6개, 각 섹션 형식:)
-<h2 id="sectionN" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>N. [섹션 제목]</b></h2>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[내용]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[내용]</p>
-<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[핵심]</div>
-(핵심요약카드, FAQ 6개, 키워드 나열 포함)
+<h2 id="section1" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. ${keyword}란 무엇인가? 기초부터 탄탄하게</b></h2>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[이 주제의 정의와 개념을 쉽고 재미있게 설명하는 5-6문장. 어려운 용어는 비유로 풀어서 설명]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[역사적 배경이나 발전 과정을 흥미롭게 서술하는 5문장. 재미있는 사실이나 몰랐던 이야기 포함]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[일상생활과의 연결고리, 왜 지금 알아야 하는지 공감되게 설명하는 4문장]</p>
+<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[이 섹션에서 가장 중요한 핵심 내용 2문장]</div>
+
+<h2 id="section2" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. ${keyword}의 핵심 특징과 장점</b></h2>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[주요 특징이나 장점을 구체적인 사례와 함께 설명하는 5-6문장. 숫자나 통계를 활용해 신뢰도 높이기]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[실제 활용 사례나 성공 사례를 흥미롭게 서술하는 5문장]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[다른 대안과 비교하거나, 이 주제만의 독특한 가치를 설명하는 4문장]</p>
+<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[이 섹션의 가장 중요한 포인트 2문장]</div>
+
+<h2 id="section3" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. ${keyword} 제대로 활용하는 실전 방법</b></h2>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[실제로 어떻게 사용하거나 접근하는지 단계별로 쉽게 설명하는 5-6문장. 초보자도 따라할 수 있게 친절하게]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[흔히 하는 실수나 주의사항을 유머러스하게 설명하는 5문장]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[전문가만 아는 꿀팁이나 노하우를 공개하는 4-5문장]</p>
+<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[실전에서 바로 써먹을 수 있는 핵심 팁 2문장]</div>
+
+<h2 id="section4" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. ${keyword} 관련 최신 트렌드와 미래 전망</b></h2>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[최신 동향과 변화를 흥미롭게 설명하는 5-6문장. 2024-2025년 트렌드, 새로운 방향성]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[앞으로의 전망과 예측을 전문가 시각으로 분석하는 5문장]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[트렌드에 뒤처지지 않으려면 지금 해야 할 것들을 구체적으로 제시하는 4문장]</p>
+<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[미래를 위해 지금 당장 체크해야 할 핵심 포인트 2문장]</div>
+
+<h2 id="section5" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. ${keyword} 전문가가 알려주는 성공 비결</b></h2>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[성공한 사람들의 공통점이나 검증된 방법론을 스토리텔링으로 풀어내는 5-6문장]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[실패를 피하는 방법과 올바른 접근법을 유쾌하게 설명하는 5문장]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[처음 시작하는 사람을 위한 단계별 로드맵 제시 4-5문장]</p>
+<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[성공을 위한 가장 중요한 마인드셋이나 행동 원칙 2문장]</div>
+
+<h2 id="section6" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>6. ${keyword} 총정리 — 오늘부터 바로 시작하세요</b></h2>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[지금까지 배운 내용을 깔끔하게 정리하고 실행 동기를 부여하는 5-6문장]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[독자가 취해야 할 다음 액션 스텝을 구체적으로 제시하는 4-5문장]</p>
+<p style="margin-bottom: 15px;" data-ke-size="size16">[마무리 메시지 — 독자를 응원하고 댓글이나 공유를 유도하는 3-4문장]</p>
+<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[이 글 전체의 핵심 메시지를 한 번 더 강조하는 2문장]</div>
+
+<div class="single-summary-card" style="border: 2px solid #ccc; padding: 20px; border-radius: 8px; max-width: 800px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 20px auto;">
+<div class="card-header" style="display: flex; align-items: center; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-bottom: 10px;"><span style="font-size: 24px; color: #1a73e8; margin-right: 10px;" class="card-header-icon">💡</span>
+<h3 style="font-size: 20px; color: #1a73e8; margin: 0;" data-ke-size="size23">핵심 요약</h3>
+</div>
+<div class="card-content" style="font-size: 16px; line-height: 1.5; color: #333;">
+<div class="section" style="margin-bottom: 10px;"><b>첫 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[섹션1-2에서 다룬 가장 중요한 핵심 내용 1문장]</span></div>
+<div class="section" style="margin-bottom: 10px;"><b>두 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[섹션3에서 다룬 실전 방법의 핵심 1문장]</span></div>
+<div class="section" style="margin-bottom: 10px;"><b>세 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[섹션4-5에서 다룬 트렌드와 성공 비결 핵심 1문장]</span></div>
+<div class="section" style="margin-bottom: 10px;"><b>네 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[지금 당장 실천할 수 있는 가장 중요한 행동 1문장]</span></div>
+</div>
+<div class="card-footer" style="font-size: 14px; color: #777; border-top: 1px dashed #ddd; padding-top: 10px; margin-top: 10px; text-align: center;">[독자를 응원하는 따뜻한 마무리 한 문장]</div>
+</div>
+
 <h2 id="faq" style="font-size: 22px; color: #1a73e8; margin: 30px 0 14px; padding-bottom: 8px; border-bottom: 2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
-<p data-ke-size="size16"><span style="background-color: #fafafa; color: #333333;">[키워드1], [키워드2], ...</span></p>`;
+<div style="margin: 22px 0 0;">
+<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
+<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q1. [${keyword}에 대해 가장 많이 묻는 질문 1]</div>
+<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+</div>
+<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
+<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q2. [자주 묻는 질문 2]</div>
+<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+</div>
+<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
+<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q3. [자주 묻는 질문 3]</div>
+<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+</div>
+<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
+<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q4. [자주 묻는 질문 4]</div>
+<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+</div>
+<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
+<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q5. [자주 묻는 질문 5]</div>
+<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+</div>
+<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
+<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q6. [자주 묻는 질문 6]</div>
+<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+</div>
+</div>
+
+<p data-ke-size="size16"><span style="background-color: #fafafa; color: #333333; text-align: start;">[관련 키워드 10개를 쉼표로 나열]</span></p>
+===KEYWORDS===
+[관련 키워드 10개를 쉼표로 구분하여 나열]
+
+주의사항: 위의 대괄호 [] 안의 지시문은 모두 실제 내용으로 교체하세요. 대괄호나 지시문이 최종 출력에 남아있으면 안 됩니다. HTML 태그와 실제 내용만 출력하세요.`;
 }
 
 async function searchPixabayImages(query: string, count = 3): Promise<string[]> {
@@ -86,11 +165,21 @@ async function searchPixabayImages(query: string, count = 3): Promise<string[]> 
   if (!apiKey) return [];
   try {
     const res = await fetch(
-      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&lang=ko&image_type=photo&per_page=${count + 3}&safesearch=true&min_width=600`
+      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.hits || []).slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+    const hits = data.hits || [];
+    if (hits.length > 0) {
+      return hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+    }
+    // 결과 없으면 일반 이미지로 폴백
+    const fallbackRes = await fetch(
+      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent('nature background')}&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
+    );
+    if (!fallbackRes.ok) return [];
+    const fallbackData = await fallbackRes.json();
+    return (fallbackData.hits || []).slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
   } catch { return []; }
 }
 
