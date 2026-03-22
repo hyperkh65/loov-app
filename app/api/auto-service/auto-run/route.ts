@@ -139,8 +139,8 @@ async function generateArticleForUser(
       ai_model: aiModel,
       status: 'draft',
       sources: [
-        ...news.map(n => ({ type: 'news', ...n })),
-        ...blogs.map(b => ({ type: 'blog', ...b })),
+        ...news.map((n: {title:string;description:string;link:string}) => ({ type: 'news', ...n })),
+        ...blogs.map((b: {title:string;description:string;link:string}) => ({ type: 'blog', ...b })),
       ],
       word_count: wordCount,
     });
