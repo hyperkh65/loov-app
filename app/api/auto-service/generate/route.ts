@@ -11,7 +11,7 @@ async function searchNaver(type: 'news' | 'blog', query: string) {
   if (!clientId || !clientSecret) return [];
   try {
     const res = await fetch(
-      `https://openapi.naver.com/v1/search/${type}.json?query=${encodeURIComponent(query)}&display=5&sort=date`,
+      `https://openapi.naver.com/v1/search/${type}.json?query=${encodeURIComponent(query)}&display=10&sort=date`,
       { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
     );
     if (!res.ok) return [];
