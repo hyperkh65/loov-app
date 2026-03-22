@@ -88,11 +88,18 @@ export default function AutoServicePage() {
 
   // 미리보기/편집 모달
   const [previewArticle, setPreviewArticle] = useState<Article | null>(null);
+  const [modalTab, setModalTab] = useState<'preview' | 'edit' | 'images'>('preview');
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [editTitle, setEditTitle] = useState('');
   const [editModel, setEditModel] = useState('qwen3');
   const [savingEdit, setSavingEdit] = useState(false);
+  // 이미지 편집
+  const [imgSearchTab, setImgSearchTab] = useState<'pixabay' | 'sns' | 'upload'>('pixabay');
+  const [imgQuery, setImgQuery] = useState('');
+  const [imgResults, setImgResults] = useState<{ url: string; thumb: string; author: string }[]>([]);
+  const [imgLoading, setImgLoading] = useState(false);
+  const [replacingImgSrc, setReplacingImgSrc] = useState<string | null>(null);
 
   // 발행 모달
   const [publishArticle, setPublishArticle] = useState<Article | null>(null);
@@ -100,6 +107,9 @@ export default function AutoServicePage() {
   const [selSns, setSelSns] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
+  // WordPress 사이트 목록
+  const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
+  const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
 
   // localStorage에서 무료AI 페이지의 키 읽기 (서버로 전달용)
   const getAiKeys = () => ({
@@ -111,9 +121,11 @@ export default function AutoServicePage() {
   useEffect(() => {
     fetch('/api/auto-service/settings')
       .then(r => r.json())
-      .then(d => {
-        if (d && !d.error) setAutoSettings(d);
-      });
+      .then(d => { if (d && !d.error) setAutoSettings(d); });
+    // WordPress 사이트 목록 로드
+    fetch('/api/wordpress/sites')
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d)) setWpSites(d); });
   }, []);
 
   const loadArticles = useCallback(async (status?: string) => {
@@ -212,11 +224,47 @@ export default function AutoServicePage() {
 
   const openPreview = (article: Article) => {
     setPreviewArticle(article);
+    setModalTab('preview');
     setEditMode(false);
     setEditContent(article.content);
     setEditTitle(article.title);
     setEditModel(article.ai_model || 'qwen3');
     setPublishResult(null);
+    setImgResults([]);
+    setReplacingImgSrc(null);
+    setImgQuery(article.keyword || '');
+  };
+
+  // 콘텐츠에서 img src 목록 추출
+  const extractImages = (html: string): string[] => {
+    const matches = [...html.matchAll(/<img[^>]+src="([^"]+)"/gi)];
+    return [...new Set(matches.map(m => m[1]))];
+  };
+
+  // 이미지 검색 (Pixabay or SNS)
+  const searchImages = async (tab: 'pixabay' | 'sns', q: string) => {
+    setImgLoading(true);
+    setImgResults([]);
+    const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    setImgResults(data.images || []);
+    setImgLoading(false);
+  };
+
+  // 이미지 교체 (editContent 내 src URL 변경)
+  const replaceImage = (oldSrc: string, newUrl: string) => {
+    setEditContent(prev => prev.replaceAll(oldSrc, newUrl));
+    setReplacingImgSrc(null);
+    setImgResults([]);
+  };
+
+  // 파일 업로드
+  const uploadFile = async (file: File, oldSrc: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/auto-service/images', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.url) replaceImage(oldSrc, data.url);
   };
 
   const saveEdit = async () => {
@@ -244,8 +292,9 @@ export default function AutoServicePage() {
 
   const openPublish = (article: Article) => {
     setPublishArticle(article);
-    setSelBlog(['naver']);
+    setSelBlog([]);
     setSelSns([]);
+    setSelWpSiteIds([]);
     setPublishResult(null);
   };
 
@@ -255,7 +304,12 @@ export default function AutoServicePage() {
     const res = await fetch('/api/auto-service/publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ article_id: publishArticle.id, blog_platforms: selBlog, sns_platforms: selSns }),
+      body: JSON.stringify({
+        article_id: publishArticle.id,
+        blog_platforms: selBlog,
+        sns_platforms: selSns,
+        wp_site_ids: selWpSiteIds,
+      }),
     });
     const data = await res.json();
     setPublishResult(data.results || {});
@@ -671,12 +725,46 @@ export default function AutoServicePage() {
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-2 block">블로그 플랫폼</label>
                   <div className="space-y-2">
-                    {BLOG_PLATFORMS.map(p => (
+                    {BLOG_PLATFORMS.filter(p => p.id !== 'wordpress').map(p => (
                       <label key={p.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                         <input type="checkbox" checked={selBlog.includes(p.id)} onChange={() => togglePlatform(selBlog, setSelBlog, p.id)} className="w-4 h-4" />
                         <span>{p.icon} {p.name}</span>
                       </label>
                     ))}
+                    {/* WordPress 사이트 목록 */}
+                    {wpSites.length > 0 ? (
+                      <div>
+                        <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🔵 WordPress 사이트 선택</div>
+                        {wpSites.map(site => (
+                          <label key={site.id} className="flex items-center gap-3 p-3 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-50 mb-1.5">
+                            <input type="checkbox"
+                              checked={selWpSiteIds.includes(site.id)}
+                              onChange={() => {
+                                const newIds = selWpSiteIds.includes(site.id)
+                                  ? selWpSiteIds.filter(id => id !== site.id)
+                                  : [...selWpSiteIds, site.id];
+                                setSelWpSiteIds(newIds);
+                                // wordpress를 blog_platforms에 포함 여부 자동 설정
+                                if (newIds.length > 0 && !selBlog.includes('wordpress')) {
+                                  setSelBlog(prev => [...prev, 'wordpress']);
+                                } else if (newIds.length === 0) {
+                                  setSelBlog(prev => prev.filter(b => b !== 'wordpress'));
+                                }
+                              }}
+                              className="w-4 h-4" />
+                            <div>
+                              <div className="text-sm font-medium text-gray-800">{site.site_name}</div>
+                              <div className="text-xs text-gray-400">{site.site_url}</div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 border border-gray-200">
+                        🔵 WordPress 사이트가 없습니다.{' '}
+                        <a href="/dashboard/wordpress" className="text-blue-600 hover:underline">WordPress 관리</a>에서 사이트를 추가하세요.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>
