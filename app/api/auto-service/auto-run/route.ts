@@ -9,6 +9,47 @@ export const maxDuration = 300;
 // Vercel Cron 또는 수동 트리거로 호출됨
 // Authorization: Bearer <CRON_SECRET>
 
+// 수집된 기사에서 og:image 스크래핑
+async function scrapeArticleImages(
+  items: { link: string; title: string }[],
+  limit = 6,
+): Promise<{ url: string; title: string }[]> {
+  const results: { url: string; title: string }[] = [];
+  const toScrape = items.slice(0, limit);
+
+  await Promise.allSettled(toScrape.map(async (item) => {
+    try {
+      const res = await fetch(item.link, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) return;
+      const html = await res.text();
+
+      // og:image 우선 추출
+      const ogMatch =
+        html.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+        html.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+      if (ogMatch?.[1]?.startsWith('http')) {
+        results.push({ url: ogMatch[1], title: item.title });
+        return;
+      }
+
+      // 첫 번째 큰 이미지 (icon/logo/button 제외)
+      const imgMatches = [...html.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+\.(jpg|jpeg|png|webp)(?:\?[^"']*)?)["']/gi)];
+      const filtered = imgMatches
+        .map(m => m[1])
+        .filter(u => !/(icon|logo|button|banner|sprite|pixel|blank|tracking)/i.test(u));
+      if (filtered[0]) results.push({ url: filtered[0], title: item.title });
+    } catch { /* skip */ }
+  }));
+
+  return results;
+}
+
 async function searchNaver(type: 'news' | 'blog', query: string) {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
@@ -327,16 +368,20 @@ async function generateArticleForUser(
     ]);
 
     const prompt = buildPrompt(keyword, news, blogs);
-    const rawOutput = await generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey);
-    const { title, meta_description, content: rawContent } = parseAiOutput(rawOutput);
+    const allSourceItems = [...news, ...blogs];
 
+    let rawOutput: string;
+    let scrapedImages: { url: string; title: string }[] = [];
+    [rawOutput, scrapedImages] = await Promise.all([
+      generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey),
+      scrapeArticleImages(allSourceItems),
+    ]);
+
+    const { title, meta_description, content: rawContent } = parseAiOutput(rawOutput);
     if (!title || !rawContent) return false;
 
-    // 이미지 검색 + 본문 삽입
     const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
     const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
-
-    // SVG 썸네일 생성 (Naver CDN thumbnail URL을 배경으로, 실패시 그라디언트)
     const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
     const wordCount = content.replace(/<[^>]+>/g, '').length;
 
@@ -353,6 +398,7 @@ async function generateArticleForUser(
       sources: [
         ...news.map((n: {title:string;description:string;link:string}) => ({ type: 'news', ...n })),
         ...blogs.map((b: {title:string;description:string;link:string}) => ({ type: 'blog', ...b })),
+        ...scrapedImages.map(img => ({ type: 'collected_image', title: img.title, link: img.url })),
       ],
       word_count: wordCount,
     });

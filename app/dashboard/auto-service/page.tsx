@@ -42,7 +42,7 @@ interface Article {
   published_at: string | null;
   word_count: number;
   created_at: string;
-  sources: { type: string; title: string; link: string }[];
+  sources: { type: string; title: string; link: string; description?: string }[];
 }
 
 interface AutoSettings {
@@ -100,6 +100,7 @@ export default function AutoServicePage() {
   const [imgResults, setImgResults] = useState<{ url: string; thumb: string; author: string; caption?: string }[]>([]);
   const [imgLoading, setImgLoading] = useState(false);
   const [replacingImgSrc, setReplacingImgSrc] = useState<string | null>(null);
+  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null); // 다운로드 중인 이미지 URL
   // 대표이미지 편집기
   const [thumbTitle, setThumbTitle] = useState('');
   const [thumbKeyword, setThumbKeyword] = useState('');
@@ -278,6 +279,28 @@ export default function AutoServicePage() {
     const res = await fetch('/api/auto-service/images', { method: 'POST', body: form });
     const data = await res.json();
     if (data.url) replaceImage(oldSrc, data.url);
+  };
+
+  // 외부 이미지 URL → Supabase 다운로드 후 URL 반환
+  const downloadImage = async (url: string): Promise<string | null> => {
+    setDownloadingUrl(url);
+    try {
+      const res = await fetch('/api/auto-service/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      return data.url || null;
+    } catch { return null; }
+    finally { setDownloadingUrl(null); }
+  };
+
+  // 이미지를 본문 끝에 삽입
+  const insertImageToContent = (imageUrl: string, title: string) => {
+    const alt = title.replace(/"/g, '');
+    const imgHtml = `\n<figure style="text-align:center;margin:25px 0;"><img src="${imageUrl}" alt="${alt}" title="${alt}" style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/><figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt} | ⓒ 수집 이미지</figcaption></figure>\n`;
+    setEditContent(prev => prev + imgHtml);
   };
 
   const saveEdit = async () => {
@@ -807,6 +830,69 @@ export default function AutoServicePage() {
                     </label>
                   </div>
                 </div>
+
+                {/* 수집된 소스 이미지 */}
+                {(() => {
+                  const collectedImages = (previewArticle.sources || []).filter(s => s.type === 'collected_image');
+                  if (collectedImages.length === 0) return null;
+                  return (
+                    <div className="mb-5 p-4 bg-amber-50 rounded-xl border border-amber-200">
+                      <p className="text-xs font-semibold text-amber-800 mb-2">
+                        📰 수집된 소스 이미지 ({collectedImages.length}개) — 클릭하면 다운로드 후 사용
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {collectedImages.map((img, i) => (
+                          <div key={i} className="relative group">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={img.link}
+                              alt={img.title}
+                              className="w-28 h-20 object-cover rounded-lg border border-amber-200"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 flex flex-col items-center justify-center gap-1 transition-all rounded-lg opacity-0 group-hover:opacity-100">
+                              <button
+                                onClick={async () => {
+                                  if (downloadingUrl) return;
+                                  const stored = await downloadImage(img.link);
+                                  if (!stored) { alert('다운로드 실패'); return; }
+                                  if (replacingImgSrc) {
+                                    replaceImage(replacingImgSrc, stored);
+                                  } else {
+                                    insertImageToContent(stored, img.title);
+                                    alert('✅ 본문에 이미지가 추가되었습니다');
+                                  }
+                                }}
+                                disabled={downloadingUrl === img.link}
+                                className="text-white text-xs bg-blue-600 px-2 py-0.5 rounded hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {downloadingUrl === img.link ? '⏳' : replacingImgSrc ? '교체' : '본문 추가'}
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (downloadingUrl) return;
+                                  const stored = await downloadImage(img.link);
+                                  if (stored) setThumbBgUrl(stored);
+                                  else alert('다운로드 실패');
+                                }}
+                                disabled={downloadingUrl === img.link}
+                                className="text-white text-xs bg-yellow-500 px-2 py-0.5 rounded hover:bg-yellow-600 disabled:opacity-50"
+                              >
+                                {downloadingUrl === img.link ? '⏳' : '배경 사용'}
+                              </button>
+                            </div>
+                            {downloadingUrl === img.link && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg">
+                                <span className="text-white text-xs">다운로드 중...</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-amber-600 mt-2">💡 이미지가 안 보이면 원본 사이트에서 차단된 것입니다</p>
+                    </div>
+                  );
+                })()}
 
                 {/* 현재 글 이미지 목록 */}
                 <div className="mb-4">
