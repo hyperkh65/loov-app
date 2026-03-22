@@ -93,18 +93,66 @@ HTML 형식 (반드시 이 구조 그대로):
 중요: HTML 외 다른 텍스트, 마크다운, 설명문 절대 금지.`;
 }
 
+async function searchPixabayImages(query: string, count = 3): Promise<string[]> {
+  const apiKey = process.env.PIXABAY_API_KEY;
+  if (!apiKey) return [];
+  try {
+    const res = await fetch(
+      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&lang=ko&image_type=photo&per_page=${count + 3}&safesearch=true&min_width=600`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.hits || []).slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+  } catch { return []; }
+}
+
+function insertImagesIntoContent(content: string, imageUrls: string[], keyword: string): string {
+  if (imageUrls.length === 0) return content;
+  const imgHtml = (url: string) =>
+    `\n<div style="text-align:center;margin:25px 0;">`+
+    `<img src="${url}" alt="${keyword}" `+
+    `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);"/>`+
+    `<p style="font-size:12px;color:#888;margin-top:6px;">ⓒ Pixabay 무료 이미지</p>`+
+    `</div>\n`;
+
+  // H2 섹션 후마다 이미지 삽입 (짝수 번째: 2번째, 4번째)
+  let imgIdx = 0;
+  let h2Count = 0;
+  return content.replace(/<\/h2>/gi, (match) => {
+    h2Count++;
+    if (h2Count % 2 === 1 && imgIdx < imageUrls.length) {
+      return match + imgHtml(imageUrls[imgIdx++]);
+    }
+    return match;
+  });
+}
+
 function parseAiOutput(raw: string) {
+  // 마크다운 코드블록 제거
+  const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '');
+
   const extract = (tag: string) => {
-    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?=====[A-Z]|$)`, 'i');
-    const match = raw.match(re);
+    // 대소문자 무관 + [A-Za-z] 로 다음 섹션 감지
+    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?=====[A-Za-z]|$)`, 'i');
+    const match = cleaned.match(re);
     return match ? match[1].trim() : '';
   };
-  return {
-    title: extract('TITLE'),
-    meta_description: extract('META'),
-    content: extract('CONTENT'),
-    keywords: extract('KEYWORDS').split(',').map(k => k.trim()).filter(Boolean),
-  };
+
+  // 제목: 첫 줄만 취하고 60자 초과 시 자름
+  const rawTitle = extract('TITLE');
+  const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle).trim().slice(0, 60);
+
+  // 메타설명: 첫 줄만
+  const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
+
+  // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
+  let content = extract('CONTENT');
+  content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+
+  const keywordsRaw = extract('KEYWORDS');
+  const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
+
+  return { title, meta_description, content, keywords };
 }
 
 export async function POST(req: NextRequest) {
@@ -135,15 +183,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `AI 생성 실패: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }
 
-  const { title, meta_description, content, keywords } = parseAiOutput(rawOutput);
-  if (!title || !content) {
+  const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
+  if (!title || !rawContent) {
     return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
   }
 
-  // 3. SVG 썸네일 자동 생성 (Blogger 스타일)
+  // 3. Pixabay 이미지 검색 + 본문 삽입
+  const pixabayImages = await searchPixabayImages(keyword, 3);
+  const content = insertImagesIntoContent(rawContent, pixabayImages, keyword);
+
+  // 4. SVG 썸네일 자동 생성 (Blogger 스타일, 대표이미지)
   const imageUrl = await generateAndUploadThumbnail(title, keyword);
 
-  // 4. 글자 수 계산
+  // 5. 글자 수 계산
   const wordCount = content.replace(/<[^>]+>/g, '').length;
 
   // 5. DB 저장
