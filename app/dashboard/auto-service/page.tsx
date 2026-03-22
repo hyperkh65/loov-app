@@ -97,9 +97,15 @@ export default function AutoServicePage() {
   // 이미지 편집
   const [imgSearchTab, setImgSearchTab] = useState<'google' | 'pixabay' | 'sns' | 'upload'>('google');
   const [imgQuery, setImgQuery] = useState('');
-  const [imgResults, setImgResults] = useState<{ url: string; thumb: string; author: string }[]>([]);
+  const [imgResults, setImgResults] = useState<{ url: string; thumb: string; author: string; caption?: string }[]>([]);
   const [imgLoading, setImgLoading] = useState(false);
   const [replacingImgSrc, setReplacingImgSrc] = useState<string | null>(null);
+  // 대표이미지 편집기
+  const [thumbTitle, setThumbTitle] = useState('');
+  const [thumbKeyword, setThumbKeyword] = useState('');
+  const [thumbColor, setThumbColor] = useState<'blue' | 'dark' | 'green'>('blue');
+  const [thumbGenerating, setThumbGenerating] = useState(false);
+  const [thumbRepUrl, setThumbRepUrl] = useState<string | null>(null);
 
   // 발행 모달
   const [publishArticle, setPublishArticle] = useState<Article | null>(null);
@@ -233,6 +239,10 @@ export default function AutoServicePage() {
     setImgResults([]);
     setReplacingImgSrc(null);
     setImgQuery(article.keyword || '');
+    setThumbTitle(article.title);
+    setThumbKeyword(article.keyword || '');
+    setThumbColor('blue');
+    setThumbRepUrl(article.representative_image_url);
   };
 
   // 콘텐츠에서 img src 목록 추출
@@ -721,9 +731,75 @@ export default function AutoServicePage() {
             {/* 이미지 탭 */}
             {modalTab === 'images' && (
               <div className="p-4">
+
+                {/* ── 대표이미지 편집기 ── */}
+                <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <p className="text-xs font-semibold text-gray-700 mb-3">🖼️ 대표이미지 (썸네일) 편집</p>
+                  <div className="flex gap-3 mb-3">
+                    {thumbRepUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumbRepUrl} alt="대표이미지" className="w-24 h-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 space-y-2">
+                      <input value={thumbTitle} onChange={e => setThumbTitle(e.target.value)}
+                        placeholder="제목 텍스트" className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+                      <input value={thumbKeyword} onChange={e => setThumbKeyword(e.target.value)}
+                        placeholder="키워드 태그" className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+                      <div className="flex gap-2">
+                        {([['blue', '🔵 블루'], ['dark', '⚫ 다크'], ['green', '🟢 그린']] as ['blue'|'dark'|'green', string][]).map(([c, label]) => (
+                          <button key={c} onClick={() => setThumbColor(c)}
+                            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${thumbColor === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700'}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={async () => {
+                      if (!previewArticle) return;
+                      setThumbGenerating(true);
+                      const res = await fetch('/api/auto-service/thumbnail', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ article_id: previewArticle.id, title: thumbTitle, keyword: thumbKeyword, color_scheme: thumbColor }),
+                      });
+                      const data = await res.json();
+                      if (data.url) {
+                        setThumbRepUrl(data.url);
+                        setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
+                        await loadArticles();
+                      }
+                      setThumbGenerating(false);
+                    }} disabled={thumbGenerating}
+                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                      {thumbGenerating ? '생성 중...' : '🎨 썸네일 재생성'}
+                    </button>
+                    <label className="flex-1 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer text-center">
+                      📁 이미지 직접 업로드
+                      <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file || !previewArticle) return;
+                        setThumbGenerating(true);
+                        const form = new FormData();
+                        form.append('file', file);
+                        form.append('article_id', previewArticle.id);
+                        const res = await fetch('/api/auto-service/thumbnail', { method: 'PUT', body: form });
+                        const data = await res.json();
+                        if (data.url) {
+                          setThumbRepUrl(data.url);
+                          setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
+                          await loadArticles();
+                        }
+                        setThumbGenerating(false);
+                      }} />
+                    </label>
+                  </div>
+                </div>
+
                 {/* 현재 글 이미지 목록 */}
                 <div className="mb-4">
-                  <p className="text-xs font-medium text-gray-600 mb-2">현재 글의 이미지 ({extractImages(editContent).length}개) — 클릭하면 교체</p>
+                  <p className="text-xs font-medium text-gray-600 mb-2">📄 본문 이미지 ({extractImages(editContent).length}개) — 클릭하면 교체</p>
                   {extractImages(editContent).length === 0 ? (
                     <p className="text-sm text-gray-400">이미지 없음</p>
                   ) : (
@@ -794,7 +870,7 @@ export default function AutoServicePage() {
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-all">
                           <span className="text-white text-xs font-bold opacity-0 group-hover:opacity-100">교체</span>
                         </div>
-                        <p className="text-xs text-gray-400 truncate px-1 py-0.5">{img.author}</p>
+                        <p className="text-xs text-gray-400 truncate px-1 py-0.5">{img.caption || img.author}</p>
                       </div>
                     ))}
                   </div>
