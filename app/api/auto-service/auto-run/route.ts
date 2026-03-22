@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
+import { getSetting } from '@/lib/get-setting';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
 
@@ -161,9 +162,11 @@ ${keyword}를 포함한 메타 설명 (120-160자, 클릭을 유도하는 문장
 }
 
 async function searchInlineImages(query: string, count = 3): Promise<string[]> {
-  // 1순위: Google Custom Search
-  const googleKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const googleCx = process.env.GOOGLE_SEARCH_CX;
+  // 1순위: Google Custom Search (설정 페이지에서 입력한 키)
+  const [googleKey, googleCx] = await Promise.all([
+    getSetting('GOOGLE_SEARCH_API_KEY'),
+    getSetting('GOOGLE_SEARCH_CX'),
+  ]);
   if (googleKey && googleCx) {
     try {
       const res = await fetch(
@@ -176,8 +179,8 @@ async function searchInlineImages(query: string, count = 3): Promise<string[]> {
       }
     } catch { /* fallthrough */ }
   }
-  // 2순위: Pixabay
-  const pixabayKey = process.env.PIXABAY_API_KEY;
+  // 2순위: Pixabay (설정 페이지에서 입력한 키)
+  const pixabayKey = await getSetting('PIXABAY_API_KEY');
   if (pixabayKey) {
     try {
       const res = await fetch(
