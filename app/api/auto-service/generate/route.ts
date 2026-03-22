@@ -32,117 +32,150 @@ function buildPrompt(keyword: string, newsItems: {title:string;description:strin
     ...blogItems.map((b, i) => `[블로그${i+1}] ${b.title}\n${b.description}`),
   ].join('\n\n');
 
-  return `당신은 대한민국 최고의 SEO 블로그 전문 작가입니다. 구글 애드센스 승인 및 수익 극대화에 최적화된 글을 작성합니다.
+  return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
+수집된 최신 뉴스와 블로그 자료를 철저히 분석하여, 그 내용에 기반한 정확하고 흥미로운 블로그 글을 작성합니다.
+
+═══════════════════════════════════
+■ 글 작성 핵심 원칙 (반드시 준수)
+═══════════════════════════════════
+
+【두괄식 원칙】
+- 모든 소제목과 단락의 첫 문장에 핵심 결론/사실을 먼저 쓸 것
+- "~에 대해 알아보겠습니다" "~이 중요합니다" 같은 서론식 문장 절대 금지
+- 독자가 첫 문장만 읽어도 그 단락의 핵심을 파악할 수 있어야 함
+
+【소제목 원칙】
+- 소제목은 반드시 키워드의 실제 맥락과 성격에 맞게 직접 결정할 것
+- 고정 템플릿 소제목(예: "X의 핵심 특징과 장점", "X 성공 비결") 절대 사용 금지
+- 수집된 참고자료의 핵심 내용을 기반으로 소제목 구성
+- 예: 사고/사건 키워드 → 경위, 원인, 피해, 대책 위주 소제목
+- 예: 제품/서비스 키워드 → 특징, 가격, 사용법, 비교 위주 소제목
+- 예: 트렌드/이슈 키워드 → 현황, 배경, 영향, 전망 위주 소제목
+
+【참고자료 활용 원칙】
+- 제공된 뉴스/블로그 자료의 구체적 내용(날짜, 인물명, 수치, 사건 경위)을 글에 반드시 반영
+- 자료에 없는 내용을 억지로 지어내지 말 것
+- 자료가 사건/사고라면 안전, 원인, 피해, 대응 관점으로 서술
+- 자료가 제품/서비스라면 실사용 관점으로 서술
+
+【문체 원칙】
+- 친근하고 읽기 쉬운 구어체 혼용, 딱딱한 공문체 금지
+- 독자가 "오, 이거 몰랐네!" 하고 무릎 칠 만한 사실 포함
+- 공감 유발 표현, 구체적 사례, 생생한 묘사 활용
+- 각 단락 최소 4문장, 충분한 내용 서술
+
+【분량 원칙】
+- 순수 텍스트(HTML 태그 제외) 최소 3500자 이상 필수
+- H2 섹션 6개, 각 섹션 3개 단락 이상
 
 포커스 키워드: "${keyword}"
 오늘 날짜: ${today}
 
-참고 자료:
-${sources || '(참고 자료 없음 - 전문 지식으로 풍부하게 작성)'}
+══════════════════════════════
+■ 수집된 참고자료 (반드시 분석 후 활용)
+══════════════════════════════
 
-## 작성 지침 (필수 준수)
-- 분량: 순수 텍스트 기준 최소 3500자 이상 (HTML 태그 제외)
-- 톤앤매너: 친근하고 유쾌하며 유익한 전문가 느낌 — 딱딱하지 않고 읽는 재미가 있어야 함
-- 각 단락은 최소 4-5문장으로 풍부하게 작성
-- 포커스 키워드는 제목, 소제목, 본문에 자연스럽게 반복 삽입
-- 독자가 끝까지 읽고 싶게 만드는 흥미로운 사례, 통계, 비유 활용
-- 각 H2 섹션은 6문장 이상, 충분히 깊이 있게 서술
+${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성)'}
 
-## 출력 형식 (정확히 이 순서대로, 다른 텍스트 절대 추가 금지)
+══════════════════════════════
+■ 출력 형식 (이 구조 그대로 출력)
+══════════════════════════════
 
 ===TITLE===
-${keyword}에 관한 SEO 최적화 제목 (30-60자, 키워드를 앞부분에)
+[포커스 키워드를 앞에 포함한 SEO 제목, 40-60자, 참고자료 내용 반영]
 ===META===
-${keyword}를 포함한 메타 설명 (120-160자, 클릭을 유도하는 문장)
+[포커스 키워드 포함, 독자 클릭 유발하는 메타 설명 130-160자]
 ===CONTENT===
-<p data-ke-size="size16"><span style="background-color: #fafafa; color: #333333; text-align: start;">${keyword} - ${today}, 지금 이 순간 많은 사람들이 궁금해하는 바로 그 주제입니다. [2문장의 흥미로운 도입부를 작성하세요 — 독자의 궁금증을 자극하고 계속 읽게 만드는 내용]</span></p>
-<p data-ke-size="size16">[배경과 맥락을 설명하는 3-4문장 단락. 왜 이 주제가 중요한지, 요즘 어떤 트렌드와 연결되는지 친근하게 설명. 통계나 구체적 사례 포함]</p>
-<p data-ke-size="size16">[이 글에서 무엇을 배울 수 있는지 안내하는 단락. 독자의 기대감을 높이는 3문장]</p>
-<div style="background-color: #f5f5f5; padding: 15px; border-radius: 8px; font-style: italic; margin-bottom: 25px; font-size: 15px;"><b>${keyword}란?</b> [핵심 개념 정의 및 이 글의 핵심 내용을 2-3문장으로 요약. 독자가 북마크하고 싶을 만큼 명확하게]</div>
-<h3 style="margin-bottom: 15px;" data-ke-size="size23"><b><span style="background-color: #fafafa; color: #333333; text-align: start;">${keyword} 완벽 가이드: 알아두면 인생이 바뀌는 핵심 정보</span></b></h3>
+<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[두괄식 도입: 이 글의 핵심 결론/사실을 첫 문장에 직접 명시. 참고자료의 가장 핵심적인 내용을 바탕으로 독자를 바로 끌어당기는 2-3문장]</span></p>
+<p data-ke-size="size16">[참고자료에서 파악한 배경과 맥락 3-4문장. 구체적 수치나 날짜 포함]</p>
+<p data-ke-size="size16">[이 글에서 다룰 핵심 포인트 3가지를 구체적으로 예고하는 문장]</p>
+<div style="background-color:#f5f5f5;padding:15px;border-radius:8px;font-style:italic;margin-bottom:25px;font-size:15px;"><b>[핵심 한줄 요약]</b> [참고자료 기반 2-3문장 요약]</div>
+<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
 
-<h2 id="section1" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. ${keyword}란 무엇인가? 기초부터 탄탄하게</b></h2>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[이 주제의 정의와 개념을 쉽고 재미있게 설명하는 5-6문장 단락. 어려운 용어는 비유로 풀어서 설명. 독자가 "아, 이거구나!" 하고 무릎을 칠 만한 내용]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[역사적 배경이나 발전 과정을 흥미롭게 서술하는 5문장 단락. 재미있는 사실이나 몰랐던 이야기 포함]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[일상생활과의 연결고리, 왜 지금 알아야 하는지 공감되게 설명하는 4문장 단락]</p>
-<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[이 섹션에서 가장 중요한 핵심 내용 2문장. 독자가 기억해야 할 것]</div>
+<h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 내용 기반 소제목]</b></h2>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
-<h2 id="section2" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. ${keyword}의 핵심 특징과 장점</b></h2>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[주요 특징이나 장점을 구체적인 사례와 함께 설명하는 5-6문장 단락. 숫자나 통계를 활용해 신뢰도 높이기]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[실제 활용 사례나 성공 사례를 흥미롭게 서술하는 5문장. 독자가 "나도 해봐야겠다"고 생각하게 만들기]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[다른 대안과 비교하거나, 이 주제만의 독특한 가치를 설명하는 4문장]</p>
-<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[이 섹션의 가장 중요한 포인트 2문장]</div>
+<h2 id="section2" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. [참고자료 내용 기반 소제목]</b></h2>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
-<h2 id="section3" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. ${keyword} 제대로 활용하는 실전 방법</b></h2>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[실제로 어떻게 사용하거나 접근하는지 단계별로 쉽게 설명하는 5-6문장. 초보자도 따라할 수 있게 친절하게]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[흔히 하는 실수나 주의사항을 유머러스하게 설명하는 5문장. "이거 저도 처음에 몰랐는데..." 식의 공감 유발]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[전문가만 아는 꿀팁이나 노하우를 공개하는 4-5문장. 독자가 스크린샷 찍고 싶을 만한 내용]</p>
-<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[실전에서 바로 써먹을 수 있는 핵심 팁 2문장]</div>
+<h2 id="section3" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. [참고자료 내용 기반 소제목]</b></h2>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
-<h2 id="section4" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. ${keyword} 관련 최신 트렌드와 미래 전망</b></h2>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[최신 동향과 변화를 흥미롭게 설명하는 5-6문장. 2024-2025년 트렌드, 새로운 기술이나 방향성]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[앞으로의 전망과 예측을 전문가 시각으로 분석하는 5문장. 독자가 미리 준비할 수 있게 안내]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[트렌드에 뒤처지지 않으려면 지금 해야 할 것들을 구체적으로 제시하는 4문장]</p>
-<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[미래를 위해 지금 당장 체크해야 할 핵심 포인트 2문장]</div>
+<h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 내용 기반 소제목]</b></h2>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
-<h2 id="section5" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. ${keyword} 전문가가 알려주는 성공 비결</b></h2>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[성공한 사람들의 공통점이나 검증된 방법론을 스토리텔링으로 풀어내는 5-6문장. 실제 사례나 연구 결과 인용]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[실패를 피하는 방법과 올바른 접근법을 유쾌하게 설명하는 5문장. 독자가 공감하고 웃으면서 배울 수 있게]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[처음 시작하는 사람을 위한 단계별 로드맵 제시 4-5문장. 작은 것부터 시작해서 점점 성장하는 방향성]</p>
-<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[성공을 위한 가장 중요한 마인드셋이나 행동 원칙 2문장]</div>
+<h2 id="section5" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. [참고자료 내용 기반 소제목]</b></h2>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
-<h2 id="section6" style="font-size: 22px; color: white; background: linear-gradient(to right, #1a73e8, #004d99); margin: 30px 0 15px; border-radius: 10px; padding: 10px 25px; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>6. ${keyword} 총정리 — 오늘부터 바로 시작하세요</b></h2>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[지금까지 배운 내용을 깔끔하게 정리하고 실행 동기를 부여하는 5-6문장. "이제 알았으니 바로 해보세요!" 에너지]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[독자가 취해야 할 다음 액션 스텝을 구체적으로 제시하는 4-5문장. 오늘 당장 할 수 있는 첫 번째 행동]</p>
-<p style="margin-bottom: 15px;" data-ke-size="size16">[마무리 메시지 — 독자를 응원하고 댓글이나 공유를 유도하는 3-4문장. 따뜻하고 친근한 마무리]</p>
-<div style="background-color: #e8f4fd; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0;"><b>💡 핵심 포인트</b><br />[이 글 전체의 핵심 메시지를 한 번 더 강조하는 2문장]</div>
+<h2 id="section6" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>6. [참고자료 내용 기반 소제목]</b></h2>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
-<div class="single-summary-card" style="border: 2px solid #ccc; padding: 20px; border-radius: 8px; max-width: 800px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 20px auto;">
-<div class="card-header" style="display: flex; align-items: center; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-bottom: 10px;"><span style="font-size: 24px; color: #1a73e8; margin-right: 10px;" class="card-header-icon">💡</span>
-<h3 style="font-size: 20px; color: #1a73e8; margin: 0;" data-ke-size="size23">핵심 요약</h3>
+<div class="single-summary-card" style="border:2px solid #ccc;padding:20px;border-radius:8px;max-width:800px;background-color:#ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin:20px auto;">
+<div class="card-header" style="display:flex;align-items:center;border-bottom:2px solid #1a73e8;padding-bottom:10px;margin-bottom:10px;"><span style="font-size:24px;color:#1a73e8;margin-right:10px;">💡</span><h3 style="font-size:20px;color:#1a73e8;margin:0;" data-ke-size="size23">핵심 요약</h3></div>
+<div class="card-content" style="font-size:16px;line-height:1.5;color:#333;">
+<div class="section" style="margin-bottom:10px;"><b>첫 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[섹션1 핵심 사실 1문장]</span></div>
+<div class="section" style="margin-bottom:10px;"><b>두 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[섹션2-3 핵심 사실 1문장]</span></div>
+<div class="section" style="margin-bottom:10px;"><b>세 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[섹션4-5 핵심 사실 1문장]</span></div>
+<div class="section" style="margin-bottom:10px;"><b>네 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[독자가 바로 실천할 수 있는 핵심 행동 1문장]</span></div>
 </div>
-<div class="card-content" style="font-size: 16px; line-height: 1.5; color: #333;">
-<div class="section" style="margin-bottom: 10px;"><b>첫 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[섹션1-2에서 다룬 가장 중요한 핵심 내용 1문장]</span></div>
-<div class="section" style="margin-bottom: 10px;"><b>두 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[섹션3에서 다룬 실전 방법의 핵심 1문장]</span></div>
-<div class="section" style="margin-bottom: 10px;"><b>세 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[섹션4-5에서 다룬 트렌드와 성공 비결 핵심 1문장]</span></div>
-<div class="section" style="margin-bottom: 10px;"><b>네 번째 핵심:</b> <span style="background-color: #fffde7; padding: 2px 5px; border-radius: 3px;">[지금 당장 실천할 수 있는 가장 중요한 행동 1문장]</span></div>
-</div>
-<div class="card-footer" style="font-size: 14px; color: #777; border-top: 1px dashed #ddd; padding-top: 10px; margin-top: 10px; text-align: center;">[독자를 응원하는 따뜻한 마무리 한 문장]</div>
+<div class="card-footer" style="font-size:14px;color:#777;border-top:1px dashed #ddd;padding-top:10px;margin-top:10px;text-align:center;">[마무리 한 문장]</div>
 </div>
 
-<h2 id="faq" style="font-size: 22px; color: #1a73e8; margin: 30px 0 14px; padding-bottom: 8px; border-bottom: 2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
-<div style="margin: 22px 0 0;">
-<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
-<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q1. [${keyword}에 대해 가장 많이 묻는 질문 1]</div>
-<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+<h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
+<div style="margin:22px 0 0;">
+<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q1. [참고자료 기반 실제 궁금증]</div>
+<div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
-<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
-<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q2. [자주 묻는 질문 2]</div>
-<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q2. [참고자료 기반 실제 궁금증]</div>
+<div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
-<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
-<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q3. [자주 묻는 질문 3]</div>
-<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q3. [참고자료 기반 실제 궁금증]</div>
+<div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
-<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
-<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q4. [자주 묻는 질문 4]</div>
-<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q4. [참고자료 기반 실제 궁금증]</div>
+<div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
-<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
-<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q5. [자주 묻는 질문 5]</div>
-<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q5. [참고자료 기반 실제 궁금증]</div>
+<div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
-<div style="margin: 0 0 18px; padding: 14px; background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px;">
-<div style="font-weight: bold; margin: 0 0 6px; color: #1a73e8;">Q6. [자주 묻는 질문 6]</div>
-<div style="color: #555;">[명확하고 친절한 답변 2-3문장]</div>
+<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q6. [참고자료 기반 실제 궁금증]</div>
+<div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
 </div>
 
-<p data-ke-size="size16"><span style="background-color: #fafafa; color: #333333; text-align: start;">[관련 키워드 10개를 쉼표로 나열]</span></p>
+<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[관련 키워드 10개 쉼표 구분]</span></p>
 ===KEYWORDS===
-[관련 키워드 10개를 쉼표로 구분하여 나열]
+[관련 키워드 10개 쉼표 구분]
 
-주의사항: 위의 대괄호 [] 안의 지시문은 모두 실제 내용으로 교체하세요. 대괄호나 지시문이 최종 출력에 남아있으면 안 됩니다. HTML 태그와 실제 내용만 출력하세요.`;
+⚠️ 최종 주의사항:
+- 모든 [] 대괄호 지시문은 실제 내용으로 반드시 교체
+- 참고자료의 실제 내용을 기반으로 작성 (지어내기 금지)
+- 소제목은 키워드 성격에 맞게 AI가 직접 결정
+- HTML 태그 외 마크다운, 설명문, 대괄호 최종 출력에 절대 포함 금지`;
 }
 
 async function searchInlineImages(query: string, count = 3): Promise<string[]> {
@@ -189,22 +222,30 @@ async function searchInlineImages(query: string, count = 3): Promise<string[]> {
   return [];
 }
 
+function extractH2Title(h2Tag: string): string {
+  return h2Tag.replace(/<[^>]+>/g, '').trim();
+}
+
 function insertImagesIntoContent(content: string, imageUrls: string[], keyword: string): string {
   if (imageUrls.length === 0) return content;
-  const imgHtml = (url: string) =>
-    `\n<div style="text-align:center;margin:25px 0;">`+
-    `<img src="${url}" alt="${keyword}" `+
-    `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);"/>`+
-    `<p style="font-size:12px;color:#888;margin-top:6px;">ⓒ Pixabay 무료 이미지</p>`+
-    `</div>\n`;
+  const imgHtml = (url: string, sectionTitle: string) => {
+    const alt = sectionTitle || keyword;
+    return `\n<figure style="text-align:center;margin:25px 0;">` +
+      `<img src="${url}" alt="${alt}" title="${alt}" ` +
+      `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
+      `loading="lazy"/>` +
+      `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt} | ⓒ 이미지</figcaption>` +
+      `</figure>\n`;
+  };
 
-  // 모든 H2 섹션 후에 이미지 삽입 (홀수 번째)
+  // 모든 H2 섹션 후에 이미지 삽입 (홀수 번째), H2 제목 텍스트 캡처
   let imgIdx = 0;
   let h2Count = 0;
-  return content.replace(/<\/h2>/gi, (match) => {
+  return content.replace(/(<h2[^>]*>[\s\S]*?<\/h2>)/gi, (match) => {
     h2Count++;
     if (h2Count % 2 === 1 && imgIdx < imageUrls.length) {
-      return match + imgHtml(imageUrls[imgIdx++]);
+      const sectionTitle = extractH2Title(match);
+      return match + imgHtml(imageUrls[imgIdx++], sectionTitle);
     }
     return match;
   });
@@ -274,8 +315,8 @@ export async function POST(req: NextRequest) {
   const inlineImages = await searchInlineImages(keyword, 3);
   const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
 
-  // 4. SVG 썸네일 자동 생성
-  const imageUrl = await generateAndUploadThumbnail(title, keyword);
+  // 4. SVG 썸네일 자동 생성 (첫 번째 인라인 이미지를 배경으로 사용)
+  const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', inlineImages[0]);
 
   // 5. 글자 수 계산
   const wordCount = content.replace(/<[^>]+>/g, '').length;
