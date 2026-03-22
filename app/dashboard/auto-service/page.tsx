@@ -95,7 +95,7 @@ export default function AutoServicePage() {
   const [editModel, setEditModel] = useState('qwen3');
   const [savingEdit, setSavingEdit] = useState(false);
   // 이미지 편집
-  const [imgSearchTab, setImgSearchTab] = useState<'pixabay' | 'sns' | 'upload'>('pixabay');
+  const [imgSearchTab, setImgSearchTab] = useState<'google' | 'pixabay' | 'sns' | 'upload'>('google');
   const [imgQuery, setImgQuery] = useState('');
   const [imgResults, setImgResults] = useState<{ url: string; thumb: string; author: string }[]>([]);
   const [imgLoading, setImgLoading] = useState(false);
@@ -241,8 +241,8 @@ export default function AutoServicePage() {
     return [...new Set(matches.map(m => m[1]))];
   };
 
-  // 이미지 검색 (Pixabay or SNS)
-  const searchImages = async (tab: 'pixabay' | 'sns', q: string) => {
+  // 이미지 검색 (Google, Pixabay, SNS)
+  const searchImages = async (tab: 'google' | 'pixabay' | 'sns', q: string) => {
     setImgLoading(true);
     setImgResults([]);
     const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
@@ -644,6 +644,7 @@ export default function AutoServicePage() {
       {previewArticle && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto" onClick={e => { if (e.target === e.currentTarget) setPreviewArticle(null); }}>
           <div className="bg-white rounded-2xl w-full max-w-4xl my-4 shadow-2xl">
+            {/* 헤더 */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[previewArticle.status].color}`}>
@@ -652,24 +653,46 @@ export default function AutoServicePage() {
                 <span className="text-sm text-gray-500">{previewArticle.word_count.toLocaleString()}자</span>
               </div>
               <div className="flex gap-2 flex-wrap">
-                {!editMode ? (
-                  <button onClick={() => setEditMode(true)} className="px-3 py-1.5 text-sm bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200">✏️ 편집</button>
-                ) : (
-                  <>
-                    <button onClick={() => setEditMode(false)} className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg">취소</button>
-                    <button onClick={saveEdit} disabled={savingEdit} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">
-                      {savingEdit ? '저장 중...' : '💾 저장'}
-                    </button>
-                  </>
+                {modalTab === 'edit' && (
+                  <button onClick={saveEdit} disabled={savingEdit} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">
+                    {savingEdit ? '저장 중...' : '💾 저장'}
+                  </button>
                 )}
                 <button onClick={() => { openPublish(previewArticle); setPreviewArticle(null); }}
-                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700">🚀 승인 & 발행</button>
-                <button onClick={() => deleteArticle(previewArticle.id)} className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200">🗑️ 삭제</button>
+                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700">🚀 발행</button>
+                <button onClick={() => deleteArticle(previewArticle.id)} className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200">🗑️</button>
                 <button onClick={() => setPreviewArticle(null)} className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg">✕</button>
               </div>
             </div>
 
-            {editMode ? (
+            {/* 탭 */}
+            <div className="flex border-b border-gray-200 px-4">
+              {([['preview', '👁️ 미리보기'], ['edit', '✏️ 편집'], ['images', '🖼️ 이미지']] as ['preview'|'edit'|'images', string][]).map(([t, label]) => (
+                <button key={t} onClick={() => setModalTab(t)}
+                  className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${modalTab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* 미리보기 탭 */}
+            {modalTab === 'preview' && (
+              <div className="p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-2">{previewArticle.title}</h2>
+                {previewArticle.meta_description && (
+                  <p className="text-sm text-gray-500 mb-4 pb-4 border-b border-gray-100">{previewArticle.meta_description}</p>
+                )}
+                {previewArticle.representative_image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={previewArticle.representative_image_url} alt={previewArticle.keyword}
+                    className="w-full max-h-80 object-cover rounded-xl mb-6" />
+                )}
+                <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: previewArticle.content }} />
+              </div>
+            )}
+
+            {/* 편집 탭 */}
+            {modalTab === 'edit' && (
               <div className="p-4 space-y-3">
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">제목 (SEO)</label>
@@ -677,7 +700,7 @@ export default function AutoServicePage() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">AI 모델 변경</label>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">AI 모델</label>
                   <div className="flex flex-wrap gap-2">
                     {AI_MODELS.map(m => (
                       <button key={m.id} onClick={() => setEditModel(m.id)}
@@ -693,18 +716,99 @@ export default function AutoServicePage() {
                     rows={22} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y" />
                 </div>
               </div>
-            ) : (
-              <div className="p-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-2">{previewArticle.title}</h2>
-                {previewArticle.meta_description && (
-                  <p className="text-sm text-gray-500 mb-4 pb-4 border-b border-gray-100">{previewArticle.meta_description}</p>
+            )}
+
+            {/* 이미지 탭 */}
+            {modalTab === 'images' && (
+              <div className="p-4">
+                {/* 현재 글 이미지 목록 */}
+                <div className="mb-4">
+                  <p className="text-xs font-medium text-gray-600 mb-2">현재 글의 이미지 ({extractImages(editContent).length}개) — 클릭하면 교체</p>
+                  {extractImages(editContent).length === 0 ? (
+                    <p className="text-sm text-gray-400">이미지 없음</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {extractImages(editContent).map((src, i) => (
+                        <div key={i} onClick={() => setReplacingImgSrc(replacingImgSrc === src ? null : src)}
+                          className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${replacingImgSrc === src ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200 hover:border-blue-300'}`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={src} alt={`이미지 ${i+1}`} className="w-28 h-20 object-cover" />
+                          <div className="absolute inset-0 bg-black/0 hover:bg-black/20 flex items-center justify-center transition-all">
+                            {replacingImgSrc === src && <span className="text-white text-xs font-bold bg-blue-500 px-2 py-0.5 rounded">교체 중</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {replacingImgSrc && (
+                    <p className="text-xs text-blue-600 mt-2 font-medium">↓ 아래에서 교체할 이미지를 선택하세요</p>
+                  )}
+                </div>
+
+                {/* 이미지 검색 탭 */}
+                <div className="flex gap-1 mb-3 border-b border-gray-200">
+                  {([['google', '🔍 구글'], ['pixabay', '📸 픽사베이'], ['sns', '🐦 SNS'], ['upload', '📁 업로드']] as ['google'|'pixabay'|'sns'|'upload', string][]).map(([t, label]) => (
+                    <button key={t} onClick={() => { setImgSearchTab(t); setImgResults([]); }}
+                      className={`px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${imgSearchTab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {imgSearchTab !== 'upload' && (
+                  <div className="flex gap-2 mb-3">
+                    <input value={imgQuery} onChange={e => setImgQuery(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && searchImages(imgSearchTab as 'google'|'pixabay'|'sns', imgQuery)}
+                      placeholder={imgSearchTab === 'sns' ? '계정 이름 검색...' : `${previewArticle.keyword} 이미지 검색...`}
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+                    <button onClick={() => searchImages(imgSearchTab as 'google'|'pixabay'|'sns', imgQuery || previewArticle.keyword)}
+                      disabled={imgLoading}
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50">
+                      {imgLoading ? '...' : '검색'}
+                    </button>
+                  </div>
                 )}
-                {previewArticle.representative_image_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={previewArticle.representative_image_url} alt={previewArticle.keyword}
-                    className="w-full max-h-80 object-cover rounded-xl mb-6" />
+
+                {imgSearchTab === 'upload' && (
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center">
+                    <p className="text-sm text-gray-500 mb-2">이미지를 드래그하거나 클릭하여 업로드</p>
+                    <input type="file" accept="image/*" onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file && replacingImgSrc) uploadFile(file, replacingImgSrc);
+                      else if (file) alert('먼저 위에서 교체할 이미지를 클릭하세요');
+                    }} className="hidden" id="img-upload" />
+                    <label htmlFor="img-upload" className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 inline-block">
+                      파일 선택
+                    </label>
+                    {!replacingImgSrc && <p className="text-xs text-orange-500 mt-2">⚠️ 먼저 위에서 교체할 이미지를 클릭하세요</p>}
+                  </div>
                 )}
-                <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: previewArticle.content }} />
+
+                {imgResults.length > 0 && (
+                  <div className="grid grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto">
+                    {imgResults.map((img, i) => (
+                      <div key={i} onClick={() => replacingImgSrc ? replaceImage(replacingImgSrc, img.url) : alert('먼저 위에서 교체할 이미지를 클릭하세요')}
+                        className="relative cursor-pointer rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 group">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={img.thumb || img.url} alt={img.author} className="w-full h-20 object-cover" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-all">
+                          <span className="text-white text-xs font-bold opacity-0 group-hover:opacity-100">교체</span>
+                        </div>
+                        <p className="text-xs text-gray-400 truncate px-1 py-0.5">{img.author}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 저장 버튼 */}
+                {editContent !== previewArticle.content && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <button onClick={saveEdit} disabled={savingEdit}
+                      className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                      {savingEdit ? '저장 중...' : '💾 이미지 변경 저장'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

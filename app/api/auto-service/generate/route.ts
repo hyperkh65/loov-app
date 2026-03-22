@@ -144,28 +144,46 @@ ${keyword}를 포함한 메타 설명 (120-160자, 클릭을 유도하는 문장
 주의사항: 위의 대괄호 [] 안의 지시문은 모두 실제 내용으로 교체하세요. 대괄호나 지시문이 최종 출력에 남아있으면 안 됩니다. HTML 태그와 실제 내용만 출력하세요.`;
 }
 
-async function searchPixabayImages(query: string, count = 3): Promise<string[]> {
-  const apiKey = process.env.PIXABAY_API_KEY;
-  if (!apiKey) return [];
-  try {
-    // 한글 키워드로 먼저 시도
-    const res = await fetch(
-      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    const hits = data.hits || [];
-    if (hits.length > 0) {
-      return hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
-    }
-    // 결과 없으면 영문으로 재시도 (자연, 기술, 도시 등 일반 이미지)
-    const fallbackRes = await fetch(
-      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent('nature background')}&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
-    );
-    if (!fallbackRes.ok) return [];
-    const fallbackData = await fallbackRes.json();
-    return (fallbackData.hits || []).slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
-  } catch { return []; }
+async function searchInlineImages(query: string, count = 3): Promise<string[]> {
+  // 1순위: Google Custom Search
+  const googleKey = process.env.GOOGLE_SEARCH_API_KEY;
+  const googleCx = process.env.GOOGLE_SEARCH_CX;
+  if (googleKey && googleCx) {
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCx}&q=${encodeURIComponent(query)}&searchType=image&num=${Math.min(count, 10)}&safe=active&imgSize=large`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const urls = (data.items || []).slice(0, count).map((item: { link: string }) => item.link);
+        if (urls.length > 0) return urls;
+      }
+    } catch { /* fallthrough */ }
+  }
+
+  // 2순위: Pixabay
+  const pixabayKey = process.env.PIXABAY_API_KEY;
+  if (pixabayKey) {
+    try {
+      const res = await fetch(
+        `https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const hits = data.hits || [];
+        if (hits.length > 0) return hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+      }
+      // 한글 검색 결과 없으면 영문 폴백
+      const fallbackRes = await fetch(
+        `https://pixabay.com/api/?key=${pixabayKey}&q=nature+background&image_type=photo&per_page=${count + 5}&safesearch=true&min_width=600`
+      );
+      if (fallbackRes.ok) {
+        const data = await fallbackRes.json();
+        return (data.hits || []).slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+      }
+    } catch { /* skip */ }
+  }
+  return [];
 }
 
 function insertImagesIntoContent(content: string, imageUrls: string[], keyword: string): string {
@@ -249,9 +267,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
   }
 
-  // 3. Pixabay 이미지 검색 + 본문 삽입
-  const pixabayImages = await searchPixabayImages(keyword, 3);
-  const content = insertImagesIntoContent(rawContent, pixabayImages, keyword);
+  // 3. Google/Pixabay 이미지 검색 + 본문 삽입
+  const inlineImages = await searchInlineImages(keyword, 3);
+  const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
 
   // 4. SVG 썸네일 자동 생성
   const imageUrl = await generateAndUploadThumbnail(title, keyword);
