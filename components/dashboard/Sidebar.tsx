@@ -64,6 +64,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: '자동화서비스',
+    items: [
+      { href: '/dashboard/auto-service', icon: '🤖', label: '블로그 자동화' },
+    ],
+  },
+  {
     label: '자동화',
     items: [
       { href: '/dashboard/x-collect',  icon: '🐦', label: 'X 수집 / SNS 발행' },
