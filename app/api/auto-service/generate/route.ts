@@ -6,6 +6,47 @@ import { getSetting } from '@/lib/get-setting';
 
 export const maxDuration = 120;
 
+// 수집된 기사에서 og:image 스크래핑
+async function scrapeArticleImages(
+  items: { link: string; title: string }[],
+  limit = 6,
+): Promise<{ url: string; title: string }[]> {
+  const results: { url: string; title: string }[] = [];
+  const toScrape = items.slice(0, limit);
+
+  await Promise.allSettled(toScrape.map(async (item) => {
+    try {
+      const res = await fetch(item.link, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) return;
+      const html = await res.text();
+
+      // og:image 우선 추출
+      const ogMatch =
+        html.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+        html.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+      if (ogMatch?.[1]?.startsWith('http')) {
+        results.push({ url: ogMatch[1], title: item.title });
+        return;
+      }
+
+      // 첫 번째 큰 이미지 (icon/logo/button 제외)
+      const imgMatches = [...html.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+\.(jpg|jpeg|png|webp)(?:\?[^"']*)?)["']/gi)];
+      const filtered = imgMatches
+        .map(m => m[1])
+        .filter(u => !/(icon|logo|button|banner|sprite|pixel|blank|tracking)/i.test(u));
+      if (filtered[0]) results.push({ url: filtered[0], title: item.title });
+    } catch { /* skip */ }
+  }));
+
+  return results;
+}
+
 async function searchNaver(type: 'news' | 'blog', query: string) {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
@@ -314,16 +355,17 @@ export async function POST(req: NextRequest) {
     searchNaver('blog', keyword),
   ]);
 
-  const sources = [
-    ...newsItems.map((n: {title:string;description:string;link:string}) => ({ type: 'news', ...n })),
-    ...blogItems.map((b: {title:string;description:string;link:string}) => ({ type: 'blog', ...b })),
-  ];
-
-  // 2. AI 글 생성
+  // 2. AI 글 생성 + 소스 이미지 스크래핑 병렬 처리
   const prompt = buildPrompt(keyword, newsItems, blogItems);
+  const allSourceItems = [...newsItems, ...blogItems];
+
   let rawOutput: string;
+  let scrapedImages: { url: string; title: string }[] = [];
   try {
-    rawOutput = await generateText(prompt, ai_model, clientOllamaKey, clientOpenrouterKey);
+    [rawOutput, scrapedImages] = await Promise.all([
+      generateText(prompt, ai_model, clientOllamaKey, clientOpenrouterKey),
+      scrapeArticleImages(allSourceItems),
+    ]);
   } catch (err) {
     return NextResponse.json({ error: `AI 생성 실패: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }
@@ -334,11 +376,10 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. 이미지 검색 + 본문 삽입
-  // displayUrls: 브라우저 표시용(외부 URL), thumbUrl: CDN URL(서버 fetch용 배경이미지)
   const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
   const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
 
-  // 4. SVG 썸네일 생성 (Naver CDN thumbnail을 배경으로, 실패시 그라디언트)
+  // 4. SVG 썸네일 생성
   const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
 
   // 5. 글자 수 계산
@@ -357,7 +398,11 @@ export async function POST(req: NextRequest) {
       representative_image_url: imageUrl,
       ai_model,
       status: 'draft',
-      sources,
+      sources: [
+        ...newsItems.map((n: {title:string;description:string;link:string}) => ({ type: 'news', ...n })),
+        ...blogItems.map((b: {title:string;description:string;link:string}) => ({ type: 'blog', ...b })),
+        ...scrapedImages.map(img => ({ type: 'collected_image', title: img.title, link: img.url })),
+      ],
       word_count: wordCount,
     })
     .select()

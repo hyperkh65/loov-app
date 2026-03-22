@@ -159,12 +159,42 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'action 필요 (naver|google|pixabay|sns)' }, { status: 400 });
 }
 
-// 사용자 파일 업로드 → Supabase Storage
+// 사용자 파일 업로드 OR 외부 URL 다운로드 → Supabase Storage
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
+  const contentType = req.headers.get('content-type') || '';
+
+  // 외부 URL 다운로드 방식 (JSON body: { url })
+  if (contentType.includes('application/json')) {
+    const { url } = await req.json();
+    if (!url) return NextResponse.json({ error: 'url 필요' }, { status: 400 });
+
+    const imgRes = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; imagebot/1.0)' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!imgRes.ok) return NextResponse.json({ error: '이미지 다운로드 실패' }, { status: 400 });
+
+    const ct = imgRes.headers.get('content-type') || 'image/jpeg';
+    const ext = ct.split('/')[1]?.split(';')[0]?.replace('jpeg', 'jpg') || 'jpg';
+    const path = `uploads/${user.id}/${Date.now()}.${ext}`;
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+
+    const adminSupabase = createAdminClient();
+    const { error } = await adminSupabase.storage
+      .from('auto-blog')
+      .upload(path, buffer, { contentType: ct, upsert: true });
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const { data: { publicUrl } } = adminSupabase.storage.from('auto-blog').getPublicUrl(path);
+    return NextResponse.json({ url: publicUrl });
+  }
+
+  // 파일 업로드 방식 (FormData)
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
   if (!file) return NextResponse.json({ error: '파일 없음' }, { status: 400 });
