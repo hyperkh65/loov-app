@@ -41,35 +41,64 @@ async function searchPixabay(query: string, count = 9): Promise<{ url: string; t
   } catch { return []; }
 }
 
-// X.com 수집 이미지 검색 (bossai_x_videos 중 이미지 확장자)
+// X.com 수집 이미지 검색 (bossai_x_videos 중 이미지 확장자, 키워드로 본문/계정 검색)
 async function searchSnsImages(query: string, limit = 12) {
   const supabase = createAdminClient();
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
+  // 키워드로 tweet_text 또는 username 검색
   let q = supabase
     .from('bossai_x_videos')
-    .select('id, username, video_url, tweet_url, collected_at')
+    .select('id, username, video_url, tweet_url, tweet_text, collected_at')
     .order('collected_at', { ascending: false })
-    .limit(limit * 3);
+    .limit(limit * 5);
 
-  if (query) q = q.ilike('username', `%${query}%`);
+  if (query) {
+    q = q.or(`tweet_text.ilike.%${query}%,username.ilike.%${query}%`);
+  }
 
   const { data } = await q;
   if (!data) return [];
 
-  return data
+  const filtered = data
     .filter(item => {
       const ext = item.video_url?.split('.').pop()?.toLowerCase().split('?')[0];
       return imageExts.includes(ext || '');
     })
-    .slice(0, limit)
-    .map(item => ({
-      url: item.video_url,
-      thumb: item.video_url,
-      author: `@${item.username}`,
-      source: 'x.com',
-      tweet_url: item.tweet_url,
-    }));
+    .slice(0, limit);
+
+  // 결과 없으면 키워드 없이 최신 이미지 반환
+  if (filtered.length === 0 && query) {
+    const { data: fallback } = await supabase
+      .from('bossai_x_videos')
+      .select('id, username, video_url, tweet_url, tweet_text, collected_at')
+      .order('collected_at', { ascending: false })
+      .limit(limit * 3);
+
+    return (fallback || [])
+      .filter(item => {
+        const ext = item.video_url?.split('.').pop()?.toLowerCase().split('?')[0];
+        return imageExts.includes(ext || '');
+      })
+      .slice(0, limit)
+      .map(item => ({
+        url: item.video_url,
+        thumb: item.video_url,
+        author: `@${item.username}`,
+        source: 'x.com',
+        tweet_url: item.tweet_url,
+        caption: item.tweet_text?.slice(0, 60),
+      }));
+  }
+
+  return filtered.map(item => ({
+    url: item.video_url,
+    thumb: item.video_url,
+    author: `@${item.username}`,
+    source: 'x.com',
+    tweet_url: item.tweet_url,
+    caption: item.tweet_text?.slice(0, 60),
+  }));
 }
 
 export async function GET(req: NextRequest) {
