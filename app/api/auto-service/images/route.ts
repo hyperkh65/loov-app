@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { getSetting } from '@/lib/get-setting';
 
-// Google Custom Search 이미지 검색
+// Google Custom Search 이미지 검색 (설정 페이지 DB 키 사용)
 async function searchGoogle(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
-  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const cx = process.env.GOOGLE_SEARCH_CX;
+  const [apiKey, cx] = await Promise.all([
+    getSetting('GOOGLE_SEARCH_API_KEY'),
+    getSetting('GOOGLE_SEARCH_CX'),
+  ]);
   if (!apiKey || !cx) return [];
   try {
     const res = await fetch(
@@ -20,9 +23,9 @@ async function searchGoogle(query: string, count = 9): Promise<{ url: string; th
   } catch { return []; }
 }
 
-// Pixabay 이미지 검색
+// Pixabay 이미지 검색 (설정 페이지 DB 키 사용)
 async function searchPixabay(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
-  const apiKey = process.env.PIXABAY_API_KEY;
+  const apiKey = await getSetting('PIXABAY_API_KEY');
   if (!apiKey) return [];
   try {
     const res = await fetch(
