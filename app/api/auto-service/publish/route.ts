@@ -218,7 +218,12 @@ export async function POST(req: NextRequest) {
   // SNS 발행
   if (sns_platforms.length > 0) {
     try {
-      const snsContent = `${article.title}\n\n${article.meta_description || ''}`;
+      // 블로그 발행 결과 URL 수집 (SNS에 링크 포함)
+      const blogUrls = Object.entries(results)
+        .filter(([k, v]) => !k.startsWith('sns_') && v.success && v.url)
+        .map(([, v]) => v.url!);
+      const blogLinkText = blogUrls.length > 0 ? '\n\n🔗 ' + blogUrls.join('\n🔗 ') : '';
+      const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
       const res = await fetch(`${baseUrl}/api/sns/post-now`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },

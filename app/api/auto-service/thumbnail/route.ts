@@ -10,11 +10,11 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { article_id, title, keyword, color_scheme = 'blue' } = await req.json();
+  const { article_id, title, keyword, color_scheme = 'blue', bg_image_url } = await req.json();
   if (!article_id || !title || !keyword)
     return NextResponse.json({ error: 'article_id, title, keyword 필요' }, { status: 400 });
 
-  const imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme);
+  const imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme, bg_image_url || undefined);
   if (!imageUrl) return NextResponse.json({ error: '썸네일 생성 실패' }, { status: 500 });
 
   // DB 업데이트
