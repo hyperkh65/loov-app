@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { generateText } from '@/lib/auto-blog-ai';
 
 export const maxDuration = 300;
 
@@ -38,24 +39,6 @@ async function getTrendingKeywords(): Promise<string[]> {
   } catch { return []; }
 }
 
-async function callOllamaCloud(prompt: string, model: string): Promise<string> {
-  const apiKey = process.env.OLLAMA_API_KEY;
-  if (!apiKey) throw new Error('OLLAMA_API_KEY 없음');
-
-  const res = await fetch('https://ollama.com/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      stream: false,
-    }),
-  });
-
-  if (!res.ok) throw new Error(`Ollama API 오류: ${await res.text()}`);
-  const data = await res.json();
-  return data.message?.content || '';
-}
 
 function buildPrompt(keyword: string, news: {title:string;description:string}[], blogs: {title:string;description:string}[]): string {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -115,7 +98,9 @@ async function generateArticleForUser(
   supabase: ReturnType<typeof createAdminClient>,
   userId: string,
   keyword: string,
-  aiModel: string
+  aiModel: string,
+  clientOllamaKey?: string,
+  clientOpenrouterKey?: string,
 ): Promise<boolean> {
   // 최근 7일 내 같은 키워드 글 있으면 스킵
   const { data: existing } = await supabase
@@ -135,7 +120,7 @@ async function generateArticleForUser(
     ]);
 
     const prompt = buildPrompt(keyword, news, blogs);
-    const rawOutput = await callOllamaCloud(prompt, aiModel);
+    const rawOutput = await generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey);
     const { title, meta_description, content } = parseAiOutput(rawOutput);
 
     if (!title || !content) return false;
@@ -232,7 +217,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { keywords: customKws, ai_model = 'qwen3', max = 3 } = await req.json();
+  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey } = await req.json();
   const adminSupabase = createAdminClient();
 
   const trendKeywords = customKws?.length > 0 ? customKws : await getTrendingKeywords();
@@ -243,7 +228,7 @@ export async function POST(req: NextRequest) {
 
   for (const keyword of keywordsToUse) {
     if (generated >= max) break;
-    const ok = await generateArticleForUser(adminSupabase, user.id, keyword, ai_model);
+    const ok = await generateArticleForUser(adminSupabase, user.id, keyword, ai_model, clientOllamaKey, clientOpenrouterKey);
     if (ok) {
       generated++;
       usedKeywords.push(keyword);

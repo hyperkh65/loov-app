@@ -100,6 +100,12 @@ export default function AutoServicePage() {
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
 
+  // localStorage에서 무료AI 페이지의 키 읽기 (서버로 전달용)
+  const getAiKeys = () => ({
+    clientOllamaKey: localStorage.getItem('freeai_ollama_key') || undefined,
+    clientOpenrouterKey: localStorage.getItem('freeai_openrouter_key') || undefined,
+  });
+
   // 설정 로드
   useEffect(() => {
     fetch('/api/auto-service/settings')
@@ -154,6 +160,7 @@ export default function AutoServicePage() {
         keywords: autoSettings.custom_keywords.length > 0 ? autoSettings.custom_keywords : [],
         ai_model: autoSettings.ai_model,
         max: autoSettings.max_per_run,
+        ...getAiKeys(),
       }),
     });
     const data = await res.json();
@@ -177,7 +184,7 @@ export default function AutoServicePage() {
       const res = await fetch('/api/auto-service/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, ai_model: autoSettings.ai_model }),
+        body: JSON.stringify({ keyword, ai_model: autoSettings.ai_model, ...getAiKeys() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '생성 실패');
