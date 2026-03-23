@@ -182,7 +182,7 @@ export async function generateAndUploadThumbnail(
   const buffer = Buffer.from(svg, 'utf-8');
 
   const supabase = createAdminClient();
-  const filename = `thumbnails/${Date.now()}_${encodeURIComponent(keyword.slice(0, 15))}.svg`;
+  const filename = `thumbnails/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.svg`;
 
   // 버킷 생성 시도 (이미 존재하면 에러 무시)
   const { error: bucketErr } = await supabase.storage.createBucket('auto-blog', { public: true });
