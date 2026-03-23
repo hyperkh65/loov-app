@@ -313,11 +313,11 @@ export default function AutoServicePage() {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       const proxyUrl = thumbSelectedBg.startsWith('http') ? `/api/proxy-image?url=${encodeURIComponent(thumbSelectedBg)}` : thumbSelectedBg;
-      img.src = proxyUrl;
       await new Promise<void>((res, rej) => {
-        img.onload = () => res();
-        img.onerror = () => rej(new Error('이미지 로드 실패'));
-        setTimeout(() => rej(new Error('타임아웃')), 15000);
+        const t = setTimeout(() => rej(new Error('이미지 로드 타임아웃')), 15000);
+        img.onload = () => { clearTimeout(t); res(); };
+        img.onerror = () => { clearTimeout(t); rej(new Error('이미지 로드 실패 - 다른 이미지를 선택해주세요')); };
+        img.src = proxyUrl;
       });
 
       const scale = Math.max(1080 / img.naturalWidth, 1080 / img.naturalHeight);
@@ -1012,8 +1012,8 @@ export default function AutoServicePage() {
                     {thumbBgImages.length > 0 && (
                       <div className="grid grid-cols-3 gap-1.5">
                         {thumbBgImages.map(img => (
-                          <button key={img.id} onClick={() => setThumbSelectedBg(img.url)}
-                            className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${thumbSelectedBg === img.url ? 'border-blue-500 ring-2 ring-blue-400' : 'border-transparent hover:border-gray-400'}`}>
+                          <button key={img.id} onClick={() => setThumbSelectedBg(img.thumb || img.url)}
+                            className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${thumbSelectedBg === (img.thumb || img.url) ? 'border-blue-500 ring-2 ring-blue-400' : 'border-transparent hover:border-gray-400'}`}>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={img.thumb} alt="" className="w-full h-full object-cover" />
                           </button>
@@ -1234,7 +1234,7 @@ export default function AutoServicePage() {
                           if (replacingImgSrc) {
                             replaceImage(replacingImgSrc, img.url);
                           } else {
-                            setThumbSelectedBg(img.url);
+                            setThumbSelectedBg(img.thumb || img.url);
                             setThumbBgImages([]);
                           }
                         }}
