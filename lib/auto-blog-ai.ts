@@ -87,6 +87,28 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
   return text;
 }
 
+async function callClaude(apiKey: string, prompt: string): Promise<string> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 8192,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) throw new Error(`Claude ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const text = data.content?.[0]?.text || '';
+  if (!text) throw new Error('Claude 빈 응답');
+  return text;
+}
+
 export async function generateText(
   prompt: string,
   preferModel: string = 'qwen3',
@@ -109,7 +131,7 @@ export async function generateText(
     }
   }
 
-  // 2. OpenRouter (무료AI 페이지 localStorage 키 우선)
+  // 2. OpenRouter (localStorage 키 → DB 설정 키 순서)
   const orKey = clientOpenrouterKey || await getSetting('OPENROUTER_API_KEY');
   if (orKey) {
     for (const model of OPENROUTER_MODELS) {
@@ -137,9 +159,18 @@ export async function generateText(
     }
   }
 
+  // 5. Claude Haiku (설정 페이지 DB 키 - 빠르고 저렴, 한국어 우수)
+  const claudeKey = await getSetting('CLAUDE_API_KEY');
+  if (claudeKey) {
+    try {
+      return await callClaude(claudeKey, prompt);
+    } catch (e) {
+      errors.push(`Claude: ${e}`);
+    }
+  }
+
   throw new Error(
-    '사용 가능한 AI 없음 — 아래 중 하나를 설정해주세요:\n' +
-    '① 무료AI 페이지에서 Ollama 또는 OpenRouter 키 입력\n' +
-    '② AI 설정 페이지에서 Gemini 또는 OpenAI 키 저장'
+    `사용 가능한 AI 없음 (${errors.join(' | ')})\n` +
+    '설정 페이지 → API 키 관리에서 Gemini, OpenAI, Claude 키 중 하나를 저장하세요.'
   );
 }

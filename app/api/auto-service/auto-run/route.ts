@@ -349,7 +349,7 @@ async function generateArticleForUser(
   aiModel: string,
   clientOllamaKey?: string,
   clientOpenrouterKey?: string,
-): Promise<boolean> {
+): Promise<{ ok: boolean; reason?: string }> {
   // 최근 7일 내 같은 키워드 글 있으면 스킵
   const { data: existing } = await supabase
     .from('bossai_auto_articles')
@@ -359,7 +359,7 @@ async function generateArticleForUser(
     .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     .limit(1);
 
-  if (existing && existing.length > 0) return false;
+  if (existing && existing.length > 0) return { ok: false, reason: `중복 키워드 (7일 이내 생성됨)` };
 
   try {
     const [news, blogs] = await Promise.all([
@@ -378,7 +378,7 @@ async function generateArticleForUser(
     ]);
 
     const { title, meta_description, content: rawContent } = parseAiOutput(rawOutput);
-    if (!title || !rawContent) return false;
+    if (!title || !rawContent) return { ok: false, reason: 'AI 출력 파싱 실패' };
 
     const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
     const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
@@ -403,10 +403,11 @@ async function generateArticleForUser(
       word_count: wordCount,
     });
 
-    return true;
+    return { ok: true };
   } catch (err) {
-    console.error(`[auto-run] ${keyword} 생성 실패:`, err);
-    return false;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[auto-run] ${keyword} 생성 실패:`, msg);
+    return { ok: false, reason: msg };
   }
 }
 
@@ -446,8 +447,8 @@ export async function GET(req: NextRequest) {
 
     for (const keyword of keywordsToUse) {
       if (generated >= max_per_run) break;
-      const ok = await generateArticleForUser(supabase, user_id, keyword, ai_model || 'qwen3');
-      if (ok) {
+      const result = await generateArticleForUser(supabase, user_id, keyword, ai_model || 'qwen3');
+      if (result.ok) {
         generated++;
         usedKeywords.push(keyword);
       }
@@ -483,13 +484,17 @@ export async function POST(req: NextRequest) {
 
   let generated = 0;
   const usedKeywords: string[] = [];
+  const errors: { keyword: string; reason: string }[] = [];
 
   for (const keyword of keywordsToUse) {
     if (generated >= max) break;
-    const ok = await generateArticleForUser(adminSupabase, user.id, keyword, ai_model, clientOllamaKey, clientOpenrouterKey);
-    if (ok) {
+    const result = await generateArticleForUser(adminSupabase, user.id, keyword, ai_model, clientOllamaKey, clientOpenrouterKey);
+    if (result.ok) {
       generated++;
       usedKeywords.push(keyword);
+    } else if (result.reason && !result.reason.includes('중복')) {
+      // 중복 아닌 실제 에러만 저장
+      errors.push({ keyword, reason: result.reason });
     }
   }
 
@@ -497,9 +502,9 @@ export async function POST(req: NextRequest) {
   await adminSupabase.from('bossai_auto_settings').upsert({
     user_id: user.id,
     last_run_at: new Date().toISOString(),
-    last_run_status: 'success',
+    last_run_status: generated > 0 ? 'success' : (errors.length > 0 ? 'error' : 'skipped'),
     last_run_count: generated,
   }, { onConflict: 'user_id' });
 
-  return NextResponse.json({ ok: true, generated, keywords: usedKeywords });
+  return NextResponse.json({ ok: true, generated, keywords: usedKeywords, errors });
 }

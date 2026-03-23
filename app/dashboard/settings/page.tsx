@@ -43,7 +43,7 @@ export default function SettingsPage() {
   const [naverMsg, setNaverMsg] = useState('');
 
   // API 키 관리 state
-  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', OPENROUTER_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [apiKeysSaving, setApiKeysSaving] = useState(false);
   const [apiKeysMsg, setApiKeysMsg] = useState('');
@@ -330,9 +330,10 @@ export default function SettingsPage() {
               <h2 className="font-bold text-gray-900">🤖 AI API 키</h2>
 
               {([
-                { key: 'GEMINI_API_KEY', label: 'Gemini API Key', desc: 'AI 채팅, 이미지 생성, 네이버 썸네일 자동생성', link: 'https://aistudio.google.com/app/apikey' },
-                { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', desc: 'SEO 리라이팅, 자동 태그 생성, 네이버 GPT 리라이팅', link: 'https://platform.openai.com/api-keys' },
-                { key: 'CLAUDE_API_KEY', label: 'Claude API Key', desc: '네이버 블로그 Claude 리라이팅', link: 'https://console.anthropic.com/settings/keys' },
+                { key: 'GEMINI_API_KEY', label: 'Gemini API Key ⭐', desc: '블로그 자동 글 생성 (무료 티어 충분) · AI 채팅 · 이미지', link: 'https://aistudio.google.com/app/apikey' },
+                { key: 'CLAUDE_API_KEY', label: 'Claude API Key ⭐', desc: '블로그 자동 글 생성 (Haiku, 빠르고 한국어 우수) · 리라이팅', link: 'https://console.anthropic.com/settings/keys' },
+                { key: 'OPENROUTER_API_KEY', label: 'OpenRouter API Key', desc: '블로그 자동 글 생성 (Qwen3/Llama 등 무료 모델) - 무료 가입 후 키 발급', link: 'https://openrouter.ai/keys' },
+                { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', desc: 'SEO 리라이팅, 자동 태그 생성, 블로그 글 생성', link: 'https://platform.openai.com/api-keys' },
                 { key: 'PIXABAY_API_KEY', label: 'Pixabay API Key', desc: '자동 블로그 인라인 이미지 · 숏폼 이미지 검색 (무료)', link: 'https://pixabay.com/api/docs/' },
                 { key: 'PEXELS_API_KEY', label: 'Pexels API Key', desc: '숏폼 고화질 이미지 검색 (무료)', link: 'https://www.pexels.com/api/' },
                 { key: 'GOOGLE_SEARCH_API_KEY', label: 'Google Custom Search API Key', desc: '자동 블로그 구글 이미지 검색 (하루 100건 무료) — PIXABAY보다 우선 적용', link: 'https://developers.google.com/custom-search/v1/introduction' },
