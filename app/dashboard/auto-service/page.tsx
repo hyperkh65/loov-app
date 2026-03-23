@@ -517,20 +517,30 @@ export default function AutoServicePage() {
   const doPublish = async () => {
     if (!publishArticle) return;
     setPublishing(true);
-    const res = await fetch('/api/auto-service/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        article_id: publishArticle.id,
-        blog_platforms: selBlog,
-        sns_platforms: selSns,
-        wp_site_ids: selWpSiteIds,
-      }),
-    });
-    const data = await res.json();
-    setPublishResult(data.results || {});
-    setPublishing(false);
-    await loadArticles();
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90_000); // 90초 타임아웃
+      const res = await fetch('/api/auto-service/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_id: publishArticle.id,
+          blog_platforms: selBlog,
+          sns_platforms: selSns,
+          wp_site_ids: selWpSiteIds,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const data = await res.json();
+      setPublishResult(data.results || {});
+      await loadArticles();
+    } catch (err) {
+      const msg = err instanceof Error && err.name === 'AbortError' ? '발행 시간 초과 (90초). 다시 시도해주세요.' : String(err);
+      alert(`발행 실패: ${msg}`);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const togglePlatform = (arr: string[], setArr: (v: string[]) => void, id: string) => {

@@ -61,7 +61,7 @@ async function resolveTermId(
   return null;
 }
 
-// 콘텐츠 내 이미지를 WP 미디어로 업로드 후 URL 교체
+// 콘텐츠 내 이미지를 WP 미디어로 병렬 업로드 후 URL 교체 (최대 5개)
 async function uploadContentImages(
   content: string,
   siteUrl: string,
@@ -69,16 +69,20 @@ async function uploadContentImages(
 ): Promise<string> {
   const imgRegex = /<img([^>]+)src="([^"]+)"([^>]*)>/gi;
   const matches = [...content.matchAll(imgRegex)];
-  let processed = content;
+  const urlsToUpload = [...new Set(
+    matches.map(m => m[2]).filter(u => u.startsWith('http'))
+  )].slice(0, 5); // 최대 5개만 업로드
 
-  for (const match of matches) {
-    const originalUrl = match[2];
-    if (!originalUrl.startsWith('http')) continue;
-    const uploaded = await uploadImageToWordpress(originalUrl, siteUrl, auth);
-    if (uploaded) {
-      processed = processed.replaceAll(originalUrl, uploaded.url);
-    }
-  }
+  if (urlsToUpload.length === 0) return content;
+
+  const results = await Promise.all(
+    urlsToUpload.map(url => uploadImageToWordpress(url, siteUrl, auth))
+  );
+
+  let processed = content;
+  urlsToUpload.forEach((originalUrl, i) => {
+    if (results[i]) processed = processed.replaceAll(originalUrl, results[i]!.url);
+  });
   return processed;
 }
 
