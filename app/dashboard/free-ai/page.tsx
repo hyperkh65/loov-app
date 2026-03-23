@@ -56,6 +56,17 @@ export default function FreeAIPage() {
     setOpenrouterApiKey(localStorage.getItem('freeai_openrouter_key') || '');
   }, []);
 
+  // AI 키를 localStorage + DB 설정 모두에 저장 (자동실행/서버 기능에서도 사용)
+  const saveKeyToDb = async (dbKey: string, value: string) => {
+    try {
+      await fetch('/api/app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [dbKey]: value }),
+      });
+    } catch { /* 저장 실패 무시 */ }
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -270,6 +281,7 @@ export default function FreeAIPage() {
                   onChange={e => {
                     setOllamaApiKey(e.target.value);
                     localStorage.setItem('freeai_ollama_key', e.target.value);
+                    if (e.target.value.length > 10) saveKeyToDb('OLLAMA_API_KEY', e.target.value);
                   }}
                   className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
@@ -283,11 +295,12 @@ export default function FreeAIPage() {
                   onChange={e => {
                     setOpenrouterApiKey(e.target.value);
                     localStorage.setItem('freeai_openrouter_key', e.target.value);
+                    if (e.target.value.length > 10) saveKeyToDb('OPENROUTER_API_KEY', e.target.value);
                   }}
                   className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
-              <div className="text-[10px] text-slate-600 px-1">키는 브라우저에만 저장됩니다</div>
+              <div className="text-[10px] text-slate-500 px-1">키는 브라우저 + 서버에 저장되어 자동실행에도 사용됩니다</div>
             </div>
           )}
 
