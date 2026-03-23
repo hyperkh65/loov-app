@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const AI_MODELS = [
   { id: 'qwen3', name: 'Qwen 3', emoji: '🔮' },
@@ -101,13 +101,19 @@ export default function AutoServicePage() {
   const [imgLoading, setImgLoading] = useState(false);
   const [replacingImgSrc, setReplacingImgSrc] = useState<string | null>(null);
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null); // 다운로드 중인 이미지 URL
-  // 대표이미지 편집기
+  // 대표이미지 편집기 (Canvas 기반)
   const [thumbTitle, setThumbTitle] = useState('');
-  const [thumbKeyword, setThumbKeyword] = useState('');
-  const [thumbColor, setThumbColor] = useState<'blue' | 'dark' | 'green'>('blue');
+  const [thumbSubTitle, setThumbSubTitle] = useState('');
+  const [thumbColor, setThumbColor] = useState<'dark' | 'blue' | 'green'>('dark');
   const [thumbGenerating, setThumbGenerating] = useState(false);
   const [thumbRepUrl, setThumbRepUrl] = useState<string | null>(null);
-  const [thumbBgUrl, setThumbBgUrl] = useState<string | null>(null); // 배경이미지 URL
+  const [thumbBgQuery, setThumbBgQuery] = useState('');
+  const [thumbBgImages, setThumbBgImages] = useState<{ id: number; url: string; thumb: string }[]>([]);
+  const [thumbBgLoading, setThumbBgLoading] = useState(false);
+  const [thumbSelectedBg, setThumbSelectedBg] = useState('');
+  const [thumbPreviewUrl, setThumbPreviewUrl] = useState('');
+  const thumbCanvasRef = useRef<HTMLCanvasElement>(null);
+  const thumbFileInputRef = useRef<HTMLInputElement>(null);
 
   // 발행 모달
   const [publishArticle, setPublishArticle] = useState<Article | null>(null);
@@ -245,11 +251,144 @@ export default function AutoServicePage() {
     setImgSearchTab('naver');
     setReplacingImgSrc(null);
     setImgQuery(article.keyword || '');
-    setThumbTitle(article.title);
-    setThumbKeyword(article.keyword || '');
-    setThumbColor('blue');
+    setThumbTitle(article.title.length > 20 ? article.title.slice(0, Math.ceil(article.title.length * 0.6)) : article.title);
+    setThumbSubTitle(article.title.length > 20 ? article.title.slice(Math.ceil(article.title.length * 0.6)) : (article.keyword || ''));
+    setThumbColor('dark');
     setThumbRepUrl(article.representative_image_url);
-    setThumbBgUrl(null);
+    setThumbBgQuery(article.keyword || '');
+    setThumbBgImages([]);
+    setThumbSelectedBg('');
+    setThumbPreviewUrl('');
+  };
+
+  // ── 캔버스 썸네일 함수들 ──
+  const searchThumbBgImages = async () => {
+    const q = thumbBgQuery;
+    if (!q) return;
+    setThumbBgLoading(true);
+    try {
+      const res = await fetch(`/api/shorts/images?q=${encodeURIComponent(q)}&source=pixabay&per_page=9`);
+      const data = await res.json();
+      setThumbBgImages((data.images || []).map((img: { id: number; url: string; thumb: string }) => ({ id: img.id, url: img.url, thumb: img.thumb })));
+    } catch { /* ignore */ }
+    finally { setThumbBgLoading(false); }
+  };
+
+  const wrapTextOnCanvas = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
+    const lines: string[] = [];
+    let currentLine = '';
+    for (const char of text) {
+      const testLine = currentLine + char;
+      if (ctx.measureText(testLine).width > maxWidth && currentLine.length > 0) {
+        lines.push(currentLine);
+        currentLine = char;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  };
+
+  const generateCanvasThumbnail = async () => {
+    if (!thumbSelectedBg || !thumbTitle) { alert('배경 이미지와 메인 제목을 입력해주세요.'); return; }
+    setThumbGenerating(true);
+    try {
+      const canvas = thumbCanvasRef.current!;
+      canvas.width = 1080; canvas.height = 1080;
+      const ctx = canvas.getContext('2d')!;
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const proxyUrl = thumbSelectedBg.startsWith('http') ? `/api/proxy-image?url=${encodeURIComponent(thumbSelectedBg)}` : thumbSelectedBg;
+      img.src = proxyUrl;
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error('이미지 로드 실패'));
+        setTimeout(() => rej(new Error('타임아웃')), 15000);
+      });
+
+      const scale = Math.max(1080 / img.naturalWidth, 1080 / img.naturalHeight);
+      const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+      ctx.drawImage(img, (1080 - w) / 2, (1080 - h) / 2, w, h);
+
+      const grad = ctx.createLinearGradient(0, 0, 0, 1080);
+      if (thumbColor === 'blue') {
+        grad.addColorStop(0, 'rgba(0,10,40,0.50)'); grad.addColorStop(0.5, 'rgba(0,15,50,0.65)'); grad.addColorStop(1, 'rgba(0,10,40,0.55)');
+      } else if (thumbColor === 'green') {
+        grad.addColorStop(0, 'rgba(0,20,10,0.50)'); grad.addColorStop(0.5, 'rgba(0,25,15,0.65)'); grad.addColorStop(1, 'rgba(0,20,10,0.55)');
+      } else {
+        grad.addColorStop(0, 'rgba(0,0,0,0.48)'); grad.addColorStop(0.5, 'rgba(0,0,0,0.62)'); grad.addColorStop(1, 'rgba(0,0,0,0.52)');
+      }
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, 1080, 1080);
+      const vignette = ctx.createRadialGradient(540, 540, 300, 540, 540, 760);
+      vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,0.45)');
+      ctx.fillStyle = vignette; ctx.fillRect(0, 0, 1080, 1080);
+      ctx.fillStyle = '#f0b429'; ctx.fillRect(0, 0, 1080, 10);
+
+      const fontSize = thumbTitle.length <= 8 ? 120 : thumbTitle.length <= 14 ? 100 : thumbTitle.length <= 20 ? 86 : 72;
+      ctx.font = `bold ${fontSize}px "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const lines = wrapTextOnCanvas(ctx, thumbTitle, 960);
+      const lineHeight = fontSize * 1.3;
+      const totalTextH = lines.length * lineHeight;
+      const subH = thumbSubTitle ? 80 : 0;
+      const startY = (1080 - totalTextH - subH - (thumbSubTitle ? 30 : 0)) / 2;
+
+      lines.forEach((line, i) => {
+        const y = startY + i * lineHeight + lineHeight / 2;
+        ctx.font = `bold ${fontSize}px "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif`;
+        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = 45; ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        for (let k = 0; k < 6; k++) ctx.fillText(line, 540, y); ctx.restore();
+        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,1)'; ctx.shadowBlur = 18; ctx.fillStyle = 'rgba(20,20,20,0.8)';
+        for (let k = 0; k < 3; k++) ctx.fillText(line, 540, y); ctx.restore();
+        ctx.save(); ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.fillText(line, 540, y); ctx.restore();
+      });
+
+      if (thumbSubTitle) {
+        const subFontSize = 54; const subY = startY + totalTextH + 45;
+        ctx.font = `bold ${subFontSize}px "Apple SD Gothic Neo","Malgun Gothic",sans-serif`;
+        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = 30; ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        for (let k = 0; k < 5; k++) ctx.fillText(thumbSubTitle, 540, subY); ctx.restore();
+        ctx.save(); ctx.shadowBlur = 0;
+        ctx.fillStyle = thumbColor === 'green' ? '#86efac' : thumbColor === 'blue' ? '#93c5fd' : '#e2e8f0';
+        ctx.fillText(thumbSubTitle, 540, subY); ctx.restore();
+      }
+
+      ctx.fillStyle = '#f0b429'; ctx.fillRect(0, 1070, 1080, 10);
+      setThumbPreviewUrl(canvas.toDataURL('image/png'));
+    } catch (e) {
+      alert('썸네일 생성 오류: ' + String(e));
+    } finally {
+      setThumbGenerating(false);
+    }
+  };
+
+  const uploadCanvasThumbnail = async () => {
+    if (!thumbPreviewUrl || !previewArticle) return;
+    setThumbGenerating(true);
+    try {
+      const res = await fetch(thumbPreviewUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `thumbnail_${Date.now()}.png`, { type: 'image/png' });
+      const form = new FormData();
+      form.append('file', file);
+      form.append('article_id', previewArticle.id);
+      const uploadRes = await fetch('/api/auto-service/thumbnail', { method: 'PUT', body: form });
+      const data = await uploadRes.json();
+      if (data.url) {
+        setThumbRepUrl(data.url);
+        setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
+        await loadArticles();
+        alert('✅ 대표이미지가 저장됐습니다.');
+      } else {
+        alert('업로드 실패: ' + (data.error || '알 수 없는 오류'));
+      }
+    } catch (e) {
+      alert('업로드 오류: ' + String(e));
+    } finally {
+      setThumbGenerating(false);
+    }
   };
 
   // 콘텐츠에서 img src 목록 추출
@@ -815,61 +954,82 @@ export default function AutoServicePage() {
             {modalTab === 'images' && (
               <div className="p-4">
 
-                {/* ── 대표이미지 편집기 ── */}
-                <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  <p className="text-xs font-semibold text-gray-700 mb-3">🖼️ 대표이미지 (썸네일) 편집</p>
-                  <div className="flex gap-3 mb-3">
-                    {thumbRepUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumbRepUrl} alt="대표이미지" className="w-24 h-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 space-y-2">
-                      <input value={thumbTitle} onChange={e => setThumbTitle(e.target.value)}
-                        placeholder="제목 텍스트" className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
-                      <input value={thumbKeyword} onChange={e => setThumbKeyword(e.target.value)}
-                        placeholder="키워드 태그" className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
-                      <div className="flex gap-2">
-                        {([['blue', '🔵 블루'], ['dark', '⚫ 다크'], ['green', '🟢 그린']] as ['blue'|'dark'|'green', string][]).map(([c, label]) => (
-                          <button key={c} onClick={() => setThumbColor(c)}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${thumbColor === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700'}`}>
-                            {label}
+                {/* ── 대표이미지 편집기 (Canvas 기반) ── */}
+                <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-gray-700">🖼️ 대표이미지 자동 생성</p>
+                    <div className="flex gap-2 items-center">
+                      {(['dark', 'blue', 'green'] as const).map(c => (
+                        <button key={c} onClick={() => setThumbColor(c)}
+                          className={`w-5 h-5 rounded-full border-2 transition-all ${thumbColor === c ? 'border-gray-800 scale-125' : 'border-gray-300'} ${c === 'dark' ? 'bg-gray-700' : c === 'blue' ? 'bg-blue-700' : 'bg-green-700'}`}
+                          title={c} />
+                      ))}
+                      {thumbRepUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={thumbRepUrl} alt="현재 대표이미지" className="w-8 h-8 object-cover rounded border border-gray-300 ml-1" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 배경 이미지 검색 */}
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">배경 이미지 선택</p>
+                    <div className="flex gap-2 mb-2">
+                      <input type="text" value={thumbBgQuery} onChange={e => setThumbBgQuery(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && searchThumbBgImages()}
+                        placeholder="검색어 입력 (영어 권장)"
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
+                      <button onClick={searchThumbBgImages} disabled={thumbBgLoading}
+                        className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-gray-700 text-sm rounded-lg">
+                        {thumbBgLoading ? '...' : '검색'}
+                      </button>
+                      <button onClick={() => thumbFileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm rounded-lg" title="파일 업로드">⬆️</button>
+                    </div>
+                    <input ref={thumbFileInputRef} type="file" accept="image/*" className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) { const reader = new FileReader(); reader.onload = ev => { if (ev.target?.result) setThumbSelectedBg(ev.target.result as string); }; reader.readAsDataURL(f); }
+                      }} />
+                    {thumbBgImages.length > 0 && (
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {thumbBgImages.map(img => (
+                          <button key={img.id} onClick={() => setThumbSelectedBg(img.url)}
+                            className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${thumbSelectedBg === img.url ? 'border-blue-500 ring-2 ring-blue-400' : 'border-transparent hover:border-gray-400'}`}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={img.thumb} alt="" className="w-full h-full object-cover" />
                           </button>
                         ))}
                       </div>
+                    )}
+                    {thumbSelectedBg && thumbBgImages.length === 0 && (
+                      <p className="text-xs text-green-600 mt-1">✅ 배경 이미지 선택됨</p>
+                    )}
+                  </div>
+
+                  {/* 텍스트 입력 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">메인 제목 (크게)</p>
+                      <textarea value={thumbTitle} onChange={e => setThumbTitle(e.target.value)} rows={2}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">서브 제목 (작게, 선택)</p>
+                      <textarea value={thumbSubTitle} onChange={e => setThumbSubTitle(e.target.value)} rows={2}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:border-blue-500" />
                     </div>
                   </div>
-                  {thumbBgUrl && (
-                    <div className="flex items-center gap-2 mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={thumbBgUrl} alt="배경" className="w-10 h-10 object-cover rounded" />
-                      <span className="text-xs text-blue-700 flex-1">배경이미지 선택됨</span>
-                      <button onClick={() => setThumbBgUrl(null)} className="text-xs text-red-500 hover:text-red-700">✕ 제거</button>
-                    </div>
-                  )}
+
+                  <canvas ref={thumbCanvasRef} className="hidden" />
+
                   <div className="flex gap-2">
-                    <button onClick={async () => {
-                      if (!previewArticle) return;
-                      setThumbGenerating(true);
-                      const res = await fetch('/api/auto-service/thumbnail', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ article_id: previewArticle.id, title: thumbTitle, keyword: thumbKeyword, color_scheme: thumbColor, bg_image_url: thumbBgUrl || undefined }),
-                      });
-                      const data = await res.json();
-                      if (data.url) {
-                        setThumbRepUrl(data.url);
-                        setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
-                        await loadArticles();
-                      } else if (data.error) {
-                        alert(`❌ 썸네일 생성 실패:\n${data.error}`);
-                      }
-                      setThumbGenerating(false);
-                    }} disabled={thumbGenerating}
-                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                      {thumbGenerating ? '생성 중...' : '🎨 썸네일 재생성'}
+                    <button onClick={generateCanvasThumbnail} disabled={thumbGenerating || !thumbSelectedBg || !thumbTitle}
+                      className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                      {thumbGenerating ? '생성 중...' : '✨ 썸네일 생성'}
                     </button>
-                    <label className="flex-1 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer text-center">
-                      📁 이미지 직접 업로드
+                    <label className="py-2 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer text-center">
+                      📁 직접 업로드
                       <input type="file" accept="image/*" className="hidden" onChange={async e => {
                         const file = e.target.files?.[0];
                         if (!file || !previewArticle) return;
@@ -888,6 +1048,25 @@ export default function AutoServicePage() {
                       }} />
                     </label>
                   </div>
+
+                  {/* 미리보기 + 저장 */}
+                  {thumbPreviewUrl && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500">미리보기</p>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={thumbPreviewUrl} alt="썸네일 미리보기" className="w-full max-w-xs mx-auto rounded-xl border border-gray-200 block" />
+                      <div className="flex gap-2">
+                        <a href={thumbPreviewUrl} download={`thumbnail_${Date.now()}.png`}
+                          className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg text-center">
+                          ⬇️ 다운로드
+                        </a>
+                        <button onClick={uploadCanvasThumbnail} disabled={thumbGenerating}
+                          className="flex-1 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium">
+                          {thumbGenerating ? '저장 중...' : '💾 대표이미지로 저장'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 수집된 소스 이미지 */}
@@ -931,7 +1110,7 @@ export default function AutoServicePage() {
                                 onClick={async () => {
                                   if (downloadingUrl) return;
                                   const stored = await downloadImage(img.link);
-                                  if (stored) setThumbBgUrl(stored);
+                                  if (stored) { setThumbSelectedBg(stored); setThumbBgImages([]); }
                                   else alert('다운로드 실패');
                                 }}
                                 disabled={downloadingUrl === img.link}
@@ -1037,10 +1216,11 @@ export default function AutoServicePage() {
                           if (replacingImgSrc) {
                             replaceImage(replacingImgSrc, img.url);
                           } else {
-                            setThumbBgUrl(img.url);
+                            setThumbSelectedBg(img.url);
+                            setThumbBgImages([]);
                           }
                         }}
-                          className={`relative cursor-pointer rounded-lg overflow-hidden border-2 hover:border-blue-400 group transition-all ${thumbBgUrl === img.url ? 'border-yellow-400 ring-2 ring-yellow-200' : 'border-gray-200'}`}>
+                          className={`relative cursor-pointer rounded-lg overflow-hidden border-2 hover:border-blue-400 group transition-all ${thumbSelectedBg === img.url ? 'border-yellow-400 ring-2 ring-yellow-200' : 'border-gray-200'}`}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={img.thumb || img.url} alt={img.author} className="w-full h-20 object-cover" />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-all">
@@ -1048,7 +1228,7 @@ export default function AutoServicePage() {
                               {replacingImgSrc ? '교체' : '배경 사용'}
                             </span>
                           </div>
-                          {thumbBgUrl === img.url && (
+                          {thumbSelectedBg === img.url && (
                             <div className="absolute top-1 right-1 bg-yellow-400 text-xs px-1 rounded font-bold">배경</div>
                           )}
                           <p className="text-xs text-gray-400 truncate px-1 py-0.5">{img.caption || img.author}</p>
