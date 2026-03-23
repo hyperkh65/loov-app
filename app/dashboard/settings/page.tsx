@@ -198,7 +198,7 @@ export default function SettingsPage() {
     });
     if (r.ok) {
       setApiKeysMsg('✅ 저장 완료');
-      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', OPENROUTER_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
       const updated: Record<string, boolean> = { ...apiKeyStatus };
       Object.entries(apiKeys).forEach(([k, v]) => { if (v.trim()) updated[k] = true; });
       setApiKeyStatus(updated);
