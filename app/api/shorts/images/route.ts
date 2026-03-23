@@ -15,9 +15,16 @@ async function searchPixabay(query: string, perPage: number): Promise<{ id: numb
       ...(orientation ? { orientation } : {}),
     });
     const res = await fetch(`https://pixabay.com/api/?${params}`);
-    const data = await res.json() as { hits?: { id: number; largeImageURL: string; webformatURL: string; tags: string; user: string }[] };
+    const data = await res.json() as { hits?: { id: number; largeImageURL: string; webformatURL: string; previewURL: string; tags: string; user: string }[] };
     if (data.hits?.length) {
-      return data.hits.map(h => ({ id: h.id, url: h.largeImageURL, thumb: h.webformatURL, tags: h.tags, author: h.user }));
+      return data.hits.map(h => ({
+        id: h.id,
+        url: h.largeImageURL,
+        // previewURL은 cdn.pixabay.com CDN 직접 URL → _150을 _640으로 교체하면 서버사이드 접근 가능
+        thumb: h.previewURL ? h.previewURL.replace(/_\d+\.jpg$/, '_640.jpg') : h.webformatURL,
+        tags: h.tags,
+        author: h.user,
+      }));
     }
   }
   return [];
