@@ -289,6 +289,26 @@ function extractH2Title(h2Tag: string): string {
   return h2Tag.replace(/<[^>]+>/g, '').trim();
 }
 
+// h3 텍스트를 실제 기사 제목으로 교체
+function injectTitleIntoH3(content: string, title: string): string {
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // h3 안의 가장 안쪽 텍스트 노드 교체
+  return content.replace(
+    /(<h3[^>]*>(?:<[^>]+>)*)([^<]+)((?:<\/[^>]+>)*<\/h3>)/,
+    (_, open, _text, close) => `${open}${esc(title)}${close}`
+  );
+}
+
+// 대표이미지를 첫 번째 h3 바로 다음에 삽입
+function insertRepresentativeImageIntoContent(content: string, imageUrl: string, title: string): string {
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const repImg = `\n<figure style="text-align:center;margin:20px auto;">`
+    + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
+    + `style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
+    + `</figure>\n`;
+  return content.replace(/(<\/h3>)/, `$1${repImg}`);
+}
+
 function insertImagesIntoContent(content: string, imageUrls: string[], keyword: string): string {
   if (imageUrls.length === 0) return content;
   const imgHtml = (url: string, sectionTitle: string) => {
@@ -297,7 +317,7 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
       `<img src="${url}" alt="${alt}" title="${alt}" ` +
       `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
       `loading="lazy"/>` +
-      `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt} | ⓒ 이미지</figcaption>` +
+      `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption>` +
       `</figure>\n`;
   };
 
@@ -377,10 +397,14 @@ export async function POST(req: NextRequest) {
 
   // 3. 이미지 검색 + 본문 삽입
   const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
-  const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
+  let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
+  // h3 부제목을 실제 기사 제목으로 교체
+  content = injectTitleIntoH3(content, title);
 
   // 4. SVG 썸네일 생성
   const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+  // 대표이미지를 본문 h3 다음에 삽입
+  if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
 
   // 5. 글자 수 계산
   const wordCount = content.replace(/<[^>]+>/g, '').length;

@@ -303,6 +303,23 @@ function extractH2Title(h2Tag: string): string {
   return h2Tag.replace(/<[^>]+>/g, '').trim();
 }
 
+function injectTitleIntoH3(content: string, title: string): string {
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return content.replace(
+    /(<h3[^>]*>(?:<[^>]+>)*)([^<]+)((?:<\/[^>]+>)*<\/h3>)/,
+    (_, open, _text, close) => `${open}${esc(title)}${close}`
+  );
+}
+
+function insertRepresentativeImageIntoContent(content: string, imageUrl: string, title: string): string {
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const repImg = `\n<figure style="text-align:center;margin:20px auto;">`
+    + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
+    + `style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
+    + `</figure>\n`;
+  return content.replace(/(<\/h3>)/, `$1${repImg}`);
+}
+
 function insertImagesIntoContent(content: string, imageUrls: string[], keyword: string): string {
   if (imageUrls.length === 0) return content;
   const imgHtml = (url: string, sectionTitle: string) => {
@@ -311,7 +328,7 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
       `<img src="${url}" alt="${alt}" title="${alt}" ` +
       `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
       `loading="lazy"/>` +
-      `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt} | ⓒ 이미지</figcaption>` +
+      `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption>` +
       `</figure>\n`;
   };
 
@@ -381,8 +398,10 @@ async function generateArticleForUser(
     if (!title || !rawContent) return { ok: false, reason: 'AI 출력 파싱 실패' };
 
     const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
-    const content = insertImagesIntoContent(rawContent, inlineImages, keyword);
+    let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
+    content = injectTitleIntoH3(content, title);
     const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+    if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
     const wordCount = content.replace(/<[^>]+>/g, '').length;
 
     await supabase.from('bossai_auto_articles').insert({
