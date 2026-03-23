@@ -184,6 +184,8 @@ export async function generateAndUploadThumbnail(
     const supabase = createAdminClient();
     const filename = `thumbnails/${Date.now()}_${encodeURIComponent(keyword.slice(0, 15))}.svg`;
 
+    // 버킷 없으면 자동 생성
+    await supabase.storage.createBucket('auto-blog', { public: true }).catch(() => {});
     const { error } = await supabase.storage
       .from('auto-blog')
       .upload(filename, buffer, { contentType: 'image/svg+xml', upsert: true });
