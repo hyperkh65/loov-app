@@ -19,6 +19,7 @@ const ALLOWED_KEYS = [
   // Naver Open API
   'NAVER_CLIENT_ID',
   'NAVER_CLIENT_SECRET',
+  'NAVER_CAFE_CLUB_ID',
   // Naver Search Ad API (키워드 검색량)
   'NAVER_AD_API_KEY',
   'NAVER_AD_SECRET',
