@@ -196,6 +196,8 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await imgRes.arrayBuffer());
 
     const adminSupabase = createAdminClient();
+    // 버킷 없으면 자동 생성
+    await adminSupabase.storage.createBucket('auto-blog', { public: true }).catch(() => {});
     const { error } = await adminSupabase.storage
       .from('auto-blog')
       .upload(path, buffer, { contentType: ct, upsert: true });
@@ -216,6 +218,8 @@ export async function POST(req: NextRequest) {
   const path = `uploads/${user.id}/${Date.now()}.${ext}`;
 
   const adminSupabase = createAdminClient();
+  // 버킷 없으면 자동 생성
+  await adminSupabase.storage.createBucket('auto-blog', { public: true }).catch(() => {});
   const { error } = await adminSupabase.storage
     .from('auto-blog')
     .upload(path, buffer, { contentType: file.type, upsert: true });
