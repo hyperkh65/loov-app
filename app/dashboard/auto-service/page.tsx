@@ -74,7 +74,7 @@ export default function AutoServicePage() {
   const [settingsError, setSettingsError] = useState('');
   const [customKwInput, setCustomKwInput] = useState('');
   const [runningNow, setRunningNow] = useState(false);
-  const [runResult, setRunResult] = useState<{ generated: number; keywords: string[] } | null>(null);
+  const [runResult, setRunResult] = useState<{ generated: number; keywords: string[]; errors?: { keyword: string; reason: string }[] } | null>(null);
 
   // 수동 생성
   const [manualKeyword, setManualKeyword] = useState('');
@@ -196,7 +196,7 @@ export default function AutoServicePage() {
       }),
     });
     const data = await res.json();
-    setRunResult({ generated: data.generated || 0, keywords: data.keywords || [] });
+    setRunResult({ generated: data.generated || 0, keywords: data.keywords || [], errors: data.errors || [] });
     setRunningNow(false);
     // 초안 탭으로 이동
     if (data.generated > 0) {
@@ -495,16 +495,32 @@ export default function AutoServicePage() {
             <p className="text-sm text-gray-500 mb-4">스케줄을 기다리지 않고 지금 즉시 글을 생성합니다. 생성된 초안은 "초안 관리"에서 확인하고 승인 후 발행하세요.</p>
 
             {runResult && (
-              <div className={`mb-4 p-3 rounded-xl text-sm ${runResult.generated > 0 ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+              <div className="mb-4 space-y-2">
                 {runResult.generated > 0 ? (
-                  <div>
+                  <div className="p-3 rounded-xl text-sm bg-green-50 text-green-700">
                     <strong>✅ {runResult.generated}개 글 생성 완료!</strong>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {runResult.keywords.map((kw, i) => <span key={i} className="text-xs bg-green-100 px-2 py-0.5 rounded">{kw}</span>)}
                     </div>
                   </div>
                 ) : (
-                  <span>⚠️ 새로 생성할 키워드가 없습니다 (최근 7일 내 같은 키워드 글 이미 존재)</span>
+                  <div className="p-3 rounded-xl text-sm bg-yellow-50 text-yellow-700">
+                    <strong>⚠️ 0개 생성됨</strong>
+                    {runResult.errors && runResult.errors.length > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {runResult.errors.map((e, i) => (
+                          <div key={i} className="text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
+                            <span className="font-medium">키워드 &quot;{e.keyword}&quot;:</span> {e.reason}
+                          </div>
+                        ))}
+                        <p className="text-xs mt-2 text-gray-600">
+                          💡 <strong>설정 페이지 → API 키 관리</strong>에서 Gemini, Claude, OpenAI 키 중 하나를 저장하면 서버 자동 실행됩니다.
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="block mt-1 text-xs">최근 7일 내 같은 키워드 글이 이미 존재합니다</span>
+                    )}
+                  </div>
                 )}
               </div>
             )}
