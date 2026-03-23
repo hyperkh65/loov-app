@@ -191,26 +191,38 @@ export default function AutoServicePage() {
   const runNow = async () => {
     setRunningNow(true);
     setRunResult(null);
-    const res = await fetch('/api/auto-service/auto-run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        keywords: autoSettings.custom_keywords.length > 0 ? autoSettings.custom_keywords : [],
-        ai_model: autoSettings.ai_model,
-        max: autoSettings.max_per_run,
-        ...getAiKeys(),
-      }),
-    });
-    const data = await res.json();
-    setRunResult({ generated: data.generated || 0, keywords: data.keywords || [], errors: data.errors || [] });
-    setRunningNow(false);
-    // 초안 탭으로 이동
-    if (data.generated > 0) {
-      setTab('drafts');
-      await loadArticles();
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 270_000); // 4.5분 타임아웃
+      const res = await fetch('/api/auto-service/auto-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keywords: autoSettings.custom_keywords.length > 0 ? autoSettings.custom_keywords : [],
+          ai_model: autoSettings.ai_model,
+          max: autoSettings.max_per_run,
+          ...getAiKeys(),
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const data = await res.json();
+      setRunResult({ generated: data.generated || 0, keywords: data.keywords || [], errors: data.errors || [] });
+      if (data.generated > 0) {
+        setTab('drafts');
+        await loadArticles();
+      }
+      fetch('/api/auto-service/settings').then(r => r.json()).then(d => { if (d && !d.error) setAutoSettings(d); });
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      setRunResult({
+        generated: 0,
+        keywords: [],
+        errors: [{ keyword: '실행', reason: isTimeout ? '시간 초과 (5분). 글이 일부 생성됐을 수 있으니 초안 탭을 확인하세요.' : String(err) }],
+      });
+    } finally {
+      setRunningNow(false);
     }
-    // 설정 갱신 (last_run_at 업데이트)
-    fetch('/api/auto-service/settings').then(r => r.json()).then(d => { if (d && !d.error) setAutoSettings(d); });
   };
 
   // 수동 글 생성
