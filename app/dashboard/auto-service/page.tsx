@@ -272,6 +272,24 @@ export default function AutoServicePage() {
     setImgResults([]);
   };
 
+  // 이미지 삭제 (figure 전체 또는 img 태그 제거)
+  const deleteImage = (src: string) => {
+    const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    setEditContent(prev => {
+      // <figure>...<img src="URL">...</figure> 전체 제거
+      let result = prev.replace(
+        new RegExp(`<figure[^>]*>[\\s\\S]*?<img[^>]+src="${escapedSrc}"[^>]*\\/?>[\\s\\S]*?<\\/figure>`, 'gi'),
+        ''
+      );
+      // 혹시 figure가 없으면 img 태그만 제거
+      if (result === prev) {
+        result = prev.replace(new RegExp(`<img[^>]+src="${escapedSrc}"[^>]*\\/?>`, 'gi'), '');
+      }
+      return result;
+    });
+    setReplacingImgSrc(null);
+  };
+
   // 파일 업로드
   const uploadFile = async (file: File, oldSrc: string) => {
     const form = new FormData();
@@ -291,6 +309,10 @@ export default function AutoServicePage() {
         body: JSON.stringify({ url }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        alert(`❌ ${data.error || '다운로드 실패'}`);
+        return null;
+      }
       return data.url || null;
     } catch { return null; }
     finally { setDownloadingUrl(null); }
@@ -912,19 +934,27 @@ export default function AutoServicePage() {
 
                 {/* 현재 글 이미지 목록 */}
                 <div className="mb-4">
-                  <p className="text-xs font-medium text-gray-600 mb-2">📄 본문 이미지 ({extractImages(editContent).length}개) — 클릭하면 교체</p>
+                  <p className="text-xs font-medium text-gray-600 mb-2">📄 본문 이미지 ({extractImages(editContent).length}개) — 클릭: 교체 선택 | 🗑️: 삭제</p>
                   {extractImages(editContent).length === 0 ? (
                     <p className="text-sm text-gray-400">이미지 없음</p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {extractImages(editContent).map((src, i) => (
-                        <div key={i} onClick={() => setReplacingImgSrc(replacingImgSrc === src ? null : src)}
-                          className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${replacingImgSrc === src ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200 hover:border-blue-300'}`}>
+                        <div key={i} className={`relative rounded-lg overflow-hidden border-2 transition-all ${replacingImgSrc === src ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200 hover:border-blue-300'}`}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={src} alt={`이미지 ${i+1}`} className="w-28 h-20 object-cover" />
-                          <div className="absolute inset-0 bg-black/0 hover:bg-black/20 flex items-center justify-center transition-all">
-                            {replacingImgSrc === src && <span className="text-white text-xs font-bold bg-blue-500 px-2 py-0.5 rounded">교체 중</span>}
-                          </div>
+                          <img src={src} alt={`이미지 ${i+1}`} className="w-28 h-20 object-cover cursor-pointer"
+                            onClick={() => setReplacingImgSrc(replacingImgSrc === src ? null : src)} />
+                          {/* 삭제 버튼 */}
+                          <button
+                            onClick={() => { if (confirm('이 이미지를 삭제하시겠습니까?')) deleteImage(src); }}
+                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600 shadow"
+                            title="이미지 삭제"
+                          >×</button>
+                          {replacingImgSrc === src && (
+                            <div className="absolute inset-0 bg-blue-500/30 flex items-end justify-center pb-1">
+                              <span className="text-white text-xs font-bold bg-blue-500 px-2 py-0.5 rounded">교체 중</span>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

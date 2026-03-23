@@ -172,11 +172,23 @@ export async function POST(req: NextRequest) {
     const { url } = await req.json();
     if (!url) return NextResponse.json({ error: 'url 필요' }, { status: 400 });
 
+    // 뉴스/블로그 사이트 hotlink 차단 우회: 브라우저처럼 보이도록 헤더 설정
+    let origin = '';
+    try { origin = new URL(url).origin; } catch { /* skip */ }
+
     const imgRes = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; imagebot/1.0)' },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': origin ? origin + '/' : 'https://www.google.com/',
+        'sec-fetch-dest': 'image',
+        'sec-fetch-mode': 'no-cors',
+        'sec-fetch-site': 'cross-site',
+      },
       signal: AbortSignal.timeout(15_000),
     });
-    if (!imgRes.ok) return NextResponse.json({ error: '이미지 다운로드 실패' }, { status: 400 });
+    if (!imgRes.ok) return NextResponse.json({ error: `이미지 다운로드 실패 (${imgRes.status}) — 원본 사이트에서 직접 다운로드 후 업로드 탭을 이용하세요` }, { status: 400 });
 
     const ct = imgRes.headers.get('content-type') || 'image/jpeg';
     const ext = ct.split('/')[1]?.split(';')[0]?.replace('jpeg', 'jpg') || 'jpg';
