@@ -186,10 +186,17 @@ export async function POST(req: NextRequest) {
             }
 
             // 5. 포스트 발행
+            // slug: focus_keyword 기반으로 생성 (WordPress 자동 slug 잘림 방지)
+            const rawSlug = (article.focus_keyword || article.keyword || article.title)
+              .replace(/[,!?\.]/g, '')
+              .replace(/\s+/g, '-')
+              .toLowerCase()
+              .slice(0, 60);
             const postBody: Record<string, unknown> = {
               title: article.title,
               content: wpContent,
               status: 'publish',
+              slug: rawSlug,
             };
             if (featuredMediaId) postBody.featured_media = featuredMediaId;
             if (catId) postBody.categories = [catId];
