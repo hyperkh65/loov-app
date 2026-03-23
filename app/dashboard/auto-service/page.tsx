@@ -426,20 +426,24 @@ export default function AutoServicePage() {
     setImgResults([]);
   };
 
-  // 이미지 삭제 (figure 전체 또는 img 태그 제거)
+  // 이미지 삭제 (DOMParser로 정확하게 해당 figure/img만 제거)
   const deleteImage = (src: string) => {
-    const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     setEditContent(prev => {
-      // <figure>...<img src="URL">...</figure> 전체 제거
-      let result = prev.replace(
-        new RegExp(`<figure[^>]*>[\\s\\S]*?<img[^>]+src="${escapedSrc}"[^>]*\\/?>[\\s\\S]*?<\\/figure>`, 'gi'),
-        ''
-      );
-      // 혹시 figure가 없으면 img 태그만 제거
-      if (result === prev) {
-        result = prev.replace(new RegExp(`<img[^>]+src="${escapedSrc}"[^>]*\\/?>`, 'gi'), '');
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(prev, 'text/html');
+        const imgs = doc.querySelectorAll(`img[src="${CSS.escape(src)}"]`);
+        imgs.forEach(img => {
+          const figure = img.closest('figure');
+          if (figure) figure.remove();
+          else img.remove();
+        });
+        return doc.body.innerHTML;
+      } catch {
+        // DOMParser 실패 시 단순 img 태그만 제거
+        const escaped = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return prev.replace(new RegExp(`<img[^>]+src="${escaped}"[^>]*\\/?>`, 'gi'), '');
       }
-      return result;
     });
     setReplacingImgSrc(null);
   };
