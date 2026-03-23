@@ -153,52 +153,56 @@ function generateSvg(
 </svg>`;
 }
 
+// 에러 발생 시 throw (null 반환 안 함 - 호출측에서 try/catch로 처리)
 export async function generateAndUploadThumbnail(
   title: string,
   keyword: string,
   colorScheme: 'blue' | 'dark' | 'green' = 'blue',
   bgImageUrl?: string,
-): Promise<string | null> {
-  try {
-    let bgBase64: string | undefined;
-    let bgMimeType: string | undefined;
+): Promise<string> {
+  let bgBase64: string | undefined;
+  let bgMimeType: string | undefined;
 
-    if (bgImageUrl) {
-      try {
-        const imgRes = await fetch(bgImageUrl);
-        if (imgRes.ok) {
-          const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-          const mimeType = contentType.split(';')[0].trim();
-          const arrayBuffer = await imgRes.arrayBuffer();
-          bgBase64 = Buffer.from(arrayBuffer).toString('base64');
-          bgMimeType = mimeType;
-        }
-      } catch {
-        // 이미지 fetch 실패 시 그라디언트 배경으로 폴백
+  if (bgImageUrl) {
+    try {
+      const imgRes = await fetch(bgImageUrl);
+      if (imgRes.ok) {
+        const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+        const mimeType = contentType.split(';')[0].trim();
+        const arrayBuffer = await imgRes.arrayBuffer();
+        bgBase64 = Buffer.from(arrayBuffer).toString('base64');
+        bgMimeType = mimeType;
       }
+    } catch {
+      // 배경 이미지 fetch 실패 시 그라디언트 배경으로 폴백 (무시)
     }
-
-    const svg = generateSvg(title, keyword, colorScheme, bgBase64, bgMimeType);
-    const buffer = Buffer.from(svg, 'utf-8');
-
-    const supabase = createAdminClient();
-    const filename = `thumbnails/${Date.now()}_${encodeURIComponent(keyword.slice(0, 15))}.svg`;
-
-    // 버킷 없으면 자동 생성
-    await supabase.storage.createBucket('auto-blog', { public: true }).catch(() => {});
-    const { error } = await supabase.storage
-      .from('auto-blog')
-      .upload(filename, buffer, { contentType: 'image/svg+xml', upsert: true });
-
-    if (error) {
-      console.error('[thumbnail] 업로드 실패:', error.message);
-      return null;
-    }
-
-    const { data: { publicUrl } } = supabase.storage.from('auto-blog').getPublicUrl(filename);
-    return publicUrl;
-  } catch (err) {
-    console.error('[thumbnail] 생성 실패:', err);
-    return null;
   }
+
+  const svg = generateSvg(title, keyword, colorScheme, bgBase64, bgMimeType);
+  const buffer = Buffer.from(svg, 'utf-8');
+
+  const supabase = createAdminClient();
+  const filename = `thumbnails/${Date.now()}_${encodeURIComponent(keyword.slice(0, 15))}.svg`;
+
+  // 버킷 생성 시도 (이미 존재하면 에러 무시)
+  const { error: bucketErr } = await supabase.storage.createBucket('auto-blog', { public: true });
+  if (bucketErr && !bucketErr.message.includes('already exist') && !bucketErr.message.includes('duplicate')) {
+    // 버킷이 정말 없는지 확인
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const exists = buckets?.some((b: { name: string }) => b.name === 'auto-blog');
+    if (!exists) {
+      throw new Error('Supabase Storage "auto-blog" 버킷이 없습니다. Supabase Dashboard → Storage에서 auto-blog 버킷을 Public으로 생성해주세요.');
+    }
+  }
+
+  const { error } = await supabase.storage
+    .from('auto-blog')
+    .upload(filename, buffer, { contentType: 'image/svg+xml', upsert: true });
+
+  if (error) {
+    throw new Error(`썸네일 업로드 실패: ${error.message}`);
+  }
+
+  const { data: { publicUrl } } = supabase.storage.from('auto-blog').getPublicUrl(filename);
+  return publicUrl;
 }

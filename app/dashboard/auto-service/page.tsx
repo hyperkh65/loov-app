@@ -223,6 +223,9 @@ export default function AutoServicePage() {
       setManualKeyword('');
       setTab('drafts');
       await loadArticles();
+      if (data.thumbnail_error) {
+        alert(`⚠️ 글은 생성됐지만 대표이미지 실패:\n${data.thumbnail_error}\n\n→ Supabase Dashboard > Storage에서 "auto-blog" 버킷을 Public으로 생성해주세요.`);
+      }
     } catch (err) {
       alert(`글 생성 실패: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -857,6 +860,8 @@ export default function AutoServicePage() {
                         setThumbRepUrl(data.url);
                         setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
                         await loadArticles();
+                      } else if (data.error) {
+                        alert(`❌ 썸네일 생성 실패:\n${data.error}`);
                       }
                       setThumbGenerating(false);
                     }} disabled={thumbGenerating}

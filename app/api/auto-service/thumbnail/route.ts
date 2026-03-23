@@ -14,7 +14,13 @@ export async function POST(req: NextRequest) {
   if (!article_id || !title || !keyword)
     return NextResponse.json({ error: 'article_id, title, keyword 필요' }, { status: 400 });
 
-  const imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme, bg_image_url || undefined);
+  let imageUrl: string | null = null;
+  try {
+    imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme, bg_image_url || undefined);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
   if (!imageUrl) return NextResponse.json({ error: '썸네일 생성 실패' }, { status: 500 });
 
   // DB 업데이트
