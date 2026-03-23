@@ -496,6 +496,18 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, users: settings.length, total_generated: totalGenerated, summary });
 }
 
+// 키워드 품질 검증: 너무 짧거나 잘리거나 의미없는 키워드 제거
+function isQualityKeyword(kw: string): boolean {
+  const t = kw.trim();
+  if (t.length < 3) return false;                      // 너무 짧음
+  if (/^\d+$/.test(t)) return false;                   // 순수 숫자
+  if (/[ㄱ-ㅎㅏ-ㅣ]$/.test(t)) return false;         // 자음/모음으로 끝남 (잘린 한글)
+  if (/^[a-zA-Z]{1,2}$/.test(t)) return false;        // 알파벳 1-2자
+  if (/^[가-힣]{1,2}$/.test(t)) return false;         // 한글 1-2자
+  if (/(.)\1{3,}/.test(t)) return false;               // 같은 글자 4번 이상 반복
+  return true;
+}
+
 // 수동 트리거 (대시보드에서 즉시 실행)
 export async function POST(req: NextRequest) {
   const supabase = await (await import('@/lib/supabase-server')).createClient();
@@ -505,8 +517,10 @@ export async function POST(req: NextRequest) {
   const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey } = await req.json();
   const adminSupabase = createAdminClient();
 
-  const trendKeywords = customKws?.length > 0 ? customKws : await getTrendingKeywords();
-  const keywordsToUse = trendKeywords.slice(0, max * 2);
+  const rawKeywords = customKws?.length > 0 ? customKws : await getTrendingKeywords();
+  // 품질 필터 적용: 불완전하거나 의미없는 키워드 제외
+  const trendKeywords = rawKeywords.filter(isQualityKeyword);
+  const keywordsToUse = trendKeywords.slice(0, max * 3); // 여유있게 풀 확보
 
   let generated = 0;
   const usedKeywords: string[] = [];
