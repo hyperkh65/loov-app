@@ -693,25 +693,21 @@ export default function AutoServicePage() {
                       {runResult.keywords.map((kw, i) => <span key={i} className="text-xs bg-green-100 px-2 py-0.5 rounded">{kw}</span>)}
                     </div>
                   </div>
-                ) : (
+                ) : runResult.errors && runResult.errors.length > 0 ? (
                   <div className="p-3 rounded-xl text-sm bg-yellow-50 text-yellow-700">
-                    <strong>⚠️ 0개 생성됨</strong>
-                    {runResult.errors && runResult.errors.length > 0 ? (
-                      <div className="mt-2 space-y-1">
-                        {runResult.errors.map((e, i) => (
-                          <div key={i} className="text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
-                            <span className="font-medium">키워드 &quot;{e.keyword}&quot;:</span> {e.reason}
-                          </div>
-                        ))}
-                        <p className="text-xs mt-2 text-gray-600">
-                          💡 <strong>설정 페이지 → API 키 관리</strong>에서 Gemini, Claude, OpenAI 키 중 하나를 저장하면 서버 자동 실행됩니다.
-                        </p>
-                      </div>
-                    ) : (
-                      <span className="block mt-1 text-xs">최근 7일 내 같은 키워드 글이 이미 존재합니다</span>
-                    )}
+                    <strong>⚠️ 생성 실패</strong>
+                    <div className="mt-2 space-y-1">
+                      {runResult.errors.map((e, i) => (
+                        <div key={i} className="text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
+                          <span className="font-medium">키워드 &quot;{e.keyword}&quot;:</span> {e.reason}
+                        </div>
+                      ))}
+                      <p className="text-xs mt-2 text-gray-600">
+                        💡 <strong>설정 페이지 → API 키 관리</strong>에서 Gemini, Claude, OpenAI 키 중 하나를 저장하면 서버 자동 실행됩니다.
+                      </p>
+                    </div>
                   </div>
-                )}
+                ) : null}
               </div>
             )}
 
