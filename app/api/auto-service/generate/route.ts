@@ -402,7 +402,14 @@ export async function POST(req: NextRequest) {
   content = injectTitleIntoH3(content, title);
 
   // 4. SVG 썸네일 생성
-  const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+  let imageUrl: string | null = null;
+  let thumbnailError: string | undefined;
+  try {
+    imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+  } catch (err) {
+    thumbnailError = err instanceof Error ? err.message : String(err);
+    console.error('[generate] 썸네일 생성 실패:', thumbnailError);
+  }
   // 대표이미지를 본문 h3 다음에 삽입
   if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
 
@@ -433,5 +440,5 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ item: data, keywords, word_count: wordCount });
+  return NextResponse.json({ item: data, keywords, word_count: wordCount, thumbnail_error: thumbnailError });
 }

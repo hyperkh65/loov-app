@@ -400,7 +400,12 @@ async function generateArticleForUser(
     const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
     let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
     content = injectTitleIntoH3(content, title);
-    const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+    let imageUrl: string | null = null;
+    try {
+      imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+    } catch (thumbErr) {
+      console.error(`[auto-run] 썸네일 실패 (${keyword}):`, thumbErr instanceof Error ? thumbErr.message : thumbErr);
+    }
     if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
     const wordCount = content.replace(/<[^>]+>/g, '').length;
 
