@@ -46,6 +46,8 @@ export default function NaverCafePage() {
   const [clubId, setClubId] = useState('');
   const [cafeName, setCafeName] = useState('');
   const [cafeUrl, setCafeUrl] = useState('');
+  const [cafeSlugInput, setCafeSlugInput] = useState('');
+  const [resolving, setResolving] = useState(false);
   const [savingConn, setSavingConn] = useState(false);
   const [loadingMenus, setLoadingMenus] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState('');
@@ -69,9 +71,27 @@ export default function NaverCafePage() {
     setConn(data);
     if (data.club_id) setClubId(data.club_id);
     if (data.cafe_name) setCafeName(data.cafe_name);
-    if (data.cafe_url) setCafeUrl(data.cafe_url);
+    if (data.cafe_url) { setCafeUrl(data.cafe_url); setCafeSlugInput(data.cafe_url); }
     setLoadingConn(false);
   }, []);
+
+  const resolveClubId = async () => {
+    const slug = cafeSlugInput.trim().replace(/^https?:\/\/cafe\.naver\.com\//, '').replace(/\/$/, '');
+    if (!slug) { setSettingsMsg('카페 URL을 입력하세요'); return; }
+    setResolving(true);
+    setSettingsMsg('');
+    const res = await fetch(`/api/naver-cafe/resolve?slug=${encodeURIComponent(slug)}`);
+    const data = await res.json();
+    if (data.club_id) {
+      setClubId(data.club_id);
+      if (data.cafe_name) setCafeName(data.cafe_name);
+      setCafeUrl(slug);
+      setSettingsMsg(`✅ 카페 ID 조회 성공: ${data.club_id} (${data.cafe_name})`);
+    } else {
+      setSettingsMsg(`❌ ${data.error}`);
+    }
+    setResolving(false);
+  };
 
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
@@ -209,43 +229,54 @@ export default function NaverCafePage() {
           {/* 카페 정보 입력 */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
             <p className="text-sm font-semibold text-gray-800">카페 정보</p>
+
+            {/* URL 자동 조회 */}
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">
-                카페 숫자 ID <span className="text-red-400">*</span>
-              </label>
-              <input
-                value={clubId}
-                onChange={(e) => setClubId(e.target.value)}
-                placeholder="예: 12345678"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                카페 URL: cafe.naver.com/cafename → 카페 관리 → 카페 ID 확인
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">카페 이름</label>
+              <label className="text-xs text-gray-500 mb-1 block">카페 URL</label>
+              <div className="flex gap-2">
                 <input
-                  value={cafeName}
-                  onChange={(e) => setCafeName(e.target.value)}
-                  placeholder="예: 내 카페"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  value={cafeSlugInput}
+                  onChange={(e) => setCafeSlugInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && resolveClubId()}
+                  placeholder="예: 2dayskr 또는 cafe.naver.com/2dayskr"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                 />
+                <button
+                  onClick={resolveClubId}
+                  disabled={resolving}
+                  className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 whitespace-nowrap"
+                >
+                  {resolving ? '조회 중...' : '🔍 자동 조회'}
+                </button>
               </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">카페 URL 슬러그</label>
-                <input
-                  value={cafeUrl}
-                  onChange={(e) => setCafeUrl(e.target.value)}
-                  placeholder="예: mycafe"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
+              <p className="text-xs text-gray-400 mt-1">카페 URL만 입력하면 숫자 ID를 자동으로 가져옵니다</p>
             </div>
+
+            {/* 조회된 결과 표시 */}
+            {clubId && (
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">카페 ID</span>
+                  <span className="font-mono font-semibold text-gray-800">{clubId}</span>
+                </div>
+                {cafeName && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">카페 이름</span>
+                    <span className="text-gray-800">{cafeName}</span>
+                  </div>
+                )}
+                {cafeUrl && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">URL</span>
+                    <span className="text-gray-800">cafe.naver.com/{cafeUrl}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               onClick={saveSettings}
-              disabled={savingConn}
+              disabled={savingConn || !clubId}
               className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
             >
               {savingConn ? '저장 중...' : '💾 설정 저장'}
