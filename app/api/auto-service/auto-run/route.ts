@@ -122,8 +122,10 @@ function buildPrompt(keyword: string, news: {title:string;description:string}[],
 - 각 단락 최소 4문장, 충분한 내용 서술
 
 【분량 원칙】
-- 순수 텍스트(HTML 태그 제외) 최소 3500자 이상 필수
-- H2 섹션 6개, 각 섹션 3개 단락 이상
+- 순수 텍스트(HTML 태그 제외) 최소 4000자 이상 필수 (미달 시 재작성)
+- H2 섹션 6개, 각 섹션 단락 3개 이상
+- 각 단락은 반드시 5문장 이상 (짧은 문장 금지, 한 문장 최소 30자 이상)
+- 각 H2 첫 번째 단락은 7-8문장으로 충분히 풀어쓸 것
 
 포커스 키워드: "${keyword}"
 오늘 날짜: ${today}
@@ -150,40 +152,40 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
 
 <h2 id="section2" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
 
 <h2 id="section3" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
 
 <h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
 
 <h2 id="section5" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
 
 <h2 id="section6" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>6. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 내용 심화. 수치/날짜/인물 포함. 4-5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 몰랐던 관련 사실이나 시각. 4문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 + 향후 전망: 앞으로 어떻게 될지, 독자가 어떻게 대응해야 할지 5-6문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
 
 <div class="single-summary-card" style="border:2px solid #ccc;padding:20px;border-radius:8px;max-width:800px;background-color:#ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin:20px auto;">
 <div class="card-header" style="display:flex;align-items:center;border-bottom:2px solid #1a73e8;padding-bottom:10px;margin-bottom:10px;"><span style="font-size:24px;color:#1a73e8;margin-right:10px;">💡</span><h3 style="font-size:20px;color:#1a73e8;margin:0;" data-ke-size="size23">핵심 요약</h3></div>
