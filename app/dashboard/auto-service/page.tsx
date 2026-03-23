@@ -318,11 +318,27 @@ export default function AutoServicePage() {
     finally { setDownloadingUrl(null); }
   };
 
-  // 이미지를 본문 끝에 삽입
-  const insertImageToContent = (imageUrl: string, title: string) => {
-    const alt = title.replace(/"/g, '');
-    const imgHtml = `\n<figure style="text-align:center;margin:25px 0;"><img src="${imageUrl}" alt="${alt}" title="${alt}" style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/><figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt} | ⓒ 수집 이미지</figcaption></figure>\n`;
-    setEditContent(prev => prev + imgHtml);
+  // 이미지를 본문 H2 소제목 다음 위치에 삽입 (이미지 없는 첫 번째 H2 뒤)
+  const insertImageToContent = (imageUrl: string, altText: string) => {
+    const alt = altText.replace(/"/g, '');
+    const imgHtml = `\n<figure style="text-align:center;margin:25px 0;"><img src="${imageUrl}" alt="${alt}" title="${alt}" style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/><figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption></figure>\n`;
+
+    setEditContent(prev => {
+      // H2 태그 목록과 위치 파악
+      const h2Regex = /(<h2[^>]*>[\s\S]*?<\/h2>)/gi;
+      const h2Matches = [...prev.matchAll(h2Regex)];
+
+      for (const match of h2Matches) {
+        const h2End = (match.index ?? 0) + match[0].length;
+        // H2 다음 600자 내에 <figure 없으면 이 위치에 삽입
+        const nextChunk = prev.substring(h2End, h2End + 600);
+        if (!/<figure/i.test(nextChunk)) {
+          return prev.substring(0, h2End) + imgHtml + prev.substring(h2End);
+        }
+      }
+      // 모든 H2에 이미지 있으면 끝에 추가
+      return prev + imgHtml;
+    });
   };
 
   const saveEdit = async () => {
