@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import { Platform } from '@/lib/sns/platforms';
 
 export async function GET(
@@ -17,24 +17,23 @@ export async function GET(
   if (error) return NextResponse.redirect(`${returnUrl}?error=${encodeURIComponent(error)}`);
   if (!code || !state) return NextResponse.redirect(`${returnUrl}?error=invalid_response`);
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(`${siteUrl}/login`);
+  // Admin client 사용 - 세션 없이도 state로 user_id 조회 가능
+  const supabase = createAdminClient();
 
-  // State 검증
+  // State 검증 (user_id는 state에서 조회)
   const { data: oauthState, error: stateErr } = await supabase
     .from('sns_oauth_state')
     .select('*')
     .eq('state', state)
-    .eq('user_id', user.id)
     .eq('platform', platform)
-    .gte('expires_at', new Date().toISOString())
     .single();
 
   if (stateErr || !oauthState) {
     console.error('[SNS Callback] state_mismatch:', stateErr?.message);
-    return NextResponse.redirect(`${returnUrl}?error=state_mismatch`);
+    return NextResponse.redirect(`${returnUrl}?error=${encodeURIComponent('state_mismatch: ' + (stateErr?.message || 'not found'))}`);
   }
+
+  const userId = oauthState.user_id;
   await supabase.from('sns_oauth_state').delete().eq('id', oauthState.id);
 
   const redirectUri = `${siteUrl}/api/sns/callback/${platform}`;
@@ -172,7 +171,7 @@ export async function GET(
     const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null;
 
     await supabase.from('sns_connections').upsert({
-      user_id: user.id, platform, access_token: accessToken, refresh_token: refreshToken,
+      user_id: userId, platform, access_token: accessToken, refresh_token: refreshToken,
       token_expires_at: expiresAt, platform_user_id: platformUserId, platform_username: platformUsername,
       platform_display_name: platformDisplayName, platform_avatar: platformAvatar,
       is_active: true, updated_at: new Date().toISOString(),
