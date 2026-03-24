@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('scope', 'profile email cafe');
 
   return NextResponse.redirect(authUrl.toString());
 }

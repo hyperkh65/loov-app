@@ -60,6 +60,8 @@ export default function NaverCafePage() {
   const [content, setContent] = useState('');
   const [menuId, setMenuId] = useState('');
   const [openYn, setOpenYn] = useState<'Y' | 'N'>('Y');
+  const [attachUrls, setAttachUrls] = useState<string[]>([]);
+  const [attachInput, setAttachInput] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ ok?: boolean; url?: string; error?: string } | null>(null);
 
@@ -176,7 +178,7 @@ export default function NaverCafePage() {
       const res = await fetch('/api/naver-cafe/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn }),
+        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, image_urls: attachUrls }),
       });
       const data = await res.json();
       setPublishResult(data);
@@ -453,6 +455,39 @@ export default function NaverCafePage() {
                 placeholder="글 내용을 입력하세요. HTML 태그 사용 가능합니다."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none font-mono"
               />
+            </div>
+
+            {/* 이미지 첨부 */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">이미지 첨부 (URL, 최대 5개)</label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  value={attachInput}
+                  onChange={e => setAttachInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && attachInput.trim() && attachUrls.length < 5) {
+                      setAttachUrls(prev => [...prev, attachInput.trim()]);
+                      setAttachInput('');
+                    }
+                  }}
+                  placeholder="이미지 URL 입력 후 Enter"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  onClick={() => { if (attachInput.trim() && attachUrls.length < 5) { setAttachUrls(prev => [...prev, attachInput.trim()]); setAttachInput(''); } }}
+                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-300"
+                >추가</button>
+              </div>
+              {attachUrls.length > 0 && (
+                <div className="space-y-1">
+                  {attachUrls.map((url, i) => (
+                    <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-2 py-1 text-xs">
+                      <span className="flex-1 truncate text-gray-600">{url}</span>
+                      <button onClick={() => setAttachUrls(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <button
