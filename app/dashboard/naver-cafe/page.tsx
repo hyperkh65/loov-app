@@ -60,8 +60,7 @@ export default function NaverCafePage() {
   const [content, setContent] = useState('');
   const [menuId, setMenuId] = useState('');
   const [openYn, setOpenYn] = useState<'Y' | 'N'>('Y');
-  const [attachUrls, setAttachUrls] = useState<string[]>([]);
-  const [attachInput, setAttachInput] = useState('');
+  const [attachFiles, setAttachFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ ok?: boolean; url?: string; error?: string } | null>(null);
 
@@ -178,7 +177,7 @@ export default function NaverCafePage() {
       const res = await fetch('/api/naver-cafe/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, image_urls: attachUrls }),
+        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, images: attachFiles }),
       });
       const data = await res.json();
       setPublishResult(data);
@@ -459,31 +458,33 @@ export default function NaverCafePage() {
 
             {/* 이미지 첨부 */}
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">이미지 첨부 (URL, 최대 5개)</label>
-              <div className="flex gap-2 mb-2">
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">이미지 첨부 (최대 5개)</label>
+              <label className="flex items-center gap-2 w-full cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-3 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                <span className="text-lg">📎</span>
+                <span className="text-sm text-gray-500">이미지 파일 선택 (jpg, png, gif, webp)</span>
                 <input
-                  value={attachInput}
-                  onChange={e => setAttachInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && attachInput.trim() && attachUrls.length < 5) {
-                      setAttachUrls(prev => [...prev, attachInput.trim()]);
-                      setAttachInput('');
-                    }
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files || []).slice(0, 5 - attachFiles.length);
+                    const results = await Promise.all(files.map(f => new Promise<{ name: string; base64: string; type: string }>((res) => {
+                      const reader = new FileReader();
+                      reader.onload = () => res({ name: f.name, base64: (reader.result as string).split(',')[1], type: f.type });
+                      reader.readAsDataURL(f);
+                    })));
+                    setAttachFiles(prev => [...prev, ...results].slice(0, 5));
+                    e.target.value = '';
                   }}
-                  placeholder="이미지 URL 입력 후 Enter"
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                 />
-                <button
-                  onClick={() => { if (attachInput.trim() && attachUrls.length < 5) { setAttachUrls(prev => [...prev, attachInput.trim()]); setAttachInput(''); } }}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-300"
-                >추가</button>
-              </div>
-              {attachUrls.length > 0 && (
-                <div className="space-y-1">
-                  {attachUrls.map((url, i) => (
-                    <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-2 py-1 text-xs">
-                      <span className="flex-1 truncate text-gray-600">{url}</span>
-                      <button onClick={() => setAttachUrls(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600">✕</button>
+              </label>
+              {attachFiles.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {attachFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1 text-xs">
+                      <span className="text-gray-600 max-w-[120px] truncate">{f.name}</span>
+                      <button onClick={() => setAttachFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600">✕</button>
                     </div>
                   ))}
                 </div>
