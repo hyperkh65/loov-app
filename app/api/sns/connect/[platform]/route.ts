@@ -22,7 +22,7 @@ export async function GET(
     twitter:   !process.env.TWITTER_CLIENT_ID   || !process.env.TWITTER_CLIENT_SECRET,
     threads:   !process.env.THREADS_APP_ID      || !process.env.THREADS_APP_SECRET,
     facebook:  !process.env.FACEBOOK_APP_ID     || !process.env.FACEBOOK_APP_SECRET,
-    instagram: !process.env.FACEBOOK_APP_ID     || !process.env.FACEBOOK_APP_SECRET,
+    instagram: !(process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID),
     linkedin:  !process.env.LINKEDIN_CLIENT_ID  || !process.env.LINKEDIN_CLIENT_SECRET,
   };
   if (missingEnv[platform]) {
@@ -78,9 +78,10 @@ export async function GET(
       break;
     }
     case 'instagram': {
-      // Instagram API (standalone) - api.instagram.com 엔드포인트 사용
+      // Instagram API (standalone) - 별도 앱 ID 사용
+      const igAppId = process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID;
       authUrl = new URL('https://api.instagram.com/oauth/authorize');
-      authUrl.searchParams.set('client_id', process.env.FACEBOOK_APP_ID!);
+      authUrl.searchParams.set('client_id', igAppId!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', PLATFORMS.instagram.scopes.join(','));
       authUrl.searchParams.set('response_type', 'code');
