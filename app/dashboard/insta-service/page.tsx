@@ -6,7 +6,7 @@ type Tab = 'image' | 'reels' | 'cardnews';
 type Tone = 'casual' | 'professional' | 'trendy';
 type CardTheme = 'blue' | 'dark' | 'warm' | 'green' | 'purple';
 type ImgItem = { id: string; url: string; thumb: string; source: 'pixabay' | 'upload' | 'blog' | 'card' };
-type CardSlide = { type: 'title' | 'content' | 'brand'; title: string; body: string };
+type CardSlide = { type: 'title' | 'content' | 'brand'; title: string; body: string; points: string[] };
 
 interface Article {
   id: string;
@@ -50,69 +50,98 @@ function CardPreview({ slide, theme, num, total, size = 'full' }: { slide: CardS
   const scale = isFull ? 1 : 0.25;
   const w = 1080 * scale;
   const h = 1080 * scale;
-
-  const style = (px: number) => `${px * scale}px`;
+  const s = (px: number) => `${px * scale}px`;
 
   if (slide.type === 'title') {
     return (
       <div style={{ width: w, height: h, background: `linear-gradient(135deg, ${c.bg1} 0%, ${c.bg2} 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', borderRadius: isFull ? 12 : 4 }}>
-        <div style={{ position: 'absolute', top: -40 * scale, right: -40 * scale, width: 200 * scale, height: 200 * scale, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: style(10), padding: `${style(40)} ${style(48)} 0` }}>
-          <div style={{ width: style(36), height: style(36), background: c.accent, borderRadius: style(8), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: style(15), fontWeight: 900, color: c.bg2 }}>2D</div>
-          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: style(18), fontWeight: 700 }}>2days.kr</span>
+        <div style={{ position: 'absolute', top: -60 * scale, right: -60 * scale, width: 240 * scale, height: 240 * scale, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: s(12), padding: `${s(52)} ${s(64)} 0` }}>
+          <div style={{ width: s(44), height: s(44), background: c.accent, borderRadius: s(10), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(18), fontWeight: 900, color: c.bg2 }}>2D</div>
+          <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: s(22), fontWeight: 700 }}>2days.kr</span>
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: `0 ${style(60)}`, textAlign: 'center' }}>
-          <div style={{ width: style(50), height: style(5), background: c.accent, borderRadius: style(3), marginBottom: style(32) }} />
-          <div style={{ fontSize: style(52), fontWeight: 900, color: c.text, lineHeight: 1.2 }}>{slide.title}</div>
-          {slide.body && <div style={{ marginTop: style(24), fontSize: style(24), color: c.sub, lineHeight: 1.5 }}>{slide.body}</div>}
-          <div style={{ marginTop: style(40), display: 'flex', gap: style(6) }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: `0 ${s(80)}`, textAlign: 'center' }}>
+          <div style={{ width: s(64), height: s(7), background: c.accent, borderRadius: s(4), marginBottom: s(44) }} />
+          <div style={{ fontSize: s(76), fontWeight: 900, color: c.text, lineHeight: 1.15 }}>{slide.title}</div>
+          {slide.body && <div style={{ marginTop: s(32), fontSize: s(32), color: c.sub, lineHeight: 1.5 }}>{slide.body}</div>}
+          <div style={{ marginTop: s(52), display: 'flex', gap: s(8) }}>
             {Array.from({ length: total }, (_, i) => (
-              <div key={i} style={{ width: i === 0 ? style(22) : style(8), height: style(8), borderRadius: style(4), background: i === 0 ? c.accent : 'rgba(255,255,255,0.3)' }} />
+              <div key={i} style={{ width: i === 0 ? s(28) : s(10), height: s(10), borderRadius: s(5), background: i === 0 ? c.accent : 'rgba(255,255,255,0.28)' }} />
             ))}
           </div>
         </div>
-        <div style={{ height: style(8), background: c.accent }} />
+        <div style={{ height: s(12), background: c.accent }} />
       </div>
     );
   }
 
   if (slide.type === 'brand') {
+    const bpts = slide.points?.length > 0 ? slide.points : ['📲 팔로우하고 매일 유용한 정보 받기', '💾 저장해두고 필요할 때 꺼내보기', '🔗 친구에게 공유해서 함께 성장하기'];
     return (
-      <div style={{ width: w, height: h, background: `linear-gradient(160deg, ${c.bg2} 0%, ${c.bg1} 60%, ${c.bg2} 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: isFull ? 12 : 4 }}>
-        <div style={{ width: style(100), height: style(100), background: c.accent, borderRadius: style(24), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: style(42), fontWeight: 900, color: c.bg2, marginBottom: style(28) }}>2D</div>
-        <div style={{ fontSize: style(56), fontWeight: 900, color: c.text }}>{slide.title}</div>
-        <div style={{ fontSize: style(24), color: c.sub, marginTop: style(14) }}>{slide.body || '오늘의 정보, 내일의 성공'}</div>
-        <div style={{ width: style(70), height: style(4), background: c.accent, borderRadius: style(2), margin: `${style(40)} 0` }} />
-        <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: style(14), padding: `${style(16)} ${style(40)}`, border: `2px solid ${c.accent}`, textAlign: 'center' }}>
-          <div style={{ fontSize: style(22), color: c.text, fontWeight: 700 }}>팔로우 & 저장하고 유용한 정보 받기</div>
-          <div style={{ fontSize: style(16), color: c.sub, marginTop: style(6) }}>매일 새로운 비즈니스 인사이트</div>
+      <div style={{ width: w, height: h, background: `linear-gradient(160deg, ${c.bg2} 0%, ${c.bg1} 55%, ${c.bg2} 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: isFull ? 12 : 4 }}>
+        <div style={{ width: s(140), height: s(140), background: c.accent, borderRadius: s(36), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(60), fontWeight: 900, color: c.bg2, marginBottom: s(40) }}>2D</div>
+        <div style={{ fontSize: s(78), fontWeight: 900, color: c.text }}>{slide.title}</div>
+        <div style={{ fontSize: s(30), color: c.sub, marginTop: s(16) }}>{slide.body || '오늘의 정보, 내일의 성공'}</div>
+        <div style={{ width: s(100), height: s(5), background: c.accent, borderRadius: s(3), margin: `${s(44)} 0 ${s(36)}` }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: s(16), width: s(840), padding: `0 ${s(20)}` }}>
+          {bpts.slice(0, 3).map((pt, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: s(18), background: 'rgba(255,255,255,0.09)', borderRadius: s(16), padding: `${s(18)} ${s(28)}` }}>
+              <span style={{ fontSize: s(28), flexShrink: 0 }}>{pt.slice(0, 2)}</span>
+              <span style={{ fontSize: s(26), color: c.text, fontWeight: 700 }}>{pt.slice(2).trim()}</span>
+            </div>
+          ))}
         </div>
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: style(8), background: c.accent }} />
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: s(12), background: c.accent }} />
       </div>
     );
   }
 
-  // content card
+  // content card — bullet points layout
+  const pts = slide.points?.length > 0 ? slide.points : slide.body ? [slide.body] : [];
   return (
-    <div style={{ width: w, height: h, background: `linear-gradient(160deg, ${c.bg2} 0%, #08112e 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: `${style(48)} ${style(56)}`, borderRadius: isFull ? 12 : 4 }}>
-      <div style={{ position: 'absolute', top: -40 * scale, right: -40 * scale, width: 150 * scale, height: 150 * scale, borderRadius: '50%', background: c.accent, opacity: 0.08 }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: style(40) }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: style(8) }}>
-          <div style={{ width: style(26), height: style(26), background: c.accent, borderRadius: style(6), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: style(11), fontWeight: 900, color: c.bg2 }}>2D</div>
-          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: style(16), fontWeight: 700 }}>2days.kr</span>
+    <div style={{ width: w, height: h, background: `linear-gradient(160deg, ${c.bg2} 0%, #07101f 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: `${s(52)} ${s(64)} ${s(52)}`, borderRadius: isFull ? 12 : 4 }}>
+      <div style={{ position: 'absolute', top: -50 * scale, right: -50 * scale, width: 180 * scale, height: 180 * scale, borderRadius: '50%', background: c.accent, opacity: 0.07 }} />
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s(40) }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: s(10) }}>
+          <div style={{ width: s(30), height: s(30), background: c.accent, borderRadius: s(7), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(13), fontWeight: 900, color: c.bg2 }}>2D</div>
+          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: s(18), fontWeight: 700 }}>2days.kr</span>
         </div>
-        <div style={{ background: c.accent, color: c.bg2, fontSize: style(16), fontWeight: 900, padding: `${style(5)} ${style(14)}`, borderRadius: style(20) }}>{num} / {total}</div>
+        <div style={{ background: c.accent, color: c.bg2, fontSize: s(18), fontWeight: 900, padding: `${s(6)} ${s(20)}`, borderRadius: s(28) }}>{num} / {total}</div>
       </div>
-      <div style={{ width: style(60), height: style(60), background: c.accent, borderRadius: style(14), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: style(28), fontWeight: 900, color: c.bg2, marginBottom: style(28) }}>{num}</div>
-      <div style={{ fontSize: style(38), fontWeight: 900, color: c.text, lineHeight: 1.25, marginBottom: style(24) }}>{slide.title}</div>
-      <div style={{ width: style(40), height: style(4), background: c.accent, borderRadius: style(2), marginBottom: style(24) }} />
-      <div style={{ fontSize: style(26), color: c.sub, lineHeight: 1.75 }}>{slide.body}</div>
-      <div style={{ position: 'absolute', bottom: style(56), right: style(56), display: 'flex', gap: style(6) }}>
+      {/* Number badge + Title */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: s(20), marginBottom: s(24) }}>
+        <div style={{ width: s(68), height: s(68), background: c.accent, borderRadius: s(16), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(32), fontWeight: 900, color: c.bg2, flexShrink: 0 }}>{num}</div>
+        <div>
+          <div style={{ fontSize: s(46), fontWeight: 900, color: c.text, lineHeight: 1.2 }}>{slide.title}</div>
+          {slide.body && <div style={{ fontSize: s(24), color: c.sub, marginTop: s(6), lineHeight: 1.4 }}>{slide.body}</div>}
+        </div>
+      </div>
+      {/* Divider */}
+      <div style={{ width: '100%', height: s(2), background: 'rgba(255,255,255,0.10)', marginBottom: s(28) }}>
+        <div style={{ width: s(72), height: s(2), background: c.accent }} />
+      </div>
+      {/* Bullet points */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: s(18), flex: 1 }}>
+        {pts.slice(0, 5).map((pt, i) => {
+          const hasEmoji = pt.length > 1 && /\p{Emoji}/u.test(pt[0] + pt[1]);
+          const emo = hasEmoji ? pt.slice(0, 2) : '▶';
+          const txt = hasEmoji ? pt.slice(2).trim() : pt;
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: s(16), background: 'rgba(255,255,255,0.07)', borderRadius: s(14), padding: `${s(16)} ${s(22)}` }}>
+              <div style={{ width: s(40), height: s(40), background: c.accent, borderRadius: s(10), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(20), flexShrink: 0 }}>{emo}</div>
+              <span style={{ fontSize: s(26), color: c.text, lineHeight: 1.55, fontWeight: 700 }}>{txt}</span>
+            </div>
+          );
+        })}
+      </div>
+      {/* Progress dots */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: s(7), marginTop: s(20) }}>
         {Array.from({ length: total }, (_, i) => (
-          <div key={i} style={{ width: i === num - 1 ? style(22) : style(8), height: style(8), borderRadius: style(4), background: i === num - 1 ? c.accent : 'rgba(255,255,255,0.25)' }} />
+          <div key={i} style={{ width: i === num - 1 ? s(26) : s(9), height: s(9), borderRadius: s(5), background: i === num - 1 ? c.accent : 'rgba(255,255,255,0.22)' }} />
         ))}
       </div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: style(8), background: c.accent }} />
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: s(12), background: c.accent }} />
     </div>
   );
 }
@@ -256,6 +285,7 @@ export default function InstaServicePage() {
         total: String(total),
         theme: cardTheme,
         brand: '2days.kr',
+        points: JSON.stringify(slide.points || []),
       });
 
       try {
@@ -657,14 +687,35 @@ export default function InstaServicePage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500">본문</label>
-                      <textarea
+                      <label className="text-xs text-gray-500">부제목</label>
+                      <input
                         value={cardSlides[activeCardIdx]?.body || ''}
                         onChange={e => setCardSlides(prev => prev.map((s, i) => i === activeCardIdx ? { ...s, body: e.target.value } : s))}
-                        rows={3}
-                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 mt-0.5 resize-none"
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 mt-0.5"
                       />
                     </div>
+                    {cardSlides[activeCardIdx]?.type === 'content' && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs text-gray-500">포인트 (한 줄씩 입력)</label>
+                          <button
+                            onClick={() => setCardSlides(prev => prev.map((s, i) => i === activeCardIdx ? { ...s, points: [...(s.points || []), '✅ 새 포인트'] } : s))}
+                            className="text-xs text-blue-600 hover:text-blue-800">+ 추가</button>
+                        </div>
+                        {(cardSlides[activeCardIdx]?.points || []).map((pt, pi) => (
+                          <div key={pi} className="flex gap-1 mb-1">
+                            <input
+                              value={pt}
+                              onChange={e => setCardSlides(prev => prev.map((s, i) => i === activeCardIdx ? { ...s, points: s.points.map((p, j) => j === pi ? e.target.value : p) } : s))}
+                              className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+                            />
+                            <button
+                              onClick={() => setCardSlides(prev => prev.map((s, i) => i === activeCardIdx ? { ...s, points: s.points.filter((_, j) => j !== pi) } : s))}
+                              className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
