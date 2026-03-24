@@ -177,7 +177,7 @@ export default function NaverCafePage() {
       const res = await fetch('/api/naver-cafe/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, images: attachFiles }),
+        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, attachments: attachFiles }),
       });
       const data = await res.json();
       setPublishResult(data);
@@ -456,22 +456,23 @@ export default function NaverCafePage() {
               />
             </div>
 
-            {/* 이미지 첨부 */}
+            {/* 파일/이미지 첨부 */}
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">이미지 첨부 (최대 5개)</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">파일/이미지 첨부 (최대 5개)</label>
               <label className="flex items-center gap-2 w-full cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-3 hover:border-blue-400 hover:bg-blue-50 transition-colors">
                 <span className="text-lg">📎</span>
-                <span className="text-sm text-gray-500">이미지 파일 선택 (jpg, png, gif, webp)</span>
+                <span className="text-sm text-gray-500">
+                  {attachFiles.length > 0 ? `${attachFiles.length}개 선택됨 (클릭으로 추가)` : '이미지, PDF, 문서 등 모든 파일 선택 가능'}
+                </span>
                 <input
                   type="file"
-                  accept="image/*"
                   multiple
                   className="hidden"
                   onChange={async (e) => {
                     const files = Array.from(e.target.files || []).slice(0, 5 - attachFiles.length);
                     const results = await Promise.all(files.map(f => new Promise<{ name: string; base64: string; type: string }>((res) => {
                       const reader = new FileReader();
-                      reader.onload = () => res({ name: f.name, base64: (reader.result as string).split(',')[1], type: f.type });
+                      reader.onload = () => res({ name: f.name, base64: (reader.result as string).split(',')[1], type: f.type || 'application/octet-stream' });
                       reader.readAsDataURL(f);
                     })));
                     setAttachFiles(prev => [...prev, ...results].slice(0, 5));
@@ -481,12 +482,16 @@ export default function NaverCafePage() {
               </label>
               {attachFiles.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {attachFiles.map((f, i) => (
-                    <div key={i} className="flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1 text-xs">
-                      <span className="text-gray-600 max-w-[120px] truncate">{f.name}</span>
-                      <button onClick={() => setAttachFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600">✕</button>
-                    </div>
-                  ))}
+                  {attachFiles.map((f, i) => {
+                    const isImage = f.type.startsWith('image/');
+                    return (
+                      <div key={i} className="flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1 text-xs">
+                        <span className="mr-0.5">{isImage ? '🖼️' : '📄'}</span>
+                        <span className="text-gray-600 max-w-[120px] truncate">{f.name}</span>
+                        <button onClick={() => setAttachFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 ml-1">✕</button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
