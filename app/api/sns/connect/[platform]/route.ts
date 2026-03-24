@@ -78,10 +78,12 @@ export async function GET(
       break;
     }
     case 'instagram': {
-      authUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth');
+      // Instagram API (standalone) - api.instagram.com 엔드포인트 사용
+      authUrl = new URL('https://api.instagram.com/oauth/authorize');
       authUrl.searchParams.set('client_id', process.env.FACEBOOK_APP_ID!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', PLATFORMS.instagram.scopes.join(','));
+      authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('state', state);
       break;
     }

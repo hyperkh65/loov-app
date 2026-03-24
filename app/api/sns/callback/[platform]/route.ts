@@ -106,20 +106,37 @@ export async function GET(
         break;
       }
       case 'instagram': {
-        const tokenRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?client_id=${process.env.FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_APP_SECRET}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`);
-        const tokenData = await tokenRes.json();
-        if (!tokenRes.ok || tokenData.error) throw new Error(JSON.stringify(tokenData));
-        accessToken = tokenData.access_token;
-        expiresIn = tokenData.expires_in || null;
-        // Instagram Business Account 조회
-        const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=instagram_business_account{id,username,name,profile_picture_url}&access_token=${accessToken}`);
-        const pagesData = await pagesRes.json();
-        const igAccount = pagesData.data?.[0]?.instagram_business_account;
-        if (!igAccount) throw new Error('Facebook 페이지에 연결된 Instagram 비즈니스 계정이 없습니다');
-        platformUserId = igAccount.id;
-        platformUsername = `@${igAccount.username}`;
-        platformDisplayName = igAccount.name || igAccount.username;
-        platformAvatar = igAccount.profile_picture_url || null;
+        // Instagram API (standalone) - 단기 토큰 교환
+        const shortTokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: process.env.FACEBOOK_APP_ID!,
+            client_secret: process.env.FACEBOOK_APP_SECRET!,
+            grant_type: 'authorization_code',
+            redirect_uri: redirectUri,
+            code,
+          }),
+        });
+        const shortTokenData = await shortTokenRes.json();
+        if (!shortTokenRes.ok || shortTokenData.error_type) throw new Error(JSON.stringify(shortTokenData));
+        const shortToken = shortTokenData.access_token;
+
+        // 장기 토큰으로 교환 (60일)
+        const longTokenRes = await fetch(
+          `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${process.env.FACEBOOK_APP_SECRET}&access_token=${shortToken}`
+        );
+        const longTokenData = await longTokenRes.json();
+        accessToken = longTokenData.access_token || shortToken;
+        expiresIn = longTokenData.expires_in || null;
+
+        // 사용자 정보 조회
+        const userRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id,username,name,profile_picture_url&access_token=${accessToken}`);
+        const userData = await userRes.json();
+        platformUserId = userData.id || shortTokenData.user_id;
+        platformUsername = `@${userData.username || ''}`;
+        platformDisplayName = userData.name || userData.username || '';
+        platformAvatar = userData.profile_picture_url || null;
         break;
       }
       case 'linkedin': {
