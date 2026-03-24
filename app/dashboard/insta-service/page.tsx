@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import type { CardSlide } from './types';
+
+const CardNewsPlayer = dynamic(() => import('./CardNewsPlayer'), { ssr: false });
 
 type Tab = 'image' | 'reels' | 'cardnews';
 type Tone = 'casual' | 'professional' | 'trendy';
 type CardTheme = 'blue' | 'dark' | 'warm' | 'green' | 'purple';
 type ImgItem = { id: string; url: string; thumb: string; source: 'pixabay' | 'upload' | 'blog' | 'card' };
-type CardSlide = { type: 'title' | 'content' | 'brand'; title: string; body: string; points: string[] };
+type CardViewMode = 'preview' | 'video';
 
 interface Article {
   id: string;
@@ -192,6 +196,8 @@ export default function InstaServicePage() {
   const [cardGenError, setCardGenError] = useState('');
   const [generatingImages, setGeneratingImages] = useState(false);
   const [cardImgProgress, setCardImgProgress] = useState(0);
+  const [cardViewMode, setCardViewMode] = useState<CardViewMode>('preview');
+  const [cardBgm, setCardBgm] = useState('none');
 
   // Publish
   const [publishing, setPublishing] = useState(false);
@@ -742,13 +748,27 @@ export default function InstaServicePage() {
 
             {/* Card News Preview */}
             {tab === 'cardnews' ? (
-              <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
+              <div className="flex flex-col gap-4 w-full max-w-4xl">
+                {/* Mode toggle */}
+                {cardSlides.length > 0 && (
+                  <div className="flex gap-2 bg-gray-100 rounded-xl p-1 self-start">
+                    <button onClick={() => setCardViewMode('preview')}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${cardViewMode === 'preview' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                      🖼️ 슬라이드 보기
+                    </button>
+                    <button onClick={() => setCardViewMode('video')}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${cardViewMode === 'video' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                      🎬 영상 미리보기 (Remotion)
+                    </button>
+                  </div>
+                )}
+
                 {cardSlides.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center">
                     <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white text-3xl font-black mb-6 shadow-xl">2D</div>
                     <h2 className="text-xl font-bold text-gray-800 mb-2">2days.kr 카드뉴스</h2>
                     <p className="text-gray-500 text-sm mb-1">블로그 글을 선택하고 AI로 카드뉴스를 자동 생성하세요</p>
-                    <p className="text-gray-400 text-xs">마지막 슬라이드에는 자동으로 브랜딩이 추가됩니다</p>
+                    <p className="text-gray-400 text-xs">정적 이미지 카드뉴스 + Remotion 애니메이션 영상 모두 지원</p>
                     <div className="mt-8 flex gap-2">
                       {CARD_THEMES.map(t => (
                         <div key={t.key} className="w-16 h-16 rounded-xl shadow-md flex items-center justify-center text-white font-black text-sm"
@@ -758,7 +778,18 @@ export default function InstaServicePage() {
                       ))}
                     </div>
                   </div>
+
+                ) : cardViewMode === 'video' ? (
+                  /* ── REMOTION VIDEO MODE ── */
+                  <CardNewsPlayer
+                    slides={cardSlides}
+                    theme={cardTheme}
+                    bgm={cardBgm}
+                    onBgmChange={setCardBgm}
+                  />
+
                 ) : (
+                  /* ── STATIC SLIDE PREVIEW MODE ── */
                   <div className="flex gap-6 w-full">
                     {/* Big preview */}
                     <div className="flex-shrink-0">
@@ -774,12 +805,20 @@ export default function InstaServicePage() {
                           size="full"
                         />
                       </div>
+                      {/* Nav arrows */}
+                      <div className="flex items-center justify-center gap-3 mt-3">
+                        <button onClick={() => setActiveCardIdx(i => Math.max(0, i - 1))} disabled={activeCardIdx === 0}
+                          className="px-3 py-1.5 bg-gray-200 rounded-lg text-sm disabled:opacity-30 hover:bg-gray-300">◀</button>
+                        <span className="text-xs text-gray-500">{activeCardIdx + 1} / {cardSlides.length}</span>
+                        <button onClick={() => setActiveCardIdx(i => Math.min(cardSlides.length - 1, i + 1))} disabled={activeCardIdx === cardSlides.length - 1}
+                          className="px-3 py-1.5 bg-gray-200 rounded-lg text-sm disabled:opacity-30 hover:bg-gray-300">▶</button>
+                      </div>
                     </div>
 
                     {/* Thumbnail strip */}
                     <div className="flex-1">
                       <p className="text-xs font-semibold text-gray-600 mb-3">전체 슬라이드</p>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-3 gap-2.5">
                         {cardSlides.map((slide, i) => (
                           <button key={i} onClick={() => setActiveCardIdx(i)}
                             className={`relative rounded-lg overflow-hidden border-2 transition-all ${activeCardIdx === i ? 'border-blue-500 shadow-md' : 'border-gray-200 hover:border-gray-400'}`}
