@@ -92,12 +92,12 @@ export async function GET(
         break;
       }
       case 'facebook': {
-        const tokenRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?client_id=${process.env.FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_APP_SECRET}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`);
+        const tokenRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?client_id=${process.env.FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_APP_SECRET}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`);
         const tokenData = await tokenRes.json();
         if (!tokenRes.ok || tokenData.error) throw new Error(JSON.stringify(tokenData));
         accessToken = tokenData.access_token;
         expiresIn = tokenData.expires_in || null;
-        const userRes = await fetch(`https://graph.facebook.com/v18.0/me?fields=id,name,picture&access_token=${accessToken}`);
+        const userRes = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`);
         const userData = await userRes.json();
         platformUserId = userData.id;
         platformUsername = userData.name;
@@ -106,13 +106,13 @@ export async function GET(
         break;
       }
       case 'instagram': {
-        const tokenRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?client_id=${process.env.FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_APP_SECRET}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`);
+        const tokenRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?client_id=${process.env.FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_APP_SECRET}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`);
         const tokenData = await tokenRes.json();
         if (!tokenRes.ok || tokenData.error) throw new Error(JSON.stringify(tokenData));
         accessToken = tokenData.access_token;
         expiresIn = tokenData.expires_in || null;
         // Instagram Business Account 조회
-        const pagesRes = await fetch(`https://graph.facebook.com/v18.0/me/accounts?fields=instagram_business_account{id,username,name,profile_picture_url}&access_token=${accessToken}`);
+        const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=instagram_business_account{id,username,name,profile_picture_url}&access_token=${accessToken}`);
         const pagesData = await pagesRes.json();
         const igAccount = pagesData.data?.[0]?.instagram_business_account;
         if (!igAccount) throw new Error('Facebook 페이지에 연결된 Instagram 비즈니스 계정이 없습니다');

@@ -27,16 +27,18 @@ export const PLATFORMS: Record<Platform, {
   },
   facebook: {
     name: 'Facebook',
-    authUrl: 'https://www.facebook.com/v18.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token',
+    authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
     scopes: ['pages_show_list', 'pages_manage_posts', 'pages_read_engagement'],
     charLimit: 63206,
   },
   instagram: {
     name: 'Instagram',
-    authUrl: 'https://www.facebook.com/v18.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token',
-    scopes: ['instagram_basic', 'instagram_content_publish', 'instagram_manage_comments', 'pages_show_list'],
+    authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    // instagram_basic/instagram_content_publish 는 2024-12 폐기됨
+    // Instagram Business/Creator API 신규 스코프 사용
+    scopes: ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_comments', 'pages_show_list'],
     charLimit: 2200,
   },
   linkedin: {
@@ -112,12 +114,12 @@ export async function postToThreads(accessToken: string, userId: string, content
 }
 
 export async function postToFacebook(accessToken: string, content: string): Promise<{ id: string }> {
-  const pagesRes = await fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`);
+  const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?access_token=${accessToken}`);
   if (!pagesRes.ok) throw new Error('Facebook 페이지 목록 조회 실패');
   const { data: pages } = await pagesRes.json();
 
   if (!pages || pages.length === 0) {
-    const res = await fetch(`https://graph.facebook.com/v18.0/me/feed`, {
+    const res = await fetch(`https://graph.facebook.com/v21.0/me/feed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: content, access_token: accessToken }),
@@ -127,7 +129,7 @@ export async function postToFacebook(accessToken: string, content: string): Prom
   }
 
   const page = pages[0];
-  const res = await fetch(`https://graph.facebook.com/v18.0/${page.id}/feed`, {
+  const res = await fetch(`https://graph.facebook.com/v21.0/${page.id}/feed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: content, access_token: page.access_token }),
