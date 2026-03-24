@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
         results.naver = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
 
       } else if (platform === 'blogger') {
-        const res = await fetch(`${baseUrl}/api/blogger/publish`, {
+        const res = await fetch(`${baseUrl}/api/blogger/posts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
           body: JSON.stringify({
