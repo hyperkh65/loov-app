@@ -17,6 +17,21 @@ function isVideoUrl(url: string): boolean {
   return /\.(mp4|mov|avi|webm)(\?|$)/i.test(url);
 }
 
+/** Instagram 영상 컨테이너 처리 완료 대기 (최대 90초) */
+async function waitInstagramVideoReady(containerId: string, accessToken: string, maxWaitMs = 90000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    await new Promise(r => setTimeout(r, 4000));
+    try {
+      const res = await fetch(`https://graph.instagram.com/v21.0/${containerId}?fields=status_code&access_token=${accessToken}`);
+      const data = await res.json();
+      if (data.status_code === 'FINISHED') return;
+      if (data.status_code === 'ERROR') throw new Error('Instagram 영상 처리 실패');
+    } catch (e) { if ((e as Error).message?.includes('처리 실패')) throw e; }
+  }
+  throw new Error('Instagram 영상 처리 시간 초과 (90초)');
+}
+
 /** Threads child 컨테이너가 FINISHED 될 때까지 폴링 (최대 30초) */
 async function waitThreadsContainerFinished(containerId: string, accessToken: string): Promise<boolean> {
   for (let i = 0; i < 40; i++) {
@@ -344,50 +359,62 @@ export async function postToInstagramWithMedia(
   content: string,
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
-  if (!mediaUrls?.length) throw new Error('Instagram은 이미지가 필요합니다.');
+  if (!mediaUrls?.length) throw new Error('Instagram은 이미지 또는 영상이 필요합니다.');
 
-  // Instagram Business 계정 ID 조회
-  const igAccRes = await fetch(
-    `https://graph.facebook.com/v18.0/me?fields=instagram_business_account&access_token=${accessToken}`,
-  );
-  if (!igAccRes.ok) throw new Error('Instagram 계정 조회 실패');
-  const igAccData = await igAccRes.json();
-  const igUserId = igAccData.instagram_business_account?.id;
-  if (!igUserId) throw new Error('Instagram Business 계정이 없습니다');
+  // Standalone Instagram API (graph.instagram.com/v21.0)
+  // 연결 토큰은 api.instagram.com/oauth/authorize를 통해 발급된 standalone 토큰
+  const meRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id&access_token=${accessToken}`);
+  if (!meRes.ok) throw new Error(`Instagram 사용자 조회 실패: ${await meRes.text()}`);
+  const { id: igUserId } = await meRes.json();
+  if (!igUserId) throw new Error('Instagram 사용자 ID를 가져올 수 없습니다');
 
   if (mediaUrls.length === 1) {
     const isVideo = isVideoUrl(mediaUrls[0]);
-    const containerRes = await fetch(`https://graph.facebook.com/v18.0/${igUserId}/media`, {
+    const body: Record<string, unknown> = {
+      caption: content.substring(0, 2200),
+      access_token: accessToken,
+    };
+    if (isVideo) {
+      body.media_type = 'REELS';
+      body.video_url = mediaUrls[0];
+      body.share_to_feed = true;
+    } else {
+      body.media_type = 'IMAGE';
+      body.image_url = mediaUrls[0];
+    }
+
+    const containerRes = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        media_type: isVideo ? 'REELS' : 'IMAGE',
-        [isVideo ? 'video_url' : 'image_url']: mediaUrls[0],
-        caption: content.substring(0, 2200),
-        access_token: accessToken,
-      }),
+      body: JSON.stringify(body),
     });
     if (!containerRes.ok) throw new Error(`Instagram 미디어 컨테이너 생성 실패: ${await containerRes.text()}`);
     const { id: containerId } = await containerRes.json();
 
-    const pubRes = await fetch(`https://graph.facebook.com/v18.0/${igUserId}/media_publish`, {
+    // 영상은 처리 완료까지 대기
+    if (isVideo) await waitInstagramVideoReady(containerId, accessToken);
+
+    const pubRes = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media_publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ creation_id: containerId, access_token: accessToken }),
     });
     if (!pubRes.ok) throw new Error(`Instagram 게시 실패: ${await pubRes.text()}`);
     return { id: (await pubRes.json()).id };
+
   } else {
+    // 캐러셀: 이미지 전용
     const childIds: string[] = [];
     for (const url of mediaUrls.slice(0, 10)) {
-      const cr = await fetch(`https://graph.facebook.com/v18.0/${igUserId}/media`, {
+      const cr = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ media_type: 'IMAGE', image_url: url, is_carousel_item: true, access_token: accessToken }),
       });
       if (cr.ok) childIds.push((await cr.json()).id);
     }
-    const carRes = await fetch(`https://graph.facebook.com/v18.0/${igUserId}/media`, {
+    if (!childIds.length) throw new Error('Instagram 캐러셀: 이미지 업로드 실패');
+    const carRes = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ media_type: 'CAROUSEL', children: childIds.join(','), caption: content.substring(0, 2200), access_token: accessToken }),
@@ -395,7 +422,7 @@ export async function postToInstagramWithMedia(
     if (!carRes.ok) throw new Error(`Instagram 캐러셀 생성 실패: ${await carRes.text()}`);
     const { id: carouselId } = await carRes.json();
 
-    const pubRes = await fetch(`https://graph.facebook.com/v18.0/${igUserId}/media_publish`, {
+    const pubRes = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media_publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ creation_id: carouselId, access_token: accessToken }),
