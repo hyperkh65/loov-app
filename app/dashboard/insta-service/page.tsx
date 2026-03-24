@@ -8,8 +8,8 @@ const CardNewsPlayer = dynamic(() => import('./CardNewsPlayer'), { ssr: false })
 
 type Tab = 'image' | 'reels' | 'cardnews';
 type Tone = 'casual' | 'professional' | 'trendy';
-type CardTheme = 'blue' | 'dark' | 'warm' | 'green' | 'purple';
-type ImgItem = { id: string; url: string; thumb: string; source: 'pixabay' | 'upload' | 'blog' | 'card' };
+type CardTheme = 'blue' | 'dark' | 'warm' | 'green' | 'purple' | 'neon' | 'minimal' | 'sunset';
+type ImgItem = { id: string; url: string; thumb: string; source: 'pixabay' | 'upload' | 'blog' | 'card'; isVideo?: boolean };
 type CardViewMode = 'preview' | 'video';
 
 interface Article {
@@ -32,19 +32,25 @@ const BGM_TRACKS = [
 ];
 
 const CARD_THEMES: { key: CardTheme; label: string; bg1: string; bg2: string; accent: string }[] = [
-  { key: 'blue',   label: '💙 프로 블루',  bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913' },
-  { key: 'dark',   label: '🖤 다크',      bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560' },
-  { key: 'warm',   label: '🔴 웜 레드',   bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24' },
-  { key: 'green',  label: '💚 내추럴',    bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28' },
-  { key: 'purple', label: '💜 퍼플',     bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471' },
+  { key: 'blue',    label: '💙 프로 블루',  bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913' },
+  { key: 'dark',    label: '🖤 다크',       bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560' },
+  { key: 'warm',    label: '🔴 웜 레드',    bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24' },
+  { key: 'green',   label: '💚 내추럴',     bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28' },
+  { key: 'purple',  label: '💜 퍼플',       bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471' },
+  { key: 'neon',    label: '🌈 네온 사이버', bg1: '#050510', bg2: '#0D0D2B', accent: '#00F5FF' },
+  { key: 'minimal', label: '🤍 미니멀 화이트', bg1: '#F8F5F0', bg2: '#EDE8E1', accent: '#E63946' },
+  { key: 'sunset',  label: '🌅 선셋 비이브', bg1: '#0F0820', bg2: '#1A0A35', accent: '#FF6B6B' },
 ];
 
 const THEME_COLORS: Record<CardTheme, { bg1: string; bg2: string; accent: string; text: string; sub: string }> = {
-  blue:   { bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
-  dark:   { bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560', text: '#fff', sub: 'rgba(255,255,255,0.60)' },
-  warm:   { bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24', text: '#fff', sub: 'rgba(255,255,255,0.70)' },
-  green:  { bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
-  purple: { bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
+  blue:    { bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
+  dark:    { bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560', text: '#fff', sub: 'rgba(255,255,255,0.60)' },
+  warm:    { bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24', text: '#fff', sub: 'rgba(255,255,255,0.70)' },
+  green:   { bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
+  purple:  { bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
+  neon:    { bg1: '#050510', bg2: '#0D0D2B', accent: '#00F5FF', text: '#fff', sub: 'rgba(255,255,255,0.75)' },
+  minimal: { bg1: '#F8F5F0', bg2: '#EDE8E1', accent: '#E63946', text: '#1a1a2e', sub: '#4a4a6a' },
+  sunset:  { bg1: '#0F0820', bg2: '#1A0A35', accent: '#FF6B6B', text: '#fff', sub: 'rgba(255,255,255,0.72)' },
 };
 
 /* ── Card Preview Component (CSS-rendered, always 1080×1080 intrinsic) ── */
@@ -365,10 +371,17 @@ export default function InstaServicePage() {
     setUploadingImg(true);
     const form = new FormData();
     form.append('file', file);
-    form.append('type', 'image');
     const res = await fetch('/api/sns/media', { method: 'POST', body: form });
     const data = await res.json();
-    if (data.url) setImages(prev => [...prev, { id: `upload_${Date.now()}`, url: data.url, thumb: data.url, source: 'upload' }]);
+    if (data.url) {
+      setImages(prev => [...prev, {
+        id: `upload_${Date.now()}`,
+        url: data.url,
+        thumb: data.url,
+        source: 'upload',
+        isVideo: data.isVideo,
+      }]);
+    }
     setUploadingImg(false);
   };
 
@@ -385,7 +398,15 @@ export default function InstaServicePage() {
   // Publish
   const publish = async () => {
     if (!caption.trim()) { alert('캡션을 입력하세요'); return; }
-    const mediaUrls = tab === 'image' ? images.map(i => i.url) : videoUrl ? [videoUrl] : [];
+    // 이미지/영상 탭 모두 지원: 영상이 포함된 경우 단독 발행
+    let mediaUrls: string[];
+    if (tab === 'reels') {
+      mediaUrls = videoUrl ? [videoUrl] : [];
+    } else {
+      // 이미지 탭: 영상 파일이 있으면 첫 번째 영상으로 릴스 발행, 없으면 이미지 캐러셀
+      const videoItem = images.find(i => i.isVideo);
+      mediaUrls = videoItem ? [videoItem.url] : images.map(i => i.url);
+    }
     if (!mediaUrls.length) { alert('이미지 또는 영상을 추가하세요'); return; }
 
     setPublishing(true);
@@ -514,8 +535,8 @@ export default function InstaServicePage() {
               <div className="p-3 border-b border-gray-100">
                 <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-300 rounded-lg p-2.5 hover:border-purple-400 hover:bg-purple-50 transition-colors">
                   <span>📎</span>
-                  <span className="text-xs text-gray-500">{uploadingImg ? '업로드 중...' : '파일 업로드 (최대 10개)'}</span>
-                  <input ref={imgFileRef} type="file" accept="image/*" multiple className="hidden"
+                  <span className="text-xs text-gray-500">{uploadingImg ? '업로드 중...' : '이미지 / 동영상 업로드 (이미지 최대 10개, 동영상은 릴스로 발행)'}</span>
+                  <input ref={imgFileRef} type="file" accept="image/*,video/mp4,video/quicktime,video/mov" multiple className="hidden"
                     onChange={async e => { for (const f of Array.from(e.target.files || [])) await uploadImage(f); e.target.value = ''; }} />
                 </label>
               </div>
@@ -528,15 +549,25 @@ export default function InstaServicePage() {
                   </div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {images.map((img, i) => (
-                      <div key={img.id} className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={img.thumb} alt="" className="w-full h-full object-cover" />
+                      <div key={img.id} className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group bg-black">
+                        {img.isVideo ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                            <video src={img.url} className="w-full h-full object-contain" muted playsInline />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-8 h-8 bg-black/60 rounded-full flex items-center justify-center text-white text-sm">▶</div>
+                            </div>
+                          </div>
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={img.thumb} alt="" className="w-full h-full object-contain bg-black" />
+                        )}
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                           <button onClick={() => removeImage(img.id)} className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center">✕</button>
                         </div>
                         <div className="absolute top-1 left-1 w-4 h-4 bg-black/60 text-white text-xs rounded flex items-center justify-center">{i + 1}</div>
-                        {img.source === 'card' && <div className="absolute bottom-1 right-1 bg-blue-600 text-white text-xs px-1 rounded">카드</div>}
-                        {img.source === 'blog' && <div className="absolute bottom-1 right-1 bg-purple-500 text-white text-xs px-1 rounded">블로그</div>}
+                        {img.isVideo && <div className="absolute bottom-1 right-1 bg-orange-500 text-white text-xs px-1 rounded">🎬</div>}
+                        {img.source === 'card' && !img.isVideo && <div className="absolute bottom-1 right-1 bg-blue-600 text-white text-xs px-1 rounded">카드</div>}
+                        {img.source === 'blog' && !img.isVideo && <div className="absolute bottom-1 right-1 bg-purple-500 text-white text-xs px-1 rounded">블로그</div>}
                       </div>
                     ))}
                   </div>
@@ -867,11 +898,18 @@ export default function InstaServicePage() {
                     <div className="bg-white rounded-[2rem] overflow-hidden" style={{ aspectRatio: '9/16' }}>
                       {tab === 'image' ? (
                         images.length > 0 ? (
-                          <div className="relative w-full h-full bg-gray-100">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={images[0].url} alt="" className="w-full h-full object-cover" />
+                          <div className="relative w-full h-full bg-black">
+                            {images[0].isVideo ? (
+                              <video src={images[0].url} className="w-full h-full object-contain" muted playsInline loop autoPlay />
+                            ) : (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={images[0].url} alt="" className="w-full h-full object-contain" />
+                            )}
                             {images.length > 1 && (
                               <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">1/{images.length}</div>
+                            )}
+                            {images[0].isVideo && (
+                              <div className="absolute top-2 left-2 bg-orange-500/80 text-white text-xs px-2 py-0.5 rounded-full">🎬 릴스</div>
                             )}
                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
                               <p className="text-white text-xs line-clamp-2">{caption.slice(0, 100)}</p>
@@ -994,7 +1032,12 @@ export default function InstaServicePage() {
         <div className="bg-white border-t border-gray-200 px-6 py-4 flex items-center gap-4">
           <div className="flex-1">
             {tab === 'image'
-              ? <p className="text-sm text-gray-600">이미지 <span className="font-semibold text-purple-600">{images.length}장</span> · 캡션 <span className="font-semibold">{charCount}자</span></p>
+              ? (() => {
+                  const videoItem = images.find(i => i.isVideo);
+                  return videoItem
+                    ? <p className="text-sm text-gray-600">🎬 <span className="font-semibold text-orange-500">릴스(영상)</span>로 발행 · 캡션 <span className="font-semibold">{charCount}자</span></p>
+                    : <p className="text-sm text-gray-600">이미지 <span className="font-semibold text-purple-600">{images.length}장</span> · 캡션 <span className="font-semibold">{charCount}자</span></p>;
+                })()
               : <p className="text-sm text-gray-600">영상: <span className="font-semibold text-purple-600">{videoUrl ? '선택됨' : '미선택'}</span> · BGM: {BGM_TRACKS.find(t => t.id === bgm)?.label}</p>
             }
           </div>

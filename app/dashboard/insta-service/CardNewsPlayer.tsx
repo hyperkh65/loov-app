@@ -51,7 +51,7 @@ export const BGM_TRACKS = [
   { id: 'dreamy2',      label: '🌠 Ethereal',            url: 'https://cdn.pixabay.com/audio/2023/02/14/audio_46ae50fae9.mp3' },
 ];
 
-type CardTheme = 'blue' | 'dark' | 'warm' | 'green' | 'purple';
+type CardTheme = 'blue' | 'dark' | 'warm' | 'green' | 'purple' | 'neon' | 'minimal' | 'sunset';
 
 interface Props {
   slides: CardSlide[];

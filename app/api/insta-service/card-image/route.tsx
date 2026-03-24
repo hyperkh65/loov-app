@@ -4,11 +4,15 @@ import { NextRequest } from 'next/server';
 export const runtime = 'edge';
 
 const THEMES = {
-  blue:   { bg: '#080C18', bg2: '#0D1B4A', accent: '#FDB913', text: '#ffffff', sub: 'rgba(255,255,255,0.75)', dim: 'rgba(255,255,255,0.38)' },
-  dark:   { bg: '#09090F', bg2: '#1a1a2e', accent: '#e94560', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.35)' },
-  warm:   { bg: '#120505', bg2: '#3B0E0A', accent: '#F9CA24', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.38)' },
-  green:  { bg: '#030F0E', bg2: '#004D40', accent: '#FFCA28', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.35)' },
-  purple: { bg: '#0A0414', bg2: '#2D1155', accent: '#F8C471', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.35)' },
+  blue:    { bg: '#080C18', bg2: '#0D1B4A', accent: '#FDB913', text: '#ffffff', sub: 'rgba(255,255,255,0.75)', dim: 'rgba(255,255,255,0.38)' },
+  dark:    { bg: '#09090F', bg2: '#1a1a2e', accent: '#e94560', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.35)' },
+  warm:    { bg: '#120505', bg2: '#3B0E0A', accent: '#F9CA24', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.38)' },
+  green:   { bg: '#030F0E', bg2: '#004D40', accent: '#FFCA28', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.35)' },
+  purple:  { bg: '#0A0414', bg2: '#2D1155', accent: '#F8C471', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.35)' },
+  // New themes
+  neon:    { bg: '#050510', bg2: '#0D0D2B', accent: '#00F5FF', text: '#ffffff', sub: 'rgba(255,255,255,0.78)', dim: 'rgba(0,245,255,0.5)' },
+  minimal: { bg: '#F8F5F0', bg2: '#EDE8E1', accent: '#E63946', text: '#1a1a2e', sub: '#4a4a6a', dim: '#9999bb' },
+  sunset:  { bg: '#0F0820', bg2: '#1A0A35', accent: '#FF6B6B', text: '#ffffff', sub: 'rgba(255,255,255,0.75)', dim: 'rgba(255,107,107,0.55)' },
 };
 type ThemeKey = keyof typeof THEMES;
 
