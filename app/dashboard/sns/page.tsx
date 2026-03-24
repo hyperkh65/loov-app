@@ -117,9 +117,16 @@ export default function SNSPage() {
 
   useEffect(() => {
     loadAll();
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('error')) setUrlError(decodeURIComponent(params.get('error')!));
-    if (params.get('connected') || params.get('error')) window.history.replaceState({}, '', '/dashboard/sns');
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const errParam = params.get('error');
+      const connParam = params.get('connected');
+      if (errParam) {
+        try { setUrlError(decodeURIComponent(errParam)); } catch { setUrlError(errParam); }
+      }
+      if (connParam) setUrlError(null); // 성공 시 에러 초기화
+      if (connParam || errParam) window.history.replaceState({}, '', '/dashboard/sns');
+    } catch { /* ignore */ }
   }, []);
 
   const disconnect = async (platform: string) => {
