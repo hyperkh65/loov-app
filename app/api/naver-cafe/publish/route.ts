@@ -97,8 +97,9 @@ export async function POST(req: NextRequest) {
   }
 
   const articleId = resData.message?.result?.articleId;
+  const cafeSlug = conn.cafe_url || conn.club_id;
   const articleUrl = articleId
-    ? `https://cafe.naver.com/${conn.cafe_url || conn.club_id}/${articleId}`
+    ? `https://cafe.naver.com/${cafeSlug}/articles/${articleId}`
     : undefined;
 
   // 이력 저장
