@@ -28,8 +28,8 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const body = await req.json() as { title: string; content: string; menu_id?: string; open_yn?: string; images?: { name: string; base64: string; type: string }[] };
-  const { title, content, menu_id, open_yn = 'Y', images = [] } = body;
+  const body = await req.json() as { title: string; content: string; menu_id?: string; open_yn?: string; attachments?: { name: string; base64: string; type: string }[] };
+  const { title, content, menu_id, open_yn = 'Y', attachments = [] } = body;
   if (!title || !content) return NextResponse.json({ error: '제목과 내용 필요' }, { status: 400 });
 
   const { data: conn } = await supabase.from('naver_cafe_connections')
@@ -69,12 +69,11 @@ export async function POST(req: NextRequest) {
   form.append('content', content);
   form.append('openYn', open_yn);
 
-  // 이미지 첨부 (base64 → Blob)
-  for (const img of images.slice(0, 5)) {
+  // 파일/이미지 첨부 (base64 → Blob)
+  for (const file of attachments.slice(0, 5)) {
     try {
-      const buf = Buffer.from(img.base64, 'base64');
-      const ext = img.type.split('/')[1]?.split(';')[0] || 'jpg';
-      form.append('attach', new Blob([buf], { type: img.type }), img.name || `image_${Date.now()}.${ext}`);
+      const buf = Buffer.from(file.base64, 'base64');
+      form.append('attach', new Blob([buf], { type: file.type || 'application/octet-stream' }), file.name || `file_${Date.now()}`);
     } catch { /* 첨부 실패 무시 */ }
   }
 
