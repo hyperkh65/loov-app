@@ -198,13 +198,14 @@ export interface CardNewsSceneProps {
 }
 
 export function CardNewsScene({ slides, theme = 'blue', bgmUrl }: CardNewsSceneProps) {
+  const { width, height } = useVideoConfig();
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ width, height, position: 'relative', overflow: 'hidden' }}>
       {bgmUrl && <Audio src={bgmUrl} volume={0.6} />}
       <Series>
-        {slides.map((slide, i) => (
+        {(slides.length > 0 ? slides : [{ type: 'title' as const, title: '슬라이드를 생성하세요', body: '', points: [] }]).map((slide, i) => (
           <Series.Sequence key={i} durationInFrames={SLIDE_FRAMES}>
-            <SingleSlide slide={slide} theme={theme} slideIndex={i} totalSlides={slides.length} />
+            <SingleSlide slide={slide} theme={theme} slideIndex={i} totalSlides={Math.max(1, slides.length)} />
           </Series.Sequence>
         ))}
       </Series>
