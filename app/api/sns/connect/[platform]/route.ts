@@ -37,6 +37,7 @@ export async function GET(
 
   const { error: insertErr } = await supabase.from('sns_oauth_state').insert({
     user_id: user.id, platform, state, code_verifier: codeVerifier,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10분
   });
   if (insertErr) {
     return NextResponse.redirect(
