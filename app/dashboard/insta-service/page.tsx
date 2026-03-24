@@ -47,34 +47,35 @@ const THEME_COLORS: Record<CardTheme, { bg1: string; bg2: string; accent: string
   purple: { bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
 };
 
-/* ── Card Preview Component (CSS-rendered) ── */
-function CardPreview({ slide, theme, num, total, size = 'full' }: { slide: CardSlide; theme: CardTheme; num: number; total: number; size?: 'full' | 'thumb' }) {
+/* ── Card Preview Component (CSS-rendered, always 1080×1080 intrinsic) ── */
+const PF = '"Pretendard Variable", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif';
+
+function CardPreview({ slide, theme, num, total }: { slide: CardSlide; theme: CardTheme; num: number; total: number }) {
   const c = THEME_COLORS[theme];
-  const isFull = size === 'full';
-  const scale = isFull ? 1 : 0.25;
-  const w = 1080 * scale;
-  const h = 1080 * scale;
-  const s = (px: number) => `${px * scale}px`;
+  const W = 1080; const H = 1080;
 
   if (slide.type === 'title') {
     return (
-      <div style={{ width: w, height: h, background: `linear-gradient(135deg, ${c.bg1} 0%, ${c.bg2} 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', borderRadius: isFull ? 12 : 4 }}>
-        <div style={{ position: 'absolute', top: -60 * scale, right: -60 * scale, width: 240 * scale, height: 240 * scale, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: s(12), padding: `${s(52)} ${s(64)} 0` }}>
-          <div style={{ width: s(44), height: s(44), background: c.accent, borderRadius: s(10), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(18), fontWeight: 900, color: c.bg2 }}>2D</div>
-          <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: s(22), fontWeight: 700 }}>2days.kr</span>
+      <div style={{ width: W, height: H, background: `linear-gradient(140deg, ${c.bg1} 0%, ${c.bg2} 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', fontFamily: PF }}>
+        <div style={{ position: 'absolute', top: -120, right: -120, width: 480, height: 480, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+        <div style={{ position: 'absolute', bottom: -60, right: -20, fontSize: 500, fontWeight: 900, color: c.accent, opacity: 0.05, lineHeight: 1 }}>01</div>
+        {/* Brand */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '64px 80px 0' }}>
+          <div style={{ width: 52, height: 52, background: c.accent, borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 23, fontWeight: 900, color: c.bg2 }}>2D</div>
+          <span style={{ color: c.sub, fontSize: 28, fontWeight: 700 }}>2days.kr</span>
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: `0 ${s(80)}`, textAlign: 'center' }}>
-          <div style={{ width: s(64), height: s(7), background: c.accent, borderRadius: s(4), marginBottom: s(44) }} />
-          <div style={{ fontSize: s(76), fontWeight: 900, color: c.text, lineHeight: 1.15 }}>{slide.title}</div>
-          {slide.body && <div style={{ marginTop: s(32), fontSize: s(32), color: c.sub, lineHeight: 1.5 }}>{slide.body}</div>}
-          <div style={{ marginTop: s(52), display: 'flex', gap: s(8) }}>
+        {/* Center */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 80px', textAlign: 'center' }}>
+          <div style={{ width: 180, height: 9, background: c.accent, borderRadius: 5, marginBottom: 56 }} />
+          <div style={{ fontSize: 96, fontWeight: 900, color: c.text, lineHeight: 1.1, letterSpacing: -2 }}>{slide.title}</div>
+          {slide.body && <div style={{ marginTop: 36, fontSize: 44, color: c.sub, lineHeight: 1.55 }}>{slide.body}</div>}
+          <div style={{ marginTop: 64, display: 'flex', gap: 10 }}>
             {Array.from({ length: total }, (_, i) => (
-              <div key={i} style={{ width: i === 0 ? s(28) : s(10), height: s(10), borderRadius: s(5), background: i === 0 ? c.accent : 'rgba(255,255,255,0.28)' }} />
+              <div key={i} style={{ width: i === 0 ? 38 : 12, height: 12, borderRadius: 6, background: i === 0 ? c.accent : 'rgba(255,255,255,0.25)' }} />
             ))}
           </div>
         </div>
-        <div style={{ height: s(12), background: c.accent }} />
+        <div style={{ height: 16, background: c.accent }} />
       </div>
     );
   }
@@ -82,70 +83,76 @@ function CardPreview({ slide, theme, num, total, size = 'full' }: { slide: CardS
   if (slide.type === 'brand') {
     const bpts = slide.points?.length > 0 ? slide.points : ['📲 팔로우하고 매일 유용한 정보 받기', '💾 저장해두고 필요할 때 꺼내보기', '🔗 친구에게 공유해서 함께 성장하기'];
     return (
-      <div style={{ width: w, height: h, background: `linear-gradient(160deg, ${c.bg2} 0%, ${c.bg1} 55%, ${c.bg2} 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: isFull ? 12 : 4 }}>
-        <div style={{ width: s(140), height: s(140), background: c.accent, borderRadius: s(36), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(60), fontWeight: 900, color: c.bg2, marginBottom: s(40) }}>2D</div>
-        <div style={{ fontSize: s(78), fontWeight: 900, color: c.text }}>{slide.title}</div>
-        <div style={{ fontSize: s(30), color: c.sub, marginTop: s(16) }}>{slide.body || '오늘의 정보, 내일의 성공'}</div>
-        <div style={{ width: s(100), height: s(5), background: c.accent, borderRadius: s(3), margin: `${s(44)} 0 ${s(36)}` }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: s(16), width: s(840), padding: `0 ${s(20)}` }}>
+      <div style={{ width: W, height: H, background: `linear-gradient(160deg, ${c.bg2} 0%, ${c.bg1} 55%, ${c.bg2} 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: PF }}>
+        <div style={{ width: 160, height: 160, background: c.accent, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 72, fontWeight: 900, color: c.bg2, marginBottom: 48 }}>2D</div>
+        <div style={{ fontSize: 96, fontWeight: 900, color: c.text }}>{slide.title}</div>
+        <div style={{ fontSize: 38, color: c.sub, marginTop: 18 }}>{slide.body || '오늘의 정보, 내일의 성공'}</div>
+        <div style={{ width: 120, height: 6, background: c.accent, borderRadius: 3, margin: '52px 0 48px' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22, width: 880 }}>
           {bpts.slice(0, 3).map((pt, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: s(18), background: 'rgba(255,255,255,0.09)', borderRadius: s(16), padding: `${s(18)} ${s(28)}` }}>
-              <span style={{ fontSize: s(28), flexShrink: 0 }}>{pt.slice(0, 2)}</span>
-              <span style={{ fontSize: s(26), color: c.text, fontWeight: 700 }}>{pt.slice(2).trim()}</span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 24, background: 'rgba(255,255,255,0.09)', borderRadius: 20, padding: '24px 36px' }}>
+              <span style={{ fontSize: 38, flexShrink: 0 }}>{pt.slice(0, 2)}</span>
+              <span style={{ fontSize: 36, color: c.text, fontWeight: 700 }}>{pt.slice(2).trim()}</span>
             </div>
           ))}
         </div>
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: s(12), background: c.accent }} />
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 16, background: c.accent }} />
       </div>
     );
   }
 
-  // content card — bullet points layout
+  // content card
   const pts = slide.points?.length > 0 ? slide.points : slide.body ? [slide.body] : [];
   return (
-    <div style={{ width: w, height: h, background: `linear-gradient(160deg, ${c.bg2} 0%, #07101f 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: `${s(52)} ${s(64)} ${s(52)}`, borderRadius: isFull ? 12 : 4 }}>
-      <div style={{ position: 'absolute', top: -50 * scale, right: -50 * scale, width: 180 * scale, height: 180 * scale, borderRadius: '50%', background: c.accent, opacity: 0.07 }} />
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s(40) }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: s(10) }}>
-          <div style={{ width: s(30), height: s(30), background: c.accent, borderRadius: s(7), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(13), fontWeight: 900, color: c.bg2 }}>2D</div>
-          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: s(18), fontWeight: 700 }}>2days.kr</span>
+    <div style={{ width: W, height: H, background: `linear-gradient(160deg, ${c.bg2} 0%, #07101f 100%)`, position: 'relative', overflow: 'hidden', display: 'flex', fontFamily: PF }}>
+      {/* Left accent bar */}
+      <div style={{ width: 16, background: c.accent, flexShrink: 0 }} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '60px 68px 60px 56px', position: 'relative' }}>
+        {/* Large watermark number */}
+        <div style={{ position: 'absolute', bottom: -60, right: -10, fontSize: 520, fontWeight: 900, color: c.accent, opacity: 0.05, lineHeight: 1, userSelect: 'none' }}>{String(num).padStart(2,'0')}</div>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 44 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, background: c.accent, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 900, color: c.bg2 }}>2D</div>
+            <span style={{ color: 'rgba(255,255,255,0.42)', fontSize: 22, fontWeight: 700 }}>2days.kr</span>
+          </div>
+          <div style={{ background: c.accent, color: c.bg2, fontSize: 22, fontWeight: 900, padding: '8px 24px', borderRadius: 32 }}>{num} / {total}</div>
         </div>
-        <div style={{ background: c.accent, color: c.bg2, fontSize: s(18), fontWeight: 900, padding: `${s(6)} ${s(20)}`, borderRadius: s(28) }}>{num} / {total}</div>
-      </div>
-      {/* Number badge + Title */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: s(20), marginBottom: s(24) }}>
-        <div style={{ width: s(68), height: s(68), background: c.accent, borderRadius: s(16), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(32), fontWeight: 900, color: c.bg2, flexShrink: 0 }}>{num}</div>
-        <div>
-          <div style={{ fontSize: s(46), fontWeight: 900, color: c.text, lineHeight: 1.2 }}>{slide.title}</div>
-          {slide.body && <div style={{ fontSize: s(24), color: c.sub, marginTop: s(6), lineHeight: 1.4 }}>{slide.body}</div>}
+        {/* Badge + Title */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 22, marginBottom: 20 }}>
+          <div style={{ width: 90, height: 90, background: c.accent, borderRadius: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 50, fontWeight: 900, color: c.bg2, flexShrink: 0 }}>{num}</div>
+          <div>
+            <div style={{ fontSize: 72, fontWeight: 900, color: c.text, lineHeight: 1.15, letterSpacing: -1 }}>{slide.title}</div>
+            {slide.body && <div style={{ fontSize: 34, color: c.sub, marginTop: 8, lineHeight: 1.45 }}>{slide.body}</div>}
+          </div>
+        </div>
+        {/* Divider */}
+        <div style={{ display: 'flex', marginBottom: 28 }}>
+          <div style={{ width: 80, height: 4, background: c.accent, borderRadius: 2 }} />
+          <div style={{ flex: 1, height: 2, background: 'rgba(255,255,255,0.08)', marginTop: 1 }} />
+        </div>
+        {/* Bullet points — fill remaining space evenly */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, justifyContent: 'space-evenly' }}>
+          {pts.slice(0, 5).map((pt, i) => {
+            const hasEmoji = pt.length > 1 && /\p{Emoji}/u.test(pt[0] + pt[1]);
+            const emo = hasEmoji ? pt.slice(0, 2) : '▶';
+            const txt = hasEmoji ? pt.slice(2).trim() : pt;
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 20, background: 'rgba(255,255,255,0.07)', borderRadius: 18, padding: '22px 28px', borderLeft: `5px solid ${c.accent}` }}>
+                <div style={{ width: 58, height: 58, background: `${c.accent}28`, borderRadius: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, flexShrink: 0, border: `2px solid ${c.accent}55` }}>{emo}</div>
+                <span style={{ fontSize: 40, color: c.text, lineHeight: 1.5, fontWeight: 700 }}>{txt}</span>
+              </div>
+            );
+          })}
+        </div>
+        {/* Progress dots */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          {Array.from({ length: total }, (_, i) => (
+            <div key={i} style={{ width: i === num - 1 ? 30 : 10, height: 10, borderRadius: 5, background: i === num - 1 ? c.accent : 'rgba(255,255,255,0.22)' }} />
+          ))}
         </div>
       </div>
-      {/* Divider */}
-      <div style={{ width: '100%', height: s(2), background: 'rgba(255,255,255,0.10)', marginBottom: s(28) }}>
-        <div style={{ width: s(72), height: s(2), background: c.accent }} />
-      </div>
-      {/* Bullet points */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: s(18), flex: 1 }}>
-        {pts.slice(0, 5).map((pt, i) => {
-          const hasEmoji = pt.length > 1 && /\p{Emoji}/u.test(pt[0] + pt[1]);
-          const emo = hasEmoji ? pt.slice(0, 2) : '▶';
-          const txt = hasEmoji ? pt.slice(2).trim() : pt;
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: s(16), background: 'rgba(255,255,255,0.07)', borderRadius: s(14), padding: `${s(16)} ${s(22)}` }}>
-              <div style={{ width: s(40), height: s(40), background: c.accent, borderRadius: s(10), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: s(20), flexShrink: 0 }}>{emo}</div>
-              <span style={{ fontSize: s(26), color: c.text, lineHeight: 1.55, fontWeight: 700 }}>{txt}</span>
-            </div>
-          );
-        })}
-      </div>
-      {/* Progress dots */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: s(7), marginTop: s(20) }}>
-        {Array.from({ length: total }, (_, i) => (
-          <div key={i} style={{ width: i === num - 1 ? s(26) : s(9), height: s(9), borderRadius: s(5), background: i === num - 1 ? c.accent : 'rgba(255,255,255,0.22)' }} />
-        ))}
-      </div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: s(12), background: c.accent }} />
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 16, background: c.accent }} />
     </div>
   );
 }
@@ -202,6 +209,18 @@ export default function InstaServicePage() {
   // Publish
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ ok?: boolean; url?: string; error?: string } | null>(null);
+
+  // Load Pretendard font once
+  useEffect(() => {
+    const id = 'pretendard-var';
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css';
+      document.head.appendChild(link);
+    }
+  }, []);
 
   // Load articles
   const loadArticles = useCallback(async (q = '') => {
@@ -796,14 +815,16 @@ export default function InstaServicePage() {
                       <div className="text-xs text-gray-500 mb-2 text-center font-medium">
                         {activeCardIdx + 1} / {cardSlides.length} — {cardSlides[activeCardIdx]?.type === 'title' ? '타이틀 카드' : cardSlides[activeCardIdx]?.type === 'brand' ? '브랜드 카드' : '내용 카드'}
                       </div>
-                      <div style={{ transform: 'scale(0.42)', transformOrigin: 'top left', width: 1080 * 0.42, height: 1080 * 0.42 }}>
-                        <CardPreview
-                          slide={cardSlides[activeCardIdx]}
-                          theme={cardTheme}
-                          num={activeCardIdx + 1}
-                          total={cardSlides.length}
-                          size="full"
-                        />
+                      {/* Correct scale container: outer clips to scaled size, inner at natural 1080px */}
+                      <div style={{ width: 454, height: 454, overflow: 'hidden', borderRadius: 12, flexShrink: 0 }}>
+                        <div style={{ width: 1080, height: 1080, transform: 'scale(0.42)', transformOrigin: '0 0' }}>
+                          <CardPreview
+                            slide={cardSlides[activeCardIdx]}
+                            theme={cardTheme}
+                            num={activeCardIdx + 1}
+                            total={cardSlides.length}
+                          />
+                        </div>
                       </div>
                       {/* Nav arrows */}
                       <div className="flex items-center justify-center gap-3 mt-3">
@@ -823,8 +844,10 @@ export default function InstaServicePage() {
                           <button key={i} onClick={() => setActiveCardIdx(i)}
                             className={`relative rounded-lg overflow-hidden border-2 transition-all ${activeCardIdx === i ? 'border-blue-500 shadow-md' : 'border-gray-200 hover:border-gray-400'}`}
                             style={{ aspectRatio: '1/1' }}>
-                            <div style={{ transform: 'scale(0.22)', transformOrigin: 'top left', width: 1080 * 0.22, height: 1080 * 0.22, pointerEvents: 'none' }}>
-                              <CardPreview slide={slide} theme={cardTheme} num={i + 1} total={cardSlides.length} size="full" />
+                            <div style={{ width: 1080 * 0.22, height: 1080 * 0.22, overflow: 'hidden', pointerEvents: 'none' }}>
+                              <div style={{ width: 1080, height: 1080, transform: 'scale(0.22)', transformOrigin: '0 0' }}>
+                                <CardPreview slide={slide} theme={cardTheme} num={i + 1} total={cardSlides.length} />
+                              </div>
                             </div>
                             <div className="absolute bottom-1 left-1 right-1 bg-black/50 rounded text-white text-xs text-center py-0.5">
                               {i + 1} {slide.type === 'brand' ? '🏷️' : ''}
