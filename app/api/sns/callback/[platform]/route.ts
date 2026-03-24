@@ -170,16 +170,17 @@ export async function GET(
 
     const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null;
 
-    await supabase.from('sns_connections').upsert({
+    const { error: upsertErr } = await supabase.from('sns_connections').upsert({
       user_id: userId, platform, access_token: accessToken, refresh_token: refreshToken,
       token_expires_at: expiresAt, platform_user_id: platformUserId, platform_username: platformUsername,
       platform_display_name: platformDisplayName, platform_avatar: platformAvatar,
       is_active: true, updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,platform' });
 
+    if (upsertErr) throw new Error(`DB저장실패: ${upsertErr.message}`);
     return NextResponse.redirect(`${returnUrl}?connected=${platform}`);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = (err instanceof Error ? err.message : String(err)).slice(0, 200);
     console.error(`[SNS Callback] ${platform}:`, message);
     return NextResponse.redirect(`${returnUrl}?error=${encodeURIComponent(message)}`);
   }
