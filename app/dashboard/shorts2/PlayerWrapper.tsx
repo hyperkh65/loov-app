@@ -4,6 +4,7 @@ import { Player } from '@remotion/player';
 import { TitleScene } from './remotion/templates/TitleScene';
 import { ListScene } from './remotion/templates/ListScene';
 import { CardScene } from './remotion/templates/CardScene';
+import { CardNewsScene } from './remotion/templates/CardNewsScene';
 import { CodeScene } from './remotion/templates/CodeScene';
 import { FlowScene } from './remotion/templates/FlowScene';
 import { DialogScene } from './remotion/templates/DialogScene';
@@ -11,13 +12,14 @@ import { StatsScene } from './remotion/templates/StatsScene';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const COMPONENTS: Record<string, React.FC<any>> = {
-  title:  TitleScene,
-  list:   ListScene,
-  card:   CardScene,
-  code:   CodeScene,
-  flow:   FlowScene,
-  dialog: DialogScene,
-  stats:  StatsScene,
+  title:    TitleScene,
+  list:     ListScene,
+  card:     CardScene,
+  code:     CodeScene,
+  flow:     FlowScene,
+  dialog:   DialogScene,
+  stats:    StatsScene,
+  cardnews: CardNewsScene,
 };
 
 export default function PlayerWrapper({
