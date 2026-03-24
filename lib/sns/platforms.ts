@@ -34,11 +34,9 @@ export const PLATFORMS: Record<Platform, {
   },
   instagram: {
     name: 'Instagram',
-    authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
-    // instagram_basic/instagram_content_publish 는 2024-12 폐기됨
-    // Instagram Business/Creator API 신규 스코프 사용
-    scopes: ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_comments', 'pages_show_list'],
+    authUrl: 'https://api.instagram.com/oauth/authorize',
+    tokenUrl: 'https://api.instagram.com/oauth/access_token',
+    scopes: ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_comments'],
     charLimit: 2200,
   },
   linkedin: {
