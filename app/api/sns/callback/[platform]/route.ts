@@ -106,13 +106,15 @@ export async function GET(
         break;
       }
       case 'instagram': {
-        // Instagram API (standalone) - 단기 토큰 교환
+        // Instagram API (standalone) - 별도 앱 ID/Secret 사용
+        const igAppId = process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID;
+        const igAppSecret = process.env.INSTAGRAM_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
         const shortTokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({
-            client_id: process.env.FACEBOOK_APP_ID!,
-            client_secret: process.env.FACEBOOK_APP_SECRET!,
+            client_id: igAppId!,
+            client_secret: igAppSecret!,
             grant_type: 'authorization_code',
             redirect_uri: redirectUri,
             code,
@@ -124,7 +126,7 @@ export async function GET(
 
         // 장기 토큰으로 교환 (60일)
         const longTokenRes = await fetch(
-          `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${process.env.FACEBOOK_APP_SECRET}&access_token=${shortToken}`
+          `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${igAppSecret}&access_token=${shortToken}`
         );
         const longTokenData = await longTokenRes.json();
         accessToken = longTokenData.access_token || shortToken;
