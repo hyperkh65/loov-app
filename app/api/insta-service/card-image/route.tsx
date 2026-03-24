@@ -4,26 +4,11 @@ import { NextRequest } from 'next/server';
 export const runtime = 'edge';
 
 const THEMES = {
-  blue: {
-    bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913',
-    text: '#ffffff', sub: 'rgba(255,255,255,0.65)', card: '#0F2D7A',
-  },
-  dark: {
-    bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560',
-    text: '#ffffff', sub: 'rgba(255,255,255,0.60)', card: '#16213e',
-  },
-  warm: {
-    bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24',
-    text: '#ffffff', sub: 'rgba(255,255,255,0.70)', card: '#A93226',
-  },
-  green: {
-    bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28',
-    text: '#ffffff', sub: 'rgba(255,255,255,0.65)', card: '#00695C',
-  },
-  purple: {
-    bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471',
-    text: '#ffffff', sub: 'rgba(255,255,255,0.65)', card: '#5B2C6F',
-  },
+  blue:   { bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913', text: '#ffffff', sub: 'rgba(255,255,255,0.70)', dim: 'rgba(255,255,255,0.45)' },
+  dark:   { bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560', text: '#ffffff', sub: 'rgba(255,255,255,0.68)', dim: 'rgba(255,255,255,0.40)' },
+  warm:   { bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24', text: '#ffffff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.45)' },
+  green:  { bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28', text: '#ffffff', sub: 'rgba(255,255,255,0.70)', dim: 'rgba(255,255,255,0.45)' },
+  purple: { bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471', text: '#ffffff', sub: 'rgba(255,255,255,0.70)', dim: 'rgba(255,255,255,0.45)' },
 };
 
 type ThemeKey = keyof typeof THEMES;
@@ -35,67 +20,54 @@ async function loadFont(): Promise<ArrayBuffer | null> {
       { signal: AbortSignal.timeout(6000) }
     );
     return res.arrayBuffer();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const type = searchParams.get('type') || 'content';
-  const title = searchParams.get('title') || '';
-  const body = searchParams.get('body') || '';
-  const num = Number(searchParams.get('num') || '1');
-  const total = Number(searchParams.get('total') || '6');
+  const type    = searchParams.get('type') || 'content';
+  const title   = searchParams.get('title') || '';
+  const body    = searchParams.get('body') || '';
+  const num     = Number(searchParams.get('num') || '1');
+  const total   = Number(searchParams.get('total') || '6');
   const themeKey = (searchParams.get('theme') || 'blue') as ThemeKey;
-  const brand = searchParams.get('brand') || '2days.kr';
+  const brand   = searchParams.get('brand') || '2days.kr';
+  // points passed as JSON-encoded array
+  let points: string[] = [];
+  try { points = JSON.parse(searchParams.get('points') || '[]'); } catch { /* ignore */ }
 
   const c = THEMES[themeKey] ?? THEMES.blue;
   const fontData = await loadFont();
-
   const imgOptions: ConstructorParameters<typeof ImageResponse>[1] = {
     width: 1080,
     height: 1080,
     ...(fontData ? { fonts: [{ name: 'NotoSansKR', data: fontData, weight: 700 as const }] } : {}),
   };
-
-  const fontFamily = fontData ? 'NotoSansKR, sans-serif' : 'sans-serif';
+  const ff = fontData ? 'NotoSansKR, sans-serif' : 'sans-serif';
 
   /* ── TITLE CARD ── */
   if (type === 'title') {
     return new ImageResponse(
-      <div style={{ width: 1080, height: 1080, background: `linear-gradient(135deg, ${c.bg1} 0%, ${c.bg2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily, position: 'relative', overflow: 'hidden' }}>
-        {/* Decorative circles */}
-        <div style={{ position: 'absolute', top: -120, right: -120, width: 480, height: 480, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', display: 'flex' }} />
-        <div style={{ position: 'absolute', bottom: -180, left: -80, width: 520, height: 520, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex' }} />
-        <div style={{ position: 'absolute', top: 200, right: -60, width: 200, height: 200, borderRadius: '50%', background: c.accent, opacity: 0.12, display: 'flex' }} />
-
-        {/* Top brand bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '48px 60px 0' }}>
-          <div style={{ width: 44, height: 44, background: c.accent, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 900, color: c.bg2 }}>2D</div>
-          <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 24, fontWeight: 700 }}>{brand}</span>
+      <div style={{ width: 1080, height: 1080, background: `linear-gradient(135deg, ${c.bg1} 0%, ${c.bg2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily: ff, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -140, right: -140, width: 500, height: 500, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex' }} />
+        <div style={{ position: 'absolute', bottom: -200, left: -100, width: 560, height: 560, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex' }} />
+        {/* Top brand */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '52px 64px 0' }}>
+          <div style={{ width: 48, height: 48, background: c.accent, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: c.bg2 }}>2D</div>
+          <span style={{ color: c.dim, fontSize: 26, fontWeight: 700 }}>{brand}</span>
         </div>
-
-        {/* Center content */}
+        {/* Center */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 80px', textAlign: 'center' }}>
-          {/* Accent line */}
-          <div style={{ width: 64, height: 6, background: c.accent, borderRadius: 3, marginBottom: 44, display: 'flex' }} />
-          {/* Main title */}
-          <div style={{ fontSize: 76, fontWeight: 900, color: c.text, lineHeight: 1.2, maxWidth: 920, display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>{title}</div>
-          {/* Subtitle */}
-          {body && (
-            <div style={{ marginTop: 36, fontSize: 34, color: c.sub, lineHeight: 1.5, maxWidth: 820, display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>{body}</div>
-          )}
-          {/* Slide counter */}
-          <div style={{ marginTop: 56, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 72, height: 7, background: c.accent, borderRadius: 4, marginBottom: 48, display: 'flex' }} />
+          <div style={{ fontSize: 84, fontWeight: 900, color: c.text, lineHeight: 1.15, maxWidth: 940, display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>{title}</div>
+          {body && <div style={{ marginTop: 40, fontSize: 38, color: c.sub, lineHeight: 1.55, maxWidth: 840, display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}>{body}</div>}
+          <div style={{ marginTop: 60, display: 'flex', gap: 10 }}>
             {Array.from({ length: total }, (_, i) => (
-              <div key={i} style={{ width: i === 0 ? 28 : 10, height: 10, borderRadius: 5, background: i === 0 ? c.accent : 'rgba(255,255,255,0.3)', display: 'flex' }} />
+              <div key={i} style={{ width: i === 0 ? 32 : 12, height: 12, borderRadius: 6, background: i === 0 ? c.accent : 'rgba(255,255,255,0.25)', display: 'flex' }} />
             ))}
           </div>
         </div>
-
-        {/* Bottom accent bar */}
-        <div style={{ height: 10, background: c.accent, display: 'flex' }} />
+        <div style={{ height: 12, background: c.accent, display: 'flex' }} />
       </div>,
       imgOptions,
     );
@@ -103,80 +75,88 @@ export async function GET(req: NextRequest) {
 
   /* ── BRAND CARD ── */
   if (type === 'brand') {
+    const brandPoints = points.length > 0 ? points : ['📲 팔로우하고 매일 유용한 정보 받기', '💾 저장해두고 필요할 때 꺼내보기', '🔗 친구에게 공유해서 함께 성장하기'];
     return new ImageResponse(
-      <div style={{ width: 1080, height: 1080, background: `linear-gradient(160deg, ${c.bg2} 0%, ${c.bg1} 60%, ${c.bg2} 100%)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily, position: 'relative', overflow: 'hidden' }}>
-        {/* Decorative bg shapes */}
-        <div style={{ position: 'absolute', top: -200, left: -200, width: 600, height: 600, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex' }} />
-        <div style={{ position: 'absolute', bottom: -200, right: -200, width: 700, height: 700, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex' }} />
-
-        {/* Logo mark */}
-        <div style={{ width: 140, height: 140, background: c.accent, borderRadius: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 60, fontWeight: 900, color: c.bg2, marginBottom: 40, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>2D</div>
-
-        {/* Brand name */}
-        <div style={{ fontSize: 80, fontWeight: 900, color: c.text, letterSpacing: '-1px', display: 'flex' }}>{brand}</div>
-        <div style={{ fontSize: 32, color: c.sub, marginTop: 20, display: 'flex' }}>{body || '오늘의 정보, 내일의 성공'}</div>
-
-        {/* Divider */}
-        <div style={{ width: 100, height: 5, background: c.accent, borderRadius: 3, margin: '60px 0', display: 'flex' }} />
-
-        {/* CTA */}
-        <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 20, padding: '24px 60px', border: `2px solid ${c.accent}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-          <div style={{ fontSize: 30, color: c.text, fontWeight: 700, display: 'flex' }}>팔로우 & 저장하고 유용한 정보 받기</div>
-          <div style={{ fontSize: 22, color: c.sub, display: 'flex' }}>매일 새로운 비즈니스 인사이트</div>
+      <div style={{ width: 1080, height: 1080, background: `linear-gradient(160deg, ${c.bg2} 0%, ${c.bg1} 55%, ${c.bg2} 100%)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: ff, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -220, left: -220, width: 650, height: 650, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex' }} />
+        <div style={{ position: 'absolute', bottom: -220, right: -220, width: 700, height: 700, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex' }} />
+        {/* Logo */}
+        <div style={{ width: 150, height: 150, background: c.accent, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 66, fontWeight: 900, color: c.bg2, marginBottom: 44, boxShadow: '0 24px 64px rgba(0,0,0,0.35)' }}>2D</div>
+        <div style={{ fontSize: 86, fontWeight: 900, color: c.text, letterSpacing: '-1px', display: 'flex' }}>{title}</div>
+        <div style={{ fontSize: 34, color: c.sub, marginTop: 18, display: 'flex' }}>{body || '오늘의 정보, 내일의 성공'}</div>
+        <div style={{ width: 110, height: 6, background: c.accent, borderRadius: 3, margin: '52px 0 48px', display: 'flex' }} />
+        {/* CTA points */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: 840 }}>
+          {brandPoints.map((pt, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 20, background: 'rgba(255,255,255,0.08)', borderRadius: 18, padding: '20px 32px', border: `1px solid rgba(255,255,255,0.12)` }}>
+              <span style={{ fontSize: 34, display: 'flex', flexShrink: 0 }}>{pt.slice(0, 2)}</span>
+              <span style={{ fontSize: 30, color: c.text, fontWeight: 700, display: 'flex' }}>{pt.slice(2).trim()}</span>
+            </div>
+          ))}
         </div>
-
-        {/* Bottom bar */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 10, background: c.accent, display: 'flex' }} />
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 12, background: c.accent, display: 'flex' }} />
       </div>,
       imgOptions,
     );
   }
 
   /* ── CONTENT CARD ── */
+  const displayPoints = points.length > 0 ? points : body ? [body] : [];
+
   return new ImageResponse(
-    <div style={{ width: 1080, height: 1080, background: `linear-gradient(160deg, ${c.bg2} 0%, #08112e 100%)`, display: 'flex', flexDirection: 'column', fontFamily, padding: '64px 72px', position: 'relative', overflow: 'hidden' }}>
-      {/* Decorative accent circle */}
-      <div style={{ position: 'absolute', top: -80, right: -80, width: 300, height: 300, borderRadius: '50%', background: c.accent, opacity: 0.08, display: 'flex' }} />
-      <div style={{ position: 'absolute', bottom: 60, left: -60, width: 200, height: 200, borderRadius: '50%', background: c.bg1, opacity: 0.5, display: 'flex' }} />
+    <div style={{ width: 1080, height: 1080, background: `linear-gradient(160deg, ${c.bg2} 0%, #07101f 100%)`, display: 'flex', flexDirection: 'column', fontFamily: ff, padding: '56px 68px 56px', position: 'relative', overflow: 'hidden' }}>
+      {/* Decorative */}
+      <div style={{ position: 'absolute', top: -80, right: -80, width: 280, height: 280, borderRadius: '50%', background: c.accent, opacity: 0.07, display: 'flex' }} />
+      <div style={{ position: 'absolute', bottom: 20, left: -80, width: 220, height: 220, borderRadius: '50%', background: c.bg1, opacity: 0.4, display: 'flex' }} />
 
-      {/* Header: brand + page counter */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 56 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, background: c.accent, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900, color: c.bg2 }}>2D</div>
-          <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 22, fontWeight: 700 }}>{brand}</span>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 48 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 34, height: 34, background: c.accent, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 900, color: c.bg2 }}>2D</div>
+          <span style={{ color: c.dim, fontSize: 22, fontWeight: 700 }}>{brand}</span>
         </div>
-        <div style={{ background: c.accent, color: c.bg2, fontSize: 22, fontWeight: 900, padding: '8px 22px', borderRadius: 30, display: 'flex' }}>
-          {num} / {total}
+        <div style={{ background: c.accent, color: c.bg2, fontSize: 22, fontWeight: 900, padding: '8px 24px', borderRadius: 32, display: 'flex' }}>{num} / {total}</div>
+      </div>
+
+      {/* Number badge + Title row */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, marginBottom: 32 }}>
+        <div style={{ width: 72, height: 72, background: c.accent, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, fontWeight: 900, color: c.bg2, flexShrink: 0 }}>{num}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ fontSize: 52, fontWeight: 900, color: c.text, lineHeight: 1.2, display: 'flex', flexWrap: 'wrap' }}>{title}</div>
+          {body && <div style={{ fontSize: 28, color: c.sub, marginTop: 8, lineHeight: 1.4, display: 'flex', flexWrap: 'wrap' }}>{body}</div>}
         </div>
       </div>
 
-      {/* Number badge */}
-      <div style={{ width: 80, height: 80, background: c.accent, borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, fontWeight: 900, color: c.bg2, marginBottom: 40 }}>
-        {num}
+      {/* Divider */}
+      <div style={{ width: '100%', height: 2, background: 'rgba(255,255,255,0.12)', marginBottom: 36, display: 'flex' }}>
+        <div style={{ width: 80, height: 2, background: c.accent, display: 'flex' }} />
       </div>
 
-      {/* Title */}
-      <div style={{ fontSize: 56, fontWeight: 900, color: c.text, lineHeight: 1.25, marginBottom: 40, maxWidth: 920, display: 'flex', flexWrap: 'wrap' }}>
-        {title}
+      {/* Bullet points */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22, flex: 1 }}>
+        {displayPoints.slice(0, 5).map((pt, i) => {
+          // Split emoji from text (first 2 chars might be emoji)
+          const hasEmoji = /^\p{Emoji}/u.test(pt);
+          const emoji = hasEmoji ? pt.slice(0, 2) : '▶';
+          const text = hasEmoji ? pt.slice(2).trim() : pt;
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 20, background: 'rgba(255,255,255,0.07)', borderRadius: 16, padding: '18px 24px', border: `1px solid rgba(255,255,255,0.10)` }}>
+              <div style={{ width: 44, height: 44, background: c.accent, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{emoji}</div>
+              <span style={{ fontSize: 30, color: c.text, lineHeight: 1.55, fontWeight: 700, display: 'flex', flexWrap: 'wrap', flex: 1 }}>{text}</span>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Accent line under title */}
-      <div style={{ width: 56, height: 5, background: c.accent, borderRadius: 3, marginBottom: 36, display: 'flex' }} />
-
-      {/* Body text */}
-      <div style={{ fontSize: 38, color: c.sub, lineHeight: 1.75, maxWidth: 920, display: 'flex', flexWrap: 'wrap' }}>
-        {body}
-      </div>
-
-      {/* Dot progress */}
-      <div style={{ position: 'absolute', bottom: 80, right: 72, display: 'flex', gap: 8 }}>
+      {/* Progress dots */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 28 }}>
         {Array.from({ length: total }, (_, i) => (
-          <div key={i} style={{ width: i === num - 1 ? 28 : 10, height: 10, borderRadius: 5, background: i === num - 1 ? c.accent : 'rgba(255,255,255,0.25)', display: 'flex' }} />
+          <div key={i} style={{ width: i === num - 1 ? 28 : 10, height: 10, borderRadius: 5, background: i === num - 1 ? c.accent : 'rgba(255,255,255,0.22)', display: 'flex' }} />
         ))}
       </div>
 
-      {/* Bottom accent bar */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 10, background: c.accent, display: 'flex' }} />
+      {/* Bottom bar */}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 12, background: c.accent, display: 'flex' }} />
     </div>,
     imgOptions,
   );
