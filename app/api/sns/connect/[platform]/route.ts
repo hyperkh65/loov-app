@@ -78,7 +78,7 @@ export async function GET(
       break;
     }
     case 'instagram': {
-      authUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth');
+      authUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth');
       authUrl.searchParams.set('client_id', process.env.FACEBOOK_APP_ID!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', PLATFORMS.instagram.scopes.join(','));
