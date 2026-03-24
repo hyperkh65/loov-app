@@ -39,7 +39,6 @@ export async function POST(req: NextRequest) {
 
   if (!conn) return NextResponse.json({ error: '카페 연결 필요' }, { status: 400 });
   if (!conn.club_id) return NextResponse.json({ error: '카페 ID 미설정' }, { status: 400 });
-  if (!conn.member_id) return NextResponse.json({ error: '회원 ID 조회 필요 - OAuth 재연결 해주세요' }, { status: 400 });
 
   let accessToken: string = conn.access_token;
 
@@ -61,11 +60,14 @@ export async function POST(req: NextRequest) {
   if (!accessToken) return NextResponse.json({ error: 'OAuth 토큰 없음. 재연결 필요' }, { status: 400 });
 
   // 게시글 작성 (multipart/form-data)
+  // 네이버 카페 API: POST /v1/cafe/{clubId}/menu/{menuId}/articles
+  const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
+  if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
+
   const form = new FormData();
   form.append('subject', title);
   form.append('content', content);
   form.append('openYn', open_yn);
-  if (menu_id) form.append('menuId', String(menu_id));
 
   // 이미지 첨부 (base64 → Blob)
   for (const img of images.slice(0, 5)) {
@@ -76,7 +78,7 @@ export async function POST(req: NextRequest) {
     } catch { /* 첨부 실패 무시 */ }
   }
 
-  const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/members/${conn.member_id}/articles`;
+  const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
