@@ -125,20 +125,26 @@ export async function GET(
         const shortToken = shortTokenData.access_token;
 
         // 장기 토큰으로 교환 (60일)
-        const longTokenRes = await fetch(
-          `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${igAppSecret}&access_token=${shortToken}`
-        );
-        const longTokenData = await longTokenRes.json();
-        accessToken = longTokenData.access_token || shortToken;
-        expiresIn = longTokenData.expires_in || null;
+        let longToken = shortToken;
+        let longExpires: number | null = null;
+        try {
+          const longTokenRes = await fetch(
+            `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${igAppSecret}&access_token=${shortToken}`
+          );
+          const longTokenData = await longTokenRes.json();
+          if (longTokenData.access_token) { longToken = longTokenData.access_token; longExpires = longTokenData.expires_in || null; }
+        } catch { /* 단기 토큰으로 폴백 */ }
+        accessToken = longToken;
+        expiresIn = longExpires;
 
-        // 사용자 정보 조회
-        const userRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id,username,name,profile_picture_url&access_token=${accessToken}`);
+        // 사용자 정보 조회 (instagram_business_basic 스코프: id, username만 보장)
+        const userRes = await fetch(`https://graph.instagram.com/me?fields=id,username&access_token=${accessToken}`);
         const userData = await userRes.json();
-        platformUserId = userData.id || shortTokenData.user_id;
+        if (userData.error) throw new Error(`Instagram 사용자 정보 실패: ${JSON.stringify(userData.error)}`);
+        platformUserId = userData.id || String(shortTokenData.user_id);
         platformUsername = `@${userData.username || ''}`;
-        platformDisplayName = userData.name || userData.username || '';
-        platformAvatar = userData.profile_picture_url || null;
+        platformDisplayName = userData.username || '';
+        platformAvatar = null;
         break;
       }
       case 'linkedin': {
