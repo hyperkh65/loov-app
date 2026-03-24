@@ -1,42 +1,33 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 
+// GET: 저장된 메뉴 목록 반환
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const { data: conn } = await supabase.from('naver_cafe_connections')
-    .select('club_id, access_token, token_expires_at')
+    .select('menu_list')
     .eq('user_id', user.id)
     .single();
 
-  if (!conn?.access_token) return NextResponse.json({ error: '카페 OAuth 연결 필요' }, { status: 400 });
-  if (!conn.club_id) return NextResponse.json({ error: '카페 ID 미설정' }, { status: 400 });
+  return NextResponse.json({ menus: conn?.menu_list || [] });
+}
 
-  const res = await fetch(`https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/list`, {
-    headers: { Authorization: `Bearer ${conn.access_token}` },
-  });
+// POST: 메뉴 목록 수동 저장 (Naver API에 메뉴 목록 조회 기능 없음)
+export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  if (!res.ok) {
-    const text = await res.text();
-    return NextResponse.json({ error: `메뉴 조회 실패: ${res.status} ${text.slice(0, 200)}` }, { status: 400 });
-  }
+  const { menus } = await req.json();
 
-  const data = await res.json() as {
-    message?: {
-      result?: {
-        menuList?: { menuId: number; menuName: string; menuType: string }[];
-      };
-    };
-  };
-  const menus = data.message?.result?.menuList || [];
-
-  // DB에 저장
-  await supabase.from('naver_cafe_connections').update({
+  const { error } = await supabase.from('naver_cafe_connections').update({
     menu_list: menus,
     updated_at: new Date().toISOString(),
   }).eq('user_id', user.id);
 
-  return NextResponse.json({ menus });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true, menus });
 }

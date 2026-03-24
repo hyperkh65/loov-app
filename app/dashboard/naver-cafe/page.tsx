@@ -49,8 +49,11 @@ export default function NaverCafePage() {
   const [cafeSlugInput, setCafeSlugInput] = useState('');
   const [resolving, setResolving] = useState(false);
   const [savingConn, setSavingConn] = useState(false);
-  const [loadingMenus, setLoadingMenus] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState('');
+  // 수동 메뉴 추가
+  const [newMenuId, setNewMenuId] = useState('');
+  const [newMenuName, setNewMenuName] = useState('');
+  const [savingMenus, setSavingMenus] = useState(false);
 
   // write
   const [title, setTitle] = useState('');
@@ -134,18 +137,35 @@ export default function NaverCafePage() {
     setSavingConn(false);
   };
 
-  const loadMenus = async () => {
-    setLoadingMenus(true);
-    setSettingsMsg('');
-    const res = await fetch('/api/naver-cafe/menus');
-    const data = await res.json();
-    if (data.menus) {
-      setSettingsMsg(`✅ 게시판 ${data.menus.length}개 로드됨`);
-      loadConn();
-    } else {
-      setSettingsMsg(`❌ ${data.error}`);
+  const addMenu = async () => {
+    const id = newMenuId.trim();
+    const name = newMenuName.trim();
+    if (!id || !name) { setSettingsMsg('게시판 ID와 이름을 모두 입력하세요'); return; }
+    setSavingMenus(true);
+    const currentMenus: MenuItem[] = conn.menu_list || [];
+    if (currentMenus.find(m => String(m.menuId) === id)) {
+      setSettingsMsg('이미 추가된 게시판 ID입니다'); setSavingMenus(false); return;
     }
-    setLoadingMenus(false);
+    const newMenus = [...currentMenus, { menuId: Number(id), menuName: name, menuType: 'text' }];
+    const res = await fetch('/api/naver-cafe/menus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ menus: newMenus }),
+    });
+    const data = await res.json();
+    if (data.ok) { setSettingsMsg('✅ 게시판 추가됨'); setNewMenuId(''); setNewMenuName(''); loadConn(); }
+    else { setSettingsMsg(`❌ ${data.error}`); }
+    setSavingMenus(false);
+  };
+
+  const removeMenu = async (menuId: number) => {
+    const newMenus = (conn.menu_list || []).filter(m => m.menuId !== menuId);
+    await fetch('/api/naver-cafe/menus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ menus: newMenus }),
+    });
+    loadConn();
   };
 
   const doPublish = async () => {
@@ -309,29 +329,55 @@ export default function NaverCafePage() {
             )}
           </div>
 
-          {/* 게시판 목록 로드 */}
-          {conn.oauth_connected && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          {/* 게시판 수동 추가 */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <div>
               <p className="text-sm font-semibold text-gray-800">게시판 목록</p>
-              <button
-                onClick={loadMenus}
-                disabled={loadingMenus}
-                className="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {loadingMenus ? '불러오는 중...' : '📋 게시판 목록 불러오기'}
-              </button>
-              {menus.length > 0 && (
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {menus.map((m) => (
-                    <div key={m.menuId} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-xs">
-                      <span className="font-medium text-gray-700">{m.menuName}</span>
-                      <span className="text-gray-400">ID: {m.menuId} · {m.menuType}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <p className="text-xs text-gray-400 mt-0.5">
+                네이버 카페 API는 게시판 자동 조회를 지원하지 않습니다. 카페에서 직접 확인 후 추가하세요.
+              </p>
             </div>
-          )}
+            <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">게시판 ID 확인 방법</p>
+              <p>카페 게시판 클릭 → URL에서 <code className="bg-blue-100 px-1 rounded">menuid=</code> 뒤 숫자</p>
+              <p className="text-blue-500">예: ArticleList.nhn?clubid=30929054&menuid=<strong>12</strong></p>
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={newMenuId}
+                onChange={e => setNewMenuId(e.target.value)}
+                placeholder="게시판 ID (숫자)"
+                className="w-28 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500"
+              />
+              <input
+                value={newMenuName}
+                onChange={e => setNewMenuName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addMenu()}
+                placeholder="게시판 이름"
+                className="flex-1 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={addMenu}
+                disabled={savingMenus}
+                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              >
+                추가
+              </button>
+            </div>
+            {menus.length > 0 && (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {menus.map((m) => (
+                  <div key={m.menuId} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-xs">
+                    <span className="font-medium text-gray-700">{m.menuName}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400">ID: {m.menuId}</span>
+                      <button onClick={() => removeMenu(m.menuId)} className="text-red-400 hover:text-red-600">✕</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {settingsMsg && (
             <p className={`text-sm text-center ${settingsMsg.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
