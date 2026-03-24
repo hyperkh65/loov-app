@@ -339,8 +339,8 @@ export default function NaverCafePage() {
             </div>
             <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700 space-y-1">
               <p className="font-semibold">게시판 ID 확인 방법</p>
-              <p>카페 게시판 클릭 → URL에서 <code className="bg-blue-100 px-1 rounded">menuid=</code> 뒤 숫자</p>
-              <p className="text-blue-500">예: ArticleList.nhn?clubid=30929054&menuid=<strong>12</strong></p>
+              <p>카페 게시판 클릭 → URL 마지막 숫자</p>
+              <p className="text-blue-500 break-all">예: cafe.naver.com/f-e/cafes/30929054/menus/<strong>15</strong></p>
             </div>
             <div className="flex gap-2">
               <input
