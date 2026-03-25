@@ -835,6 +835,7 @@ export default function InstaServicePage() {
                     slides={cardSlides}
                     theme={cardTheme}
                     bgm={cardBgm}
+                    caption={caption}
                     onBgmChange={setCardBgm}
                   />
 

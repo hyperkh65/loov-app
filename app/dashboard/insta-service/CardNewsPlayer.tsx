@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 // Direct imports — this file is already 'use client', no SSR issue
 import { Player } from '@remotion/player';
 import { CardNewsScene } from '../shorts2/remotion/templates/CardNewsScene';
@@ -57,10 +58,12 @@ interface Props {
   slides: CardSlide[];
   theme: CardTheme;
   bgm: string;
+  caption: string;
   onBgmChange: (id: string) => void;
 }
 
 const SLIDE_FRAMES = 150;
+const SLIDE_SECS = 5; // seconds per slide in canvas recording
 const GENRE_GROUPS = [
   { label: 'Lofi/Chill', ids: ['lofi1','lofi2','lofi3','lofi4'] },
   { label: 'Pop/Upbeat', ids: ['upbeat1','upbeat2','upbeat3'] },
@@ -76,12 +79,221 @@ const GENRE_GROUPS = [
   { label: 'Dreamy', ids: ['dreamy1','dreamy2'] },
 ];
 
-export default function CardNewsPlayer({ slides, theme, bgm, onBgmChange }: Props) {
+// ── Record a canvas slideshow from card image URLs → webm Blob ──
+async function recordSlideshowVideo(
+  imageUrls: string[],
+  secsPerSlide: number,
+  onProgress: (pct: number) => void
+): Promise<Blob> {
+  const SIZE = 720; // 720x720 for reasonable file size
+  const FPS = 30;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d')!;
+
+  // Preload all images
+  const imgs = await Promise.all(imageUrls.map(url => new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  })));
+
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9'
+    : 'video/webm';
+
+  const stream = canvas.captureStream(FPS);
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 });
+  const chunks: BlobPart[] = [];
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  recorder.start(200);
+
+  const total = imgs.length;
+  for (let i = 0; i < total; i++) {
+    const endTime = performance.now() + secsPerSlide * 1000;
+    // Draw and hold this image for secsPerSlide
+    while (performance.now() < endTime) {
+      ctx.drawImage(imgs[i], 0, 0, SIZE, SIZE);
+      await new Promise<void>(r => requestAnimationFrame(() => r()));
+    }
+    onProgress(Math.round(((i + 1) / total) * 80));
+  }
+
+  recorder.stop();
+  await new Promise<void>(r => { recorder.onstop = () => r(); });
+  onProgress(100);
+
+  return new Blob(chunks, { type: mimeType });
+}
+
+export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChange }: Props) {
   const bgmUrl = BGM_TRACKS.find(t => t.id === bgm)?.url || '';
   const totalFrames = Math.max(1, slides.length) * SLIDE_FRAMES;
 
+  // Upload modals
+  const [showInstaModal, setShowInstaModal] = useState(false);
+  const [showYtModal, setShowYtModal] = useState(false);
+  const [instaCaption, setInstaCaption] = useState('');
+  const [ytTitle, setYtTitle] = useState('');
+  const [ytDesc, setYtDesc] = useState('');
+  const [ytTags, setYtTags] = useState('카드뉴스,shorts,정보');
+
+  // Upload state
+  const [instaLoading, setInstaLoading] = useState(false);
+  const [instaResult, setInstaResult] = useState<{ ok: boolean; url?: string; error?: string } | null>(null);
+  const [ytLoading, setYtLoading] = useState(false);
+  const [ytResult, setYtResult] = useState<{ ok: boolean; url?: string; error?: string } | null>(null);
+  const [ytProgress, setYtProgress] = useState(0);
+  const [ytProgressMsg, setYtProgressMsg] = useState('');
+
+  // YouTube connection
+  const [ytConnected, setYtConnected] = useState<boolean | null>(null);
+  const [ytChannel, setYtChannel] = useState('');
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Check YouTube connection on modal open
+  useEffect(() => {
+    if (showYtModal && ytConnected === null) {
+      fetch('/api/youtube/status')
+        .then(r => r.json())
+        .then(d => { setYtConnected(d.connected); setYtChannel(d.channelName || ''); });
+    }
+  }, [showYtModal, ytConnected]);
+
+  // Open Instagram modal
+  const openInstaModal = () => {
+    setInstaCaption(caption || '');
+    setInstaResult(null);
+    setShowInstaModal(true);
+  };
+
+  // Open YouTube modal
+  const openYtModal = () => {
+    setYtTitle(slides[0]?.title || '카드뉴스');
+    setYtDesc(caption || '');
+    setYtResult(null);
+    setYtProgress(0);
+    setYtProgressMsg('');
+    setShowYtModal(true);
+  };
+
+  // Fetch all card image URLs from the card-image API
+  const fetchCardImages = async (): Promise<string[]> => {
+    return Promise.all(slides.map(async (slide, i) => {
+      const params = new URLSearchParams({
+        type: slide.type,
+        title: slide.title,
+        body: slide.body || '',
+        num: String(i + 1),
+        total: String(slides.length),
+        theme,
+        points: JSON.stringify(slide.points || []),
+      });
+      const res = await fetch(`/api/insta-service/card-image?${params}`);
+      if (!res.ok) throw new Error(`카드 이미지 생성 실패 (${i + 1})`);
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
+    }));
+  };
+
+  // ── Upload to Instagram ──
+  const uploadToInsta = async () => {
+    if (!instaCaption.trim()) { alert('캡션을 입력하세요'); return; }
+    setInstaLoading(true);
+    setInstaResult(null);
+    try {
+      const res = await fetch('/api/insta-service/publish-cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slides, theme, caption: instaCaption }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInstaResult({ ok: true, url: data.url });
+      } else {
+        setInstaResult({ ok: false, error: data.error });
+      }
+    } catch (e) {
+      setInstaResult({ ok: false, error: String(e) });
+    } finally {
+      setInstaLoading(false);
+    }
+  };
+
+  // ── Record & Upload to YouTube ──
+  const uploadToYouTube = async () => {
+    if (!ytTitle.trim()) { alert('제목을 입력하세요'); return; }
+    setYtLoading(true);
+    setYtResult(null);
+    setYtProgress(5);
+    setYtProgressMsg('카드 이미지 생성 중...');
+
+    try {
+      // Step 1: Fetch card images as object URLs
+      const imageUrls = await fetchCardImages();
+      setYtProgress(20);
+      setYtProgressMsg(`슬라이드쇼 녹화 중... (${slides.length * SLIDE_SECS}초)`);
+
+      // Step 2: Record canvas slideshow
+      const videoBlob = await recordSlideshowVideo(imageUrls, SLIDE_SECS, pct => {
+        setYtProgress(20 + Math.round(pct * 0.6));
+        setYtProgressMsg(`녹화 중... ${pct}%`);
+      });
+
+      // Revoke object URLs
+      imageUrls.forEach(u => URL.revokeObjectURL(u));
+
+      setYtProgress(82);
+      setYtProgressMsg('YouTube에 업로드 중...');
+
+      // Step 3: Upload to YouTube
+      const form = new FormData();
+      form.append('video', videoBlob, 'cardnews.webm');
+      form.append('title', ytTitle);
+      form.append('description', ytDesc);
+      form.append('tags', ytTags);
+
+      const res = await fetch('/api/youtube/upload', { method: 'POST', body: form });
+      const data = await res.json();
+
+      if (data.success) {
+        setYtProgress(100);
+        setYtProgressMsg('완료!');
+        setYtResult({ ok: true, url: data.url });
+      } else {
+        setYtResult({ ok: false, error: data.error });
+      }
+    } catch (e) {
+      setYtResult({ ok: false, error: String(e) });
+    } finally {
+      setYtLoading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 w-full">
+      {/* Hidden canvas for recording */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* ── Upload buttons ── */}
+      {slides.length > 0 && (
+        <div className="flex gap-3">
+          <button onClick={openInstaModal}
+            className="flex-1 py-3 bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 text-white rounded-xl font-bold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-lg">
+            <span>📱</span> 인스타 업로드
+          </button>
+          <button onClick={openYtModal}
+            className="flex-1 py-3 bg-gradient-to-r from-red-600 to-red-500 text-white rounded-xl font-bold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-lg">
+            <span>▶</span> 유튜브 숏츠
+          </button>
+        </div>
+      )}
+
       {/* BGM selector */}
       <div className="bg-gray-900 rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -92,12 +304,10 @@ export default function CardNewsPlayer({ slides, theme, bgm, onBgmChange }: Prop
             </span>
           )}
         </div>
-        {/* None button */}
         <button onClick={() => onBgmChange('none')}
           className={`mb-3 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${bgm === 'none' ? 'bg-yellow-400 text-gray-900' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}>
           🔇 없음
         </button>
-        {/* Genre groups */}
         <div className="space-y-2">
           {GENRE_GROUPS.map(group => (
             <div key={group.label} className="flex items-center gap-2 flex-wrap">
@@ -136,6 +346,161 @@ export default function CardNewsPlayer({ slides, theme, bgm, onBgmChange }: Prop
           {slides.length}장 · {Math.round(totalFrames / 30)}초
         </div>
       </div>
+
+      {/* ── Instagram Modal ── */}
+      {showInstaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={e => { if (e.target === e.currentTarget) setShowInstaModal(false); }}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 p-4 flex items-center gap-2">
+              <span className="text-white text-lg">📱</span>
+              <h3 className="text-white font-bold">Instagram 카드뉴스 업로드</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-sm font-semibold text-gray-700 block mb-1">캡션</label>
+                <textarea
+                  value={instaCaption}
+                  onChange={e => setInstaCaption(e.target.value)}
+                  rows={6}
+                  placeholder="인스타그램 캡션..."
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 resize-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">{instaCaption.length}/2200 · {slides.length}장 캐러셀로 발행</p>
+              </div>
+
+              {instaResult && (
+                <div className={`p-3 rounded-xl text-sm ${instaResult.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                  {instaResult.ok ? (
+                    <div>
+                      <p className="font-semibold">✅ 인스타그램 발행 완료!</p>
+                      {instaResult.url && <a href={instaResult.url} target="_blank" rel="noopener noreferrer" className="text-xs underline mt-1 block">{instaResult.url}</a>}
+                    </div>
+                  ) : (
+                    <p>❌ {instaResult.error}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowInstaModal(false)}
+                  className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-50">
+                  닫기
+                </button>
+                <button onClick={uploadToInsta} disabled={instaLoading || instaResult?.ok}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {instaLoading ? (
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />발행 중...</>
+                  ) : instaResult?.ok ? '✅ 완료' : '📱 발행하기'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── YouTube Modal ── */}
+      {showYtModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={e => { if (e.target === e.currentTarget) setShowYtModal(false); }}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-red-600 to-red-500 p-4 flex items-center gap-2">
+              <span className="text-white text-lg">▶</span>
+              <h3 className="text-white font-bold">YouTube Shorts 업로드</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Connection status */}
+              {ytConnected === null ? (
+                <p className="text-sm text-gray-500 text-center py-2">YouTube 연결 확인 중...</p>
+              ) : !ytConnected ? (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
+                  <p className="text-sm text-yellow-800 font-semibold mb-3">YouTube 채널이 연결되지 않았습니다</p>
+                  <a href="/api/youtube/connect" target="_blank" rel="noopener noreferrer"
+                    className="inline-block px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700">
+                    Google 계정으로 YouTube 연결
+                  </a>
+                  <button onClick={() => { setYtConnected(null); }}
+                    className="block mx-auto mt-2 text-xs text-gray-500 underline">
+                    연결 후 새로고침
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-2">
+                    <span className="text-red-600">▶</span>
+                    <span className="text-sm text-red-700 font-semibold">{ytChannel}</span>
+                    <span className="text-xs text-gray-400 ml-auto">연결됨</span>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">제목</label>
+                    <input value={ytTitle} onChange={e => setYtTitle(e.target.value)}
+                      placeholder="Shorts 제목 (100자 이내)"
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">설명</label>
+                    <textarea value={ytDesc} onChange={e => setYtDesc(e.target.value)}
+                      rows={3} placeholder="Shorts 설명..."
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">태그 (쉼표로 구분)</label>
+                    <input value={ytTags} onChange={e => setYtTags(e.target.value)}
+                      placeholder="카드뉴스,shorts,정보"
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+
+                  {/* Progress */}
+                  {ytLoading && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-600">{ytProgressMsg}</span>
+                        <span className="text-xs font-bold text-red-600">{ytProgress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div className="bg-red-500 h-2 rounded-full transition-all duration-300" style={{ width: `${ytProgress}%` }} />
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1 text-center">
+                        슬라이드쇼 녹화 중 ({slides.length}장 × {SLIDE_SECS}초 = {slides.length * SLIDE_SECS}초 영상)
+                      </p>
+                    </div>
+                  )}
+
+                  {ytResult && (
+                    <div className={`p-3 rounded-xl text-sm ${ytResult.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                      {ytResult.ok ? (
+                        <div>
+                          <p className="font-semibold">✅ YouTube 업로드 완료!</p>
+                          {ytResult.url && <a href={ytResult.url} target="_blank" rel="noopener noreferrer" className="text-xs underline mt-1 block">{ytResult.url}</a>}
+                          <p className="text-xs text-gray-500 mt-1">처리 완료까지 몇 분이 소요될 수 있습니다.</p>
+                        </div>
+                      ) : (
+                        <p>❌ {ytResult.error}</p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowYtModal(false)}
+                  className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-50">
+                  닫기
+                </button>
+                {ytConnected && (
+                  <button onClick={uploadToYouTube} disabled={ytLoading || ytResult?.ok}
+                    className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {ytLoading ? (
+                      <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />업로드 중...</>
+                    ) : ytResult?.ok ? '✅ 완료' : '▶ 업로드'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
