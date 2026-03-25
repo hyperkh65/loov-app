@@ -105,11 +105,11 @@ async function recordSlideshowVideo(
   canvas.height = SIZE;
   const ctx = canvas.getContext('2d')!;
 
+  // Load images — no crossOrigin needed for blob: URLs
   const imgs = await Promise.all(imageUrls.map(url => new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onerror = () => reject(new Error(`이미지 로드 실패: ${url.slice(0, 40)}`));
     img.src = url;
   })));
 
@@ -118,15 +118,13 @@ async function recordSlideshowVideo(
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
   const chunks: BlobPart[] = [];
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-  recorder.start(200);
+  recorder.start(100);
 
+  // Draw each slide once, then wait the real duration — captureStream records whatever is on canvas
   const total = imgs.length;
   for (let i = 0; i < total; i++) {
-    const endTime = performance.now() + secsPerSlide * 1000;
-    while (performance.now() < endTime) {
-      ctx.drawImage(imgs[i], 0, 0, SIZE, SIZE);
-      await new Promise<void>(r => requestAnimationFrame(() => r()));
-    }
+    ctx.drawImage(imgs[i], 0, 0, SIZE, SIZE);
+    await new Promise<void>(r => setTimeout(r, secsPerSlide * 1000));
     onProgress(Math.round(((i + 1) / total) * 80));
   }
 
