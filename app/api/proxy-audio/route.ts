@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const ALLOWED = ['aboda.kr', 'assets.mixkit.co', 'cdn.pixabay.com'];
+const ALLOWED = ['aboda.kr', 'assets.mixkit.co', 'cdn.pixabay.com', 'zzgwizsrgjziwexuxquv.supabase.co'];
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');

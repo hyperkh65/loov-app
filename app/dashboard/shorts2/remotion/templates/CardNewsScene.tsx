@@ -17,14 +17,14 @@ export interface CardSlide {
 }
 
 const THEMES = {
-  blue:    { bg: '#080C18', bg2: '#0D1B4A', accent: '#FDB913', text: '#fff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.38)' },
-  dark:    { bg: '#09090F', bg2: '#1a1a2e', accent: '#e94560', text: '#fff', sub: 'rgba(255,255,255,0.70)', dim: 'rgba(255,255,255,0.35)' },
-  warm:    { bg: '#120505', bg2: '#3B0E0A', accent: '#F9CA24', text: '#fff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.38)' },
-  green:   { bg: '#030F0E', bg2: '#004D40', accent: '#FFCA28', text: '#fff', sub: 'rgba(255,255,255,0.70)', dim: 'rgba(255,255,255,0.35)' },
-  purple:  { bg: '#0A0414', bg2: '#2D1155', accent: '#F8C471', text: '#fff', sub: 'rgba(255,255,255,0.70)', dim: 'rgba(255,255,255,0.35)' },
-  neon:    { bg: '#050510', bg2: '#0D0D2B', accent: '#00F5FF', text: '#fff', sub: 'rgba(255,255,255,0.78)', dim: 'rgba(0,245,255,0.5)' },
-  minimal: { bg: '#F8F5F0', bg2: '#EDE8E1', accent: '#E63946', text: '#1a1a2e', sub: '#4a4a6a', dim: '#9999bb' },
-  sunset:  { bg: '#0F0820', bg2: '#1A0A35', accent: '#FF6B6B', text: '#fff', sub: 'rgba(255,255,255,0.75)', dim: 'rgba(255,107,107,0.55)' },
+  blue:    { bg: '#000000', bg2: '#0A0A1A', accent: '#0A84FF', text: '#fff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(10,132,255,0.5)' },
+  dark:    { bg: '#121212', bg2: '#1E1E1E', accent: '#1DB954', text: '#fff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(29,185,84,0.5)' },
+  warm:    { bg: '#0D0B00', bg2: '#1A1400', accent: '#F5C518', text: '#fff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(245,197,24,0.5)' },
+  green:   { bg: '#FAFAF8', bg2: '#F0ECE4', accent: '#C8102E', text: '#111', sub: '#555555', dim: '#AAAAAA' },
+  purple:  { bg: '#010101', bg2: '#0D0D0D', accent: '#FE2C55', text: '#fff', sub: 'rgba(255,255,255,0.78)', dim: 'rgba(254,44,85,0.6)' },
+  neon:    { bg: '#16001E', bg2: '#2D0040', accent: '#FF6CAB', text: '#fff', sub: 'rgba(255,255,255,0.78)', dim: 'rgba(255,108,171,0.6)' },
+  minimal: { bg: '#0F172A', bg2: '#1E293B', accent: '#818CF8', text: '#fff', sub: 'rgba(255,255,255,0.72)', dim: 'rgba(129,140,248,0.55)' },
+  sunset:  { bg: '#03071E', bg2: '#051833', accent: '#00C8FF', text: '#fff', sub: 'rgba(255,255,255,0.75)', dim: 'rgba(0,200,255,0.55)' },
 };
 
 type ThemeKey = keyof typeof THEMES;

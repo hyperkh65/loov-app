@@ -91,6 +91,20 @@ function getBestMimeType(): string {
   return candidates.find(t => MediaRecorder.isTypeSupported(t)) ?? 'video/webm';
 }
 
+function slideToNarration(slide: CardSlide): string {
+  if (slide.type === 'title') {
+    return `${slide.title}. ${slide.body || '지금 바로 확인해보세요.'}`;
+  }
+  if (slide.type === 'brand') {
+    return '팔로우하고 매일 유용한 정보를 받아보세요. 저장해두고 친구에게 공유해 보세요.';
+  }
+  const pts = (slide.points || []).slice(0, 3).map(p => {
+    const hasEmoji = p.length > 1 && /\p{Emoji}/u.test(p[0] + p[1]);
+    return hasEmoji ? p.slice(2).trim() : p;
+  }).filter(Boolean).join('. ');
+  return `${slide.title}. ${pts || slide.body || ''}`;
+}
+
 // ── Record a canvas slideshow from card image URLs ──
 async function recordSlideshowVideo(
   imageUrls: string[],
@@ -135,6 +149,103 @@ async function recordSlideshowVideo(
   return new Blob(chunks, { type: mimeType });
 }
 
+async function recordSlideshowVideoWithAudio(
+  imageUrls: string[],
+  secsPerSlide: number,
+  bgmProxyUrl: string,
+  ttsAudios: string[], // base64 data URLs from edge-tts API
+  onProgress: (pct: number) => void
+): Promise<Blob> {
+  const SIZE = 720;
+  const FPS = 30;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d')!;
+
+  // Load images
+  const imgs = await Promise.all(imageUrls.map(url => new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지 로드 실패'));
+    img.src = url;
+  })));
+
+  // Setup Web Audio for mixing BGM + TTS
+  const audioCtx = new AudioContext();
+  const dest = audioCtx.createMediaStreamDestination();
+
+  // BGM (via proxy to avoid CORS)
+  let bgmNode: AudioBufferSourceNode | null = null;
+  if (bgmProxyUrl) {
+    try {
+      const bgmData = await fetch(bgmProxyUrl).then(r => r.arrayBuffer());
+      const bgmBuffer = await audioCtx.decodeAudioData(bgmData);
+      bgmNode = audioCtx.createBufferSource();
+      bgmNode.buffer = bgmBuffer;
+      bgmNode.loop = true;
+      const gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0.22;
+      bgmNode.connect(gainNode);
+      gainNode.connect(dest);
+      bgmNode.start();
+    } catch { /* BGM failed gracefully */ }
+  }
+
+  // Pre-decode TTS audio
+  const ttsBuffers: (AudioBuffer | null)[] = [];
+  for (const dataUrl of ttsAudios) {
+    try {
+      const base64 = dataUrl.split(',')[1];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      ttsBuffers.push(await audioCtx.decodeAudioData(bytes.buffer.slice(0)));
+    } catch {
+      ttsBuffers.push(null);
+    }
+  }
+
+  // Create video+audio stream
+  const mimeType = getBestMimeType();
+  const videoStream = canvas.captureStream(FPS);
+  dest.stream.getAudioTracks().forEach(t => videoStream.addTrack(t));
+  const recorder = new MediaRecorder(videoStream, { mimeType, videoBitsPerSecond: 5_000_000 });
+  const chunks: BlobPart[] = [];
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  recorder.start(100);
+
+  const total = imgs.length;
+  for (let i = 0; i < total; i++) {
+    ctx.drawImage(imgs[i], 0, 0, SIZE, SIZE);
+
+    let slideDuration = secsPerSlide * 1000;
+
+    if (ttsBuffers[i]) {
+      const ttsNode = audioCtx.createBufferSource();
+      ttsNode.buffer = ttsBuffers[i]!;
+      const ttsGain = audioCtx.createGain();
+      ttsGain.gain.value = 1.0;
+      ttsNode.connect(ttsGain);
+      ttsGain.connect(dest);
+      ttsNode.start();
+      slideDuration = Math.max(secsPerSlide * 1000, ttsBuffers[i]!.duration * 1000 + 500);
+    }
+
+    await new Promise<void>(r => setTimeout(r, slideDuration));
+    onProgress(Math.round(((i + 1) / total) * 80));
+  }
+
+  bgmNode?.stop();
+  recorder.stop();
+  await new Promise<void>(r => { recorder.onstop = () => r(); });
+  await audioCtx.close();
+  onProgress(100);
+
+  return new Blob(chunks, { type: mimeType });
+}
+
 export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChange }: Props) {
   const bgmUrl = BGM_TRACKS.find(t => t.id === bgm)?.url || '';
   const totalFrames = Math.max(1, slides.length) * SLIDE_FRAMES;
@@ -163,6 +274,9 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
   const [ytChannel, setYtChannel] = useState('');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [ttsVoice, setTtsVoice] = useState('ko-KR-SunHiNeural');
+  const [ttsRate, setTtsRate] = useState(10);
 
   // Check YouTube connection on modal open
   useEffect(() => {
@@ -238,8 +352,28 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
 
         setInstaProgress(20);
         setInstaProgressMsg(`슬라이드쇼 녹화 중... (${slides.length * SLIDE_SECS}초)`);
-        const videoBlob = await recordSlideshowVideo(imageUrls, SLIDE_SECS, pct => {
-          setInstaProgress(20 + Math.round(pct * 0.5));
+
+        // Generate TTS if enabled
+        let ttsAudios: string[] = [];
+        if (ttsEnabled) {
+          setInstaProgress(22);
+          setInstaProgressMsg('음성 생성 중...');
+          try {
+            ttsAudios = await Promise.all(slides.map(async (slide) => {
+              const text = slideToNarration(slide);
+              const res = await fetch('/api/shorts/edge-tts', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, voice: ttsVoice, rate: ttsRate }),
+              });
+              const d = await res.json();
+              return (d.audio as string) || '';
+            }));
+          } catch { ttsAudios = []; }
+        }
+
+        const bgmProxyUrl = bgmUrl ? `/api/proxy-audio?url=${encodeURIComponent(bgmUrl)}` : '';
+        const videoBlob = await recordSlideshowVideoWithAudio(imageUrls, SLIDE_SECS, bgmProxyUrl, ttsAudios, pct => {
+          setInstaProgress(25 + Math.round(pct * 0.45));
           setInstaProgressMsg(`녹화 중... ${pct}%`);
         });
         imageUrls.forEach(u => URL.revokeObjectURL(u));
@@ -287,9 +421,28 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
       setYtProgress(20);
       setYtProgressMsg(`슬라이드쇼 녹화 중... (${slides.length * SLIDE_SECS}초)`);
 
-      // Step 2: Record canvas slideshow
-      const videoBlob = await recordSlideshowVideo(imageUrls, SLIDE_SECS, pct => {
-        setYtProgress(20 + Math.round(pct * 0.6));
+      // Step 2: Generate TTS for all slides (if enabled)
+      let ttsAudios: string[] = [];
+      if (ttsEnabled) {
+        setYtProgress(22);
+        setYtProgressMsg('음성 생성 중...');
+        try {
+          ttsAudios = await Promise.all(slides.map(async (slide) => {
+            const text = slideToNarration(slide);
+            const res = await fetch('/api/shorts/edge-tts', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text, voice: ttsVoice, rate: ttsRate }),
+            });
+            const d = await res.json();
+            return (d.audio as string) || '';
+          }));
+        } catch { ttsAudios = []; }
+      }
+
+      // Step 3: Record canvas slideshow with BGM + TTS
+      const bgmProxyUrl = bgmUrl ? `/api/proxy-audio?url=${encodeURIComponent(bgmUrl)}` : '';
+      const videoBlob = await recordSlideshowVideoWithAudio(imageUrls, SLIDE_SECS, bgmProxyUrl, ttsAudios, pct => {
+        setYtProgress(30 + Math.round(pct * 0.5));
         setYtProgressMsg(`녹화 중... ${pct}%`);
       });
 
@@ -422,6 +575,30 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
                 </div>
               )}
 
+              {instaMode === 'reels' && (
+                <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-gray-700">🎙️ 음성 나레이션</span>
+                    <button onClick={() => setTtsEnabled(v => !v)}
+                      className={`w-11 h-6 rounded-full transition-colors relative ${ttsEnabled ? 'bg-purple-500' : 'bg-gray-300'}`}>
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${ttsEnabled ? 'left-6' : 'left-1'}`} />
+                    </button>
+                  </div>
+                  {ttsEnabled && (
+                    <select value={ttsVoice} onChange={e => setTtsVoice(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-purple-400">
+                      <option value="ko-KR-SunHiNeural">선희 (여성·밝고 활기찬)</option>
+                      <option value="ko-KR-InJoonNeural">인준 (남성·따뜻하고 친근)</option>
+                      <option value="ko-KR-BongJinNeural">봉진 (남성·차분·전문적)</option>
+                      <option value="ko-KR-GookMinNeural">국민 (남성·젊고 활기찬)</option>
+                      <option value="ko-KR-HyunsuNeural">현수 (남성·내레이션)</option>
+                      <option value="ko-KR-JiMinNeural">지민 (여성·부드럽)</option>
+                      <option value="ko-KR-YuJinNeural">유진 (여성·감성적)</option>
+                    </select>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-semibold text-gray-700 block mb-1">캡션</label>
                 <textarea
@@ -509,6 +686,28 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
                     <span className="text-red-600">▶</span>
                     <span className="text-sm text-red-700 font-semibold">{ytChannel}</span>
                     <span className="text-xs text-gray-400 ml-auto">연결됨</span>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-gray-700">🎙️ 음성 나레이션</span>
+                      <button onClick={() => setTtsEnabled(v => !v)}
+                        className={`w-11 h-6 rounded-full transition-colors relative ${ttsEnabled ? 'bg-red-500' : 'bg-gray-300'}`}>
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${ttsEnabled ? 'left-6' : 'left-1'}`} />
+                      </button>
+                    </div>
+                    {ttsEnabled && (
+                      <select value={ttsVoice} onChange={e => setTtsVoice(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-red-400">
+                        <option value="ko-KR-SunHiNeural">선희 (여성·밝고 활기찬)</option>
+                        <option value="ko-KR-InJoonNeural">인준 (남성·따뜻하고 친근)</option>
+                        <option value="ko-KR-BongJinNeural">봉진 (남성·차분·전문적)</option>
+                        <option value="ko-KR-GookMinNeural">국민 (남성·젊고 활기찬)</option>
+                        <option value="ko-KR-HyunsuNeural">현수 (남성·내레이션)</option>
+                        <option value="ko-KR-JiMinNeural">지민 (여성·부드럽)</option>
+                        <option value="ko-KR-YuJinNeural">유진 (여성·감성적)</option>
+                      </select>
+                    )}
                   </div>
 
                   <div>

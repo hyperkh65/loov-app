@@ -32,25 +32,25 @@ const BGM_TRACKS = [
 ];
 
 const CARD_THEMES: { key: CardTheme; label: string; bg1: string; bg2: string; accent: string }[] = [
-  { key: 'blue',    label: '💙 프로 블루',  bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913' },
-  { key: 'dark',    label: '🖤 다크',       bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560' },
-  { key: 'warm',    label: '🔴 웜 레드',    bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24' },
-  { key: 'green',   label: '💚 내추럴',     bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28' },
-  { key: 'purple',  label: '💜 퍼플',       bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471' },
-  { key: 'neon',    label: '🌈 네온 사이버', bg1: '#050510', bg2: '#0D0D2B', accent: '#00F5FF' },
-  { key: 'minimal', label: '🤍 미니멀 화이트', bg1: '#F8F5F0', bg2: '#EDE8E1', accent: '#E63946' },
-  { key: 'sunset',  label: '🌅 선셋 비이브', bg1: '#0F0820', bg2: '#1A0A35', accent: '#FF6B6B' },
+  { key: 'blue',    label: '🍎 애플 미드나잇',   bg1: '#000000', bg2: '#0A0A1A', accent: '#0A84FF' },
+  { key: 'dark',    label: '🎵 스포티파이',       bg1: '#121212', bg2: '#1E1E1E', accent: '#1DB954' },
+  { key: 'warm',    label: '🏆 프리미엄 골드',    bg1: '#0D0B00', bg2: '#1A1400', accent: '#F5C518' },
+  { key: 'green',   label: '📰 에디토리얼',       bg1: '#FAFAF8', bg2: '#F0ECE4', accent: '#C8102E' },
+  { key: 'purple',  label: '🎵 틱톡 바이럴',      bg1: '#010101', bg2: '#0D0D0D', accent: '#FE2C55' },
+  { key: 'neon',    label: '📸 인스타그램',        bg1: '#16001E', bg2: '#2D0040', accent: '#FF6CAB' },
+  { key: 'minimal', label: '⚡ 모던 슬레이트',    bg1: '#0F172A', bg2: '#1E293B', accent: '#818CF8' },
+  { key: 'sunset',  label: '🌊 오션 테크',        bg1: '#03071E', bg2: '#051833', accent: '#00C8FF' },
 ];
 
 const THEME_COLORS: Record<CardTheme, { bg1: string; bg2: string; accent: string; text: string; sub: string }> = {
-  blue:    { bg1: '#1B4FD8', bg2: '#0D1B4A', accent: '#FDB913', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
-  dark:    { bg1: '#1a1a2e', bg2: '#0f0f1e', accent: '#e94560', text: '#fff', sub: 'rgba(255,255,255,0.60)' },
-  warm:    { bg1: '#C0392B', bg2: '#7B241C', accent: '#F9CA24', text: '#fff', sub: 'rgba(255,255,255,0.70)' },
-  green:   { bg1: '#00796B', bg2: '#004D40', accent: '#FFCA28', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
-  purple:  { bg1: '#6C3483', bg2: '#4A235A', accent: '#F8C471', text: '#fff', sub: 'rgba(255,255,255,0.65)' },
-  neon:    { bg1: '#050510', bg2: '#0D0D2B', accent: '#00F5FF', text: '#fff', sub: 'rgba(255,255,255,0.75)' },
-  minimal: { bg1: '#F8F5F0', bg2: '#EDE8E1', accent: '#E63946', text: '#1a1a2e', sub: '#4a4a6a' },
-  sunset:  { bg1: '#0F0820', bg2: '#1A0A35', accent: '#FF6B6B', text: '#fff', sub: 'rgba(255,255,255,0.72)' },
+  blue:    { bg1: '#000000', bg2: '#0A0A1A', accent: '#0A84FF', text: '#fff', sub: 'rgba(255,255,255,0.72)' },
+  dark:    { bg1: '#121212', bg2: '#1E1E1E', accent: '#1DB954', text: '#fff', sub: 'rgba(255,255,255,0.72)' },
+  warm:    { bg1: '#0D0B00', bg2: '#1A1400', accent: '#F5C518', text: '#fff', sub: 'rgba(255,255,255,0.72)' },
+  green:   { bg1: '#FAFAF8', bg2: '#F0ECE4', accent: '#C8102E', text: '#111111', sub: '#555555' },
+  purple:  { bg1: '#010101', bg2: '#0D0D0D', accent: '#FE2C55', text: '#fff', sub: 'rgba(255,255,255,0.78)' },
+  neon:    { bg1: '#16001E', bg2: '#2D0040', accent: '#FF6CAB', text: '#fff', sub: 'rgba(255,255,255,0.78)' },
+  minimal: { bg1: '#0F172A', bg2: '#1E293B', accent: '#818CF8', text: '#fff', sub: 'rgba(255,255,255,0.72)' },
+  sunset:  { bg1: '#03071E', bg2: '#051833', accent: '#00C8FF', text: '#fff', sub: 'rgba(255,255,255,0.75)' },
 };
 
 /* ── Card Preview Component (CSS-rendered, always 1080×1080 intrinsic) ── */
