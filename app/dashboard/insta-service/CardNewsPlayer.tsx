@@ -79,13 +79,25 @@ const GENRE_GROUPS = [
   { label: 'Dreamy', ids: ['dreamy1','dreamy2'] },
 ];
 
-// ── Record a canvas slideshow from card image URLs → webm Blob ──
+// Best available video MIME type (prefer mp4 for Instagram compatibility)
+function getBestMimeType(): string {
+  const candidates = [
+    'video/mp4;codecs=avc1,mp4a.40.2',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm',
+  ];
+  return candidates.find(t => MediaRecorder.isTypeSupported(t)) ?? 'video/webm';
+}
+
+// ── Record a canvas slideshow from card image URLs ──
 async function recordSlideshowVideo(
   imageUrls: string[],
   secsPerSlide: number,
   onProgress: (pct: number) => void
 ): Promise<Blob> {
-  const SIZE = 720; // 720x720 for reasonable file size
+  const SIZE = 720;
   const FPS = 30;
 
   const canvas = document.createElement('canvas');
@@ -93,7 +105,6 @@ async function recordSlideshowVideo(
   canvas.height = SIZE;
   const ctx = canvas.getContext('2d')!;
 
-  // Preload all images
   const imgs = await Promise.all(imageUrls.map(url => new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -102,12 +113,9 @@ async function recordSlideshowVideo(
     img.src = url;
   })));
 
-  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-    ? 'video/webm;codecs=vp9'
-    : 'video/webm';
-
+  const mimeType = getBestMimeType();
   const stream = canvas.captureStream(FPS);
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 });
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
   const chunks: BlobPart[] = [];
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
   recorder.start(200);
@@ -115,7 +123,6 @@ async function recordSlideshowVideo(
   const total = imgs.length;
   for (let i = 0; i < total; i++) {
     const endTime = performance.now() + secsPerSlide * 1000;
-    // Draw and hold this image for secsPerSlide
     while (performance.now() < endTime) {
       ctx.drawImage(imgs[i], 0, 0, SIZE, SIZE);
       await new Promise<void>(r => requestAnimationFrame(() => r()));
@@ -138,6 +145,9 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
   const [showInstaModal, setShowInstaModal] = useState(false);
   const [showYtModal, setShowYtModal] = useState(false);
   const [instaCaption, setInstaCaption] = useState('');
+  const [instaMode, setInstaMode] = useState<'carousel' | 'reels'>('carousel');
+  const [instaProgress, setInstaProgress] = useState(0);
+  const [instaProgressMsg, setInstaProgressMsg] = useState('');
   const [ytTitle, setYtTitle] = useState('');
   const [ytDesc, setYtDesc] = useState('');
   const [ytTags, setYtTags] = useState('카드뉴스,shorts,정보');
@@ -169,6 +179,8 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
   const openInstaModal = () => {
     setInstaCaption(caption || '');
     setInstaResult(null);
+    setInstaProgress(0);
+    setInstaProgressMsg('');
     setShowInstaModal(true);
   };
 
@@ -201,22 +213,60 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
     }));
   };
 
-  // ── Upload to Instagram ──
+  // ── Upload to Instagram (carousel or reels) ──
   const uploadToInsta = async () => {
     if (!instaCaption.trim()) { alert('캡션을 입력하세요'); return; }
     setInstaLoading(true);
     setInstaResult(null);
+    setInstaProgress(0);
+
     try {
-      const res = await fetch('/api/insta-service/publish-cards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slides, theme, caption: instaCaption }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setInstaResult({ ok: true, url: data.url });
+      if (instaMode === 'carousel') {
+        // Carousel: server generates PNGs and posts
+        setInstaProgressMsg('카드 이미지 생성 & 발행 중...');
+        const res = await fetch('/api/insta-service/publish-cards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slides, theme, caption: instaCaption }),
+        });
+        const data = await res.json();
+        setInstaResult(data.success ? { ok: true, url: data.url } : { ok: false, error: data.error });
+
       } else {
-        setInstaResult({ ok: false, error: data.error });
+        // Reels: record slideshow video → upload to storage → post as Reels
+        setInstaProgress(5);
+        setInstaProgressMsg('카드 이미지 생성 중...');
+        const imageUrls = await fetchCardImages();
+
+        setInstaProgress(20);
+        setInstaProgressMsg(`슬라이드쇼 녹화 중... (${slides.length * SLIDE_SECS}초)`);
+        const videoBlob = await recordSlideshowVideo(imageUrls, SLIDE_SECS, pct => {
+          setInstaProgress(20 + Math.round(pct * 0.5));
+          setInstaProgressMsg(`녹화 중... ${pct}%`);
+        });
+        imageUrls.forEach(u => URL.revokeObjectURL(u));
+
+        setInstaProgress(72);
+        setInstaProgressMsg('영상 업로드 중...');
+        const ext = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
+        const form = new FormData();
+        form.append('file', videoBlob, `cardnews.${ext}`);
+        const uploadRes = await fetch('/api/sns/media', { method: 'POST', body: form });
+        const uploadData = await uploadRes.json();
+        if (!uploadData.url) throw new Error(uploadData.error || '영상 업로드 실패');
+
+        setInstaProgress(85);
+        setInstaProgressMsg('Instagram Reels 발행 중...');
+        const postRes = await fetch('/api/sns/post-now', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: instaCaption, platforms: ['instagram'], media_urls: [uploadData.url] }),
+        });
+        const postData = await postRes.json();
+        const r = postData.results?.find((x: { platform: string }) => x.platform === 'instagram');
+        setInstaProgress(100);
+        setInstaProgressMsg('완료!');
+        setInstaResult(r?.success ? { ok: true, url: r.url } : { ok: false, error: r?.error || '발행 실패' });
       }
     } catch (e) {
       setInstaResult({ ok: false, error: String(e) });
@@ -353,20 +403,53 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 p-4 flex items-center gap-2">
               <span className="text-white text-lg">📱</span>
-              <h3 className="text-white font-bold">Instagram 카드뉴스 업로드</h3>
+              <h3 className="text-white font-bold">Instagram 업로드</h3>
             </div>
             <div className="p-5 space-y-4">
+              {/* Mode toggle */}
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+                <button onClick={() => setInstaMode('carousel')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${instaMode === 'carousel' ? 'bg-white shadow text-purple-700' : 'text-gray-500'}`}>
+                  🖼️ 이미지 캐러셀
+                </button>
+                <button onClick={() => setInstaMode('reels')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${instaMode === 'reels' ? 'bg-white shadow text-pink-600' : 'text-gray-500'}`}>
+                  🎬 릴스 (영상)
+                </button>
+              </div>
+
+              {instaMode === 'reels' && (
+                <div className="bg-pink-50 border border-pink-200 rounded-xl px-3 py-2 text-xs text-pink-700">
+                  슬라이드당 {SLIDE_SECS}초 · 총 {slides.length * SLIDE_SECS}초 영상으로 녹화 후 Reels 발행
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-semibold text-gray-700 block mb-1">캡션</label>
                 <textarea
                   value={instaCaption}
                   onChange={e => setInstaCaption(e.target.value)}
-                  rows={6}
+                  rows={5}
                   placeholder="인스타그램 캡션..."
                   className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-400 resize-none"
                 />
-                <p className="text-xs text-gray-400 mt-1">{instaCaption.length}/2200 · {slides.length}장 캐러셀로 발행</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {instaCaption.length}/2200 · {instaMode === 'carousel' ? `${slides.length}장 캐러셀` : 'Reels 영상'}로 발행
+                </p>
               </div>
+
+              {/* Progress (Reels only) */}
+              {instaLoading && instaMode === 'reels' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-600">{instaProgressMsg}</span>
+                    <span className="text-xs font-bold text-pink-600">{instaProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300" style={{ width: `${instaProgress}%` }} />
+                  </div>
+                </div>
+              )}
 
               {instaResult && (
                 <div className={`p-3 rounded-xl text-sm ${instaResult.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
@@ -389,8 +472,8 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
                 <button onClick={uploadToInsta} disabled={instaLoading || instaResult?.ok}
                   className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
                   {instaLoading ? (
-                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />발행 중...</>
-                  ) : instaResult?.ok ? '✅ 완료' : '📱 발행하기'}
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />{instaMode === 'reels' ? '처리 중...' : '발행 중...'}</>
+                  ) : instaResult?.ok ? '✅ 완료' : (instaMode === 'reels' ? '🎬 릴스 발행' : '📱 발행하기')}
                 </button>
               </div>
             </div>
