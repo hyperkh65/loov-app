@@ -126,24 +126,12 @@ function WebMirror({ web, label, webPkg }: { web: WebStatus; label: string; webP
   );
 }
 
-function NasPanel({ data, nasName, target, onBackup }: {
-  data: NasData; nasName: string; target: string; onBackup: (t: string) => void;
+function NasPanel({ data, nasName }: {
+  data: NasData; nasName: string;
 }) {
   const [showLog, setShowLog] = useState(false);
   return (
     <div className="space-y-4">
-      {/* 스케줄 */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-        <span className="text-lg">🕑</span>
-        <div>
-          <div className="text-sm font-semibold text-white">자동 백업 스케줄</div>
-          <div className="text-xs text-slate-400">{data.schedule} 매일 자동 실행</div>
-        </div>
-        <button onClick={() => onBackup(target)}
-          className="ml-auto px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-medium transition-colors">
-          ▶ 지금 백업
-        </button>
-      </div>
 
       {/* 디스크 */}
       <div className={`grid gap-3 ${data.usbDisk !== undefined ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -205,6 +193,8 @@ export default function BackupPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'hy64' | '2days'>('hy64');
   const [error, setError] = useState('');
+  const [backing, setBacking] = useState<Record<string, boolean>>({});
+  const [backupMsg, setBackupMsg] = useState<Record<string, string>>({});
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError('');
@@ -220,20 +210,38 @@ export default function BackupPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleBackup = async (target: string) => {
-    if (!confirm(`${target} NAS 백업을 지금 실행할까요?`)) return;
-    const res = await fetch('/api/nas/backup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'backup', target }),
-    });
-    const json = await res.json();
-    if (json.ok) { alert('백업이 시작됐어요!'); setTimeout(fetchData, 10000); }
+  const handleBackup = async (target: string, label: string) => {
+    if (!confirm(`${label} 백업을 지금 실행할까요?`)) return;
+    setBacking(p => ({ ...p, [target]: true }));
+    setBackupMsg(p => ({ ...p, [target]: '' }));
+    try {
+      const res = await fetch('/api/nas/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'backup', target }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setBackupMsg(p => ({ ...p, [target]: '✅ 백업 시작됨! (완료까지 수분 소요)' }));
+        setTimeout(fetchData, 12000);
+      } else {
+        setBackupMsg(p => ({ ...p, [target]: `❌ ${json.error || '실패'}` }));
+      }
+    } catch (e) {
+      setBackupMsg(p => ({ ...p, [target]: `❌ ${String(e)}` }));
+    } finally {
+      setBacking(p => ({ ...p, [target]: false }));
+    }
   };
 
+  const NAS_LIST = [
+    { target: 'hy64',  label: 'hy64',  desc: 'hy64.synology.me', icon: '🖥️' },
+    { target: '2days', label: 'hy65',  desc: '2days.kr',          icon: '🖥️' },
+  ];
+
   const tabs = [
-    { key: 'hy64', label: 'hy64 (hy64.synology.me)', icon: '🖥️' },
-    { key: '2days', label: '2days (2days.kr)', icon: '🖥️' },
+    { key: 'hy64',  label: 'hy64',  icon: '🖥️' },
+    { key: '2days', label: 'hy65',  icon: '🖥️' },
   ] as const;
 
   return (
@@ -242,7 +250,7 @@ export default function BackupPage() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold">💾 백업 관리</h1>
-            <p className="text-sm text-slate-400 mt-1">시놀로지 NAS 2대 백업 현황</p>
+            <p className="text-sm text-slate-400 mt-1">수동 백업 — 버튼을 눌러 즉시 실행</p>
           </div>
           <button onClick={fetchData} disabled={loading}
             className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors">
@@ -252,12 +260,38 @@ export default function BackupPage() {
 
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm">❌ {error}</div>}
 
-        {/* 탭 */}
+        {/* ── 수동 백업 버튼 ── */}
+        <div className="grid grid-cols-2 gap-4">
+          {NAS_LIST.map(({ target, label, desc, icon }) => (
+            <div key={target} className="bg-slate-800 border border-slate-700 rounded-2xl p-5 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">{icon}</span>
+                <div>
+                  <div className="font-bold text-white text-lg">{label}</div>
+                  <div className="text-xs text-slate-400">{desc}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => handleBackup(target, label)}
+                disabled={backing[target]}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                {backing[target]
+                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />백업 중...</>
+                  : '💾 지금 백업'}
+              </button>
+              {backupMsg[target] && (
+                <p className="text-xs text-center text-slate-300">{backupMsg[target]}</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* 탭 — 상세 현황 */}
         <div className="flex gap-2 bg-slate-800 p-1 rounded-xl border border-slate-700">
           {tabs.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${tab === t.key ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
-              {t.icon} {t.label}
+              {t.icon} {t.label} 상세보기
             </button>
           ))}
         </div>
@@ -269,12 +303,8 @@ export default function BackupPage() {
           </div>
         )}
 
-        {data && tab === 'hy64' && (
-          <NasPanel data={data.hy64} nasName="hy64" target="hy64" onBackup={handleBackup} />
-        )}
-        {data && tab === '2days' && (
-          <NasPanel data={data.days2} nasName="2days" target="2days" onBackup={handleBackup} />
-        )}
+        {data && tab === 'hy64' && <NasPanel data={data.hy64} nasName="hy64" />}
+        {data && tab === '2days' && <NasPanel data={data.days2} nasName="hy65" />}
       </div>
     </div>
   );
