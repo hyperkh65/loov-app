@@ -207,35 +207,84 @@ async function recordSlideshowVideoWithAudio(
     }
   }
 
+  // Calculate per-slide durations (TTS-aware)
+  const slideDurations = ttsBuffers.map((buf) =>
+    buf ? Math.max(secsPerSlide * 1000, buf.duration * 1000 + 600) : secsPerSlide * 1000
+  );
+  // Schedule all TTS playback upfront at exact offsets using AudioContext clock
+  let ttsOffset = 0;
+  for (let i = 0; i < ttsBuffers.length; i++) {
+    if (ttsBuffers[i]) {
+      const node = audioCtx.createBufferSource();
+      node.buffer = ttsBuffers[i]!;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 1.0;
+      node.connect(gain);
+      gain.connect(dest);
+      node.start(audioCtx.currentTime + ttsOffset / 1000);
+    }
+    ttsOffset += slideDurations[i];
+  }
+  const totalDuration = slideDurations.reduce((a, b) => a + b, 0);
+
   // Create video+audio stream
   const mimeType = getBestMimeType();
   const videoStream = canvas.captureStream(FPS);
   dest.stream.getAudioTracks().forEach(t => videoStream.addTrack(t));
-  const recorder = new MediaRecorder(videoStream, { mimeType, videoBitsPerSecond: 5_000_000 });
+  const recorder = new MediaRecorder(videoStream, { mimeType, videoBitsPerSecond: 6_000_000 });
   const chunks: BlobPart[] = [];
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
   recorder.start(100);
 
   const total = imgs.length;
+  const FADE_MS = 350;   // crossfade duration
+  const ZOOM_MS = 900;   // zoom-in duration
+
+  // Real-time animation loop — performance.now() based, so duration is always accurate
+  const recordStart = performance.now();
+  let cumulativeMs = 0;
+
   for (let i = 0; i < total; i++) {
-    ctx.drawImage(imgs[i], 0, 0, SIZE, SIZE);
+    const slideStart = recordStart + cumulativeMs;
+    const slideEnd = slideStart + slideDurations[i];
 
-    let slideDuration = secsPerSlide * 1000;
+    while (performance.now() < slideEnd) {
+      const elapsed = performance.now() - slideStart;
 
-    if (ttsBuffers[i]) {
-      const ttsNode = audioCtx.createBufferSource();
-      ttsNode.buffer = ttsBuffers[i]!;
-      const ttsGain = audioCtx.createGain();
-      ttsGain.gain.value = 1.0;
-      ttsNode.connect(ttsGain);
-      ttsGain.connect(dest);
-      ttsNode.start();
-      slideDuration = Math.max(secsPerSlide * 1000, ttsBuffers[i]!.duration * 1000 + 500);
+      // Ease-out cubic for zoom: 1.05 → 1.0 over ZOOM_MS
+      const zoomT = Math.min(elapsed / ZOOM_MS, 1);
+      const eased = 1 - Math.pow(1 - zoomT, 3);
+      const scale = 1.05 - 0.05 * eased;
+      const offset = (SIZE * (scale - 1)) / 2;
+
+      ctx.clearRect(0, 0, SIZE, SIZE);
+
+      // Crossfade: blend previous slide out while this one fades in
+      if (elapsed < FADE_MS && i > 0) {
+        const alpha = elapsed / FADE_MS;
+        ctx.save();
+        ctx.globalAlpha = 1 - alpha;
+        ctx.drawImage(imgs[i - 1], 0, 0, SIZE, SIZE);
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(imgs[i], -offset, -offset, SIZE * scale, SIZE * scale);
+        ctx.restore();
+      } else {
+        ctx.drawImage(imgs[i], -offset, -offset, SIZE * scale, SIZE * scale);
+      }
+
+      // ~30ms sleep — loop runs ~33fps; performance.now() controls actual duration
+      await new Promise<void>(r => setTimeout(r, 30));
     }
 
-    await new Promise<void>(r => setTimeout(r, slideDuration));
+    cumulativeMs += slideDurations[i];
     onProgress(Math.round(((i + 1) / total) * 80));
   }
+
+  // Wait until full duration is truly elapsed (catches any early exit)
+  const remaining = totalDuration - (performance.now() - recordStart);
+  if (remaining > 0) await new Promise<void>(r => setTimeout(r, remaining));
 
   bgmNode?.stop();
   recorder.stop();
