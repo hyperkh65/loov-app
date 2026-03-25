@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const maxDuration = 120;
@@ -11,7 +12,6 @@ interface CardSlide {
   points: string[];
 }
 
-// Generate a card image PNG via internal API and return the URL stored in Supabase
 async function generateAndStoreCardImage(
   baseUrl: string,
   slide: CardSlide,
@@ -32,10 +32,10 @@ async function generateAndStoreCardImage(
   });
 
   const res = await fetch(`${baseUrl}/api/insta-service/card-image?${params}`);
-  if (!res.ok) throw new Error(`카드 이미지 생성 실패 (${num}/${total})`);
+  if (!res.ok) throw new Error(`카드 이미지 생성 실패 (${num}/${total}): HTTP ${res.status}`);
 
   const buffer = await res.arrayBuffer();
-  const fileName = `card-news/${Date.now()}-${num}.png`;
+  const fileName = `card-news/${Date.now()}-${num}-${Math.random().toString(36).slice(2)}.png`;
 
   const { error: uploadError } = await supabase.storage
     .from('sns-media')
@@ -63,7 +63,6 @@ export async function POST(req: NextRequest) {
 
   const baseUrl = req.nextUrl.origin;
 
-  // Get Instagram connection
   const { data: conn } = await supabase
     .from('sns_connections')
     .select('access_token, platform_user_id')
@@ -74,7 +73,7 @@ export async function POST(req: NextRequest) {
 
   if (!conn) return NextResponse.json({ error: 'Instagram 미연결' }, { status: 400 });
 
-  // Generate all card images and upload to storage
+  // Generate all card images and upload to Supabase Storage
   const imageUrls: string[] = [];
   for (let i = 0; i < slides.length; i++) {
     const url = await generateAndStoreCardImage(
@@ -83,23 +82,27 @@ export async function POST(req: NextRequest) {
     imageUrls.push(url);
   }
 
-  // Post to Instagram via existing post-now API
-  const postRes = await fetch(`${baseUrl}/api/sns/post-now`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: req.headers.get('Cookie') || '' },
-    body: JSON.stringify({
-      content: caption,
-      platforms: ['instagram'],
-      media_urls: imageUrls,
-    }),
-  });
+  // Directly call Instagram API (no internal HTTP fetch)
+  try {
+    const { id: postId } = await postToPlatformWithMedia(
+      'instagram',
+      conn.access_token,
+      conn.platform_user_id || '',
+      caption,
+      imageUrls,
+    );
 
-  const postData = await postRes.json();
-  const result = postData.results?.find((r: { platform: string }) => r.platform === 'instagram');
+    // Log success
+    await supabase.from('sns_post_logs').insert({
+      user_id: user.id,
+      platform: 'instagram',
+      status: 'success',
+      platform_post_id: postId,
+    }).then(() => {/* ignore error */});
 
-  if (result?.success) {
-    return NextResponse.json({ success: true, url: result.url, imageUrls });
-  } else {
-    return NextResponse.json({ error: result?.error || '발행 실패' }, { status: 500 });
+    return NextResponse.json({ success: true, postId, imageUrls });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
