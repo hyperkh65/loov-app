@@ -110,7 +110,7 @@ export async function GET(req: Request) {
 
   try {
     const res = await fetch(
-      `${apiEndpoint}?page=1&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(apiKey)}`,
+      `${apiEndpoint}?page=1&perPage=1000&returnType=JSON&serviceKey=${apiKey}`,
       { cache: 'no-store' }
     )
     const json = await res.json()
