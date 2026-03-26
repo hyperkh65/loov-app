@@ -2,11 +2,24 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-// Set this in .env.local: DATA_GO_KR_SERVICE_KEY=발급받은키
-// Get your key at https://www.data.go.kr
-const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY
-const BASE_URL =
+// Default built-in API config
+const DEFAULT_SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY
+const DEFAULT_ENDPOINT =
   'https://api.odcloud.kr/api/3034791/v1/uddi:fa09d13d-bce8-474e-b214-8008e79ec08f'
+
+// Default field name mapping (공공데이터포털 표준)
+const DEFAULT_FIELD_MAP = {
+  id: '번호',
+  title: '사업명',
+  agency: '소관기관',
+  executor: '수행기관',
+  field: '지원분야',
+  region: '지역',
+  startDate: '신청시작일자',
+  endDate: '신청종료일자',
+  registeredAt: '등록일자',
+  url: '사업공고URL',
+}
 
 // ALL 17 regions - complete mapping
 const REGION_MAP: Record<string, string[]> = {
@@ -73,7 +86,22 @@ export async function GET(req: Request) {
   const sort = searchParams.get('sort') ?? 'deadline'
   const id = searchParams.get('id') ?? ''
 
-  if (!SERVICE_KEY) {
+  // Dynamic API config (from settings panel — optional overrides)
+  const apiEndpoint = searchParams.get('apiEndpoint') || DEFAULT_ENDPOINT
+  const apiKey = searchParams.get('apiKey') || DEFAULT_SERVICE_KEY
+
+  // Field mapping override (JSON string)
+  let FM = { ...DEFAULT_FIELD_MAP }
+  const fieldMapRaw = searchParams.get('fieldMap')
+  if (fieldMapRaw) {
+    try {
+      FM = { ...FM, ...JSON.parse(fieldMapRaw) }
+    } catch {
+      // use default
+    }
+  }
+
+  if (!apiKey) {
     return NextResponse.json(
       { error: 'DATA_GO_KR_SERVICE_KEY 환경변수가 없습니다.' },
       { status: 500 }
@@ -82,31 +110,27 @@ export async function GET(req: Request) {
 
   try {
     const res = await fetch(
-      `${BASE_URL}?page=1&perPage=1000&returnType=JSON&serviceKey=${SERVICE_KEY}`,
+      `${apiEndpoint}?page=1&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(apiKey)}`,
       { cache: 'no-store' }
     )
     const json = await res.json()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let programs: RawProgram[] = (json.data ?? []).map((item: any) => {
-      const title = item['사업명'] ?? ''
-      const endDate = item['신청종료일자']
-      const startDate = item['신청시작일자']
-      const fieldValue = item['지원분야'] ?? '기타'
-
+      const endDate = item[FM.endDate]
       return {
-        id: String(item['번호']),
-        title,
-        agency: item['소관기관'] ?? '',
-        executor: item['수행기관'] ?? '',
-        field: fieldValue,
-        region: normalizeRegion(item['지역']),
-        regionRaw: item['지역'] ?? '',
-        startDate,
+        id: String(item[FM.id] ?? Math.random()),
+        title: item[FM.title] ?? '',
+        agency: item[FM.agency] ?? '',
+        executor: item[FM.executor] ?? '',
+        field: item[FM.field] ?? '기타',
+        region: normalizeRegion(item[FM.region]),
+        regionRaw: item[FM.region] ?? '',
+        startDate: item[FM.startDate],
         endDate,
         status: getStatus(endDate),
-        registeredAt: item['등록일자'] ?? '',
-        url: item['사업공고URL'] ?? '',
+        registeredAt: item[FM.registeredAt] ?? '',
+        url: item[FM.url] ?? '',
       }
     })
 
