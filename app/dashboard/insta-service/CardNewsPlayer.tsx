@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 // Direct imports — this file is already 'use client', no SSR issue
-import { Player } from '@remotion/player';
+import { Player, type PlayerRef } from '@remotion/player';
+import html2canvas from 'html2canvas';
 import { CardNewsScene } from '../shorts2/remotion/templates/CardNewsScene';
 import type { CardSlide } from './types';
 
@@ -347,6 +348,149 @@ async function recordSlideshowVideoWithAudio(
   return new Blob(chunks, { type: mimeType });
 }
 
+/**
+ * Remotion Player를 frame-by-frame html2canvas로 캡처 → 실제 spring 애니메이션 + TTS 음성 포함 영상
+ */
+async function recordFromRemotionPlayer(
+  playerRef: React.RefObject<PlayerRef | null>,
+  playerContainerRef: React.RefObject<HTMLDivElement | null>,
+  totalFrames: number,
+  secsPerSlide: number,
+  bgmProxyUrl: string,
+  ttsAudios: string[],
+  onProgress: (pct: number) => void
+): Promise<Blob> {
+  const SIZE = 720;
+  const RECORD_FPS = 15;      // 15fps 녹화 (html2canvas 성능 고려)
+  const FRAME_STEP = 2;       // Remotion 30fps → 15fps (매 2프레임 캡처)
+
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d')!;
+
+  // ── 오디오 설정 ────────────────────────────────────────────
+  const audioCtx = new AudioContext();
+  const dest = audioCtx.createMediaStreamDestination();
+
+  // BGM
+  let bgmNode: AudioBufferSourceNode | null = null;
+  if (bgmProxyUrl) {
+    try {
+      const bgmData = await fetch(bgmProxyUrl).then(r => r.arrayBuffer());
+      const bgmBuffer = await audioCtx.decodeAudioData(bgmData);
+      bgmNode = audioCtx.createBufferSource();
+      bgmNode.buffer = bgmBuffer;
+      bgmNode.loop = true;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.22;
+      bgmNode.connect(gain);
+      gain.connect(dest);
+      bgmNode.start();
+    } catch { /* BGM 로드 실패 무시 */ }
+  }
+
+  // TTS 오디오 디코드
+  const ttsBuffers: (AudioBuffer | null)[] = [];
+  for (const dataUrl of ttsAudios) {
+    if (!dataUrl) { ttsBuffers.push(null); continue; }
+    try {
+      const base64 = dataUrl.split(',')[1];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      ttsBuffers.push(await audioCtx.decodeAudioData(bytes.buffer.slice(0)));
+    } catch { ttsBuffers.push(null); }
+  }
+
+  // TTS를 슬라이드 시작 시점에 맞춰 예약 (5초 간격 = Remotion SLIDE_FRAMES/fps)
+  for (let i = 0; i < ttsBuffers.length; i++) {
+    if (!ttsBuffers[i]) continue;
+    const node = audioCtx.createBufferSource();
+    node.buffer = ttsBuffers[i]!;
+    const gain = audioCtx.createGain();
+    gain.gain.value = 1.0;
+    node.connect(gain);
+    gain.connect(dest);
+    node.start(audioCtx.currentTime + i * secsPerSlide);
+  }
+
+  // ── 영상 녹화 설정 ─────────────────────────────────────────
+  const mimeType = getBestMimeType();
+  const videoStream = canvas.captureStream(RECORD_FPS);
+  dest.stream.getAudioTracks().forEach(t => videoStream.addTrack(t));
+  const recorder = new MediaRecorder(videoStream, { mimeType, videoBitsPerSecond: 6_000_000 });
+  const chunks: BlobPart[] = [];
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  recorder.start(100);
+
+  // Remotion Player 일시정지 후 처음으로 이동
+  const player = playerRef.current;
+  player?.pause();
+
+  const totalCaptures = Math.ceil(totalFrames / FRAME_STEP);
+  const numSlides = totalFrames / 150; // SLIDE_FRAMES = 150
+  const totalDurationMs = secsPerSlide * 1000 * numSlides;
+  const msPerCapture = totalDurationMs / totalCaptures;
+
+  const captureStart = performance.now();
+
+  for (let captureIdx = 0; captureIdx < totalCaptures; captureIdx++) {
+    const remotionFrame = Math.min(captureIdx * FRAME_STEP, totalFrames - 1);
+    const targetWallTime = captureStart + captureIdx * msPerCapture;
+
+    // Remotion Player를 목표 프레임으로 이동
+    player?.seekTo(remotionFrame);
+
+    // React 리렌더링 대기 (rAF 2회)
+    await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+    // html2canvas로 캡처
+    const container = playerContainerRef.current;
+    if (container) {
+      try {
+        const w = container.offsetWidth || 400;
+        // 캡처 전 모서리 제거 (rounded-2xl이 영상에 반영되지 않도록)
+        const parentEl = container.parentElement as HTMLElement | null;
+        const savedRadius = parentEl?.style.borderRadius ?? '';
+        if (parentEl) parentEl.style.borderRadius = '0';
+
+        const captured = await html2canvas(container, {
+          scale: SIZE / w,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          imageTimeout: 3000,
+          backgroundColor: '#000000',
+        });
+        ctx.drawImage(captured, 0, 0, SIZE, SIZE);
+
+        if (parentEl) parentEl.style.borderRadius = savedRadius;
+      } catch { /* 프레임 실패 시 이전 프레임 유지 */ }
+    }
+
+    onProgress(Math.round((captureIdx / totalCaptures) * 85));
+
+    // 실시간 동기화: 목표 wall time까지 대기
+    const now = performance.now();
+    const waitMs = targetWallTime + msPerCapture - now;
+    if (waitMs > 5) await new Promise<void>(r => setTimeout(r, waitMs));
+  }
+
+  // 오디오가 완전히 재생되도록 남은 시간 대기
+  const elapsed = performance.now() - captureStart;
+  const remaining = totalDurationMs - elapsed;
+  if (remaining > 0) await new Promise<void>(r => setTimeout(r, remaining));
+
+  bgmNode?.stop();
+  recorder.stop();
+  await new Promise<void>(r => { recorder.onstop = () => r(); });
+  await audioCtx.close();
+  onProgress(100);
+
+  return new Blob(chunks, { type: mimeType });
+}
+
 export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChange }: Props) {
   const bgmUrl = BGM_TRACKS.find(t => t.id === bgm)?.url || '';
   const totalFrames = Math.max(1, slides.length) * SLIDE_FRAMES;
@@ -375,6 +519,8 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
   const [ytChannel, setYtChannel] = useState('');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const playerRef = useRef<PlayerRef>(null);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [ttsVoice, setTtsVoice] = useState('ko-KR-SunHiNeural');
   const [ttsRate, setTtsRate] = useState(10);
@@ -446,19 +592,12 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
         setInstaResult(data.success ? { ok: true, url: data.url } : { ok: false, error: data.error });
 
       } else {
-        // Reels: record slideshow video → upload to storage → post as Reels
+        // Reels: Remotion Player frame-by-frame 캡처 → TTS 음성 포함 영상
         setInstaProgress(5);
-        setInstaProgressMsg('카드 이미지 생성 중...');
-        const imageUrls = await fetchCardImages();
+        setInstaProgressMsg('TTS 음성 생성 중...');
 
-        setInstaProgress(20);
-        setInstaProgressMsg(`슬라이드쇼 녹화 중... (${slides.length * SLIDE_SECS}초)`);
-
-        // Generate TTS if enabled
         let ttsAudios: string[] = [];
         if (ttsEnabled) {
-          setInstaProgress(22);
-          setInstaProgressMsg('음성 생성 중...');
           try {
             ttsAudios = await Promise.all(slides.map(async (slide) => {
               const text = slideToNarration(slide);
@@ -467,12 +606,23 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
           } catch { ttsAudios = []; }
         }
 
+        setInstaProgress(18);
+        const estSecs = Math.round(slides.length * SLIDE_SECS * 1.5);
+        setInstaProgressMsg(`Remotion 애니메이션 영상 녹화 중... (약 ${estSecs}초 소요)`);
+
         const bgmProxyUrl = bgmUrl ? `/api/proxy-audio?url=${encodeURIComponent(bgmUrl)}` : '';
-        const videoBlob = await recordSlideshowVideoWithAudio(imageUrls, SLIDE_SECS, bgmProxyUrl, ttsAudios, pct => {
-          setInstaProgress(25 + Math.round(pct * 0.45));
-          setInstaProgressMsg(`녹화 중... ${pct}%`);
-        });
-        imageUrls.forEach(u => URL.revokeObjectURL(u));
+        const videoBlob = await recordFromRemotionPlayer(
+          playerRef,
+          playerContainerRef,
+          totalFrames,
+          SLIDE_SECS,
+          bgmProxyUrl,
+          ttsAudios,
+          pct => {
+            setInstaProgress(18 + Math.round(pct * 0.52));
+            setInstaProgressMsg(`Remotion 녹화 중... ${pct}%`);
+          }
+        );
 
         setInstaProgress(72);
         setInstaProgressMsg('영상 업로드 중...');
@@ -512,16 +662,11 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
     setYtProgressMsg('카드 이미지 생성 중...');
 
     try {
-      // Step 1: Fetch card images as object URLs
-      const imageUrls = await fetchCardImages();
-      setYtProgress(20);
-      setYtProgressMsg(`슬라이드쇼 녹화 중... (${slides.length * SLIDE_SECS}초)`);
-
-      // Step 2: Generate TTS for all slides (if enabled)
+      // Step 1: TTS 음성 생성
+      setYtProgress(8);
+      setYtProgressMsg('TTS 음성 생성 중...');
       let ttsAudios: string[] = [];
       if (ttsEnabled) {
-        setYtProgress(22);
-        setYtProgressMsg('음성 생성 중...');
         try {
           ttsAudios = await Promise.all(slides.map(async (slide) => {
             const text = slideToNarration(slide);
@@ -530,15 +675,23 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
         } catch { ttsAudios = []; }
       }
 
-      // Step 3: Record canvas slideshow with BGM + TTS
+      // Step 2: Remotion Player frame-by-frame 캡처
+      setYtProgress(18);
+      const estSecs = Math.round(slides.length * SLIDE_SECS * 1.5);
+      setYtProgressMsg(`Remotion 애니메이션 영상 녹화 중... (약 ${estSecs}초 소요)`);
       const bgmProxyUrl = bgmUrl ? `/api/proxy-audio?url=${encodeURIComponent(bgmUrl)}` : '';
-      const videoBlob = await recordSlideshowVideoWithAudio(imageUrls, SLIDE_SECS, bgmProxyUrl, ttsAudios, pct => {
-        setYtProgress(30 + Math.round(pct * 0.5));
-        setYtProgressMsg(`녹화 중... ${pct}%`);
-      });
-
-      // Revoke object URLs
-      imageUrls.forEach(u => URL.revokeObjectURL(u));
+      const videoBlob = await recordFromRemotionPlayer(
+        playerRef,
+        playerContainerRef,
+        totalFrames,
+        SLIDE_SECS,
+        bgmProxyUrl,
+        ttsAudios,
+        pct => {
+          setYtProgress(18 + Math.round(pct * 0.5));
+          setYtProgressMsg(`Remotion 녹화 중... ${pct}%`);
+        }
+      );
 
       setYtProgress(82);
       setYtProgressMsg('YouTube에 업로드 중...');
@@ -619,21 +772,24 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
         </div>
       </div>
 
-      {/* Remotion Player */}
+      {/* Remotion Player (playerContainerRef: html2canvas 캡처 대상) */}
       <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-black" style={{ aspectRatio: '1/1' }}>
-        <Player
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          component={CardNewsScene as any}
-          inputProps={{ slides: slides.length > 0 ? slides : undefined, theme, bgmUrl, durationInFrames: totalFrames }}
-          durationInFrames={totalFrames}
-          fps={30}
-          compositionWidth={1080}
-          compositionHeight={1080}
-          style={{ width: '100%', height: '100%' }}
-          controls
-          loop
-          autoPlay
-        />
+        <div ref={playerContainerRef} style={{ width: '100%', height: '100%' }}>
+          <Player
+            ref={playerRef}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            component={CardNewsScene as any}
+            inputProps={{ slides: slides.length > 0 ? slides : undefined, theme, bgmUrl, durationInFrames: totalFrames }}
+            durationInFrames={totalFrames}
+            fps={30}
+            compositionWidth={1080}
+            compositionHeight={1080}
+            style={{ width: '100%', height: '100%' }}
+            controls
+            loop
+            autoPlay
+          />
+        </div>
         <div className="absolute top-3 right-3 bg-black/70 text-white text-xs px-2.5 py-1 rounded-full font-medium pointer-events-none">
           {slides.length}장 · {Math.round(totalFrames / 30)}초
         </div>
