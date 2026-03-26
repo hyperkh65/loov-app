@@ -91,6 +91,32 @@ function getBestMimeType(): string {
   return candidates.find(t => MediaRecorder.isTypeSupported(t)) ?? 'video/webm';
 }
 
+/** NAS TTS 우선, 실패 시 Vercel edge-tts fallback */
+async function generateTTSAudio(text: string, voice: string, rate: number): Promise<string> {
+  try {
+    const speed = 1.0 + rate / 100;
+    const res = await fetch('/api/shorts/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice_id: voice, speed }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.audio) return d.audio as string;
+    }
+  } catch { /* fallback */ }
+  // Fallback: Vercel edge-tts
+  try {
+    const res = await fetch('/api/shorts/edge-tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, rate }),
+    });
+    const d = await res.json();
+    return (d.audio as string) || '';
+  } catch { return ''; }
+}
+
 function slideToNarration(slide: CardSlide): string {
   if (slide.type === 'title') {
     return `${slide.title}. ${slide.body || '지금 바로 확인해보세요.'}`;
@@ -237,8 +263,8 @@ async function recordSlideshowVideoWithAudio(
   recorder.start(100);
 
   const total = imgs.length;
-  const FADE_MS = 350;   // crossfade duration
-  const ZOOM_MS = 900;   // zoom-in duration
+  const ENTER_MS = 480;  // 와이프업 입장 시간 (ms)
+  const KB_MAX = 1.028;  // 켄번즈 시작 스케일
 
   // Real-time animation loop — performance.now() based, so duration is always accurate
   const recordStart = performance.now();
@@ -251,27 +277,53 @@ async function recordSlideshowVideoWithAudio(
     while (performance.now() < slideEnd) {
       const elapsed = performance.now() - slideStart;
 
-      // Ease-out cubic for zoom: 1.05 → 1.0 over ZOOM_MS
-      const zoomT = Math.min(elapsed / ZOOM_MS, 1);
-      const eased = 1 - Math.pow(1 - zoomT, 3);
-      const scale = 1.05 - 0.05 * eased;
-      const offset = (SIZE * (scale - 1)) / 2;
-
       ctx.clearRect(0, 0, SIZE, SIZE);
 
-      // Crossfade: blend previous slide out while this one fades in
-      if (elapsed < FADE_MS && i > 0) {
-        const alpha = elapsed / FADE_MS;
+      if (elapsed < ENTER_MS) {
+        // === WIPE-UP ENTRANCE: 아래에서 위로 슬라이드 등장 ===
+        const t = Math.min(elapsed / ENTER_MS, 1);
+        const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic (스프링 느낌)
+
+        // 이전 슬라이드: 페이드 아웃
+        if (i > 0) {
+          ctx.save();
+          ctx.globalAlpha = 1 - eased;
+          ctx.drawImage(imgs[i - 1], 0, 0, SIZE, SIZE);
+          ctx.restore();
+        }
+
+        // 현재 슬라이드: 아래서 위로 리빌 + 줌 안정화 (1.08 → 1.02)
+        const revealTop = SIZE * (1 - eased);
+        const enterScale = 1.08 - 0.06 * eased;
+        const xOff = (SIZE * (enterScale - 1)) / 2;
+
         ctx.save();
-        ctx.globalAlpha = 1 - alpha;
-        ctx.drawImage(imgs[i - 1], 0, 0, SIZE, SIZE);
+        ctx.beginPath();
+        ctx.rect(0, revealTop, SIZE, SIZE);
+        ctx.clip();
+        ctx.drawImage(imgs[i], -xOff, -xOff, SIZE * enterScale, SIZE * enterScale);
         ctx.restore();
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.drawImage(imgs[i], -offset, -offset, SIZE * scale, SIZE * scale);
-        ctx.restore();
+
+        // 리빌 경계선 shimmer 효과
+        if (t > 0.05 && t < 0.90) {
+          const grad = ctx.createLinearGradient(0, revealTop - 20, 0, revealTop + 20);
+          grad.addColorStop(0, 'rgba(255,255,255,0)');
+          grad.addColorStop(0.5, 'rgba(255,255,255,0.42)');
+          grad.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, revealTop - 20, SIZE, 40);
+        }
       } else {
-        ctx.drawImage(imgs[i], -offset, -offset, SIZE * scale, SIZE * scale);
+        // === KEN BURNS: 켄번즈 줌아웃 + 살짝 좌측 이동 ===
+        const kbElapsed = elapsed - ENTER_MS;
+        const kbDur = Math.max(slideDurations[i] - ENTER_MS, 1);
+        const kbT = Math.min(kbElapsed / kbDur, 1);
+
+        const scale = KB_MAX - (KB_MAX - 1.0) * kbT;
+        const xOff = (SIZE * (scale - 1)) / 2;
+        const xDrift = -SIZE * 0.012 * kbT; // 좌측으로 1.2% 이동
+
+        ctx.drawImage(imgs[i], -xOff + xDrift, -xOff, SIZE * scale, SIZE * scale);
       }
 
       // ~30ms sleep — loop runs ~33fps; performance.now() controls actual duration
@@ -410,12 +462,7 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
           try {
             ttsAudios = await Promise.all(slides.map(async (slide) => {
               const text = slideToNarration(slide);
-              const res = await fetch('/api/shorts/edge-tts', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, voice: ttsVoice, rate: ttsRate }),
-              });
-              const d = await res.json();
-              return (d.audio as string) || '';
+              return generateTTSAudio(text, ttsVoice, ttsRate);
             }));
           } catch { ttsAudios = []; }
         }
@@ -478,12 +525,7 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
         try {
           ttsAudios = await Promise.all(slides.map(async (slide) => {
             const text = slideToNarration(slide);
-            const res = await fetch('/api/shorts/edge-tts', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text, voice: ttsVoice, rate: ttsRate }),
-            });
-            const d = await res.json();
-            return (d.audio as string) || '';
+            return generateTTSAudio(text, ttsVoice, ttsRate);
           }));
         } catch { ttsAudios = []; }
       }
