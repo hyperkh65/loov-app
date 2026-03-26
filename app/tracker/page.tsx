@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const CCTV_PIN = process.env.NEXT_PUBLIC_CCTV_PIN || '0609';
-const MAX_RECORD_MS = 5 * 60 * 1000;
+const MAX_RECORD_MS = 60 * 1000; // 60초마다 자동 저장 (파일 크기 제한 + 안정성)
 
 function requestFullscreen() {
   const el = document.documentElement;
@@ -80,8 +80,8 @@ export default function TrackerPage() {
   const isVoiceRecordingRef = useRef(false);
   const voiceStartRef = useRef<number>(0);
   const voiceMimeTypeRef = useRef<string>('');
-  const voiceLastDataRef = useRef<number>(0);     // 마지막 ondataavailable 시각
-  const voiceWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null); // 녹음 생존 감시
+  const voiceLastDataRef = useRef<number>(0);
+  const [voiceError, setVoiceError] = useState('');
 
   // Clock
   useEffect(() => {
@@ -314,30 +314,33 @@ export default function TrackerPage() {
     if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
     if (voiceMaxTimerRef.current) clearTimeout(voiceMaxTimerRef.current);
     if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
-    if (voiceWatchdogRef.current) clearInterval(voiceWatchdogRef.current);
 
-    if (!mediaRecorderRef.current) return;
+    const mr = mediaRecorderRef.current;
+    if (!mr) return;
 
-    if (mediaRecorderRef.current.state === 'recording') {
-      // 정상 중단 → onstop이 자동으로 업로드 처리
-      mediaRecorderRef.current.stop();
-    } else if (mediaRecorderRef.current.state === 'inactive' && voiceChunksRef.current.length > 0) {
-      // iOS가 이미 recorder를 inactive로 만들었지만 청크가 남은 경우 → 직접 업로드
+    if (mr.state === 'recording') {
+      mr.stop(); // onstop에서 업로드 처리
+    } else if (mr.state === 'inactive' && voiceChunksRef.current.length > 0) {
+      // iOS: recorder가 이미 멈췄지만 청크 남아있는 경우
       const chunks = [...voiceChunksRef.current];
       voiceChunksRef.current = [];
       const mimeType = voiceMimeTypeRef.current || 'audio/mp4';
-      const blob = new Blob(chunks, { type: mimeType });
-      const durationSec = voiceStartRef.current
-        ? Math.round((Date.now() - voiceStartRef.current) / 1000)
-        : 0;
-      uploadVoiceMemo(blob, durationSec, mimeType);
-      setVoiceElapsed(0);
-      setWaveform(Array(20).fill(4));
+      const durationSec = voiceStartRef.current ? Math.round((Date.now() - voiceStartRef.current) / 1000) : 0;
+      uploadVoiceMemo(new Blob(chunks, { type: mimeType }), durationSec, mimeType);
+      setVoiceElapsed(0); setWaveform(Array(20).fill(4));
     }
   }, [uploadVoiceMemo]);
 
+  // 60초 자동 저장 후 새 녹음 재시작 (연속 녹음 유지)
+  const restartVoiceRecording = useCallback(async () => {
+    if (!isVoiceRecordingRef.current) return;
+    const mr = mediaRecorderRef.current;
+    if (mr?.state === 'recording') mr.stop(); // onstop이 upload + 재시작 처리
+  }, []);
+
   const startVoiceRecording = useCallback(async () => {
     if (isVoiceRecordingRef.current) { stopVoiceRecording(); return; }
+    setVoiceError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
@@ -347,58 +350,27 @@ export default function TrackerPage() {
       voiceChunksRef.current = [];
       const recStart = Date.now();
       voiceStartRef.current = recStart;
-      isVoiceRecordingRef.current = true; setIsVoiceRecording(true); setVoiceElapsed(0);
-      // 실제 녹음 mimeType (iOS는 audio/mp4)
+      isVoiceRecordingRef.current = true;
+      setIsVoiceRecording(true);
+      setVoiceElapsed(0);
+
       const actualMimeType = mr.mimeType || mimeType || 'audio/mp4';
       voiceMimeTypeRef.current = actualMimeType;
-      voiceLastDataRef.current = Date.now();
+
       mr.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          voiceChunksRef.current.push(e.data);
-          voiceLastDataRef.current = Date.now();
-        }
+        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
       };
 
-      // watchdog: 20초 동안 데이터 없으면 recorder가 죽은 것 → 재시작
-      voiceWatchdogRef.current = setInterval(() => {
-        if (!isVoiceRecordingRef.current) return;
-        const silent = Date.now() - voiceLastDataRef.current > 20_000;
-        const dead = mediaRecorderRef.current?.state === 'inactive';
-        if (silent || dead) {
-          console.warn('[tracker] voice recorder dead, restarting');
-          // 지금까지 모은 청크 먼저 업로드
-          if (voiceChunksRef.current.length > 0) {
-            const chunks = [...voiceChunksRef.current];
-            voiceChunksRef.current = [];
-            const blob = new Blob(chunks, { type: voiceMimeTypeRef.current || 'audio/mp4' });
-            const dur = Math.round((Date.now() - voiceStartRef.current) / 1000);
-            uploadVoiceMemo(blob, dur, voiceMimeTypeRef.current);
-          }
-          // 마이크 재획득 후 새 recorder 시작
-          navigator.mediaDevices.getUserMedia({ audio: true }).then(newStream => {
-            const newMr = new MediaRecorder(newStream);
-            const newMime = newMr.mimeType || 'audio/mp4';
-            voiceMimeTypeRef.current = newMime;
-            voiceStartRef.current = Date.now();
-            voiceChunksRef.current = [];
-            voiceLastDataRef.current = Date.now();
-            newMr.ondataavailable = (e) => {
-              if (e.data.size > 0) { voiceChunksRef.current.push(e.data); voiceLastDataRef.current = Date.now(); }
-            };
-            newMr.onstop = () => {
-              const chunks = [...voiceChunksRef.current]; voiceChunksRef.current = [];
-              newStream.getTracks().forEach(t => t.stop());
-              if (chunks.length > 0) {
-                const blob = new Blob(chunks, { type: newMime });
-                uploadVoiceMemo(blob, Math.round((Date.now() - voiceStartRef.current) / 1000), newMime);
-              }
-              setVoiceElapsed(0); setWaveform(Array(20).fill(4));
-            };
-            newMr.start(1000);
-            mediaRecorderRef.current = newMr;
-          }).catch(() => { stopVoiceRecording(); });
-        }
-      }, 20_000);
+      mr.onerror = () => {
+        setVoiceError('녹음 오류 — 다시 탭하세요');
+        isVoiceRecordingRef.current = false;
+        setIsVoiceRecording(false);
+        if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+        if (voiceMaxTimerRef.current) clearTimeout(voiceMaxTimerRef.current);
+        if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
+        stream.getTracks().forEach(t => t.stop());
+        setVoiceElapsed(0); setWaveform(Array(20).fill(4));
+      };
 
       mr.onstop = () => {
         const durationSec = Math.round((Date.now() - recStart) / 1000);
@@ -406,17 +378,28 @@ export default function TrackerPage() {
         voiceChunksRef.current = [];
         stream.getTracks().forEach(t => t.stop());
         if (chunks.length > 0) {
-          const blob = new Blob(chunks, { type: actualMimeType });
-          uploadVoiceMemo(blob, durationSec, actualMimeType);
+          uploadVoiceMemo(new Blob(chunks, { type: actualMimeType }), durationSec, actualMimeType);
         }
-        setVoiceElapsed(0); setWaveform(Array(20).fill(4));
+        // 연속 녹음: 아직 recording 상태이면 자동 재시작
+        if (isVoiceRecordingRef.current) {
+          setVoiceElapsed(0);
+          setTimeout(() => startVoiceRecording(), 300);
+        } else {
+          setVoiceElapsed(0); setWaveform(Array(20).fill(4));
+        }
       };
-      mr.start(500);
+
+      mr.start(1000); // 1초 청크 (500ms보다 안정적)
       voiceTimerRef.current = setInterval(() => setVoiceElapsed(Math.round((Date.now() - recStart) / 1000)), 1000);
-      voiceMaxTimerRef.current = setTimeout(() => stopVoiceRecording(), MAX_RECORD_MS);
-      waveformTimerRef.current = setInterval(() => setWaveform(Array(20).fill(0).map(() => Math.floor(Math.random() * 24) + 4)), 100);
-    } catch (e) { console.error('voice start error', e); setStatusMsg('마이크 권한 필요'); }
-  }, [stopVoiceRecording, uploadVoiceMemo]);
+      // 60초마다 자동 분할 저장
+      voiceMaxTimerRef.current = setTimeout(restartVoiceRecording, MAX_RECORD_MS);
+      waveformTimerRef.current = setInterval(() => setWaveform(Array(20).fill(0).map(() => Math.floor(Math.random() * 24) + 4)), 150);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setVoiceError(msg.includes('Permission') || msg.includes('allowed') ? '마이크 권한 허용 필요' : '마이크 오류');
+      console.error('voice start error', e);
+    }
+  }, [stopVoiceRecording, uploadVoiceMemo, restartVoiceRecording]);
 
   // ── init ──────────────────────────────────────────────
   if (phase === 'init') {
@@ -545,7 +528,8 @@ export default function TrackerPage() {
             className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl transition-all active:scale-95 ${isVoiceRecording ? 'bg-red-500/30 border-2 border-red-400 animate-pulse' : 'bg-white/10 border-2 border-white/20 active:bg-white/20'}`}>
             {isVoiceRecording ? '⏹' : '🎙'}
           </button>
-          <div className="text-xs text-white/30">{isVoiceRecording ? '탭하여 중지' : '탭하여 녹음'}</div>
+          <div className="text-xs text-white/30">{isVoiceRecording ? '탭하여 중지 (60초마다 자동저장)' : '탭하여 녹음'}</div>
+          {voiceError && <div className="text-xs text-red-400 text-center mt-1">{voiceError}</div>}
         </div>
       </div>
 
