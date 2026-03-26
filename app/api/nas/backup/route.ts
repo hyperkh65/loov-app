@@ -3,111 +3,90 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { nasExec, nas2daysExec } from '@/lib/nas-ssh';
 
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 async function getNasStatus(exec: typeof nasExec, paths: {
   dbDir: string; webMirror: string; webPkgMirror?: string;
   usbWebMirror?: string; usbDbDir?: string;
 }) {
-  // ── 1번 SSH: 핵심 정보 전부 한방에 ──────────────────────────
-  const cmd1 = [
-    // DB 목록
-    `echo '===DB==='`,
-    `ls -d ${paths.dbDir}/20??-??-??_?????? 2>/dev/null | sort -r | head -5 | xargs -I{} basename {} 2>/dev/null || echo EMPTY`,
-    // 웹미러
-    `echo '===WEB==='`,
-    `stat -c "%y" ${paths.webMirror} 2>/dev/null | cut -d. -f1 || echo NONE`,
-    `du -sh ${paths.webMirror} 2>/dev/null | cut -f1 || echo -`,
-    // webPkg (2days)
-    ...(paths.webPkgMirror ? [
-      `echo '===PKG==='`,
-      `stat -c "%y" ${paths.webPkgMirror} 2>/dev/null | cut -d. -f1 || echo NONE`,
-      `du -sh ${paths.webPkgMirror} 2>/dev/null | cut -f1 || echo -`,
-    ] : []),
-    // USB (hy64)
-    ...(paths.usbWebMirror && paths.usbDbDir ? [
-      `echo '===USB==='`,
-      `stat -c "%y" ${paths.usbWebMirror} 2>/dev/null | cut -d. -f1 || echo NONE`,
-      `du -sh ${paths.usbWebMirror} 2>/dev/null | cut -f1 || echo -`,
-      `ls -d ${paths.usbDbDir}/20??-??-??_?????? 2>/dev/null | sort -r | head -5 | xargs -I{} basename {} 2>/dev/null || echo EMPTY`,
-      `df -h /volumeUSB1/usbshare 2>/dev/null | tail -1 || echo NOUSBDISK`,
-    ] : []),
-    // 디스크
-    `echo '===DISK==='`,
-    `df -h /volume1 2>/dev/null | tail -1`,
-    // 최신 DB 상세
-    `echo '===DBDETAIL==='`,
-    `LATEST=$(ls -d ${paths.dbDir}/20??-??-??_?????? 2>/dev/null | sort -r | head -1); if [ -n "$LATEST" ]; then echo $(basename $LATEST); du -sh "$LATEST" 2>/dev/null | cut -f1; ls -lh "$LATEST"/ 2>/dev/null | tail -n +2 | awk '{print $5"\\t"$9}'; else echo NONE; fi`,
-  ].join('; ');
+  // 단 2번의 병렬 SSH 연결 — du -sh 절대 사용 안 함 (수백GB 폴더에서 수분 소요)
+  const [r1, r2] = await Promise.all([
+    // ── 연결 1: 목록·날짜·디스크 (모두 즉시 응답) ────────────
+    exec([
+      `echo ===DB===`,
+      `ls -d ${paths.dbDir}/20??-??-??_?????? 2>/dev/null | sort -r | head -5 | xargs -I{} basename {} 2>/dev/null || echo EMPTY`,
+      `echo ===WEB===`,
+      `stat -c "%y" ${paths.webMirror} 2>/dev/null | cut -d. -f1 || echo NONE`,
+      ...(paths.webPkgMirror ? [
+        `echo ===PKG===`,
+        `stat -c "%y" ${paths.webPkgMirror} 2>/dev/null | cut -d. -f1 || echo NONE`,
+      ] : []),
+      ...(paths.usbWebMirror && paths.usbDbDir ? [
+        `echo ===USB===`,
+        `stat -c "%y" ${paths.usbWebMirror} 2>/dev/null | cut -d. -f1 || echo NONE`,
+        `ls -d ${paths.usbDbDir}/20??-??-??_?????? 2>/dev/null | sort -r | head -5 | xargs -I{} basename {} 2>/dev/null || echo EMPTY`,
+        `df -h /volumeUSB1/usbshare 2>/dev/null | tail -1 || echo NOUSBDISK`,
+      ] : []),
+      `echo ===DISK===`,
+      `df -h /volume1 2>/dev/null | tail -1`,
+      `echo ===DBFILES===`,
+      `LATEST=$(ls -d ${paths.dbDir}/20??-??-??_?????? 2>/dev/null | sort -r | head -1); [ -n "$LATEST" ] && ls -lh "$LATEST"/ 2>/dev/null | tail -n +2 | awk '{print $5" "$9}' || echo NONE`,
+    ].join('; ')),
+    // ── 연결 2: 로그 ─────────────────────────────────────────
+    exec(`ls /volume1/web/loov_backup/_logs/backup_*.log 2>/dev/null | sort -r | head -1 | xargs tail -c 2000 2>/dev/null || echo "로그 없음"`),
+  ]);
 
-  // ── 2번 SSH: 로그만 ──────────────────────────────────────
-  const cmd2 = `ls /volume1/web/loov_backup/_logs/backup_*.log 2>/dev/null | sort -r | head -1 | xargs tail -c 3000 2>/dev/null || echo "로그 없음"`;
-
-  const [r1, r2] = await Promise.all([exec(cmd1), exec(cmd2)]);
-  const lines = r1.stdout.split('\n');
-
-  // 섹션별 파싱
+  const lines = r1.stdout.split('\n').map(l => l.trim()).filter(Boolean);
   const sections: Record<string, string[]> = {};
   let cur = '';
   for (const line of lines) {
-    const m = line.match(/^===(\w+)===/);
-    if (m) { cur = m[1]; sections[cur] = []; }
-    else if (cur && line.trim()) sections[cur].push(line.trim());
+    if (line.startsWith('===') && line.endsWith('===')) {
+      cur = line.replace(/=/g, '');
+    } else if (cur) {
+      (sections[cur] = sections[cur] || []).push(line);
+    }
   }
-
   const sec = (k: string) => sections[k] || [];
 
-  // DB 목록
   const dbBackups = sec('DB').filter(l => l !== 'EMPTY');
 
-  // 웹미러
-  const [webStat, webSize] = sec('WEB');
-  const web = { lastSync: webStat === 'NONE' ? null : webStat || null, size: webSize || '-' };
+  const webStat = sec('WEB')[0] || 'NONE';
+  const web = { lastSync: webStat === 'NONE' ? null : webStat, size: '' };
 
-  // webPkg
   let webPkg = null;
   if (paths.webPkgMirror) {
-    const [pStat, pSize] = sec('PKG');
-    webPkg = { lastSync: pStat === 'NONE' ? null : pStat || null, size: pSize || '-' };
+    const pStat = sec('PKG')[0] || 'NONE';
+    webPkg = { lastSync: pStat === 'NONE' ? null : pStat, size: '' };
   }
 
-  // USB
   let usb = null;
   let usbDisk = undefined;
   if (paths.usbWebMirror && paths.usbDbDir) {
-    const usbLines = sec('USB');
-    const uWebStat = usbLines[0] || 'NONE';
-    const uWebSize = usbLines[1] || '-';
-    const uDbBackups = usbLines.slice(2, -1).filter(l => l !== 'EMPTY' && !l.startsWith('Filesystem'));
-    const uDiskLine = usbLines[usbLines.length - 1] || '';
-    usb = {
-      web: { lastSync: uWebStat === 'NONE' ? null : uWebStat, size: uWebSize },
-      db: uDbBackups,
-    };
-    if (uDiskLine && uDiskLine !== 'NOUSBDISK' && !uDiskLine.startsWith('Filesystem')) {
-      const p = uDiskLine.split(/\s+/);
+    const uLines = sec('USB');
+    const uWebStat = uLines[0] || 'NONE';
+    const uDbBackups = uLines.slice(1).filter(l => !l.match(/^\//i) && l !== 'EMPTY' && !l.startsWith('Filesystem') && !l.startsWith('NOUSBDISK'));
+    const diskLine = uLines.find(l => l.match(/^\//));
+    usb = { web: { lastSync: uWebStat === 'NONE' ? null : uWebStat, size: '' }, db: uDbBackups };
+    if (diskLine) {
+      const p = diskLine.split(/\s+/);
       usbDisk = p.length >= 5 ? { size: p[1], used: p[2], avail: p[3], pct: p[4] } : null;
     } else {
       usbDisk = null;
     }
   }
 
-  // 디스크
   const diskLine = sec('DISK')[0] || '';
   const dp = diskLine.split(/\s+/);
   const disk = dp.length >= 5 ? { size: dp[1], used: dp[2], avail: dp[3], pct: dp[4] } : null;
 
-  // 최신 DB 상세
+  const dbFilesLines = sec('DBFILES');
   let latestDetail = null;
-  const ddLines = sec('DBDETAIL');
-  if (ddLines.length > 0 && ddLines[0] !== 'NONE') {
-    const ts = ddLines[0];
-    const totalSize = ddLines[1] || '-';
-    const files = ddLines.slice(2).map(l => {
-      const [size, name] = l.split('\t');
-      return { size: size || '', name: name || '' };
-    }).filter(f => f.name);
-    latestDetail = { timestamp: ts, totalSize, files };
+  if (dbBackups.length > 0 && dbFilesLines[0] !== 'NONE') {
+    const files = dbFilesLines.map(l => {
+      const sp = l.indexOf(' ');
+      return { size: l.slice(0, sp), name: l.slice(sp + 1) };
+    }).filter(f => f.name && f.name !== 'NONE');
+    latestDetail = { timestamp: dbBackups[0], totalSize: '', files };
   }
 
   return { db: { backups: dbBackups, latestDetail }, web, webPkg, usb, disk, usbDisk, latestLog: r2.stdout };
