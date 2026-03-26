@@ -340,8 +340,12 @@ export default function TrackerPage() {
     if (mr?.state === 'recording') mr.stop(); // onstop이 upload + 재시작 처리
   }, []);
 
-  const startVoiceRecording = useCallback(async () => {
-    if (isVoiceRecordingRef.current) { stopVoiceRecording(); return; }
+  const startVoiceRecording = useCallback(async (autoRestart = false) => {
+    if (!autoRestart && isVoiceRecordingRef.current) { stopVoiceRecording(); return; }
+    // 이전 타이머 정리
+    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    if (voiceMaxTimerRef.current) clearTimeout(voiceMaxTimerRef.current);
+    if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
     setVoiceError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -384,8 +388,9 @@ export default function TrackerPage() {
         }
         // 연속 녹음: 아직 recording 상태이면 자동 재시작
         if (isVoiceRecordingRef.current) {
+          isVoiceRecordingRef.current = false; // startVoiceRecording 토글 방지
           setVoiceElapsed(0);
-          setTimeout(() => startVoiceRecording(), 300);
+          setTimeout(() => startVoiceRecording(true), 300);
         } else {
           setVoiceElapsed(0); setWaveform(Array(20).fill(4));
         }
@@ -401,7 +406,7 @@ export default function TrackerPage() {
       setVoiceError(msg.includes('Permission') || msg.includes('allowed') ? '마이크 권한 허용 필요' : '마이크 오류');
       console.error('voice start error', e);
     }
-  }, [stopVoiceRecording, uploadVoiceMemo, restartVoiceRecording]);
+  }, [stopVoiceRecording, uploadVoiceMemo, restartVoiceRecording]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── init ──────────────────────────────────────────────
   if (phase === 'init') {
@@ -526,7 +531,7 @@ export default function TrackerPage() {
             </div>
           )}
           {isVoiceRecording && <div className="font-mono text-red-400 text-sm">{formatTime(voiceElapsed)}</div>}
-          <button onClick={startVoiceRecording}
+          <button onClick={() => startVoiceRecording()}
             className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl transition-all active:scale-95 ${isVoiceRecording ? 'bg-red-500/30 border-2 border-red-400 animate-pulse' : 'bg-white/10 border-2 border-white/20 active:bg-white/20'}`}>
             {isVoiceRecording ? '⏹' : '🎙'}
           </button>
