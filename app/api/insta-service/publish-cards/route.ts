@@ -100,6 +100,16 @@ export async function POST(req: NextRequest) {
       platform_post_id: postId,
     }).then(() => {/* ignore error */});
 
+    // Cleanup temporary card images from storage
+    const filePaths = imageUrls.map(url => {
+      const marker = '/sns-media/';
+      const idx = url.indexOf(marker);
+      return idx >= 0 ? url.slice(idx + marker.length) : null;
+    }).filter(Boolean) as string[];
+    if (filePaths.length > 0) {
+      await supabase.storage.from('sns-media').remove(filePaths).catch(() => {/* ignore */});
+    }
+
     return NextResponse.json({ success: true, postId, imageUrls });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
