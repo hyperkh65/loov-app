@@ -246,20 +246,20 @@ export default function Cam1Page() {
     });
     localStreamRef.current = stream;
 
-    // iOS 백그라운드 방지: 오디오를 극소 볼륨으로 출력 (페이지 살아있게)
+    // iOS 백그라운드 방지: 무음 버퍼 재생 (오실레이터 사용 시 삐 소리 발생)
     try {
       const keepAliveCtx = new AudioContext();
       audioCtxRef.current = keepAliveCtx;
-      const src = keepAliveCtx.createMediaStreamSource(stream);
-      const gain = keepAliveCtx.createGain();
-      gain.gain.value = 0.02; // iOS가 무음으로 판단 안하도록 (거의 안들림)
-      src.connect(gain);
-      gain.connect(keepAliveCtx.destination);
       keepAliveCtx.resume().catch(() => {});
-      // 5초마다 resume 시도 (iOS가 suspended로 만들어도 복구)
-      audioKeepAliveRef.current = setInterval(() => {
-        if (keepAliveCtx.state === 'suspended') keepAliveCtx.resume().catch(() => {});
-      }, 5_000);
+      const playsilence = () => {
+        if (keepAliveCtx.state === 'suspended') { keepAliveCtx.resume().catch(() => {}); return; }
+        const buf = keepAliveCtx.createBuffer(1, keepAliveCtx.sampleRate * 0.1, keepAliveCtx.sampleRate);
+        const src = keepAliveCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(keepAliveCtx.destination);
+        src.start();
+      };
+      audioKeepAliveRef.current = setInterval(playsilence, 5_000);
     } catch { /* ignore */ }
 
     // 스트림 트랙 ended 감지 → 카메라 재시작 (iOS가 강제 종료한 경우)
