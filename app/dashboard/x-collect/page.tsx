@@ -112,11 +112,15 @@ export default function XCollectPage() {
     } catch {}
   };
 
+  const nasStopRef = useRef(false);
+
   const startNasMigration = async () => {
-    if (nasRunning) return;
+    if (nasRunning) { nasStopRef.current = true; return; }
+    nasStopRef.current = false;
     setNasRunning(true);
     setNasLogs([]);
-    try {
+
+    const runBatch = async (): Promise<number> => {
       const res = await fetch('/api/x-videos/migrate-to-nas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,6 +130,7 @@ export default function XCollectPage() {
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
+      let remaining = -1;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -136,16 +141,28 @@ export default function XCollectPage() {
           if (!line.startsWith('data: ')) continue;
           try {
             const log: NasLog = JSON.parse(line.slice(6));
-            setNasLogs(prev => [...prev.slice(-99), log]);
+            setNasLogs(prev => [...prev.slice(-199), log]);
             if (log.type === 'complete') {
-              setNasStatus(prev => prev ? { ...prev, remaining: log.remaining ?? 0, done: (prev.total) - (log.remaining ?? 0) } : null);
+              remaining = log.remaining ?? 0;
+              setNasStatus(prev => prev
+                ? { ...prev, remaining, done: prev.total - remaining }
+                : null);
             }
           } catch {}
         }
       }
+      return remaining;
+    };
+
+    try {
+      while (!nasStopRef.current) {
+        const remaining = await runBatch();
+        if (remaining <= 0) break;
+      }
     } catch (e) {
       setNasLogs(prev => [...prev, { type: 'error_one', error: String(e) }]);
     } finally {
+      nasStopRef.current = false;
       setNasRunning(false);
       loadNasStatus();
     }
@@ -513,8 +530,8 @@ export default function XCollectPage() {
                 <button onClick={startNasMigration} disabled={nasRunning || !nasStatus?.remaining}
                   className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2">
                   {nasRunning
-                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />이동 중...</>
-                    : nasStatus?.remaining === 0 ? '✅ 이동 완료!' : `🖥️ ${nasBatchSize}개 NAS로 이동`}
+                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />이동 중... (클릭하면 중지)</>
+                    : nasStatus?.remaining === 0 ? '✅ 이동 완료!' : '🖥️ 전체 자동 이동 시작'}
                 </button>
                 <button onClick={loadNasStatus} disabled={nasRunning}
                   className="px-4 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-xl text-sm font-medium transition-all">
