@@ -188,6 +188,88 @@ function NasPanel({ data, nasName }: {
   );
 }
 
+interface StorageSummary { [bucket: string]: number; }
+
+function StorageCleanup() {
+  const [summary, setSummary] = useState<StorageSummary | null>(null);
+  const [cleaning, setCleaning] = useState<Record<string, boolean>>({});
+  const [msgs, setMsgs] = useState<Record<string, string>>({});
+  const [loadingSum, setLoadingSum] = useState(false);
+
+  const fetchSummary = async () => {
+    setLoadingSum(true);
+    try {
+      const res = await fetch('/api/storage/cleanup');
+      const json = await res.json();
+      setSummary(json.summary);
+    } finally { setLoadingSum(false); }
+  };
+
+  const handleClean = async (bucket: string) => {
+    if (!confirm(`${bucket} 버킷의 임시 파일을 모두 삭제할까요?`)) return;
+    setCleaning(p => ({ ...p, [bucket]: true }));
+    setMsgs(p => ({ ...p, [bucket]: '' }));
+    try {
+      const res = await fetch('/api/storage/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setMsgs(p => ({ ...p, [bucket]: `✅ ${json.deleted}개 파일 삭제됨` }));
+        fetchSummary();
+      } else {
+        setMsgs(p => ({ ...p, [bucket]: `❌ ${json.error}` }));
+      }
+    } catch (e) {
+      setMsgs(p => ({ ...p, [bucket]: `❌ ${String(e)}` }));
+    } finally {
+      setCleaning(p => ({ ...p, [bucket]: false }));
+    }
+  };
+
+  const CLEAN_BUCKETS = [
+    { name: 'sns-media', label: 'SNS 미디어 (card-news)', icon: '🗂️' },
+    { name: 'bossai-images', label: 'Shorts 이미지', icon: '🎬' },
+  ];
+
+  return (
+    <div className="bg-slate-800 border border-orange-500/40 rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="font-bold text-white flex items-center gap-2"><span>🗑️</span> Supabase Storage 정리</div>
+          <div className="text-xs text-slate-400 mt-0.5">카드뉴스 업로드 임시 파일 등 삭제</div>
+        </div>
+        <button onClick={fetchSummary} disabled={loadingSum}
+          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-medium transition-colors">
+          {loadingSum ? '⏳' : '📊 파일 수 조회'}
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {CLEAN_BUCKETS.map(({ name, label, icon }) => (
+          <div key={name} className="bg-slate-900/60 rounded-xl p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span>{icon}</span>
+              <span className="text-sm font-medium text-white">{label}</span>
+              {summary && <span className="ml-auto text-xs text-orange-300 font-mono">{summary[name] ?? 0}개</span>}
+            </div>
+            <button
+              onClick={() => handleClean(name)}
+              disabled={cleaning[name]}
+              className="w-full py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5">
+              {cleaning[name]
+                ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />삭제 중...</>
+                : '🗑️ 전체 삭제'}
+            </button>
+            {msgs[name] && <p className="text-xs text-center text-slate-300">{msgs[name]}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function BackupPage() {
   const [data, setData] = useState<BackupData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -259,6 +341,9 @@ export default function BackupPage() {
         </div>
 
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm">❌ {error}</div>}
+
+        {/* ── Supabase Storage 정리 ── */}
+        <StorageCleanup />
 
         {/* ── 수동 백업 버튼 ── */}
         <div className="grid grid-cols-2 gap-4">
