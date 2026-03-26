@@ -222,19 +222,21 @@ export default function TrackerPage() {
     sessionStartRef.current = Date.now();
     sessionIdRef.current = generateSessionId();
 
-    // AudioContext keep-alive
+    // AudioContext keep-alive (완전 무음 — 소리 없이 AudioContext만 유지)
     try {
       const ctx = new AudioContext();
       audioCtxRef.current = ctx;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0.02; // iOS가 무음으로 판단하지 않도록 (거의 안들림)
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(); ctx.resume().catch(() => {});
-      // 5초마다 resume (iOS suspended 상태 자동 복구)
-      audioKeepAliveRef.current = setInterval(() => {
-        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      }, 5_000);
+      // 완전 무음 버퍼를 주기적으로 재생 (오실레이터 대신 → 삐 소리 없음)
+      const playsilence = () => {
+        if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); return; }
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate); // 0.1초 무음
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start();
+      };
+      ctx.resume().catch(() => {});
+      audioKeepAliveRef.current = setInterval(playsilence, 5_000);
     } catch { /* ignore */ }
 
     if (navigator.geolocation) {
