@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-type Tab = 'collect' | 'publish';
+type Tab = 'collect' | 'publish' | 'nas';
 
 interface Job {
   job_id: string;
@@ -89,12 +89,67 @@ export default function XCollectPage() {
   const [publishResult, setPublishResult] = useState('');
   const [ollamaKey, setOllamaKey] = useState('');
 
+  // ── NAS 이동 ──────────────────────────────────────────────
+  interface NasStatus { total: number; remaining: number; done: number; }
+  interface NasLog { type: string; index?: number; total?: number; file?: string; nasUrl?: string; error?: string; migrated?: number; failed?: number; remaining?: number; }
+  const [nasStatus, setNasStatus] = useState<NasStatus | null>(null);
+  const [nasRunning, setNasRunning] = useState(false);
+  const [nasLogs, setNasLogs] = useState<NasLog[]>([]);
+  const [nasBatchSize, setNasBatchSize] = useState(20);
+
   useEffect(() => {
     setOllamaKey(localStorage.getItem('freeai_ollama_key') || '');
     loadJobs();
     loadConnections();
     loadVideos();
+    loadNasStatus();
   }, []);
+
+  const loadNasStatus = async () => {
+    try {
+      const res = await fetch('/api/x-videos/migrate-to-nas');
+      if (res.ok) setNasStatus(await res.json());
+    } catch {}
+  };
+
+  const startNasMigration = async () => {
+    if (nasRunning) return;
+    setNasRunning(true);
+    setNasLogs([]);
+    try {
+      const res = await fetch('/api/x-videos/migrate-to-nas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: nasBatchSize }),
+      });
+      if (!res.body) throw new Error('스트림 없음');
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const log: NasLog = JSON.parse(line.slice(6));
+            setNasLogs(prev => [...prev.slice(-99), log]);
+            if (log.type === 'complete') {
+              setNasStatus(prev => prev ? { ...prev, remaining: log.remaining ?? 0, done: (prev.total) - (log.remaining ?? 0) } : null);
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      setNasLogs(prev => [...prev, { type: 'error_one', error: String(e) }]);
+    } finally {
+      setNasRunning(false);
+      loadNasStatus();
+    }
+  };
 
   // ── 수집 작업 ─────────────────────────────────────────────
   const loadJobs = async () => {
@@ -301,13 +356,13 @@ export default function XCollectPage() {
 
         {/* 탭 */}
         <div className="flex gap-1 bg-slate-900 rounded-xl p-1 mb-6 w-fit">
-          {(['collect', 'publish'] as Tab[]).map((t) => (
+          {(['collect', 'publish', 'nas'] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                 tab === t ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              {t === 'collect' ? '🐦 X 수집' : '📤 SNS 발행'}
+              {t === 'collect' ? '🐦 X 수집' : t === 'publish' ? '📤 SNS 발행' : `🖥️ NAS 이동${nasStatus?.remaining ? ` (${nasStatus.remaining})` : ''}`}
             </button>
           ))}
         </div>
@@ -401,6 +456,95 @@ export default function XCollectPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── Tab 3: NAS 이동 ──────────────────────────────────── */}
+        {tab === 'nas' && (
+          <div className="space-y-4">
+            {/* 현황 카드 */}
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: '전체', value: nasStatus?.total ?? '-', color: 'text-white' },
+                { label: 'NAS 이동됨', value: nasStatus?.done ?? '-', color: 'text-emerald-400' },
+                { label: 'Supabase 남음', value: nasStatus?.remaining ?? '-', color: 'text-orange-400' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="bg-slate-900 rounded-2xl p-4 border border-slate-700/50 text-center">
+                  <div className={`text-2xl font-black ${color}`}>{value}</div>
+                  <div className="text-xs text-slate-400 mt-1">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {nasStatus && nasStatus.total > 0 && (
+              <div className="bg-slate-900 rounded-xl p-3 border border-slate-700/50">
+                <div className="flex justify-between text-xs text-slate-400 mb-1">
+                  <span>NAS 이동 완료</span>
+                  <span>{Math.round(((nasStatus.done) / nasStatus.total) * 100)}%</span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div className="bg-emerald-500 h-2 rounded-full transition-all"
+                    style={{ width: `${Math.round((nasStatus.done / nasStatus.total) * 100)}%` }} />
+                </div>
+              </div>
+            )}
+
+            {/* 배치 설정 + 실행 */}
+            <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
+              <h2 className="text-base font-bold mb-4">hy64 NAS로 영상 이동</h2>
+              <p className="text-xs text-slate-400 mb-4">
+                NAS가 Supabase에서 직접 다운로드 → <code className="text-indigo-300">hy64.synology.me/xmedia/</code>에 저장 → Supabase에서 삭제
+              </p>
+
+              <div className="mb-4">
+                <label className="text-xs text-slate-400 mb-2 block">배치 크기 (한 번에 이동할 개수)</label>
+                <div className="flex gap-2">
+                  {[10, 20, 50, 100].map(n => (
+                    <button key={n} onClick={() => setNasBatchSize(n)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        nasBatchSize === n ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                      }`}
+                    >{n}개</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={startNasMigration} disabled={nasRunning || !nasStatus?.remaining}
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2">
+                  {nasRunning
+                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />이동 중...</>
+                    : nasStatus?.remaining === 0 ? '✅ 이동 완료!' : `🖥️ ${nasBatchSize}개 NAS로 이동`}
+                </button>
+                <button onClick={loadNasStatus} disabled={nasRunning}
+                  className="px-4 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-xl text-sm font-medium transition-all">
+                  🔄
+                </button>
+              </div>
+            </div>
+
+            {/* 진행 로그 */}
+            {nasLogs.length > 0 && (
+              <div className="bg-slate-900 rounded-2xl p-4 border border-slate-700/50">
+                <h3 className="text-sm font-bold mb-3">진행 로그</h3>
+                <div className="max-h-64 overflow-y-auto space-y-1 font-mono text-xs">
+                  {nasLogs.map((log, i) => (
+                    <div key={i} className={
+                      log.type === 'done_one' ? 'text-emerald-400' :
+                      log.type === 'error_one' ? 'text-red-400' :
+                      log.type === 'complete' ? 'text-yellow-300 font-bold' :
+                      log.type === 'progress' ? 'text-slate-400' : 'text-slate-300'
+                    }>
+                      {log.type === 'start' && `▶ 시작 (${log.total}개)`}
+                      {log.type === 'progress' && `[${log.index}/${log.total}] ⏳ ${log.file}`}
+                      {log.type === 'done_one' && `[${log.index}] ✅ ${log.file}`}
+                      {log.type === 'error_one' && `[${log.index}] ❌ ${log.file}: ${log.error}`}
+                      {log.type === 'complete' && `🎉 완료 — 성공 ${log.migrated}개 / 실패 ${log.failed}개 / 남은 ${log.remaining}개`}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
