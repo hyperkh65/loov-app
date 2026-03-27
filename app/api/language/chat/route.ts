@@ -50,31 +50,6 @@ RULES:
 11. Do NOT add any text after the GRAMMAR line`;
 }
 
-// Ollama Cloud 네이티브 API 호출 (무료AI 메뉴와 동일한 방식)
-async function callOllamaCloud(
-  apiKey: string,
-  model: string,
-  messages: Array<{ role: string; content: string }>,
-): Promise<string> {
-  const res = await fetch('https://ollama.com/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({ model, messages, stream: false }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Ollama Cloud 오류 ${res.status}: ${err}`);
-  }
-
-  const data = await res.json() as { message?: { content?: string }; error?: string };
-  if (data.error) throw new Error(data.error);
-  return data.message?.content?.trim() || '';
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as {
@@ -103,18 +78,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '메시지가 없습니다' }, { status: 400 });
     }
 
-    // API 키: 클라이언트 전달 → DB 설정 → env var
     const ollamaKey = clientOllamaKey || await getSetting('OLLAMA_API_KEY');
     if (!ollamaKey) {
       return NextResponse.json(
-        { error: 'Ollama API 키가 없습니다. 무료AI 메뉴에서 API 키를 설정해주세요.' },
+        { error: '무료AI 메뉴에서 Ollama API 키를 먼저 설정해주세요.' },
         { status: 400 }
       );
     }
 
+    const model = clientModel || await getSetting('AI_GLOBAL_MODEL') || 'qwen3.5';
     const systemPrompt = buildSystemPrompt(language, level, mode, situation);
 
-    // Build history (last 10, convert model→assistant)
     let recentHistory = history.slice(-10);
     while (recentHistory.length > 0 && recentHistory[0].role !== 'user') {
       recentHistory = recentHistory.slice(1);
@@ -130,10 +104,58 @@ export async function POST(req: NextRequest) {
       { role: 'user', content: message },
     ];
 
-    // 클라이언트 선택 모델 → DB 설정 → 기본값(qwen3.5)
-    const model = clientModel || await getSetting('AI_GLOBAL_MODEL') || 'qwen3.5';
+    // 스트리밍으로 읽어서 <think>...</think> 제거 후 전체 텍스트 수집
+    const res = await fetch('https://ollama.com/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ollamaKey}`,
+      },
+      body: JSON.stringify({ model, messages, stream: true }),
+    });
 
-    const rawText = await callOllamaCloud(ollamaKey, model, messages);
+    if (!res.ok || !res.body) {
+      const err = await res.text();
+      throw new Error(`Ollama Cloud 오류 ${res.status}: ${err}`);
+    }
+
+    // 스트림에서 thinking 블록 제거하며 텍스트 수집
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    let rawText = '';
+    let inThink = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const j = JSON.parse(line) as { message?: { content?: string }; done?: boolean };
+          const chunk = j.message?.content || '';
+          if (!chunk) continue;
+
+          // thinking 블록 필터링
+          if (chunk.includes('<think>')) inThink = true;
+          if (inThink) {
+            if (chunk.includes('</think>')) {
+              inThink = false;
+              const after = chunk.split('</think>').slice(1).join('</think>');
+              rawText += after;
+            }
+            // thinking 중이면 skip
+          } else {
+            rawText += chunk;
+          }
+        } catch { /* skip malformed */ }
+      }
+    }
+
+    rawText = rawText.trim();
 
     // Extract GRAMMAR correction
     let reply = rawText;
