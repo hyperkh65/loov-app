@@ -292,28 +292,24 @@ export default function LanguagePage() {
       else setPlayingWord(true);
 
       const clean = stripMarkers(text);
-      const res = await fetch('/api/language/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: clean, language, gender: 'female' }),
-      });
 
-      const data = await res.json() as { audio?: string; error?: string };
-      if (data.audio) {
-        if (audioRef.current) {
-          audioRef.current.pause();
-        }
-        const audio = new Audio(data.audio);
-        audioRef.current = audio;
-        audio.onended = () => {
-          setPlayingMsgIdx(null);
-          setPlayingWord(false);
+      // 브라우저 내장 Web Speech API 사용 (서버 불필요, 무료)
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+
+        const langMap: Record<string, string> = {
+          en: 'en-US', zh: 'zh-CN', ja: 'ja-JP',
+          fr: 'fr-FR', es: 'es-ES', de: 'de-DE',
+          vi: 'vi-VN', th: 'th-TH', ko: 'ko-KR',
         };
-        audio.onerror = () => {
-          setPlayingMsgIdx(null);
-          setPlayingWord(false);
-        };
-        await audio.play();
+
+        const utter = new SpeechSynthesisUtterance(clean);
+        utter.lang = langMap[language] || 'en-US';
+        utter.rate = 0.9;
+        utter.onend = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
+        utter.onerror = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
+        window.speechSynthesis.speak(utter);
+        return;
       }
     } catch {
       setPlayingMsgIdx(null);
