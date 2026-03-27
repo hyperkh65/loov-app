@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI } from '@/lib/ai-call';
 
+export const maxDuration = 60;
+
 const LANGUAGE_NAMES: Record<string, string> = {
   en: 'English',
   zh: 'Chinese (Mandarin)',

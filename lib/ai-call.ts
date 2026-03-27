@@ -157,7 +157,10 @@ async function callOpenAICompatible(
       baseUrl = 'https://ollama.com/v1'; // Ollama Cloud
     } else {
       const ollamaUrl = await getSetting('OLLAMA_BASE_URL');
-      baseUrl = `${ollamaUrl || 'http://localhost:11434'}/v1`; // Local
+      if (!ollamaUrl) {
+        throw new Error('Ollama API 키가 설정되지 않았습니다. 설정 > AI > Ollama Cloud API Key를 입력해주세요.');
+      }
+      baseUrl = `${ollamaUrl}/v1`; // Local
     }
   } else {
     baseUrl = 'https://api.openai.com/v1';
