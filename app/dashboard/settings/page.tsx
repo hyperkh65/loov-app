@@ -51,6 +51,8 @@ export default function SettingsPage() {
   const [apiKeysMsg, setApiKeysMsg] = useState('');
 
   // Ollama state
+  const [ollamaApiKey, setOllamaApiKey] = useState('');
+  const [ollamaApiKeySaved, setOllamaApiKeySaved] = useState(false);
   const [ollamaUrl, setOllamaUrl] = useState('');
   const [ollamaUrlSaved, setOllamaUrlSaved] = useState(false);
   const [ollamaTesting, setOllamaTesting] = useState(false);
@@ -136,6 +138,7 @@ export default function SettingsPage() {
       fetch('/api/app-settings')
         .then((r) => r.ok ? r.json() : {})
         .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string> }) => {
+          setOllamaApiKeySaved(!!d.hasKey?.['OLLAMA_API_KEY']);
           setOllamaUrlSaved(!!d.hasKey?.['OLLAMA_BASE_URL']);
           setOpenrouterKeySaved(!!d.hasKey?.['OPENROUTER_API_KEY']);
           // Load server global AI setting
@@ -864,10 +867,46 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Ollama 로컬 LLM 설정 */}
+            {/* Ollama 설정 */}
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
-              <h3 className="font-bold text-gray-900 mb-1">Ollama (로컬 LLM)</h3>
-              <p className="text-xs text-gray-500 mb-3">로컬에서 실행 중인 Ollama 서버 URL을 입력하세요. API 키 불필요.</p>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-bold text-gray-900">Ollama Cloud / 로컬</h3>
+                <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener" className="text-xs text-blue-500 hover:underline">API 키 발급 →</a>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">Cloud 사용 시 API 키만 입력. 로컬 사용 시 URL 입력 (키 불필요).</p>
+
+              {/* Cloud API Key */}
+              <div className="mb-3">
+                <label className="text-xs font-semibold text-gray-700 mb-1 block">
+                  Ollama Cloud API Key
+                  {ollamaApiKeySaved && <span className="ml-2 text-emerald-600 font-normal">✅ 저장됨</span>}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={ollamaApiKey}
+                    onChange={(e) => setOllamaApiKey(e.target.value)}
+                    placeholder={ollamaApiKeySaved ? '저장됨 — 변경 시 입력' : 'ollama_...'}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!ollamaApiKey.trim()) return;
+                      await fetch('/api/app-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ OLLAMA_API_KEY: ollamaApiKey }),
+                      });
+                      setOllamaApiKeySaved(true);
+                      setOllamaApiKey('');
+                    }}
+                    disabled={!ollamaApiKey.trim()}
+                    className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
+                  >저장</button>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-400 mb-2">— 또는 로컬 Ollama URL —</p>
               <div className="flex gap-2">
                 <input
                   type="text"

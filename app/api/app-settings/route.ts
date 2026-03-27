@@ -31,7 +31,8 @@ const ALLOWED_KEYS = [
   'GALLERY_NOTION_DB_URL',
   // 숏폼
   'PEXELS_API_KEY',
-  // Ollama (로컬 LLM)
+  // Ollama
+  'OLLAMA_API_KEY',
   'OLLAMA_BASE_URL',
   // AI 폴백 체인 (JSON string)
   'AI_FALLBACK_CHAIN',

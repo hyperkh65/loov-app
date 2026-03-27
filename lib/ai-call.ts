@@ -46,8 +46,10 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
       return getSetting('GEMINI_API_KEY');
     case 'openrouter':
       return getSetting('OPENROUTER_API_KEY');
-    case 'ollama':
-      return 'ollama'; // no real key needed
+    case 'ollama': {
+      const cloudKey = await getSetting('OLLAMA_API_KEY');
+      return cloudKey || 'ollama'; // cloud key or local dummy
+    }
     case 'gpt4o':
     case 'gpt4':
     case 'gpt35':
@@ -150,8 +152,13 @@ async function callOpenAICompatible(
   if (provider === 'openrouter') {
     baseUrl = 'https://openrouter.ai/api/v1';
   } else if (provider === 'ollama') {
-    const ollamaUrl = await getSetting('OLLAMA_BASE_URL');
-    baseUrl = `${ollamaUrl || 'http://localhost:11434'}/v1`;
+    const cloudKey = await getSetting('OLLAMA_API_KEY');
+    if (cloudKey) {
+      baseUrl = 'https://ollama.com/v1'; // Ollama Cloud
+    } else {
+      const ollamaUrl = await getSetting('OLLAMA_BASE_URL');
+      baseUrl = `${ollamaUrl || 'http://localhost:11434'}/v1`; // Local
+    }
   } else {
     baseUrl = 'https://api.openai.com/v1';
   }
