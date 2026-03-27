@@ -73,6 +73,28 @@ export async function POST(req: NextRequest) {
 
   if (!conn) return NextResponse.json({ error: 'Instagram 미연결' }, { status: 400 });
 
+  // ── Instagram 토큰 자동 갱신 (60일 만료 대비) ──────────────────────
+  let accessToken = conn.access_token;
+  try {
+    const refreshRes = await fetch(
+      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${accessToken}`
+    );
+    if (refreshRes.ok) {
+      const refreshData = await refreshRes.json();
+      if (refreshData.access_token) {
+        accessToken = refreshData.access_token;
+        // 갱신된 토큰 DB 저장
+        await supabase
+          .from('sns_connections')
+          .update({ access_token: accessToken, updated_at: new Date().toISOString() })
+          .eq('user_id', user.id)
+          .eq('platform', 'instagram');
+      }
+    }
+  } catch {
+    // 갱신 실패해도 기존 토큰으로 시도
+  }
+
   // Generate all card images and upload to Supabase Storage
   const imageUrls: string[] = [];
   for (let i = 0; i < slides.length; i++) {
@@ -86,7 +108,7 @@ export async function POST(req: NextRequest) {
   try {
     const { id: postId } = await postToPlatformWithMedia(
       'instagram',
-      conn.access_token,
+      accessToken,
       conn.platform_user_id || '',
       caption,
       imageUrls,
