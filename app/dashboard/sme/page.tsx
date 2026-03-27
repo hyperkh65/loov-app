@@ -45,12 +45,12 @@ const DEFAULT_FIELD_MAP: FieldMap = {
   title: '사업명',
   agency: '소관기관',
   executor: '수행기관',
-  field: '지원분야',
-  region: '지역',
+  field: '분야',
+  region: '',           // 지역 필드 없음 — 사업명 [지역] 패턴에서 자동 추출
   startDate: '신청시작일자',
   endDate: '신청종료일자',
   registeredAt: '등록일자',
-  url: '사업공고URL',
+  url: '상세URL',
 }
 
 const BUILT_IN_API: ApiConfig = {
