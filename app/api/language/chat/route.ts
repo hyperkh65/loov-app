@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
       situation?: string;
       history?: Array<{ role: 'user' | 'model'; content: string }>;
       clientOllamaKey?: string;
+      clientModel?: string;
     };
 
     const {
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
       situation,
       history = [],
       clientOllamaKey,
+      clientModel,
     } = body;
 
     if (!message?.trim()) {
@@ -128,8 +130,8 @@ export async function POST(req: NextRequest) {
       { role: 'user', content: message },
     ];
 
-    // 글로벌 설정 모델 or 기본값
-    const model = await getSetting('AI_GLOBAL_MODEL') || 'qwen3.5';
+    // 클라이언트 선택 모델 → DB 설정 → 기본값(qwen3.5)
+    const model = clientModel || await getSetting('AI_GLOBAL_MODEL') || 'qwen3.5';
 
     const rawText = await callOllamaCloud(ollamaKey, model, messages);
 
