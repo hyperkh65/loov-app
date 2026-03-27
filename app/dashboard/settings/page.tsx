@@ -574,6 +574,16 @@ export default function SettingsPage() {
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
+                  ) : serverGlobalProvider === 'ollama' ? (
+                    <select
+                      value={serverGlobalModel}
+                      onChange={(e) => setServerGlobalModel(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+                    >
+                      {['qwen3.5','qwen3','qwen3-coder','llama3.3','mistral','gemma3','deepseek-r1','phi4','llama3.2','llama3.1'].map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
                   ) : (
                     <input
                       type="text"
@@ -584,6 +594,12 @@ export default function SettingsPage() {
                     />
                   )}
                 </div>
+
+                {serverGlobalProvider === 'ollama' && (
+                  <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                    💡 아래 <b>Ollama 설정</b>에 저장된 URL을 그대로 사용합니다. 별도 키 불필요.
+                  </p>
+                )}
 
                 {serverGlobalMsg && (
                   <p className={`text-xs font-medium ${serverGlobalMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-600'}`}>
