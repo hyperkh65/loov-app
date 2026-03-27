@@ -1017,6 +1017,22 @@ export default function InstaServicePage() {
                         <div>
                           <p className="font-semibold">❌ 발행 실패</p>
                           <p className="text-xs mt-0.5">{publishResult.error}</p>
+                          {(publishResult.error?.includes('OAuthException') || publishResult.error?.includes('토큰') || publishResult.error?.includes('unknown error')) && (
+                            <button
+                              onClick={async () => {
+                                const r = await fetch('/api/sns/refresh-token', { method: 'POST' });
+                                const d = await r.json();
+                                if (d.ok) {
+                                  setPublishResult({ error: '토큰 갱신 완료 — 다시 발행해보세요.' });
+                                } else {
+                                  setPublishResult({ error: '토큰 갱신 실패 — Instagram 재연결이 필요합니다. 설정 → SNS 연결에서 Instagram을 다시 연결하세요.' });
+                                }
+                              }}
+                              className="mt-2 text-xs bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-lg transition"
+                            >
+                              🔄 Instagram 토큰 갱신 후 재시도
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
