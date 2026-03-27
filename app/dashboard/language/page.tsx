@@ -286,34 +286,40 @@ export default function LanguagePage() {
     [input, loading, messages, language, level, mode, situation]
   );
 
-  const playTTS = async (text: string, msgIdx?: number) => {
-    try {
-      if (msgIdx !== undefined) setPlayingMsgIdx(msgIdx);
-      else setPlayingWord(true);
+  const playTTS = (text: string, msgIdx?: number) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-      const clean = stripMarkers(text);
+    const langMap: Record<string, string> = {
+      en: 'en-US', zh: 'zh-CN', ja: 'ja-JP',
+      fr: 'fr-FR', es: 'es-ES', de: 'de-DE',
+      vi: 'vi-VN', th: 'th-TH', ko: 'ko-KR',
+    };
 
-      // 브라우저 내장 Web Speech API 사용 (서버 불필요, 무료)
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+    window.speechSynthesis.cancel();
 
-        const langMap: Record<string, string> = {
-          en: 'en-US', zh: 'zh-CN', ja: 'ja-JP',
-          fr: 'fr-FR', es: 'es-ES', de: 'de-DE',
-          vi: 'vi-VN', th: 'th-TH', ko: 'ko-KR',
-        };
+    const clean = stripMarkers(text);
+    const utter = new SpeechSynthesisUtterance(clean);
+    utter.lang = langMap[language] || 'en-US';
+    utter.rate = 0.9;
 
-        const utter = new SpeechSynthesisUtterance(clean);
-        utter.lang = langMap[language] || 'en-US';
-        utter.rate = 0.9;
-        utter.onend = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
-        utter.onerror = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
-        window.speechSynthesis.speak(utter);
-        return;
-      }
-    } catch {
-      setPlayingMsgIdx(null);
-      setPlayingWord(false);
+    if (msgIdx !== undefined) setPlayingMsgIdx(msgIdx);
+    else setPlayingWord(true);
+
+    utter.onend = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
+    utter.onerror = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
+
+    // voices가 로드되지 않은 경우 잠시 후 재시도
+    const speak = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const match = voices.find(v => v.lang.startsWith(langMap[language]?.slice(0, 2) || 'en'));
+      if (match) utter.voice = match;
+      window.speechSynthesis.speak(utter);
+    };
+
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = () => { speak(); };
+    } else {
+      speak();
     }
   };
 
