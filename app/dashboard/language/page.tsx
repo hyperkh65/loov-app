@@ -298,29 +298,18 @@ export default function LanguagePage() {
     window.speechSynthesis.cancel();
 
     const clean = stripMarkers(text);
+    if (!clean.trim()) return;
+
     const utter = new SpeechSynthesisUtterance(clean);
     utter.lang = langMap[language] || 'en-US';
     utter.rate = 0.9;
+    utter.onend = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
+    utter.onerror = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
 
     if (msgIdx !== undefined) setPlayingMsgIdx(msgIdx);
     else setPlayingWord(true);
 
-    utter.onend = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
-    utter.onerror = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
-
-    // voices가 로드되지 않은 경우 잠시 후 재시도
-    const speak = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const match = voices.find(v => v.lang.startsWith(langMap[language]?.slice(0, 2) || 'en'));
-      if (match) utter.voice = match;
-      window.speechSynthesis.speak(utter);
-    };
-
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = () => { speak(); };
-    } else {
-      speak();
-    }
+    window.speechSynthesis.speak(utter);
   };
 
   const saveWord = async (word: SelectedWord) => {
