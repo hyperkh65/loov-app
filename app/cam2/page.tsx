@@ -274,6 +274,12 @@ export default function Cam2Page() {
     pc.onconnectionstatechange = () => setViewerConnected(pc.connectionState === 'connected');
 
     ch.on('broadcast', { event: 'viewer-request' }, async () => {
+      // offer 전송 후 뷰어가 못 받았을 경우 기존 offer 재전송
+      if (pc.signalingState === 'have-local-offer' && pc.localDescription) {
+        ch.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });
+        return;
+      }
+      if (pc.signalingState !== 'stable') return;
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       ch.send({ type: 'broadcast', event: 'cam-offer', payload: { sdp: pc.localDescription } });

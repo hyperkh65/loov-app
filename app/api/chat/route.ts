@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSetting } from '@/lib/get-setting';
 import { checkAndIncrementUsage } from '@/lib/ai-usage';
+import { callAI, type AIMessage } from '@/lib/ai-call';
 
 const ROLE_CONTEXT: Record<string, string> = {
   '영업팀장': '고객 발굴, 영업 전략, 제안서 작성, CRM 관리, 계약 협상 전문가.',
@@ -70,13 +70,8 @@ export async function POST(req: NextRequest) {
     const roleCtx = ROLE_CONTEXT[role] || `${role} 담당 직원.`;
 
     // 서버 환경변수를 fallback으로 사용 (클라이언트 키 없거나 빈 값일 때)
-    // provider가 gemini가 아닌데 키가 없으면, gemini로 전환해서 서버 키 사용
-    let resolvedApiKey = apiKey;
-    let resolvedProvider = provider;
-    if (!resolvedApiKey) {
-      resolvedApiKey = await getSetting('GEMINI_API_KEY');
-      resolvedProvider = 'gemini';
-    }
+    const resolvedApiKey: string = apiKey || '';
+    const resolvedProvider = provider;
 
     const historyText = msgs
       .slice(-12)
@@ -121,72 +116,27 @@ export async function POST(req: NextRequest) {
     const prompt = `${historyText ? `[이전 대화]\n${historyText}\n\n` : ''}${ceo}: ${userMsg}
 ${name}:`;
 
-    if (!resolvedApiKey) {
-      // API 키 없을 때 기본 응답
-      const defaults: Record<string, string[]> = {
-        '영업팀장': ['네, 바로 영업 전략을 수립하겠습니다!', '리드 발굴을 시작하겠습니다. 타겟 고객층을 알려주시면 더 정확한 접근이 가능합니다.'],
-        '회계팀장': ['회계 처리를 진행하겠습니다.', '재무 현황을 분석하고 보고드리겠습니다.'],
-        '마케터':   ['SNS 콘텐츠를 기획하겠습니다!', '마케팅 캠페인 아이디어를 제안드릴게요.'],
-      };
-      const empDefaults = defaults[role] || ['네, 처리하겠습니다.', '바로 진행하겠습니다.'];
-      return NextResponse.json({
-        reply: empDefaults[Math.floor(Math.random() * empDefaults.length)] + ' (AI 키를 설정하면 실제 AI 응답을 받을 수 있습니다.)',
-      });
-    }
+    // Build messages array for callAI
+    const aiMessages: AIMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt },
+    ];
 
-    let reply = '';
+    // Call AI with fallback support; pass explicit key only if provided
+    const aiResult = await callAI({
+      messages: aiMessages,
+      provider: resolvedProvider,
+      model: model || undefined,
+      apiKey: resolvedApiKey || undefined,
+      maxTokens: 500,
+      useFallback: true,
+    });
 
-    // OpenAI 계열 (gpt4o, gpt4, gpt35)
-    if (resolvedProvider === 'gpt4o' || resolvedProvider === 'gpt4' || resolvedProvider === 'gpt35') {
-      const selectedModel = model || (provider === 'gpt4o' ? 'gpt-4o' : provider === 'gpt4' ? 'gpt-4-turbo' : 'gpt-3.5-turbo');
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${resolvedApiKey}` },
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 500,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || 'OpenAI API 오류');
-      reply = data.choices?.[0]?.message?.content?.trim() || '';
-
-    // Claude (Anthropic)
-    } else if (resolvedProvider === 'claude') {
-      const selectedModel = model || 'claude-sonnet-4-6';
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': resolvedApiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: selectedModel,
-          max_tokens: 500,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || 'Anthropic API 오류');
-      reply = data.content?.[0]?.text?.trim() || '';
-
-    // Gemini (Google)
-    } else {
-      const selectedModel = model || 'gemini-2.0-flash';
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI(resolvedApiKey);
-      const geminiModel = genAI.getGenerativeModel({ model: selectedModel });
-      const result = await geminiModel.generateContent(systemPrompt + '\n\n' + prompt);
-      reply = result.response.text().trim();
-    }
-
-    return NextResponse.json({ reply });
+    return NextResponse.json({
+      reply: aiResult.text,
+      provider: aiResult.provider,
+      model: aiResult.model,
+    });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('Chat error:', errMsg);
