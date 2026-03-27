@@ -32,7 +32,6 @@ interface FallbackEntry {
 }
 
 const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
-  { provider: 'gemini', model: 'gemini-2.0-flash' },
   { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
 ];
 
@@ -54,7 +53,7 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
     case 'gpt35':
       return getSetting('OPENAI_API_KEY');
     default:
-      return getSetting('GEMINI_API_KEY');
+      return 'ollama';
   }
 }
 
@@ -68,8 +67,8 @@ function defaultModel(provider: string): string {
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
     case 'openrouter':  return 'meta-llama/llama-3.3-70b-instruct:free';
-    case 'ollama':      return 'llama3.2';
-    default:            return 'gemini-2.0-flash';
+    case 'ollama':      return 'qwen3.5';
+    default:            return 'qwen3.5';
   }
 }
 
@@ -220,7 +219,7 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
   } = options;
 
   // Read global AI settings from DB when no provider/model specified
-  let primaryProvider = primaryProviderOpt || 'gemini';
+  let primaryProvider = primaryProviderOpt || 'ollama';
   let primaryModelFallback: string | undefined = primaryModelOpt;
 
   if (!primaryProviderOpt) {
