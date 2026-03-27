@@ -30,6 +30,8 @@ interface FieldMap {
   url?: string
 }
 
+type ApiRouteType = 'odcloud' | 'bizinfo' | 'kstartup' | 'mss'
+
 interface ApiConfig {
   id: string
   name: string
@@ -38,7 +40,34 @@ interface ApiConfig {
   fieldMap: FieldMap
   enabled: boolean
   isDefault?: boolean
+  routeType?: ApiRouteType  // 'odcloud'(기본) | 'bizinfo' | 'kstartup' | 'mss'
+  description?: string
 }
+
+// 미리 등록된 추가 API 프리셋
+const API_PRESETS: Omit<ApiConfig, 'id' | 'serviceKey' | 'enabled'>[] = [
+  {
+    name: '기업마당 bizinfo (전체)',
+    endpoint: 'https://apis.data.go.kr/1421000/bizinfo/pblancBsnsService',
+    fieldMap: {},
+    routeType: 'bizinfo',
+    description: '정부·지자체 통합 지원사업 공고. 인천/소상공인/청년 등 해시태그 필터 가능. 가장 많은 데이터.',
+  },
+  {
+    name: 'K-Startup 창업공고 (창업진흥원)',
+    endpoint: 'https://apis.data.go.kr/B552735/kisedKstartupService01/getAnnouncementInformation01',
+    fieldMap: {},
+    routeType: 'kstartup',
+    description: '창업진흥원 공식 창업지원사업 공고. 청년창업, 초기/도약 단계별 지원사업.',
+  },
+  {
+    name: '중소벤처기업부 사업공고',
+    endpoint: 'https://apis.data.go.kr/1421000/mssBizService_v2/getbizList_v2',
+    fieldMap: {},
+    routeType: 'mss',
+    description: '중소벤처기업부 직접 공고. R&D, 판로, 수출 지원사업 등.',
+  },
+]
 
 const DEFAULT_FIELD_MAP: FieldMap = {
   id: '번호',
@@ -123,6 +152,7 @@ function emptyForm(): Omit<ApiConfig, 'id' | 'isDefault'> {
     serviceKey: '',
     fieldMap: { ...DEFAULT_FIELD_MAP },
     enabled: true,
+    routeType: 'odcloud',
   }
 }
 
@@ -244,24 +274,24 @@ export default function SmePage() {
       sort,
     })
 
-    // Pass API config
-    if (activeApi.id === 'default') {
-      // Default built-in API — pass localStorage service key if set
-      if (defaultServiceKey) params.set('apiKey', defaultServiceKey)
+    const routeType = activeApi.routeType ?? 'odcloud'
+    const apiKey = activeApi.serviceKey || defaultServiceKey
+    if (apiKey) params.set('apiKey', apiKey)
+
+    let fetchUrl: string
+    if (routeType === 'odcloud') {
+      // api.odcloud.kr 형식
+      if (activeApi.id !== 'default') params.set('apiEndpoint', activeApi.endpoint)
+      const customFM = Object.fromEntries(Object.entries(activeApi.fieldMap).filter(([, v]) => v))
+      if (Object.keys(customFM).length > 0) params.set('fieldMap', JSON.stringify(customFM))
+      fetchUrl = `/api/sme/programs?${params}`
     } else {
-      // Custom user-added API
-      params.set('apiEndpoint', activeApi.endpoint)
-      const key = activeApi.serviceKey || defaultServiceKey
-      if (key) params.set('apiKey', key)
-      const customFM = Object.fromEntries(
-        Object.entries(activeApi.fieldMap).filter(([, v]) => v)
-      )
-      if (Object.keys(customFM).length > 0) {
-        params.set('fieldMap', JSON.stringify(customFM))
-      }
+      // apis.data.go.kr 형식 (bizinfo / kstartup / mss)
+      params.set('apiType', routeType)
+      fetchUrl = `/api/sme/bizinfo?${params}`
     }
 
-    fetch(`/api/sme/programs?${params}`)
+    fetch(fetchUrl)
       .then((r) => r.json())
       .then((data) => {
         if (data.error) { setError(data.error); setLoading(false); return }
@@ -289,6 +319,7 @@ export default function SmePage() {
       serviceKey: cfg.serviceKey,
       fieldMap: { ...DEFAULT_FIELD_MAP, ...cfg.fieldMap },
       enabled: cfg.enabled,
+      routeType: cfg.routeType ?? 'odcloud',
     })
     setShowAddForm(true)
     setShowAdvanced(false)
@@ -700,6 +731,51 @@ export default function SmePage() {
             )}
           </div>
 
+          {/* ── Preset APIs ── */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white">📦 추천 API 프리셋</h3>
+                <p className="text-xs text-gray-400 mt-0.5">버튼 하나로 바로 추가합니다. 동일한 서비스키를 사용합니다.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {API_PRESETS.map((preset) => {
+                const alreadyAdded = apiConfigs.some(
+                  (c) => c.routeType === preset.routeType && c.name === preset.name
+                )
+                return (
+                  <div key={preset.name} className="flex items-start gap-3 bg-gray-900/50 rounded-lg p-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">{preset.name}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{preset.description}</p>
+                    </div>
+                    <button
+                      disabled={alreadyAdded}
+                      onClick={() => {
+                        if (alreadyAdded) return
+                        const newCfg: ApiConfig = {
+                          ...preset,
+                          id: `api_${Date.now()}`,
+                          serviceKey: '',
+                          enabled: true,
+                        }
+                        saveConfigs([...apiConfigs, newCfg])
+                      }}
+                      className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        alreadyAdded
+                          ? 'bg-gray-700 text-gray-500 cursor-default'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      {alreadyAdded ? '추가됨' : '+ 추가'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
           {/* Built-in API */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
             <div className="flex items-center justify-between gap-3">
@@ -809,6 +885,20 @@ export default function SmePage() {
                     placeholder="예: 창업진흥원 지원사업"
                     className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">API 형식 *</label>
+                  <select
+                    value={(form as ApiConfig).routeType ?? 'odcloud'}
+                    onChange={(e) => setForm((f) => ({ ...f, routeType: e.target.value as ApiRouteType }))}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="odcloud">api.odcloud.kr (공공데이터 파일API)</option>
+                    <option value="bizinfo">기업마당 bizinfo (apis.data.go.kr)</option>
+                    <option value="kstartup">K-Startup 창업진흥원 (apis.data.go.kr)</option>
+                    <option value="mss">중소벤처기업부 (apis.data.go.kr)</option>
+                  </select>
                 </div>
 
                 <div>
