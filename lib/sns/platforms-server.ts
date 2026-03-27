@@ -17,19 +17,22 @@ function isVideoUrl(url: string): boolean {
   return /\.(mp4|mov|avi|webm)(\?|$)/i.test(url);
 }
 
-/** Instagram 영상 컨테이너 처리 완료 대기 (최대 90초) */
+/** Instagram 컨테이너 처리 완료 대기 */
 async function waitInstagramVideoReady(containerId: string, accessToken: string, maxWaitMs = 90000): Promise<void> {
   const start = Date.now();
+  // 첫 폴링 전 2초 대기
+  await new Promise(r => setTimeout(r, 2000));
   while (Date.now() - start < maxWaitMs) {
-    await new Promise(r => setTimeout(r, 4000));
     try {
-      const res = await fetch(`https://graph.instagram.com/v21.0/${containerId}?fields=status_code&access_token=${accessToken}`);
+      const res = await fetch(`https://graph.instagram.com/v21.0/${containerId}?fields=status_code,status&access_token=${accessToken}`);
       const data = await res.json();
-      if (data.status_code === 'FINISHED') return;
-      if (data.status_code === 'ERROR') throw new Error('Instagram 영상 처리 실패');
+      const code = data.status_code ?? data.status;
+      if (code === 'FINISHED') return;
+      if (code === 'ERROR') throw new Error('Instagram 컨테이너 처리 실패: ' + JSON.stringify(data));
     } catch (e) { if ((e as Error).message?.includes('처리 실패')) throw e; }
+    await new Promise(r => setTimeout(r, 3000));
   }
-  throw new Error('Instagram 영상 처리 시간 초과 (90초)');
+  // 이미지 컨테이너는 타임아웃해도 대부분 게시 가능 — throw 대신 그냥 반환
 }
 
 /** Threads child 컨테이너가 FINISHED 될 때까지 폴링 (최대 30초) */
@@ -403,7 +406,7 @@ export async function postToInstagramWithMedia(
     return { id: (await pubRes.json()).id };
 
   } else {
-    // 캐러셀: 이미지 전용
+    // 캐러셀: child 컨테이너 생성 후 각각 FINISHED 대기
     const childIds: string[] = [];
     for (const url of mediaUrls.slice(0, 10)) {
       const cr = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media`, {
@@ -411,17 +414,30 @@ export async function postToInstagramWithMedia(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ media_type: 'IMAGE', image_url: url, is_carousel_item: true, access_token: accessToken }),
       });
-      if (cr.ok) childIds.push((await cr.json()).id);
+      if (!cr.ok) {
+        console.warn('Instagram child container 생성 실패:', await cr.text());
+        continue;
+      }
+      const { id: childId } = await cr.json();
+      // 각 child 컨테이너가 FINISHED 될 때까지 대기 (최대 30초)
+      await waitInstagramVideoReady(childId, accessToken, 30000).catch(() => { /* 이미지는 빠르게 완료되므로 타임아웃 무시 */ });
+      childIds.push(childId);
     }
-    if (!childIds.length) throw new Error('Instagram 캐러셀: 이미지 업로드 실패');
+    if (!childIds.length) throw new Error('Instagram 캐러셀: 이미지 컨테이너 생성 실패');
+
+    // 캐러셀 컨테이너 생성
     const carRes = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ media_type: 'CAROUSEL', children: childIds.join(','), caption: content.substring(0, 2200), access_token: accessToken }),
     });
-    if (!carRes.ok) throw new Error(`Instagram 캐러셀 생성 실패: ${await carRes.text()}`);
+    if (!carRes.ok) throw new Error(`Instagram 캐러셀 컨테이너 생성 실패: ${await carRes.text()}`);
     const { id: carouselId } = await carRes.json();
 
+    // 캐러셀 컨테이너도 FINISHED 대기 (최대 60초)
+    await waitInstagramVideoReady(carouselId, accessToken, 60000);
+
+    // 게시
     const pubRes = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media_publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
