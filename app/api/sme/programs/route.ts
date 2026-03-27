@@ -115,6 +115,13 @@ export async function GET(req: Request) {
       { cache: 'no-store' }
     )
     const firstJson = await firstRes.json()
+
+    // Debug: return raw field keys of first item
+    if (searchParams.get('debug') === '1') {
+      const sample = firstJson.data?.[0] ?? {}
+      return NextResponse.json({ keys: Object.keys(sample), sample })
+    }
+
     const apiTotalCount: number = firstJson.totalCount ?? firstJson.data?.length ?? 0
     const totalApiPages = Math.min(Math.ceil(apiTotalCount / 1000), 5) // cap at 5000
 
