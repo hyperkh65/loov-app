@@ -163,6 +163,8 @@ export default function SmePage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm())
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [debugResult, setDebugResult] = useState<string | null>(null)
+  const [debugLoading, setDebugLoading] = useState(false)
 
   // ── Load from localStorage ──────────────────────────────────────────
   useEffect(() => {
@@ -205,6 +207,23 @@ export default function SmePage() {
       localStorage.setItem(STORAGE_KEY_BOOKMARKS, JSON.stringify([...next]))
       return next
     })
+  }
+
+  const checkApiFields = async () => {
+    setDebugLoading(true)
+    setDebugResult(null)
+    const params = new URLSearchParams({ debug: '1' })
+    if (activeApi.id !== 'default') params.set('apiEndpoint', activeApi.endpoint)
+    const key = (activeApi.id !== 'default' ? activeApi.serviceKey : '') || defaultServiceKey
+    if (key) params.set('apiKey', key)
+    try {
+      const res = await fetch(`/api/sme/programs?${params}`)
+      const json = await res.json()
+      setDebugResult(JSON.stringify(json, null, 2))
+    } catch {
+      setDebugResult('오류 발생')
+    }
+    setDebugLoading(false)
   }
 
   // ── Active API config ───────────────────────────────────────────────
@@ -881,6 +900,28 @@ export default function SmePage() {
               </div>
             </div>
           )}
+
+          {/* Debug: check raw API field names */}
+          <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-gray-300">🔍 API 응답 필드 확인</p>
+                <p className="text-xs text-gray-500 mt-0.5">API가 실제로 어떤 필드명을 반환하는지 확인합니다.</p>
+              </div>
+              <button
+                onClick={checkApiFields}
+                disabled={debugLoading}
+                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-xs font-semibold px-3 py-2 rounded-lg transition"
+              >
+                {debugLoading ? '확인중...' : '필드 확인'}
+              </button>
+            </div>
+            {debugResult && (
+              <pre className="bg-gray-900 rounded-lg p-3 text-xs text-green-300 overflow-x-auto max-h-60 overflow-y-auto">
+                {debugResult}
+              </pre>
+            )}
+          </div>
 
           {/* Guide */}
           <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 text-xs text-gray-500 space-y-1.5">
