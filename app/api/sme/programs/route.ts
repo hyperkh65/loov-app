@@ -7,18 +7,18 @@ const DEFAULT_SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY
 const DEFAULT_ENDPOINT =
   'https://api.odcloud.kr/api/3034791/v1/uddi:fa09d13d-bce8-474e-b214-8008e79ec08f'
 
-// Default field name mapping (공공데이터포털 표준)
+// Default field name mapping (공공데이터포털 중소기업지원사업 API 실제 필드명)
 const DEFAULT_FIELD_MAP = {
   id: '번호',
   title: '사업명',
   agency: '소관기관',
   executor: '수행기관',
-  field: '지원분야',
-  region: '지역',
+  field: '분야',
+  region: '',          // 지역 필드 없음 — 사업명에서 추출
   startDate: '신청시작일자',
   endDate: '신청종료일자',
   registeredAt: '등록일자',
-  url: '사업공고URL',
+  url: '상세URL',
 }
 
 // ALL 17 regions - complete mapping
@@ -141,26 +141,33 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let programs: RawProgram[] = (allData as any[]).map((item: any) => {
       const endDate = item[FM.endDate]
-      // Try multiple common URL field names as fallback
+      const title: string = item[FM.title] ?? ''
+
+      // Extract region from title prefix e.g. [대구], [경기], [전국] etc.
+      const titleRegionMatch = title.match(/^\[([^\]]+)\]/)
+      const titleRegion = titleRegionMatch ? titleRegionMatch[1] : ''
+
+      // Region: use dedicated field if present, otherwise extract from title
+      const rawRegion = FM.region ? (item[FM.region] ?? '') : titleRegion
+      const normalizedRegion = normalizeRegion(rawRegion || titleRegion || undefined)
+
+      // URL: use specified field, fallback to common names
       const urlValue =
         item[FM.url] ||
+        item['상세URL'] ||
         item['사업공고URL'] ||
         item['공고URL'] ||
         item['사업URL'] ||
-        item['신청URL'] ||
-        item['링크URL'] ||
-        item['url'] ||
-        item['URL'] ||
         ''
 
       return {
         id: String(item[FM.id] ?? Math.random()),
-        title: item[FM.title] ?? '',
+        title,
         agency: item[FM.agency] ?? '',
         executor: item[FM.executor] ?? '',
         field: item[FM.field] ?? '기타',
-        region: normalizeRegion(item[FM.region]),
-        regionRaw: item[FM.region] ?? '',
+        region: normalizedRegion,
+        regionRaw: rawRegion,
         startDate: item[FM.startDate],
         endDate,
         status: getStatus(endDate),
