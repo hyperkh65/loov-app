@@ -141,6 +141,18 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let programs: RawProgram[] = (allData as any[]).map((item: any) => {
       const endDate = item[FM.endDate]
+      // Try multiple common URL field names as fallback
+      const urlValue =
+        item[FM.url] ||
+        item['사업공고URL'] ||
+        item['공고URL'] ||
+        item['사업URL'] ||
+        item['신청URL'] ||
+        item['링크URL'] ||
+        item['url'] ||
+        item['URL'] ||
+        ''
+
       return {
         id: String(item[FM.id] ?? Math.random()),
         title: item[FM.title] ?? '',
@@ -153,7 +165,7 @@ export async function GET(req: Request) {
         endDate,
         status: getStatus(endDate),
         registeredAt: item[FM.registeredAt] ?? '',
-        url: item[FM.url] ?? '',
+        url: urlValue,
       }
     })
 
