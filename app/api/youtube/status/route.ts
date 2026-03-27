@@ -12,7 +12,9 @@ export async function GET() {
     .eq('user_id', user.id)
     .eq('platform', 'youtube')
     .eq('is_active', true)
-    .single();
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   return NextResponse.json({
     connected: !!data,

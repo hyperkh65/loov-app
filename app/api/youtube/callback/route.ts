@@ -48,7 +48,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${returnUrl}_error=auth_mismatch`);
     }
 
-    const { error: upsertError } = await supabase.from('sns_connections').upsert({
+    // 기존 YouTube 연결 삭제 후 새로 저장 (upsert 충돌 방지)
+    await supabase.from('sns_connections')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('platform', 'youtube');
+
+    const { error: insertError } = await supabase.from('sns_connections').insert({
       user_id: user.id,
       platform: 'youtube',
       access_token: tokenData.access_token,
@@ -59,11 +65,11 @@ export async function GET(req: NextRequest) {
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       extra: { expires_at: new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString() },
-    }, { onConflict: 'user_id,platform' });
+    });
 
-    if (upsertError) throw new Error('DB 저장 실패: ' + upsertError.message);
+    if (insertError) throw new Error('DB 저장 실패: ' + insertError.message);
 
-    return NextResponse.redirect(`${returnUrl}_connected=1`);
+    return NextResponse.redirect(`${baseUrl}/dashboard/insta-service?yt_connected=1`);
   } catch (err) {
     return NextResponse.redirect(`${returnUrl}_error=${encodeURIComponent(String(err))}`);
   }

@@ -525,7 +525,7 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
   const [ttsVoice, setTtsVoice] = useState('ko-KR-SunHiNeural');
   const [ttsRate, setTtsRate] = useState(10);
 
-  // Check YouTube connection on modal open
+  // Check YouTube connection on modal open or after OAuth redirect
   useEffect(() => {
     if (showYtModal && ytConnected === null) {
       fetch('/api/youtube/status')
@@ -533,6 +533,23 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
         .then(d => { setYtConnected(d.connected); setYtChannel(d.channelName || ''); });
     }
   }, [showYtModal, ytConnected]);
+
+  // OAuth 콜백 후 자동 상태 갱신 (?yt_connected=1)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('yt_connected') === '1') {
+      fetch('/api/youtube/status')
+        .then(r => r.json())
+        .then(d => {
+          setYtConnected(d.connected);
+          setYtChannel(d.channelName || '');
+          setShowYtModal(true); // 모달 자동 오픈
+        });
+      // URL 파라미터 제거
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   // Open Instagram modal
   const openInstaModal = () => {
@@ -918,7 +935,7 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
               ) : !ytConnected ? (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
                   <p className="text-sm text-yellow-800 font-semibold mb-3">YouTube 채널이 연결되지 않았습니다</p>
-                  <a href="/api/youtube/connect" target="_blank" rel="noopener noreferrer"
+                  <a href="/api/youtube/connect"
                     className="inline-block px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700">
                     Google 계정으로 YouTube 연결
                   </a>
