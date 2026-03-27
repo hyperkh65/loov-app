@@ -109,14 +109,30 @@ export async function GET(req: Request) {
   }
 
   try {
-    const res = await fetch(
+    // Fetch first page to determine total count
+    const firstRes = await fetch(
       `${apiEndpoint}?page=1&perPage=1000&returnType=JSON&serviceKey=${apiKey}`,
       { cache: 'no-store' }
     )
-    const json = await res.json()
+    const firstJson = await firstRes.json()
+    const apiTotalCount: number = firstJson.totalCount ?? firstJson.data?.length ?? 0
+    const totalApiPages = Math.min(Math.ceil(apiTotalCount / 1000), 5) // cap at 5000
+
+    // Fetch remaining pages in parallel (if any)
+    let allData: unknown[] = firstJson.data ?? []
+    if (totalApiPages > 1) {
+      const extraFetches = Array.from({ length: totalApiPages - 1 }, (_, i) =>
+        fetch(
+          `${apiEndpoint}?page=${i + 2}&perPage=1000&returnType=JSON&serviceKey=${apiKey}`,
+          { cache: 'no-store' }
+        ).then((r) => r.json()).then((j) => j.data ?? [])
+      )
+      const extraData = await Promise.all(extraFetches)
+      allData = [...allData, ...extraData.flat()]
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let programs: RawProgram[] = (json.data ?? []).map((item: any) => {
+    let programs: RawProgram[] = (allData as any[]).map((item: any) => {
       const endDate = item[FM.endDate]
       return {
         id: String(item[FM.id] ?? Math.random()),
