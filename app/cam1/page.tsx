@@ -13,10 +13,28 @@ const CCTV_PIN = process.env.NEXT_PUBLIC_CCTV_PIN || '0609';
 const CHANNEL = 'cctv-cam1';
 const CAM_ID = 'cam1';
 const CHUNK_MS = 30 * 1000; // 30초 청크
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-];
+// TURN 서버: 모바일 LTE/5G 대칭형 NAT(CGNAT) 환경에서 필수
+function getIceServers(): RTCIceServer[] {
+  const servers: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turns:openrelay.metered.ca:443',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ];
+  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+  const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME;
+  const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+  if (turnUrl) servers.push({ urls: turnUrl, username: turnUser ?? '', credential: turnCred ?? '' });
+  return servers;
+}
+const ICE_SERVERS = getIceServers();
 
 // 전체화면 진입 (iOS Safari는 미지원 → 홈화면 추가 안내)
 function requestFullscreen() {
