@@ -191,7 +191,7 @@ export default function FreeAIPage() {
           {OLLAMA_CLOUD_MODELS.map(m => (
             <button
               key={m.id}
-              onClick={() => { setSelectedModel(m.id); setShowSidebar(false); }}
+              onClick={() => { setSelectedModel(m.id); localStorage.setItem('freeai_last_model', m.id); setShowSidebar(false); }}
               className={`w-full text-left px-3 py-2.5 rounded-xl transition-all ${
                 selectedModel === m.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
               }`}
@@ -215,7 +215,7 @@ export default function FreeAIPage() {
           {OPENROUTER_MODELS.map(m => (
             <button
               key={m.id}
-              onClick={() => { setSelectedModel(m.id); setShowSidebar(false); }}
+              onClick={() => { setSelectedModel(m.id); localStorage.setItem('freeai_last_model', m.id); setShowSidebar(false); }}
               className={`w-full text-left px-3 py-2.5 rounded-xl transition-all ${
                 selectedModel === m.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
               }`}

@@ -237,6 +237,8 @@ export default function LanguagePage() {
         }));
 
         const clientOllamaKey = localStorage.getItem('freeai_ollama_key') || undefined;
+        // 무료AI에서 마지막 사용 모델 (없으면 qwen3.5)
+        const clientModel = localStorage.getItem('freeai_last_model') || 'qwen3.5';
 
         const res = await fetch('/api/language/chat', {
           method: 'POST',
@@ -249,6 +251,7 @@ export default function LanguagePage() {
             situation: mode === 'situation' ? situation : undefined,
             history,
             clientOllamaKey,
+            clientModel,
           }),
         });
 
