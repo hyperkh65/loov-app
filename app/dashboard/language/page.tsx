@@ -301,10 +301,18 @@ export default function LanguagePage() {
     if (!clean.trim()) return;
 
     const utter = new SpeechSynthesisUtterance(clean);
-    utter.lang = langMap[language] || 'en-US';
+    const targetLang = langMap[language] || 'en-US';
+    utter.lang = targetLang;
     utter.rate = 0.9;
     utter.onend = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
     utter.onerror = () => { setPlayingMsgIdx(null); setPlayingWord(false); };
+
+    // Google 고품질 음성 우선 선택 (Chrome)
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v => v.lang === targetLang && v.name.includes('Google'))
+      || voices.find(v => v.lang === targetLang && !v.name.toLowerCase().includes('male'))
+      || voices.find(v => v.lang.startsWith(targetLang.slice(0, 2)));
+    if (preferred) utter.voice = preferred;
 
     if (msgIdx !== undefined) setPlayingMsgIdx(msgIdx);
     else setPlayingWord(true);
