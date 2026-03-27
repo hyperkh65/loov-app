@@ -528,7 +528,7 @@ export default function SmePage() {
                 return (
                   <div
                     key={p.id}
-                    onClick={() => setSelected(p)}
+                    onClick={() => p.url ? window.open(p.url, '_blank', 'noopener,noreferrer') : setSelected(p)}
                     className={`flex items-stretch rounded-xl cursor-pointer transition group overflow-hidden border ${
                       isActive
                         ? 'bg-gray-800 border-green-800/60 hover:border-green-600 hover:bg-gray-750'
