@@ -4,8 +4,11 @@ import { createClient } from '@/lib/supabase-server';
 export const maxDuration = 60;
 
 const BUCKETS = [
-  { name: 'sns-media', folders: ['card-news'] },
-  { name: 'bossai-images', folders: ['shorts'] },
+  { name: 'sns-media',       folders: ['card-news'] },
+  { name: 'bossai-images',   folders: ['shorts'] },
+  { name: 'auto-blog',       folders: ['images', 'thumbnails'] },
+  { name: 'notion-uploads',  folders: [''] },
+  { name: 'gallery',         folders: [''] }, // 특정 유저 폴더는 별도 처리
 ];
 
 // List all files in a bucket folder, paginated

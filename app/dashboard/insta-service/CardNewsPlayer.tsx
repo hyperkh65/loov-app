@@ -349,7 +349,8 @@ async function recordSlideshowVideoWithAudio(
 }
 
 /**
- * Remotion Player를 frame-by-frame html2canvas로 캡처 → 실제 spring 애니메이션 + TTS 음성 포함 영상
+ * Remotion Player를 frame-by-frame 캡처 → mp4-muxer + WebCodecs로 빠른 인코딩
+ * WebCodecs 미지원 시 MediaRecorder fallback
  */
 async function recordFromRemotionPlayer(
   playerRef: React.RefObject<PlayerRef | null>,
@@ -361,134 +362,287 @@ async function recordFromRemotionPlayer(
   onProgress: (pct: number) => void
 ): Promise<Blob> {
   const SIZE = 720;
-  const RECORD_FPS = 15;      // 15fps 녹화 (html2canvas 성능 고려)
-  const FRAME_STEP = 2;       // Remotion 30fps → 15fps (매 2프레임 캡처)
+  const CAPTURE_FPS = 10;                        // 출력 FPS (10fps = 충분한 품질)
+  const FRAME_STEP = Math.round(30 / CAPTURE_FPS); // Remotion 30fps → 10fps
+  const numSlides = totalFrames / 150;            // SLIDE_FRAMES = 150
+  const totalDurationSecs = secsPerSlide * numSlides;
+  const totalCaptures = Math.ceil(totalFrames / FRAME_STEP);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = SIZE;
-  canvas.height = SIZE;
-  const ctx = canvas.getContext('2d')!;
-
-  // ── 오디오 설정 ────────────────────────────────────────────
-  const audioCtx = new AudioContext();
-  const dest = audioCtx.createMediaStreamDestination();
-
-  // BGM
-  let bgmNode: AudioBufferSourceNode | null = null;
-  if (bgmProxyUrl) {
-    try {
-      const bgmData = await fetch(bgmProxyUrl).then(r => r.arrayBuffer());
-      const bgmBuffer = await audioCtx.decodeAudioData(bgmData);
-      bgmNode = audioCtx.createBufferSource();
-      bgmNode.buffer = bgmBuffer;
-      bgmNode.loop = true;
-      const gain = audioCtx.createGain();
-      gain.gain.value = 0.22;
-      bgmNode.connect(gain);
-      gain.connect(dest);
-      bgmNode.start();
-    } catch { /* BGM 로드 실패 무시 */ }
-  }
-
-  // TTS 오디오 디코드
-  const ttsBuffers: (AudioBuffer | null)[] = [];
-  for (const dataUrl of ttsAudios) {
-    if (!dataUrl) { ttsBuffers.push(null); continue; }
-    try {
-      const base64 = dataUrl.split(',')[1];
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      ttsBuffers.push(await audioCtx.decodeAudioData(bytes.buffer.slice(0)));
-    } catch { ttsBuffers.push(null); }
-  }
-
-  // TTS를 슬라이드 시작 시점에 맞춰 예약 (5초 간격 = Remotion SLIDE_FRAMES/fps)
-  for (let i = 0; i < ttsBuffers.length; i++) {
-    if (!ttsBuffers[i]) continue;
-    const node = audioCtx.createBufferSource();
-    node.buffer = ttsBuffers[i]!;
-    const gain = audioCtx.createGain();
-    gain.gain.value = 1.0;
-    node.connect(gain);
-    gain.connect(dest);
-    node.start(audioCtx.currentTime + i * secsPerSlide);
-  }
-
-  // ── 영상 녹화 설정 ─────────────────────────────────────────
-  const mimeType = getBestMimeType();
-  const videoStream = canvas.captureStream(RECORD_FPS);
-  dest.stream.getAudioTracks().forEach(t => videoStream.addTrack(t));
-  const recorder = new MediaRecorder(videoStream, { mimeType, videoBitsPerSecond: 6_000_000 });
-  const chunks: BlobPart[] = [];
-  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-  recorder.start(100);
-
-  // Remotion Player 일시정지 후 처음으로 이동
   const player = playerRef.current;
   player?.pause();
 
-  const totalCaptures = Math.ceil(totalFrames / FRAME_STEP);
-  const numSlides = totalFrames / 150; // SLIDE_FRAMES = 150
-  const totalDurationMs = secsPerSlide * 1000 * numSlides;
-  const msPerCapture = totalDurationMs / totalCaptures;
+  // ── 캡처용 캔버스 ──────────────────────────────────────────
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d', { alpha: false })!;
 
-  const captureStart = performance.now();
+  // ── WebCodecs 지원 여부 확인 ────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hasWebCodecs = typeof (window as any).VideoEncoder !== 'undefined' && typeof (window as any).AudioEncoder !== 'undefined';
 
-  for (let captureIdx = 0; captureIdx < totalCaptures; captureIdx++) {
-    const remotionFrame = Math.min(captureIdx * FRAME_STEP, totalFrames - 1);
-    const targetWallTime = captureStart + captureIdx * msPerCapture;
+  if (hasWebCodecs) {
+    // ═══════════════════════════════════════════════════════════
+    // FAST PATH: WebCodecs + mp4-muxer (real-time 불필요)
+    // ═══════════════════════════════════════════════════════════
+    const { Muxer, ArrayBufferTarget } = await import('mp4-muxer');
 
-    // Remotion Player를 목표 프레임으로 이동
-    player?.seekTo(remotionFrame);
+    const target = new ArrayBufferTarget();
+    const muxer = new Muxer({
+      target,
+      video: { codec: 'avc', width: SIZE, height: SIZE },
+      audio: { codec: 'aac', numberOfChannels: 2, sampleRate: 44100 },
+      fastStart: 'in-memory',
+      firstTimestampBehavior: 'offset',
+    });
 
-    // React 리렌더링 대기 (rAF 2회)
-    await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    // ── 비디오 인코더 ──────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const VideoEncoderClass = (window as any).VideoEncoder;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const VideoFrameClass = (window as any).VideoFrame;
 
-    // html2canvas로 캡처
-    const container = playerContainerRef.current;
-    if (container) {
-      try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videoEncoder = new VideoEncoderClass({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      output: (chunk: any, meta: any) => muxer.addVideoChunk(chunk, meta),
+      error: console.error,
+    });
+    videoEncoder.configure({
+      codec: 'avc1.4d0028', // H.264 High Profile Level 4.0
+      width: SIZE,
+      height: SIZE,
+      bitrate: 4_000_000,
+      framerate: CAPTURE_FPS,
+    });
+
+    // ── 슬라이드별 1회 캡처 후 프레임 반복 (html2canvas numSlides번만 호출) ──
+    const framesPerSlide = Math.round(secsPerSlide * CAPTURE_FPS);
+    const slideCanvases: ImageBitmap[] = [];
+
+    for (let slideIdx = 0; slideIdx < numSlides; slideIdx++) {
+      // 슬라이드의 안정된 프레임(끝부분) 캡처
+      const stableFrame = Math.min((slideIdx + 1) * 150 - 3, totalFrames - 1);
+      player?.seekTo(stableFrame);
+      // 렌더링 안정화 대기
+      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+
+      const container = playerContainerRef.current;
+      if (container) {
         const w = container.offsetWidth || 400;
-        // 캡처 전 모서리 제거 (rounded-2xl이 영상에 반영되지 않도록)
         const parentEl = container.parentElement as HTMLElement | null;
         const savedRadius = parentEl?.style.borderRadius ?? '';
         if (parentEl) parentEl.style.borderRadius = '0';
-
-        const captured = await html2canvas(container, {
-          scale: SIZE / w,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          imageTimeout: 3000,
-          backgroundColor: '#000000',
-        });
-        ctx.drawImage(captured, 0, 0, SIZE, SIZE);
-
+        try {
+          const captured = await html2canvas(container, {
+            scale: SIZE / w, useCORS: true, allowTaint: true,
+            logging: false, imageTimeout: 5000, backgroundColor: '#000000',
+          });
+          ctx.drawImage(captured, 0, 0, SIZE, SIZE);
+        } catch { /* 이전 슬라이드 유지 */ }
         if (parentEl) parentEl.style.borderRadius = savedRadius;
-      } catch { /* 프레임 실패 시 이전 프레임 유지 */ }
+      }
+      slideCanvases.push(await createImageBitmap(canvas));
+      onProgress(Math.round(((slideIdx + 1) / numSlides) * 55));
     }
 
-    onProgress(Math.round((captureIdx / totalCaptures) * 85));
+    // ── 각 슬라이드 프레임 반복 인코딩 ────────────────────────
+    let globalFrameIdx = 0;
+    for (let slideIdx = 0; slideIdx < numSlides; slideIdx++) {
+      ctx.drawImage(slideCanvases[slideIdx], 0, 0, SIZE, SIZE);
+      for (let f = 0; f < framesPerSlide; f++) {
+        const timestamp = Math.round(globalFrameIdx * (1_000_000 / CAPTURE_FPS));
+        const duration = Math.round(1_000_000 / CAPTURE_FPS);
+        const frame = new VideoFrameClass(canvas, { timestamp, duration });
+        videoEncoder.encode(frame, { keyFrame: f === 0 });
+        frame.close();
+        globalFrameIdx++;
+      }
+      onProgress(55 + Math.round(((slideIdx + 1) / numSlides) * 10));
+    }
+    slideCanvases.forEach(b => b.close());
 
-    // 실시간 동기화: 목표 wall time까지 대기
-    const now = performance.now();
-    const waitMs = targetWallTime + msPerCapture - now;
-    if (waitMs > 5) await new Promise<void>(r => setTimeout(r, waitMs));
+    await videoEncoder.flush();
+    videoEncoder.close();
+    onProgress(68);
+
+    // ── 오디오: OfflineAudioContext (즉시 렌더) ────────────────
+    const sampleRate = 44100;
+    const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDurationSecs * sampleRate) + sampleRate, sampleRate);
+
+    if (bgmProxyUrl) {
+      try {
+        const bgmData = await fetch(bgmProxyUrl).then(r => r.arrayBuffer());
+        const bgmBuffer = await offlineCtx.decodeAudioData(bgmData);
+        const bgmNode = offlineCtx.createBufferSource();
+        bgmNode.buffer = bgmBuffer;
+        bgmNode.loop = true;
+        const gain = offlineCtx.createGain();
+        gain.gain.value = 0.22;
+        bgmNode.connect(gain);
+        gain.connect(offlineCtx.destination);
+        bgmNode.start(0);
+      } catch { /* BGM 로드 실패 무시 */ }
+    }
+
+    for (let i = 0; i < ttsAudios.length; i++) {
+      const dataUrl = ttsAudios[i];
+      if (!dataUrl) continue;
+      try {
+        const base64 = dataUrl.split(',')[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+        const ttsBuffer = await offlineCtx.decodeAudioData(bytes.buffer.slice(0));
+        const node = offlineCtx.createBufferSource();
+        node.buffer = ttsBuffer;
+        const gain = offlineCtx.createGain();
+        gain.gain.value = 1.0;
+        node.connect(gain);
+        gain.connect(offlineCtx.destination);
+        node.start(i * secsPerSlide);
+      } catch { /* TTS 실패 무시 */ }
+    }
+
+    const audioBuffer = await offlineCtx.startRendering();
+    onProgress(78);
+
+    // ── 오디오 인코더 ──────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const AudioEncoderClass = (window as any).AudioEncoder;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const AudioDataClass = (window as any).AudioData;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const audioEncoder = new AudioEncoderClass({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      output: (chunk: any, meta: any) => muxer.addAudioChunk(chunk, meta),
+      error: console.error,
+    });
+    audioEncoder.configure({ codec: 'mp4a.40.2', numberOfChannels: 2, sampleRate, bitrate: 128_000 });
+
+    const chunkFrames = 1024;
+    const ch0 = audioBuffer.getChannelData(0);
+    const ch1 = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : ch0;
+    for (let i = 0; i < audioBuffer.length; i += chunkFrames) {
+      const length = Math.min(chunkFrames, audioBuffer.length - i);
+      const timestamp = Math.round((i / sampleRate) * 1_000_000);
+      const planar = new Float32Array(length * 2);
+      planar.set(ch0.subarray(i, i + length), 0);
+      planar.set(ch1.subarray(i, i + length), length);
+      const audioData = new AudioDataClass({
+        format: 'f32-planar', sampleRate, numberOfChannels: 2,
+        numberOfFrames: length, timestamp, data: planar,
+      });
+      audioEncoder.encode(audioData);
+      audioData.close();
+    }
+
+    await audioEncoder.flush();
+    audioEncoder.close();
+    onProgress(95);
+
+    muxer.finalize();
+    onProgress(100);
+
+    return new Blob([target.buffer], { type: 'video/mp4' });
+
+  } else {
+    // ═══════════════════════════════════════════════════════════
+    // FALLBACK: 기존 MediaRecorder 방식 (Safari 등 WebCodecs 미지원)
+    // ═══════════════════════════════════════════════════════════
+    const RECORD_FPS = 10;
+    const totalDurationMs = totalDurationSecs * 1000;
+    const msPerCapture = totalDurationMs / totalCaptures;
+
+    const audioCtx = new AudioContext();
+    const dest = audioCtx.createMediaStreamDestination();
+
+    if (bgmProxyUrl) {
+      try {
+        const bgmData = await fetch(bgmProxyUrl).then(r => r.arrayBuffer());
+        const bgmBuffer = await audioCtx.decodeAudioData(bgmData);
+        const bgmNode = audioCtx.createBufferSource();
+        bgmNode.buffer = bgmBuffer;
+        bgmNode.loop = true;
+        const gain = audioCtx.createGain();
+        gain.gain.value = 0.22;
+        bgmNode.connect(gain);
+        gain.connect(dest);
+        bgmNode.start();
+      } catch { /* ignore */ }
+    }
+
+    const ttsBuffers: (AudioBuffer | null)[] = [];
+    for (const dataUrl of ttsAudios) {
+      if (!dataUrl) { ttsBuffers.push(null); continue; }
+      try {
+        const base64 = dataUrl.split(',')[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        ttsBuffers.push(await audioCtx.decodeAudioData(bytes.buffer.slice(0)));
+      } catch { ttsBuffers.push(null); }
+    }
+    for (let i = 0; i < ttsBuffers.length; i++) {
+      if (!ttsBuffers[i]) continue;
+      const node = audioCtx.createBufferSource();
+      node.buffer = ttsBuffers[i]!;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 1.0;
+      node.connect(gain);
+      gain.connect(dest);
+      node.start(audioCtx.currentTime + i * secsPerSlide);
+    }
+
+    const mimeType = getBestMimeType();
+    const videoStream = canvas.captureStream(RECORD_FPS);
+    dest.stream.getAudioTracks().forEach(t => videoStream.addTrack(t));
+    const recorder = new MediaRecorder(videoStream, { mimeType, videoBitsPerSecond: 4_000_000 });
+    const chunks: BlobPart[] = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.start(100);
+
+    const captureStart = performance.now();
+    for (let captureIdx = 0; captureIdx < totalCaptures; captureIdx++) {
+      const remotionFrame = Math.min(captureIdx * FRAME_STEP, totalFrames - 1);
+      const targetWallTime = captureStart + captureIdx * msPerCapture;
+      player?.seekTo(remotionFrame);
+      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+      const container = playerContainerRef.current;
+      if (container) {
+        const w = container.offsetWidth || 400;
+        const parentEl = container.parentElement as HTMLElement | null;
+        const savedRadius = parentEl?.style.borderRadius ?? '';
+        if (parentEl) parentEl.style.borderRadius = '0';
+        try {
+          const captured = await html2canvas(container, {
+            scale: SIZE / w, useCORS: true, allowTaint: true,
+            logging: false, imageTimeout: 3000, backgroundColor: '#000000',
+          });
+          ctx.drawImage(captured, 0, 0, SIZE, SIZE);
+        } catch { /* ignore */ }
+        if (parentEl) parentEl.style.borderRadius = savedRadius;
+      }
+
+      onProgress(Math.round((captureIdx / totalCaptures) * 85));
+      const now = performance.now();
+      const waitMs = targetWallTime + msPerCapture - now;
+      if (waitMs > 5) await new Promise<void>(r => setTimeout(r, waitMs));
+    }
+
+    const elapsed = performance.now() - captureStart;
+    const remaining = totalDurationMs - elapsed;
+    if (remaining > 0) await new Promise<void>(r => setTimeout(r, remaining));
+
+    recorder.stop();
+    await new Promise<void>(r => { recorder.onstop = () => r(); });
+    await audioCtx.close();
+    onProgress(100);
+
+    return new Blob(chunks, { type: mimeType });
   }
-
-  // 오디오가 완전히 재생되도록 남은 시간 대기
-  const elapsed = performance.now() - captureStart;
-  const remaining = totalDurationMs - elapsed;
-  if (remaining > 0) await new Promise<void>(r => setTimeout(r, remaining));
-
-  bgmNode?.stop();
-  recorder.stop();
-  await new Promise<void>(r => { recorder.onstop = () => r(); });
-  await audioCtx.close();
-  onProgress(100);
-
-  return new Blob(chunks, { type: mimeType });
 }
 
 export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChange }: Props) {

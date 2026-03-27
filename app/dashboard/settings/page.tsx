@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { AIProvider, AI_PROVIDER_INFO, SUBSCRIPTION_PLANS, SubscriptionTier, ANIMAL_EMOJI } from '@/lib/types';
 
-const PLATFORM_INFO: Record<string, { label: string; icon: string; color: string }> = {
+const PLATFORM_INFO: Record<string, { label: string; icon: string; color: string; connectUrl?: string }> = {
+  youtube:  { label: '유튜브',    icon: '▶️', color: 'from-red-500 to-red-700', connectUrl: '/api/youtube/connect?return=/dashboard/settings' },
+  instagram:{ label: '인스타그램', icon: '📸', color: 'from-pink-500 to-purple-600' },
   twitter:  { label: '트위터/X',  icon: '🐦', color: 'from-blue-400 to-blue-600' },
   threads:  { label: '스레드',    icon: '🧵', color: 'from-gray-700 to-black' },
   facebook: { label: '페이스북',  icon: '📘', color: 'from-blue-500 to-blue-700' },
@@ -48,6 +50,29 @@ export default function SettingsPage() {
   const [apiKeysSaving, setApiKeysSaving] = useState(false);
   const [apiKeysMsg, setApiKeysMsg] = useState('');
 
+  // Ollama state
+  const [ollamaUrl, setOllamaUrl] = useState('');
+  const [ollamaUrlSaved, setOllamaUrlSaved] = useState(false);
+  const [ollamaTesting, setOllamaTesting] = useState(false);
+  const [ollamaTestMsg, setOllamaTestMsg] = useState('');
+
+  // OpenRouter state
+  const [openrouterKey, setOpenrouterKey] = useState('');
+  const [openrouterKeySaved, setOpenrouterKeySaved] = useState(false);
+
+  // 서버 글로벌 AI 설정 (DB에서 읽기/저장)
+  const [serverGlobalProvider, setServerGlobalProvider] = useState('gemini');
+  const [serverGlobalModel, setServerGlobalModel] = useState('gemini-2.0-flash');
+  const [serverGlobalSaving, setServerGlobalSaving] = useState(false);
+  const [serverGlobalMsg, setServerGlobalMsg] = useState('');
+
+  // AI 폴백 체인 state
+  const [fallbackChain, setFallbackChain] = useState<Array<{ provider: string; model: string }>>([]);
+  const [chainSaving, setChainSaving] = useState(false);
+  const [chainMsg, setChainMsg] = useState('');
+  const [newChainProvider, setNewChainProvider] = useState('gemini');
+  const [newChainModel, setNewChainModel] = useState('gemini-2.0-flash');
+
   // Gallery settings state
   const [galleryPw, setGalleryPw] = useState('');
   const [galleryPwSet, setGalleryPwSet] = useState(false);
@@ -60,6 +85,14 @@ export default function SettingsPage() {
   const [googleOauthConfigured, setGoogleOauthConfigured] = useState(true);
   const [googleSyncing, setGoogleSyncing] = useState(false);
   const [googleMsg, setGoogleMsg] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('yt_connected') === '1') {
+      setActiveTab('sns');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'sns') {
@@ -97,6 +130,25 @@ export default function SettingsPage() {
         .then((r) => r.ok ? r.json() : {})
         .then((d: { hasKey?: Record<string, boolean> }) => {
           setGalleryPwSet(!!d.hasKey?.['GALLERY_SECRET_PASSWORD']);
+        });
+    }
+    if (activeTab === 'ai') {
+      fetch('/api/app-settings')
+        .then((r) => r.ok ? r.json() : {})
+        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string> }) => {
+          setOllamaUrlSaved(!!d.hasKey?.['OLLAMA_BASE_URL']);
+          setOpenrouterKeySaved(!!d.hasKey?.['OPENROUTER_API_KEY']);
+          // Load server global AI setting
+          if (d.settings?.['AI_GLOBAL_PROVIDER']) setServerGlobalProvider(d.settings['AI_GLOBAL_PROVIDER']);
+          if (d.settings?.['AI_GLOBAL_MODEL']) setServerGlobalModel(d.settings['AI_GLOBAL_MODEL']);
+          // Load fallback chain
+          try {
+            const raw = d.settings?.['AI_FALLBACK_CHAIN'];
+            if (raw) {
+              const parsed = JSON.parse(raw) as Array<{ provider: string; model: string }>;
+              if (Array.isArray(parsed)) setFallbackChain(parsed);
+            }
+          } catch { /* ignore */ }
         });
     }
     if (activeTab === 'google') {
@@ -446,13 +498,127 @@ export default function SettingsPage() {
         {/* AI 설정 탭 */}
         {activeTab === 'ai' && (
           <div className="space-y-6 max-w-2xl">
-            {/* 글로벌 AI 설정 */}
+            {/* 서버 글로벌 AI 설정 (외국어학습·텔레그램 등 서버 기능에 적용) */}
+            <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">🌍</span>
+                <h2 className="font-bold text-gray-900">서버 AI 모델 (전 기능 공통 적용)</h2>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">외국어학습, 텔레그램 봇, 블로그 등 서버에서 실행되는 모든 AI 기능에 적용됩니다.</p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 mb-1.5 block">AI 공급자</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(['gemini', 'claude', 'openrouter', 'gpt4o', 'gpt4', 'gpt35', 'ollama'] as const).map((p) => (
+                      <button key={p}
+                        onClick={() => {
+                          const defaults: Record<string, string> = {
+                            gemini: 'gemini-2.0-flash', claude: 'claude-sonnet-4-6',
+                            openrouter: 'meta-llama/llama-3.3-70b-instruct:free',
+                            gpt4o: 'gpt-4o', gpt4: 'gpt-4-turbo', gpt35: 'gpt-3.5-turbo', ollama: 'llama3.2',
+                          };
+                          setServerGlobalProvider(p);
+                          setServerGlobalModel(defaults[p] || '');
+                        }}
+                        className={`py-1.5 px-2 rounded-lg border text-xs font-medium transition-all ${
+                          serverGlobalProvider === p
+                            ? 'border-violet-500 bg-violet-100 text-violet-800'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
+                      >{p}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 mb-1 block">모델명</label>
+                  {serverGlobalProvider === 'openrouter' ? (
+                    <select
+                      value={serverGlobalModel}
+                      onChange={(e) => setServerGlobalModel(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+                    >
+                      {[
+                        'meta-llama/llama-3.3-70b-instruct:free',
+                        'google/gemma-2-9b-it:free',
+                        'deepseek/deepseek-r1:free',
+                        'mistralai/mistral-7b-instruct:free',
+                        'qwen/qwen-2-7b-instruct:free',
+                        'meta-llama/llama-3.1-8b-instruct:free',
+                        'qwen/qwen3.5',
+                        'qwen/qwq-32b',
+                        'deepseek/deepseek-r1',
+                        'mistralai/mistral-small-3.1-24b-instruct',
+                        'google/gemma-3-27b-it',
+                        'microsoft/phi-4',
+                      ].map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  ) : serverGlobalProvider === 'gemini' ? (
+                    <select
+                      value={serverGlobalModel}
+                      onChange={(e) => setServerGlobalModel(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+                    >
+                      {['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'].map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  ) : serverGlobalProvider === 'claude' ? (
+                    <select
+                      value={serverGlobalModel}
+                      onChange={(e) => setServerGlobalModel(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+                    >
+                      {['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-6'].map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={serverGlobalModel}
+                      onChange={(e) => setServerGlobalModel(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+                      placeholder="모델명 입력"
+                    />
+                  )}
+                </div>
+
+                {serverGlobalMsg && (
+                  <p className={`text-xs font-medium ${serverGlobalMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {serverGlobalMsg}
+                  </p>
+                )}
+
+                <button
+                  onClick={async () => {
+                    setServerGlobalSaving(true); setServerGlobalMsg('');
+                    try {
+                      const r = await fetch('/api/app-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ AI_GLOBAL_PROVIDER: serverGlobalProvider, AI_GLOBAL_MODEL: serverGlobalModel }),
+                      });
+                      if (r.ok) setServerGlobalMsg('✅ 저장 완료 — 모든 서버 기능에 적용됩니다');
+                      else setServerGlobalMsg('❌ 저장 실패');
+                    } finally { setServerGlobalSaving(false); }
+                  }}
+                  disabled={serverGlobalSaving}
+                  className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+                >
+                  {serverGlobalSaving ? '저장 중...' : '💾 서버 AI 설정 저장'}
+                </button>
+              </div>
+            </div>
+
+            {/* 글로벌 AI 설정 (직원용 로컬 설정) */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-5">
                 <span className="text-xl">🌐</span>
                 <div>
-                  <h2 className="font-bold text-gray-900">글로벌 AI 설정</h2>
-                  <p className="text-xs text-gray-400">모든 직원에게 기본 적용되는 AI 설정</p>
+                  <h2 className="font-bold text-gray-900">AI 직원 기본 설정</h2>
+                  <p className="text-xs text-gray-400">AI 직원 채팅에 기본 적용되는 설정 (로컬 저장)</p>
                 </div>
               </div>
 
@@ -682,6 +848,219 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Ollama 로컬 LLM 설정 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900 mb-1">Ollama (로컬 LLM)</h3>
+              <p className="text-xs text-gray-500 mb-3">로컬에서 실행 중인 Ollama 서버 URL을 입력하세요. API 키 불필요.</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={ollamaUrl}
+                  onChange={(e) => setOllamaUrl(e.target.value)}
+                  placeholder={ollamaUrlSaved ? 'http://localhost:11434 (저장됨 — 변경 시 입력)' : 'http://localhost:11434'}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                />
+                <button
+                  onClick={async () => {
+                    setOllamaTesting(true); setOllamaTestMsg('');
+                    try {
+                      const url = ollamaUrl || 'http://localhost:11434';
+                      const r = await fetch(`${url}/api/tags`);
+                      if (r.ok) {
+                        const d = await r.json() as { models?: Array<{ name: string }> };
+                        const names = (d.models ?? []).map((m) => m.name).slice(0, 3).join(', ');
+                        setOllamaTestMsg(`연결 성공! 모델: ${names || '없음'}`);
+                      } else {
+                        setOllamaTestMsg('연결 실패 — Ollama가 실행 중인지 확인하세요');
+                      }
+                    } catch {
+                      setOllamaTestMsg('연결 실패 — Ollama가 실행 중인지 확인하세요');
+                    } finally {
+                      setOllamaTesting(false);
+                    }
+                  }}
+                  disabled={ollamaTesting}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {ollamaTesting ? '...' : '테스트'}
+                </button>
+              </div>
+              {ollamaTestMsg && (
+                <p className={`mt-2 text-xs font-medium ${ollamaTestMsg.includes('성공') ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {ollamaTestMsg}
+                </p>
+              )}
+              {ollamaUrl && (
+                <button
+                  onClick={async () => {
+                    await fetch('/api/app-settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ OLLAMA_BASE_URL: ollamaUrl }),
+                    });
+                    setOllamaUrlSaved(true);
+                    setOllamaUrl('');
+                  }}
+                  className="mt-2 w-full py-2 bg-gray-900 hover:bg-gray-700 text-white rounded-xl text-sm font-semibold"
+                >
+                  저장
+                </button>
+              )}
+              {ollamaUrlSaved && !ollamaUrl && (
+                <p className="mt-2 text-xs text-emerald-600 font-medium">Ollama URL이 저장되어 있습니다.</p>
+              )}
+            </div>
+
+            {/* OpenRouter 설정 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-bold text-gray-900">OpenRouter API Key</h3>
+                <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" className="text-xs text-blue-500 hover:underline">발급받기 →</a>
+              </div>
+              <p className="text-xs text-gray-500 mb-2">무료 모델 포함 100+ 모델 접근. <span className="text-emerald-600 font-medium">:free 모델은 완전 무료.</span></p>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {['meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-2-9b-it:free', 'deepseek/deepseek-r1:free'].map((m) => (
+                  <span key={m} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">{m}</span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={openrouterKey}
+                  onChange={(e) => setOpenrouterKey(e.target.value)}
+                  placeholder={openrouterKeySaved ? '저장됨 — 변경 시 입력' : 'sk-or-...'}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                />
+                <button
+                  onClick={async () => {
+                    if (!openrouterKey.trim()) return;
+                    await fetch('/api/app-settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ OPENROUTER_API_KEY: openrouterKey }),
+                    });
+                    setOpenrouterKeySaved(true);
+                    setOpenrouterKey('');
+                  }}
+                  disabled={!openrouterKey.trim()}
+                  className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
+                >
+                  저장
+                </button>
+              </div>
+              {openrouterKeySaved && !openrouterKey && (
+                <p className="mt-2 text-xs text-emerald-600 font-medium">OpenRouter API 키가 저장되어 있습니다.</p>
+              )}
+            </div>
+
+            {/* AI 폴백 체인 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900 mb-1">AI 폴백 체인</h3>
+              <p className="text-xs text-gray-500 mb-3">위 모델 실패 시 순서대로 다음 모델 시도. 비어있으면 기본값(Gemini → OpenRouter Llama) 사용.</p>
+
+              {fallbackChain.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 mb-2 p-2 bg-gray-50 rounded-lg">
+                  <span className="text-xs font-bold text-gray-400 w-5">{idx + 1}</span>
+                  <span className="flex-1 text-sm font-mono">{item.provider} / {item.model}</span>
+                  <button
+                    onClick={() => setFallbackChain((prev) => {
+                      if (idx === 0) return prev;
+                      const next = [...prev];
+                      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                      return next;
+                    })}
+                    disabled={idx === 0}
+                    className="text-gray-400 hover:text-gray-700 disabled:opacity-20 px-1"
+                    title="위로"
+                  >↑</button>
+                  <button
+                    onClick={() => setFallbackChain((prev) => {
+                      if (idx === prev.length - 1) return prev;
+                      const next = [...prev];
+                      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                      return next;
+                    })}
+                    disabled={idx === fallbackChain.length - 1}
+                    className="text-gray-400 hover:text-gray-700 disabled:opacity-20 px-1"
+                    title="아래로"
+                  >↓</button>
+                  <button
+                    onClick={() => setFallbackChain((prev) => prev.filter((_, i) => i !== idx))}
+                    className="text-gray-400 hover:text-red-500 px-1"
+                    title="삭제"
+                  >✕</button>
+                </div>
+              ))}
+
+              {/* Add new entry */}
+              <div className="flex gap-2 mt-3">
+                <select
+                  value={newChainProvider}
+                  onChange={(e) => {
+                    const p = e.target.value;
+                    setNewChainProvider(p);
+                    const providerModels: Record<string, string> = {
+                      gemini: 'gemini-2.0-flash',
+                      claude: 'claude-sonnet-4-6',
+                      openrouter: 'meta-llama/llama-3.3-70b-instruct:free',
+                      ollama: 'llama3.2',
+                      gpt4o: 'gpt-4o',
+                      gpt4: 'gpt-4-turbo',
+                      gpt35: 'gpt-3.5-turbo',
+                    };
+                    setNewChainModel(providerModels[p] || '');
+                  }}
+                  className="border border-gray-200 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-indigo-400"
+                >
+                  {['gemini', 'claude', 'openrouter', 'ollama', 'gpt4o', 'gpt4', 'gpt35'].map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={newChainModel}
+                  onChange={(e) => setNewChainModel(e.target.value)}
+                  placeholder="모델명"
+                  className="flex-1 border border-gray-200 rounded-xl px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                />
+                <button
+                  onClick={() => {
+                    if (!newChainModel.trim()) return;
+                    setFallbackChain((prev) => [...prev, { provider: newChainProvider, model: newChainModel.trim() }]);
+                  }}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold"
+                >
+                  추가
+                </button>
+              </div>
+
+              {chainMsg && (
+                <p className={`mt-2 text-xs font-medium ${chainMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {chainMsg}
+                </p>
+              )}
+              <button
+                onClick={async () => {
+                  setChainSaving(true); setChainMsg('');
+                  try {
+                    const r = await fetch('/api/app-settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ AI_FALLBACK_CHAIN: JSON.stringify(fallbackChain) }),
+                    });
+                    if (r.ok) setChainMsg('✅ 폴백 체인 저장 완료');
+                    else setChainMsg('❌ 저장 실패');
+                  } finally {
+                    setChainSaving(false);
+                  }
+                }}
+                disabled={chainSaving}
+                className="mt-3 w-full py-2 bg-gray-900 hover:bg-gray-700 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+              >
+                {chainSaving ? '저장 중...' : '폴백 체인 저장'}
+              </button>
+            </div>
+
             {/* AI 가이드 */}
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-5">
               <h3 className="font-bold text-gray-900 mb-3">💡 AI 키 발급 방법</h3>
@@ -690,6 +1069,7 @@ export default function SettingsPage() {
                   { name: 'Claude (Anthropic)', url: 'https://console.anthropic.com', desc: 'Anthropic 콘솔에서 API 키 발급' },
                   { name: 'Gemini (Google)', url: 'https://aistudio.google.com', desc: 'Google AI Studio에서 발급' },
                   { name: 'GPT (OpenAI)', url: 'https://platform.openai.com', desc: 'OpenAI Platform에서 발급' },
+                  { name: 'OpenRouter', url: 'https://openrouter.ai/keys', desc: '무료 모델 포함 100+ 모델 통합 API' },
                 ].map((item) => (
                   <div key={item.name} className="flex items-center gap-2">
                     <span className="text-indigo-400">→</span>
@@ -1127,8 +1507,8 @@ export default function SettingsPage() {
                           <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
                             {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-8 h-8 rounded-full" />}
                             <div className="min-w-0">
-                              <div className="text-sm font-medium text-gray-700 truncate">{conn.platform_display_name}</div>
-                              <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>
+                              <div className="text-sm font-medium text-gray-700 truncate">{conn.platform_display_name || conn.platform_username}</div>
+                              {conn.platform_display_name && <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>}
                             </div>
                           </div>
                           <button onClick={() => disconnectSNS(platform)} className="w-full text-xs text-red-500 border border-red-100 hover:border-red-200 rounded-xl py-2 transition-colors">
@@ -1136,7 +1516,7 @@ export default function SettingsPage() {
                           </button>
                         </div>
                       ) : (
-                        <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition-opacity`}>
+                        <a href={info.connectUrl ?? `/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition-opacity`}>
                           연결하기
                         </a>
                       )}

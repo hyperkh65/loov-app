@@ -4,10 +4,15 @@ import { createClient } from '@/lib/supabase-server';
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
-  const state = searchParams.get('state');
+  const stateRaw = searchParams.get('state');
   const error = searchParams.get('error');
   const baseUrl = req.nextUrl.origin;
-  const returnUrl = `${baseUrl}/dashboard/insta-service?youtube`;
+
+  // state format: "userId:returnPath" or legacy "userId"
+  const colonIdx = stateRaw?.indexOf(':') ?? -1;
+  const state = colonIdx > 0 ? stateRaw!.substring(0, colonIdx) : stateRaw;
+  const returnPath = colonIdx > 0 ? stateRaw!.substring(colonIdx + 1) : '/dashboard/insta-service';
+  const returnUrl = `${baseUrl}${returnPath}${returnPath.includes('?') ? '&' : '?'}youtube`;
 
   if (error || !code || !state) {
     return NextResponse.redirect(`${returnUrl}_error=${error || 'cancelled'}`);
@@ -69,7 +74,8 @@ export async function GET(req: NextRequest) {
 
     if (insertError) throw new Error('DB 저장 실패: ' + insertError.message);
 
-    return NextResponse.redirect(`${baseUrl}/dashboard/insta-service?yt_connected=1`);
+    const successUrl = `${baseUrl}${returnPath}${returnPath.includes('?') ? '&' : '?'}yt_connected=1`;
+    return NextResponse.redirect(successUrl);
   } catch (err) {
     return NextResponse.redirect(`${returnUrl}_error=${encodeURIComponent(String(err))}`);
   }

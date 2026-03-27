@@ -31,6 +31,13 @@ const ALLOWED_KEYS = [
   'GALLERY_NOTION_DB_URL',
   // 숏폼
   'PEXELS_API_KEY',
+  // Ollama (로컬 LLM)
+  'OLLAMA_BASE_URL',
+  // AI 폴백 체인 (JSON string)
+  'AI_FALLBACK_CHAIN',
+  // 글로벌 AI 설정
+  'AI_GLOBAL_PROVIDER',
+  'AI_GLOBAL_MODEL',
 ] as const;
 
 export async function GET() {
@@ -47,11 +54,16 @@ export async function GET() {
 
   const settings = (data?.settings as Record<string, string>) || {};
 
-  // 마스킹: 키 앞 4자리만 노출
+  // 마스킹: 키 앞 4자리만 노출 (비민감 키는 전체 값 반환)
+  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL']);
   const masked: Record<string, string> = {};
   for (const key of ALLOWED_KEYS) {
     const val = settings[key] || '';
-    masked[key] = val ? val.slice(0, 4) + '••••••••••••' : '';
+    if (NON_SECRET_KEYS.has(key)) {
+      masked[key] = val; // return raw value for non-sensitive settings
+    } else {
+      masked[key] = val ? val.slice(0, 4) + '••••••••••••' : '';
+    }
   }
 
   return NextResponse.json({

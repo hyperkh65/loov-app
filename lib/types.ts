@@ -2,7 +2,7 @@ export type AnimalType = 'pig' | 'cat' | 'rabbit' | 'fox' | 'otter' | 'tiger' | 
 export type Role = '대표' | '영업팀장' | '회계팀장' | '마케터' | '개발자' | '디자이너' | 'HR매니저' | '고객지원' | '전략기획';
 
 // ── AI 공급자 ─────────────────────────────────────────
-export type AIProvider = 'claude' | 'gemini' | 'gpt4o' | 'gpt4' | 'gpt35' | 'custom';
+export type AIProvider = 'claude' | 'gemini' | 'gpt4o' | 'gpt4' | 'gpt35' | 'openrouter' | 'ollama' | 'custom';
 
 export interface AIProviderConfig {
   provider: AIProvider;
@@ -12,12 +12,39 @@ export interface AIProviderConfig {
 }
 
 export const AI_PROVIDER_INFO: Record<AIProvider, { label: string; models: string[]; placeholder: string }> = {
-  claude:  { label: 'Claude (Anthropic)', models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'], placeholder: 'sk-ant-...' },
-  gemini:  { label: 'Gemini (Google)',    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],          placeholder: 'AIza...' },
-  gpt4o:   { label: 'GPT-4o (OpenAI)',   models: ['gpt-4o', 'gpt-4o-mini'],                                            placeholder: 'sk-...' },
-  gpt4:    { label: 'GPT-4 (OpenAI)',    models: ['gpt-4-turbo', 'gpt-4'],                                             placeholder: 'sk-...' },
-  gpt35:   { label: 'GPT-3.5 (OpenAI)',  models: ['gpt-3.5-turbo'],                                                    placeholder: 'sk-...' },
-  custom:  { label: '커스텀 API',         models: [],                                                                   placeholder: 'API Key...' },
+  claude:      { label: 'Claude (Anthropic)', models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'], placeholder: 'sk-ant-...' },
+  gemini:      { label: 'Gemini (Google)',    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],            placeholder: 'AIza...' },
+  gpt4o:       { label: 'GPT-4o (OpenAI)',   models: ['gpt-4o', 'gpt-4o-mini'],                                              placeholder: 'sk-...' },
+  gpt4:        { label: 'GPT-4 (OpenAI)',    models: ['gpt-4-turbo', 'gpt-4'],                                               placeholder: 'sk-...' },
+  gpt35:       { label: 'GPT-3.5 (OpenAI)',  models: ['gpt-3.5-turbo'],                                                      placeholder: 'sk-...' },
+  openrouter:  {
+    label: 'OpenRouter (다모델)',
+    models: [
+      // ── CLOUD (유료/고성능) ──────────────────────────
+      'qwen/qwen3.5',                               // Qwen 3.5 · vision · thinking
+      'qwen/qwq-32b',                               // Qwen 3 · 다국어 강점
+      'qwen/qwen2.5-coder-32b-instruct',            // Qwen 3 Coder · 코딩 특화
+      'meta-llama/llama-3.3-70b-instruct',          // Llama 3.3 · 범용
+      'mistralai/mistral-small-3.1-24b-instruct',   // Mistral · 빠른 응답
+      'google/gemma-3-27b-it',                      // Gemma 3 · 경량 고성능
+      'deepseek/deepseek-r1',                       // DeepSeek R1 · 추론 특화
+      'microsoft/phi-4',                            // Phi 4 · 초경량
+      // ── FREE (무료) ──────────────────────────────────
+      'meta-llama/llama-3.1-8b-instruct:free',      // Llama 3.1 8B FREE
+      'mistralai/mistral-7b-instruct:free',         // Mistral 7B FREE
+      'google/gemma-2-9b-it:free',                  // Gemma 2 9B FREE
+      'qwen/qwen-2-7b-instruct:free',               // Qwen 2 7B FREE
+      'deepseek/deepseek-r1:free',                  // DeepSeek R1 FREE
+      'meta-llama/llama-3.3-70b-instruct:free',     // Llama 3.3 70B FREE
+    ],
+    placeholder: 'sk-or-...',
+  },
+  ollama:      {
+    label: 'Ollama (로컬서버)',
+    models: ['qwen2.5', 'qwen2.5-coder', 'llama3.2', 'llama3.3', 'mistral', 'phi4', 'gemma2', 'deepseek-r1', 'llama3.1:70b'],
+    placeholder: 'no key needed',
+  },
+  custom:      { label: '커스텀 API',         models: [],                                                                     placeholder: 'API Key...' },
 };
 
 // ── 구독 등급 ─────────────────────────────────────────

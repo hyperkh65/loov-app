@@ -13,6 +13,9 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = `${req.nextUrl.origin}/api/youtube/callback`;
 
+  const returnPath = req.nextUrl.searchParams.get('return') || '/dashboard/insta-service';
+  const stateData = `${user.id}:${returnPath}`;
+
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -24,7 +27,7 @@ export async function GET(req: NextRequest) {
     ].join(' '),
     access_type: 'offline',
     prompt: 'consent',
-    state: user.id,
+    state: stateData,
   });
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
