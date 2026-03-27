@@ -395,21 +395,30 @@ export default function SmePage() {
             </div>
           </div>
 
-          {/* Stats */}
+          {/* Stats — 클릭으로 필터 */}
           {!loading && !error && (
             <div className="grid grid-cols-3 gap-3">
-              <div className="bg-gray-800 rounded-xl p-3 text-center">
+              <button
+                onClick={() => { setStatus(''); setPage(1) }}
+                className={`rounded-xl p-4 text-center transition border ${status === '' ? 'bg-gray-700 border-gray-500' : 'bg-gray-800 border-transparent hover:bg-gray-750'}`}
+              >
                 <div className="text-2xl font-bold text-white">{totalCount.toLocaleString()}</div>
                 <div className="text-xs text-gray-400 mt-0.5">전체</div>
-              </div>
-              <div className="bg-blue-900/40 rounded-xl p-3 text-center border border-blue-800/30">
-                <div className="text-2xl font-bold text-blue-300">{activeCount.toLocaleString()}</div>
-                <div className="text-xs text-blue-400 mt-0.5">신청가능</div>
-              </div>
-              <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+              </button>
+              <button
+                onClick={() => { setStatus('신청가능'); setPage(1) }}
+                className={`rounded-xl p-4 text-center transition border ${status === '신청가능' ? 'bg-green-800 border-green-600' : 'bg-green-900/30 border-green-800/30 hover:bg-green-900/50'}`}
+              >
+                <div className="text-2xl font-bold text-green-300">{activeCount.toLocaleString()}</div>
+                <div className="text-xs text-green-400 mt-0.5">신청가능 ▶</div>
+              </button>
+              <button
+                onClick={() => { setStatus('마감'); setPage(1) }}
+                className={`rounded-xl p-4 text-center transition border ${status === '마감' ? 'bg-gray-600 border-gray-500' : 'bg-gray-800/60 border-transparent hover:bg-gray-700'}`}
+              >
                 <div className="text-2xl font-bold text-gray-400">{closedCount.toLocaleString()}</div>
                 <div className="text-xs text-gray-500 mt-0.5">마감</div>
-              </div>
+              </button>
             </div>
           )}
 
@@ -504,9 +513,9 @@ export default function SmePage() {
 
           {/* List */}
           {loading ? (
-            <div className="space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="bg-gray-800 rounded-xl p-4 animate-pulse h-20" />
+            <div className="space-y-2">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="bg-gray-800 rounded-xl p-4 animate-pulse h-[72px]" />
               ))}
             </div>
           ) : (
@@ -514,36 +523,64 @@ export default function SmePage() {
               {programs.length === 0 && (
                 <div className="text-center py-20 text-gray-500">검색 결과가 없습니다.</div>
               )}
-              {programs.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => setSelected(p)}
-                  className="bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600 rounded-xl p-4 cursor-pointer transition group"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-white truncate group-hover:text-blue-300 transition">
-                        {p.title}
-                      </h3>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-400">
-                        <span>{p.agency}</span>
-                        {p.region && <><span>·</span><span className="text-gray-300">{p.region}</span></>}
-                        {p.field && <><span>·</span><span>{p.field}</span></>}
-                        {p.endDate && <><span>·</span><span>~{p.endDate}</span></>}
+              {programs.map((p) => {
+                const isActive = p.status === '신청가능'
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setSelected(p)}
+                    className={`flex items-stretch rounded-xl cursor-pointer transition group overflow-hidden border ${
+                      isActive
+                        ? 'bg-gray-800 border-green-800/60 hover:border-green-600 hover:bg-gray-750'
+                        : 'bg-gray-800/50 border-gray-700/50 hover:bg-gray-800 hover:border-gray-600'
+                    }`}
+                  >
+                    {/* Left accent bar */}
+                    <div className={`w-1 shrink-0 ${isActive ? 'bg-green-500' : 'bg-gray-700'}`} />
+
+                    <div className="flex-1 flex items-center justify-between gap-3 px-4 py-3 min-w-0">
+                      <div className="flex-1 min-w-0">
+                        {/* Title */}
+                        <p className={`text-sm font-semibold leading-snug truncate transition ${
+                          isActive ? 'text-white group-hover:text-green-300' : 'text-gray-300 group-hover:text-white'
+                        }`}>
+                          {p.title}
+                        </p>
+                        {/* Meta row */}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {p.agency && (
+                            <span className="text-xs text-gray-400 font-medium">{p.agency}</span>
+                          )}
+                          {p.region && (
+                            <span className="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{p.region}</span>
+                          )}
+                          {p.field && p.field !== '기타' && (
+                            <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">{p.field}</span>
+                          )}
+                          {p.endDate && (
+                            <span className={`text-xs ${isActive ? 'text-green-400' : 'text-gray-500'}`}>
+                              ~ {p.endDate}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: badge + bookmark */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <DdayBadge status={p.status} endDate={p.endDate} />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleBookmark(p.id) }}
+                          className={`text-xl leading-none transition ${
+                            bookmarks.has(p.id) ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-400'
+                          }`}
+                        >
+                          {bookmarks.has(p.id) ? '★' : '☆'}
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <DdayBadge status={p.status} endDate={p.endDate} />
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleBookmark(p.id) }}
-                        className={`text-lg transition ${bookmarks.has(p.id) ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-400'}`}
-                      >
-                        {bookmarks.has(p.id) ? '★' : '☆'}
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
