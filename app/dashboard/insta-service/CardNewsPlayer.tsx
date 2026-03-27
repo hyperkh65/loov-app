@@ -534,22 +534,6 @@ export default function CardNewsPlayer({ slides, theme, bgm, caption, onBgmChang
     }
   }, [showYtModal, ytConnected]);
 
-  // OAuth 콜백 후 자동 상태 갱신 (?yt_connected=1)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('yt_connected') === '1') {
-      fetch('/api/youtube/status')
-        .then(r => r.json())
-        .then(d => {
-          setYtConnected(d.connected);
-          setYtChannel(d.channelName || '');
-          setShowYtModal(true); // 모달 자동 오픈
-        });
-      // URL 파라미터 제거
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, []);
 
   // Open Instagram modal
   const openInstaModal = () => {

@@ -251,6 +251,16 @@ export default function InstaServicePage() {
   useEffect(() => { loadArticles(); }, [loadArticles]);
   useEffect(() => { if (tab === 'reels') loadXVideos(); }, [tab, loadXVideos]);
 
+  // YouTube OAuth 콜백 후 카드뉴스 탭으로 자동 이동
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('yt_connected') === '1') {
+      setTab('cardnews');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   // Article select → auto-generate caption
   const selectArticle = async (article: Article) => {
     setSelectedArticle(article);
