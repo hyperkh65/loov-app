@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callAI } from '@/lib/ai-call';
+import { getSetting } from '@/lib/get-setting';
 
 export const maxDuration = 60;
 
@@ -50,6 +50,31 @@ RULES:
 11. Do NOT add any text after the GRAMMAR line`;
 }
 
+// Ollama Cloud 네이티브 API 호출 (무료AI 메뉴와 동일한 방식)
+async function callOllamaCloud(
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+): Promise<string> {
+  const res = await fetch('https://ollama.com/api/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model, messages, stream: false }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Ollama Cloud 오류 ${res.status}: ${err}`);
+  }
+
+  const data = await res.json() as { message?: { content?: string }; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.message?.content?.trim() || '';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as {
@@ -59,6 +84,7 @@ export async function POST(req: NextRequest) {
       mode: 'conversation' | 'grammar' | 'reading' | 'situation';
       situation?: string;
       history?: Array<{ role: 'user' | 'model'; content: string }>;
+      clientOllamaKey?: string;
     };
 
     const {
@@ -68,35 +94,46 @@ export async function POST(req: NextRequest) {
       mode = 'conversation',
       situation,
       history = [],
+      clientOllamaKey,
     } = body;
 
     if (!message?.trim()) {
       return NextResponse.json({ error: '메시지가 없습니다' }, { status: 400 });
     }
 
-    // Build messages for callAI (system + history + current message)
+    // API 키: 클라이언트 전달 → DB 설정 → env var
+    const ollamaKey = clientOllamaKey || await getSetting('OLLAMA_API_KEY');
+    if (!ollamaKey) {
+      return NextResponse.json(
+        { error: 'Ollama API 키가 없습니다. 무료AI 메뉴에서 API 키를 설정해주세요.' },
+        { status: 400 }
+      );
+    }
+
     const systemPrompt = buildSystemPrompt(language, level, mode, situation);
 
-    // Build history messages (last 10, convert 'model' → 'assistant')
+    // Build history (last 10, convert model→assistant)
     let recentHistory = history.slice(-10);
     while (recentHistory.length > 0 && recentHistory[0].role !== 'user') {
       recentHistory = recentHistory.slice(1);
     }
     if (recentHistory.length % 2 !== 0) recentHistory = recentHistory.slice(1);
 
-    const aiMessages = [
-      { role: 'system' as const, content: systemPrompt },
+    const messages = [
+      { role: 'system', content: systemPrompt },
       ...recentHistory.map((msg) => ({
-        role: (msg.role === 'model' ? 'assistant' : 'user') as 'user' | 'assistant',
+        role: msg.role === 'model' ? 'assistant' : 'user',
         content: msg.content,
       })),
-      { role: 'user' as const, content: message },
+      { role: 'user', content: message },
     ];
 
-    const aiResult = await callAI({ messages: aiMessages, useFallback: true });
-    const rawText = aiResult.text;
+    // 글로벌 설정 모델 or 기본값
+    const model = await getSetting('AI_GLOBAL_MODEL') || 'qwen3.5';
 
-    // Extract GRAMMAR correction from end of response
+    const rawText = await callOllamaCloud(ollamaKey, model, messages);
+
+    // Extract GRAMMAR correction
     let reply = rawText;
     let grammar: { original: string; corrected: string; explanation: string } | null = null;
 
@@ -106,7 +143,6 @@ export async function POST(req: NextRequest) {
         grammar = JSON.parse(grammarMatch[1]);
         reply = rawText.slice(0, grammarMatch.index).trim();
       } catch {
-        // If parsing fails, keep the full reply
         grammar = null;
       }
     }

@@ -236,6 +236,8 @@ export default function LanguagePage() {
           content: stripMarkers(m.content),
         }));
 
+        const clientOllamaKey = localStorage.getItem('freeai_ollama_key') || undefined;
+
         const res = await fetch('/api/language/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -246,6 +248,7 @@ export default function LanguagePage() {
             mode,
             situation: mode === 'situation' ? situation : undefined,
             history,
+            clientOllamaKey,
           }),
         });
 
