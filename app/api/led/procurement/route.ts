@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { createLoovClient } from '@/lib/loov-supabase'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,35 +8,22 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 })
 
-  const loov = await createLoovClient()
-  if (!loov) {
-    return NextResponse.json({
-      events: [],
-      marketOverviews: [],
-      stats: { total_products: 0, total_companies: 0, changes_24h: 0 },
-      needSetup: true,
-    })
-  }
-
   try {
-    // 변경 이벤트
-    const { data: eventData } = await loov
+    const { data: eventData } = await supabase
       .from('pro_change_events')
       .select('*')
       .order('detected_at', { ascending: false })
       .limit(20)
 
-    // 시장 현황
-    const { data: overviewData } = await loov
+    const { data: overviewData } = await supabase
       .from('pro_market_overviews')
       .select('*')
       .order('total_products', { ascending: false })
 
     let marketOverviews = overviewData || []
 
-    // 없으면 led_products에서 집계
     if (marketOverviews.length === 0) {
-      const { data: raw } = await loov.from('led_products').select('category, maker, price')
+      const { data: raw } = await supabase.from('led_products').select('category, maker, price')
       if (raw && raw.length > 0) {
         const agg: Record<string, { comps: Set<string>; sku: number; prices: number[] }> = {}
         raw.forEach((p) => {
@@ -61,17 +47,16 @@ export async function GET() {
       }
     }
 
-    // 통계
-    const { count: prodCount } = await loov
+    const { count: prodCount } = await supabase
       .from('led_products')
       .select('*', { count: 'exact', head: true })
 
-    const { data: makerData } = await loov.from('led_products').select('maker')
+    const { data: makerData } = await supabase.from('led_products').select('maker')
     const uniqueMakers = new Set<string>()
     ;(makerData || []).forEach((r: { maker: string }) => { if (r.maker) uniqueMakers.add(r.maker) })
 
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const { count: recentChanges } = await loov
+    const { count: recentChanges } = await supabase
       .from('pro_change_events')
       .select('*', { count: 'exact', head: true })
       .gte('detected_at', yesterday)
