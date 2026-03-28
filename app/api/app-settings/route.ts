@@ -41,6 +41,9 @@ const ALLOWED_KEYS = [
   // 글로벌 AI 설정
   'AI_GLOBAL_PROVIDER',
   'AI_GLOBAL_MODEL',
+  // loov22.vercel.app Supabase (LED 제품/조달 데이터 읽기용)
+  'LOOV_SUPABASE_URL',
+  'LOOV_SUPABASE_ANON_KEY',
 ] as const;
 
 export async function GET() {
