@@ -140,6 +140,36 @@ async function callGemini(
   return result.response.text().trim();
 }
 
+// Ollama Cloud 네이티브 API (https://ollama.com/api/chat)
+async function callOllamaCloud(
+  messages: AIMessage[],
+  model: string,
+  apiKey: string,
+): Promise<string> {
+  const ollamaMessages = messages.map((m) => ({
+    role: m.role === 'assistant' ? 'assistant' : m.role,
+    content: m.content,
+  }));
+
+  const res = await fetch('https://ollama.com/api/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model, messages: ollamaMessages, stream: false }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Ollama Cloud 오류 ${res.status}: ${err}`);
+  }
+
+  const data = await res.json() as { message?: { content?: string }; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.message?.content?.trim() || '';
+}
+
 async function callOpenAICompatible(
   messages: AIMessage[],
   model: string,
@@ -152,16 +182,11 @@ async function callOpenAICompatible(
   if (provider === 'openrouter') {
     baseUrl = 'https://openrouter.ai/api/v1';
   } else if (provider === 'ollama') {
-    const cloudKey = await getSetting('OLLAMA_API_KEY');
-    if (cloudKey) {
-      baseUrl = 'https://ollama.com/v1'; // Ollama Cloud
-    } else {
-      const ollamaUrl = await getSetting('OLLAMA_BASE_URL');
-      if (!ollamaUrl) {
-        throw new Error('Ollama API 키가 설정되지 않았습니다. 설정 > AI > Ollama Cloud API Key를 입력해주세요.');
-      }
-      baseUrl = `${ollamaUrl}/v1`; // Local
+    const ollamaUrl = await getSetting('OLLAMA_BASE_URL');
+    if (!ollamaUrl) {
+      throw new Error('Ollama 로컬 URL이 설정되지 않았습니다.');
     }
+    baseUrl = `${ollamaUrl}/v1`;
   } else {
     baseUrl = 'https://api.openai.com/v1';
   }
@@ -209,6 +234,9 @@ async function callSingleProvider(
     return callClaude(messages, model, apiKey, maxTokens, temperature);
   } else if (provider === 'gemini') {
     return callGemini(messages, model, apiKey);
+  } else if (provider === 'ollama' && apiKey && apiKey !== 'ollama') {
+    // Ollama Cloud: use native /api/chat format
+    return callOllamaCloud(messages, model, apiKey);
   } else {
     // gpt4o, gpt4, gpt35, openrouter, ollama all use OpenAI-compatible API
     return callOpenAICompatible(messages, model, apiKey, provider, maxTokens, temperature);

@@ -26,11 +26,12 @@ function internalFetch(
   if (searchParams) {
     Object.entries(searchParams).forEach(([k, v]) => url.searchParams.set(k, v));
   }
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET ?? '';
   return fetch(url.toString(), {
     ...rest,
     headers: {
       'Content-Type': 'application/json',
-      'x-telegram-bot': 'true',
+      'x-internal-key': secret,
       ...(rest.headers ?? {}),
     },
   });
