@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createLoovClient } from '@/lib/loov-supabase'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,19 +9,22 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 })
 
+  const loov = await createLoovClient()
+  if (!loov) {
+    return NextResponse.json({ products: [], report: null, needSetup: true })
+  }
+
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search') || ''
   const limit = Number(searchParams.get('limit') || 1000)
   const category = searchParams.get('category') || ''
 
   try {
-    const { data: reports } = await supabase
+    const { data: reports } = await loov
       .from('led_reports')
       .select('*')
       .order('generated_at', { ascending: false })
       .limit(1)
-
-    const report = reports?.[0] || null
 
     let allProducts: unknown[] = []
     let offset = 0
@@ -28,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     while (allProducts.length < Math.min(limit, 10000)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q: any = supabase
+      let q: any = loov
         .from('led_products')
         .select('*')
         .order('collected_at', { ascending: false })
@@ -44,7 +48,7 @@ export async function GET(req: NextRequest) {
       offset += PAGE_SIZE
     }
 
-    return NextResponse.json({ products: allProducts, report })
+    return NextResponse.json({ products: allProducts, report: reports?.[0] || null })
   } catch {
     return NextResponse.json({ products: [], report: null })
   }
