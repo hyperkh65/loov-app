@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getSetting } from '@/lib/get-setting'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,7 +89,7 @@ export async function GET(req: Request) {
 
   // Dynamic API config (from settings panel — optional overrides)
   const apiEndpoint = searchParams.get('apiEndpoint') || DEFAULT_ENDPOINT
-  const apiKey = searchParams.get('apiKey') || DEFAULT_SERVICE_KEY
+  const apiKey = searchParams.get('apiKey') || DEFAULT_SERVICE_KEY || await getSetting('DATA_GO_KR_SERVICE_KEY')
 
   // Field mapping override (JSON string)
   let FM = { ...DEFAULT_FIELD_MAP }
