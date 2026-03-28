@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { isInternalRequest } from '@/lib/internal-auth';
 
 export const maxDuration = 30;
 
@@ -15,8 +16,14 @@ async function getUser(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getUser(req);
-    if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 });
+    const internal = isInternalRequest(req);
+    let userId: string | null = null;
+
+    if (!internal) {
+      const user = await getUser(req);
+      if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 });
+      userId = user.id;
+    }
 
     const { searchParams } = new URL(req.url);
     const dateFilter = searchParams.get('date');
@@ -24,8 +31,10 @@ export async function GET(req: NextRequest) {
     const db = createAdminClient();
     let query = db
       .from('bossai_schedule_events')
-      .select('*')
-      .eq('user_id', user.id)
+      .select('*');
+
+    if (userId) query = query.eq('user_id', userId);
+    query = query
       .order('date', { ascending: true })
       .order('time', { ascending: true });
 

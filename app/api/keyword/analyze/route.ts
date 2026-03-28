@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
+import { isInternalRequest } from '@/lib/internal-auth';
 import crypto from 'crypto';
 
 // Naver Search Ad API HMAC auth
@@ -27,9 +28,11 @@ function getGrade(score: number, monthly: number): 'diamond' | 'gold' | 'silver'
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+  if (!isInternalRequest(req)) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+  }
 
   const body = await req.json() as { keywords: string[]; mode?: 'golden' | 'batch' };
   const { keywords = [], mode = 'golden' } = body;
