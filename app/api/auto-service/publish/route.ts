@@ -229,25 +229,56 @@ export async function POST(req: NextRequest) {
   // SNS 발행
   if (sns_platforms.length > 0) {
     try {
-      // 블로그 발행 결과 URL 수집 (SNS에 링크 포함)
+      // 블로그 발행 결과 URL 수집
       const blogUrls = Object.entries(results)
         .filter(([k, v]) => !k.startsWith('sns_') && v.success && v.url)
         .map(([, v]) => v.url!);
       const blogLinkText = blogUrls.length > 0 ? '\n\n🔗 ' + blogUrls.join('\n🔗 ') : '';
-      const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
-      const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-        body: JSON.stringify({
-          content: snsContent,
-          platforms: sns_platforms,
-          media_urls: article.representative_image_url ? [article.representative_image_url] : [],
-        }),
-      });
-      const data = await res.json();
-      if (data.results) {
-        for (const r of data.results) {
-          results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+
+      const threadsIncluded = sns_platforms.includes('threads');
+      const otherPlatforms = sns_platforms.filter((p: string) => p !== 'threads');
+
+      // Threads 외 플랫폼: 블로그 URL 포함하여 발행
+      if (otherPlatforms.length > 0) {
+        const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
+        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+          body: JSON.stringify({
+            content: snsContent,
+            platforms: otherPlatforms,
+            media_urls: article.representative_image_url ? [article.representative_image_url] : [],
+          }),
+        });
+        const data = await res.json();
+        if (data.results) {
+          for (const r of data.results) {
+            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+          }
+        }
+      }
+
+      // Threads: 본문에 URL 없이 발행 → 블로그 URL은 댓글(reply)로 추가
+      if (threadsIncluded) {
+        const threadsContent = `${article.title}\n\n${article.meta_description || ''}`.trim();
+        const threadItems = blogUrls.length > 0
+          ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
+          : [];
+        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+          body: JSON.stringify({
+            content: threadsContent,
+            platforms: ['threads'],
+            media_urls: article.representative_image_url ? [article.representative_image_url] : [],
+            thread_items: threadItems,
+          }),
+        });
+        const data = await res.json();
+        if (data.results) {
+          for (const r of data.results) {
+            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+          }
         }
       }
     } catch (err) {

@@ -67,6 +67,14 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'LED 인텔리전스',
+    items: [
+      { href: '/dashboard/led/market',      icon: '📊', label: 'LED 시장 분석' },
+      { href: '/dashboard/led/intel',       icon: '💡', label: 'LED 제품 인텔' },
+      { href: '/dashboard/led/procurement', icon: '🏛️', label: 'LED 조달 인텔' },
+    ],
+  },
+  {
     label: '자동화서비스',
     items: [
       { href: '/dashboard/auto-service', icon: '🤖', label: '블로그 자동화' },
