@@ -13,6 +13,7 @@ import {
 import { callAISimple } from '@/lib/ai-call';
 
 export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 
 // ─── Internal fetch helper ───────────────────────────────────────────────────
 
@@ -684,9 +685,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
 
-  // Respond 200 immediately, process in background
-  // Using waitUntil pattern: fire-and-forget via an unresolved promise
-  processUpdate(update).catch(console.error);
+  // Process and respond (Vercel serverless terminates after return, so await is needed)
+  await processUpdate(update).catch(console.error);
 
   return NextResponse.json({ ok: true });
 }
