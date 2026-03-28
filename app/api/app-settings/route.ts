@@ -41,6 +41,9 @@ const ALLOWED_KEYS = [
   // 글로벌 AI 설정
   'AI_GLOBAL_PROVIDER',
   'AI_GLOBAL_MODEL',
+  // LED 인텔리전스 (loov 레포 별도 Supabase)
+  'LOOV_SUPABASE_URL',
+  'LOOV_SUPABASE_ANON_KEY',
 ] as const;
 
 export async function GET() {
