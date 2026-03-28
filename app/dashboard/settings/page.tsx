@@ -20,81 +20,10 @@ interface SNSConnection {
   is_active: boolean;
 }
 
-function LedSupabaseSettings() {
-  const [url, setUrl] = useState('');
-  const [key, setKey] = useState('');
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [urlSet, setUrlSet] = useState(false);
-  const [keySet, setKeySet] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/app-settings')
-      .then(r => r.ok ? r.json() : {})
-      .then((d: { hasKey?: Record<string, boolean> }) => {
-        setUrlSet(!!d.hasKey?.['LOOV_SUPABASE_URL']);
-        setKeySet(!!d.hasKey?.['LOOV_SUPABASE_ANON_KEY']);
-      });
-  }, []);
-
-  async function handleSave() {
-    setSaving(true); setSaved(false);
-    const body: Record<string, string> = {};
-    if (url.trim()) body['LOOV_SUPABASE_URL'] = url.trim();
-    if (key.trim()) body['LOOV_SUPABASE_ANON_KEY'] = key.trim();
-    if (Object.keys(body).length === 0) { setSaving(false); return; }
-    const res = await fetch('/api/app-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) {
-      setSaved(true);
-      if (url.trim()) { setUrlSet(true); setUrl(''); }
-      if (key.trim()) { setKeySet(true); setKey(''); }
-    }
-    setSaving(false);
-  }
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
-      <div>
-        <label className="text-sm font-semibold text-gray-700 mb-1 block">
-          LOOV Supabase URL
-          {urlSet && <span className="ml-2 text-xs text-emerald-600 font-normal">✅ 설정됨</span>}
-        </label>
-        <input
-          type="text" value={url} onChange={e => setUrl(e.target.value)}
-          placeholder={urlSet ? '새 URL을 입력하면 교체됩니다' : 'https://xxxxxxxx.supabase.co'}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-cyan-400"
-        />
-      </div>
-      <div>
-        <label className="text-sm font-semibold text-gray-700 mb-1 block">
-          LOOV Supabase Anon Key
-          {keySet && <span className="ml-2 text-xs text-emerald-600 font-normal">✅ 설정됨</span>}
-        </label>
-        <input
-          type="password" value={key} onChange={e => setKey(e.target.value)}
-          placeholder={keySet ? '새 키를 입력하면 교체됩니다' : 'eyJhbGci...'}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-cyan-400"
-        />
-      </div>
-      {saved && <p className="text-sm text-emerald-600">✅ 저장되었습니다</p>}
-      <button
-        disabled={saving || (!url.trim() && !key.trim())}
-        onClick={handleSave}
-        className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-colors"
-      >
-        {saving ? '저장 중...' : '저장'}
-      </button>
-    </div>
-  );
-}
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -350,7 +279,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1809,31 +1738,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* LED 인텔리전스 탭 */}
-        {activeTab === 'led' && (
-          <div className="space-y-6 max-w-2xl">
-            <div className="bg-cyan-50 border border-cyan-200 rounded-2xl p-4 text-sm text-cyan-900 space-y-2">
-              <p className="font-bold">💡 LED 인텔리전스 — 외부 Supabase 연결</p>
-              <p>
-                LED 제품 인텔 / 조달 인텔은 <strong>loov 레포(hyperkh65/loov)</strong>의 별도 Supabase 프로젝트에서
-                데이터를 읽어옵니다. 해당 프로젝트의 URL과 Anon Key를 입력하세요.
-              </p>
-              <p className="text-xs text-cyan-700">
-                💡 LED 시장 분석(수동 입력 데이터)은 현재 Supabase에 저장되므로 별도 설정 불필요합니다.
-              </p>
-            </div>
-
-            <LedSupabaseSettings />
-
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600 space-y-1">
-              <p className="font-semibold text-gray-800 mb-2">📋 연결 방법</p>
-              <p>1. <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" className="underline text-blue-600">supabase.com/dashboard</a> 에서 loov 프로젝트 선택</p>
-              <p>2. Settings → API → Project URL 복사 → 위 URL 입력</p>
-              <p>3. Settings → API → anon public key 복사 → 위 Anon Key 입력</p>
-              <p>4. loov 레포의 GitHub Actions가 해당 Supabase에 LED 제품 데이터를 자동 수집합니다</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
