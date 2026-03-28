@@ -88,7 +88,12 @@ export default function AutoServicePage() {
 
   // 미리보기/편집 모달
   const [previewArticle, setPreviewArticle] = useState<Article | null>(null);
-  const [modalTab, setModalTab] = useState<'preview' | 'edit' | 'images'>('preview');
+  const [modalTab, setModalTab] = useState<'preview' | 'edit' | 'images' | 'watermark'>('preview');
+  const [wmAnalysis, setWmAnalysis] = useState<{
+    totalChars: number; watermarkCount: number; emojiCount: number; gptScore: number;
+    unicodeWatermarks: number; htmlEntities: number; cleanedText: string;
+  } | null>(null);
+  const [wmLoading, setWmLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [editTitle, setEditTitle] = useState('');
@@ -921,7 +926,7 @@ export default function AutoServicePage() {
 
             {/* 탭 */}
             <div className="flex border-b border-gray-200 px-4">
-              {([['preview', '👁️ 미리보기'], ['edit', '✏️ 편집'], ['images', '🖼️ 이미지']] as ['preview'|'edit'|'images', string][]).map(([t, label]) => (
+              {([['preview', '👁️ 미리보기'], ['edit', '✏️ 편집'], ['images', '🖼️ 이미지'], ['watermark', '🔍 워터마크']] as ['preview'|'edit'|'images'|'watermark', string][]).map(([t, label]) => (
                 <button key={t} onClick={() => setModalTab(t)}
                   className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${modalTab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                   {label}
@@ -969,6 +974,96 @@ export default function AutoServicePage() {
                   <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
                     rows={22} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y" />
                 </div>
+              </div>
+            )}
+
+            {/* 워터마크 검사 탭 */}
+            {modalTab === 'watermark' && (
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-gray-900">🔍 AI 워터마크 분석</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">유니코드 워터마크, HTML 엔티티, GPT 패턴을 감지합니다</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!previewArticle?.content) return;
+                      setWmLoading(true);
+                      try {
+                        const r = await fetch('/api/ai/watermark', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ text: previewArticle.content }),
+                        });
+                        if (r.ok) setWmAnalysis(await r.json());
+                      } finally { setWmLoading(false); }
+                    }}
+                    disabled={wmLoading}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold disabled:opacity-50"
+                  >
+                    {wmLoading ? '분석 중...' : '분석 시작'}
+                  </button>
+                </div>
+
+                {wmAnalysis && (
+                  <>
+                    {/* 통계 카드 */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: '총 문자 수', value: wmAnalysis.totalChars.toLocaleString(), color: 'text-gray-800' },
+                        { label: '워터마크 수', value: wmAnalysis.watermarkCount, color: wmAnalysis.watermarkCount > 0 ? 'text-red-600' : 'text-emerald-600' },
+                        { label: '이모지 수', value: wmAnalysis.emojiCount, color: 'text-amber-600' },
+                        { label: 'GPT 점수', value: `${wmAnalysis.gptScore}%`, color: wmAnalysis.gptScore > 50 ? 'text-red-600' : wmAnalysis.gptScore > 20 ? 'text-amber-600' : 'text-emerald-600' },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                          <p className="text-xs text-gray-500 mb-1">{label}</p>
+                          <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 워터마크 유형 */}
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        { label: '유니코드 워터마크', value: wmAnalysis.unicodeWatermarks },
+                        { label: 'HTML 엔티티', value: wmAnalysis.htmlEntities },
+                        { label: '특수 패턴', value: 0 },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                          <p className="text-xs text-gray-500 mb-1">{label}</p>
+                          <p className={`text-lg font-bold ${value > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            {value > 0 ? `${value}개` : '없음'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 결과 요약 */}
+                    <div className={`p-3 rounded-xl text-sm font-medium ${
+                      wmAnalysis.watermarkCount === 0 && wmAnalysis.gptScore < 30
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    }`}>
+                      {wmAnalysis.watermarkCount === 0 && wmAnalysis.gptScore < 30
+                        ? '✅ 워터마크 없음 — 자연스러운 글입니다'
+                        : `⚠️ ${wmAnalysis.watermarkCount > 0 ? `워터마크 ${wmAnalysis.watermarkCount}개 발견. ` : ''}GPT 패턴 점수 ${wmAnalysis.gptScore}% — 정제 권장`}
+                    </div>
+
+                    {/* 정제 버튼 */}
+                    {wmAnalysis.watermarkCount > 0 && (
+                      <button
+                        onClick={() => {
+                          if (!previewArticle) return;
+                          setPreviewArticle({ ...previewArticle, content: wmAnalysis.cleanedText });
+                          setWmAnalysis({ ...wmAnalysis, watermarkCount: 0, unicodeWatermarks: 0, htmlEntities: 0, cleanedText: wmAnalysis.cleanedText });
+                        }}
+                        className="w-full py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold"
+                      >
+                        🧹 워터마크 제거 적용
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             )}
 

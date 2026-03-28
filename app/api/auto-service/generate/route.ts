@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
+import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 
 export const maxDuration = 120;
 
@@ -74,6 +75,9 @@ function buildPrompt(keyword: string, newsItems: {title:string;description:strin
   ].join('\n\n');
 
   return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
+
+${ANTI_WATERMARK_PROMPT}
+
 수집된 최신 뉴스와 블로그 자료를 철저히 분석하여, 그 내용에 기반한 정확하고 흥미로운 블로그 글을 작성합니다.
 
 ═══════════════════════════════════
@@ -391,6 +395,9 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return NextResponse.json({ error: `AI 생성 실패: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }
+
+  // 워터마크 자동 제거
+  rawOutput = cleanWatermarks(rawOutput);
 
   const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
   if (!title || !rawContent) {
