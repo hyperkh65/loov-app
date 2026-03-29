@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search') || ''
   const category = searchParams.get('category') || ''
+  const origin = searchParams.get('origin') || ''
 
   try {
     const [productsJson, reportJson] = await Promise.all([
@@ -29,9 +30,8 @@ export async function GET(req: NextRequest) {
         p.name?.toLowerCase().includes(q) || p.maker?.toLowerCase().includes(q)
       )
     }
-    if (category) {
-      products = products.filter(p => p.category === category)
-    }
+    if (category) products = products.filter(p => p.category === category)
+    if (origin)   products = products.filter(p => p.origin === origin)
 
     return NextResponse.json({ products, report })
   } catch {

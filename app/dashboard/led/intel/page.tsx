@@ -1,37 +1,81 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { Activity, Search, Filter, Grid3X3, List, RefreshCw } from 'lucide-react'
+import {
+  Activity, Search, Filter, Grid3X3, List, RefreshCw,
+  ExternalLink, TrendingUp, TrendingDown, BarChart3,
+  Globe, Building2, Package, DollarSign, Layers
+} from 'lucide-react'
 
 interface Product {
-  id: string
-  name: string
-  price: number
-  maker: string
-  category: string
-  image_url?: string
+  id: string; name: string; price: number; maker: string
+  category: string; image_url?: string; product_url?: string
+  origin?: 'korea' | 'china' | 'unknown'; maker_type?: string
   collected_at: string
-  specs?: Record<string, string>
 }
 
 interface Report {
-  generated_at: string
-  total_count: number
-  ai_commentary?: string
-  top_makers?: Array<{ name: string; count: number; avgPrice: number; certRatio: number }>
-  waste_items?: {
-    waste_count: number
-    origin_stats?: { korea_ratio: number; china_ratio: number }
-    price_distribution?: Array<{ tier: string; ratio: number }>
-    yearly_trends?: Record<string, number>
-  }
+  generated_at: string; total_count: number; ai_commentary?: string
+  total_makers?: number; total_categories?: number
+  avg_price?: number; median_price?: number; min_price?: number; max_price?: number
+  products_with_link?: number
+  origin?: { korea: number; china: number; unknown: number; korea_pct: number; china_pct: number }
+  price_tiers?: Record<string, number>
+  category_stats?: Array<{ name: string; count: number; avg_price: number; min_price: number; max_price: number; median_price: number; korea_pct: number }>
+  maker_stats?: Array<{ name: string; count: number; avg_price: number; origin: string; maker_type: string; categories: string[] }>
+  maker_type_dist?: Record<string, number>
+  price_percentiles?: Record<string, number>
+  top_category?: string; top_maker?: string
 }
 
-const C = '#00e5ff'
-const C2 = '#ff00d4'
-const BG = '#05050a'
-const CARD_BG = 'rgba(20, 20, 30, 0.4)'
-const BORDER = 'rgba(255, 255, 255, 0.08)'
+const C = '#00e5ff', C2 = '#ff00d4', CG = '#4efaa6', CW = '#ffcc00', CDANGER = '#ff4e4e'
+const BG = '#05050a', CARD = 'rgba(20,20,30,0.6)', BORDER = 'rgba(255,255,255,0.08)', SEC = 'rgba(255,255,255,0.45)'
+
+const card = (extra?: React.CSSProperties): React.CSSProperties => ({
+  background: CARD, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 20, ...extra,
+})
+
+function StatCard({ label, value, sub, color = C, icon }: { label: string; value: string | number; sub?: string; color?: string; icon?: React.ReactNode }) {
+  return (
+    <div style={{ ...card(), position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: color }} />
+      <div style={{ fontSize: 9, color: SEC, fontWeight: 800, marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 900, color, display: 'flex', alignItems: 'center', gap: 8 }}>{value}{icon}</div>
+      {sub && <div style={{ fontSize: 10, color: SEC, marginTop: 4 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function OriginBadge({ origin }: { origin?: string }) {
+  const map: Record<string, { label: string; color: string }> = {
+    korea: { label: '국산', color: CG },
+    china: { label: '중국산', color: CDANGER },
+    unknown: { label: '미상', color: SEC },
+  }
+  const o = map[origin || 'unknown'] || map.unknown
+  return (
+    <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: `${o.color}20`, color: o.color, fontWeight: 800 }}>
+      {o.label}
+    </span>
+  )
+}
+
+function BarRow({ label, value, max, color, suffix = '' }: { label: string; value: number; max: number; color: string; suffix?: string }) {
+  const pct = max > 0 ? (value / max) * 100 : 0
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+        <span style={{ color: '#ddd' }}>{label}</span>
+        <span style={{ color, fontWeight: 700 }}>{typeof value === 'number' ? value.toLocaleString() : value}{suffix}</span>
+      </div>
+      <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3 }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.6s ease' }} />
+      </div>
+    </div>
+  )
+}
+
+type ViewTab = 'overview' | 'products' | 'makers' | 'categories'
 
 export default function LedIntelPage() {
   const [products, setProducts] = useState<Product[]>([])
@@ -39,11 +83,12 @@ export default function LedIntelPage() {
   const [loading, setLoading] = useState(true)
   const [scraping, setScraping] = useState(false)
   const [scrapeMsg, setScrapeMsg] = useState('')
+  const [viewTab, setViewTab] = useState<ViewTab>('overview')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('all')
-  const [originFilter, setOriginFilter] = useState<'all' | 'korea' | 'china'>('all')
-  const [priceMax, setPriceMax] = useState(200000)
+  const [originFilter, setOriginFilter] = useState<'all' | 'korea' | 'china' | 'unknown'>('all')
+  const [priceMax, setPriceMax] = useState(500000)
   const [sort, setSort] = useState('latest')
 
   useEffect(() => { loadData() }, [])
@@ -57,7 +102,7 @@ export default function LedIntelPage() {
         setProducts(json.products || [])
         setReport(json.report || null)
       }
-    } catch { /* table not ready */ }
+    } catch { /* ignore */ }
     setLoading(false)
   }
 
@@ -67,343 +112,392 @@ export default function LedIntelPage() {
     try {
       const res = await fetch('/api/led/trigger', { method: 'POST' })
       const json = await res.json()
-      if (json.ok) {
-        setScrapeMsg('✅ 수집 시작됨 (약 3~5분 후 새로고침)')
-      } else {
-        setScrapeMsg(`❌ ${json.error}`)
-      }
-    } catch {
-      setScrapeMsg('❌ 트리거 실패')
-    }
+      setScrapeMsg(json.ok ? '✅ 수집 시작됨 (약 10~15분 후 새로고침)' : `❌ ${json.error}`)
+    } catch { setScrapeMsg('❌ 실패') }
     setScraping(false)
   }
 
-  const categories = useMemo(() => {
-    return ['all', ...new Set(products.map(p => p.category).filter(Boolean))]
-  }, [products])
+  const categories = useMemo(() => ['all', ...new Set(products.map(p => p.category).filter(Boolean))], [products])
 
-  const filteredProducts = useMemo(() => {
+  const filtered = useMemo(() => {
     return products.filter(p => {
-      const matchesCat = activeCategory === 'all' || p.category === activeCategory
-      const matchesPrice = p.price <= priceMax
       const q = searchQuery.toLowerCase()
-      const matchesSearch = !q || p.name.toLowerCase().includes(q) || p.maker.toLowerCase().includes(q)
-
-      const str = (p.name + ' ' + p.maker).toLowerCase()
-      const isKorea = str.includes('국산') || str.includes('한국') || str.includes('korea')
-      const isChina = str.includes('중국') || str.includes('china')
-      const origin = isKorea ? 'korea' : isChina ? 'china' : 'other'
-      const matchesOrigin = originFilter === 'all' || origin === originFilter
-
-      // Filter products with no image (likely danawa logo placeholders)
-      const hasImage = p.image_url && !p.image_url.includes('no_image') && !p.image_url.includes('danawa_logo')
-
-      return matchesCat && matchesPrice && matchesSearch && matchesOrigin && hasImage
+      return (activeCategory === 'all' || p.category === activeCategory)
+        && (originFilter === 'all' || p.origin === originFilter)
+        && p.price <= priceMax
+        && (!q || p.name.toLowerCase().includes(q) || p.maker.toLowerCase().includes(q))
     }).sort((a, b) => {
       if (sort === 'price_asc') return a.price - b.price
       if (sort === 'price_desc') return b.price - a.price
       return new Date(b.collected_at).getTime() - new Date(a.collected_at).getTime()
     })
-  }, [products, activeCategory, priceMax, searchQuery, originFilter, sort])
+  }, [products, activeCategory, originFilter, priceMax, searchQuery, sort])
 
-  // Market depth analytics
-  const marketDepth = useMemo(() => {
-    if (filteredProducts.length === 0) return null
-    const total = filteredProducts.length
-    let koreaCount = 0, chinaCount = 0
-    filteredProducts.forEach(p => {
-      const s = (p.name + p.maker).toLowerCase()
-      if (s.includes('국산') || s.includes('한국') || s.includes('korea')) koreaCount++
-      else if (s.includes('중국') || s.includes('china')) chinaCount++
-    })
-    const tiers = { 'Entry (<₩5k)': 0, 'Mid (₩5k~20k)': 0, 'High (₩20k~50k)': 0, 'Premium (>₩50k)': 0 }
-    filteredProducts.forEach(p => {
-      if (p.price < 5000) tiers['Entry (<₩5k)']++
-      else if (p.price < 20000) tiers['Mid (₩5k~20k)']++
-      else if (p.price < 50000) tiers['High (₩20k~50k)']++
-      else tiers['Premium (>₩50k)']++
-    })
-    // Brand rankings
-    const brandMap: Record<string, number> = {}
-    filteredProducts.forEach(p => { brandMap[p.maker] = (brandMap[p.maker] || 0) + 1 })
-    const topBrands = Object.entries(brandMap).sort((a, b) => b[1] - a[1]).slice(0, 10)
-
-    return {
-      korea_ratio: parseFloat(((koreaCount / total) * 100).toFixed(1)),
-      china_ratio: parseFloat(((chinaCount / total) * 100).toFixed(1)),
-      price_distribution: Object.entries(tiers).map(([tier, count]) => ({ tier, ratio: parseFloat(((count / total) * 100).toFixed(1)) })),
-      topBrands,
-    }
-  }, [filteredProducts])
-
-  const sideStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.03)', border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 }
-  const sideTitleStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: `${C}cc`, marginBottom: 12, letterSpacing: '0.1em', textTransform: 'uppercase' as const }
-  const filterBtnStyle = (active: boolean): React.CSSProperties => ({
-    width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-    border: `1px solid ${active ? C : 'transparent'}`, background: active ? `${C}15` : 'transparent',
-    color: active ? C : 'rgba(255,255,255,0.5)', cursor: 'pointer', transition: 'all 0.2s',
-  })
-  const cardStyle: React.CSSProperties = { background: CARD_BG, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }
+  const TabBtn = ({ id, label, icon }: { id: ViewTab; label: string; icon: React.ReactNode }) => (
+    <button onClick={() => setViewTab(id)} style={{
+      background: viewTab === id ? `${C}15` : 'none', border: `1px solid ${viewTab === id ? C : 'transparent'}`,
+      color: viewTab === id ? C : SEC, padding: '6px 14px', borderRadius: 8,
+      fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+    }}>{icon}{label}</button>
+  )
 
   return (
-    <div style={{ minHeight: '100vh', background: BG, color: '#fff', paddingBottom: 80, position: 'relative', overflow: 'hidden' }}>
-      {/* Bg glows */}
-      <div style={{ position: 'fixed', top: '-10%', left: '-10%', width: '40%', height: '40%', background: `radial-gradient(circle, ${C}08 0%, transparent 70%)`, pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'fixed', bottom: '-10%', right: '-10%', width: '50%', height: '50%', background: `radial-gradient(circle, ${C2}05 0%, transparent 70%)`, pointerEvents: 'none', zIndex: 0 }} />
+    <div style={{ minHeight: '100vh', background: BG, color: '#fff', paddingBottom: 80 }}>
+      {/* BG glows */}
+      <div style={{ position: 'fixed', top: '-10%', left: '-10%', width: '40%', height: '40%', background: `radial-gradient(circle, ${C}06 0%, transparent 70%)`, pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'fixed', bottom: '-10%', right: '-10%', width: '50%', height: '50%', background: `radial-gradient(circle, ${C2}04 0%, transparent 70%)`, pointerEvents: 'none', zIndex: 0 }} />
 
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '40px 32px', position: 'relative', zIndex: 1 }}>
+      <div style={{ maxWidth: 1500, margin: '0 auto', padding: '36px 28px', position: 'relative', zIndex: 1 }}>
         {/* Header */}
-        <header style={{ marginBottom: 40, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 32 }}>
           <div>
-            <h1 style={{ fontSize: 38, fontWeight: 900, letterSpacing: '-0.03em', margin: 0 }}>
+            <h1 style={{ fontSize: 34, fontWeight: 900, letterSpacing: '-0.03em', margin: 0 }}>
               MARKET <span style={{ color: C }}>INTELLIGENCE</span>
             </h1>
-            <p style={{ fontFamily: 'monospace', color: `${C}70`, fontSize: 12, marginTop: 4 }}>
-              PROPRIETARY DATA HARVESTING // REAL-TIME ANALYSIS ENGINE
+            <p style={{ fontFamily: 'monospace', color: `${C}60`, fontSize: 11, marginTop: 4 }}>
+              LED MARKET DATA ENGINE // {report ? new Date(report.generated_at).toLocaleString('ko-KR') : 'NO DATA'}
             </p>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4efaa6', boxShadow: '0 0 8px #4efaa6' }} />
-              <span style={{ fontSize: 10, color: '#4efaa6', fontWeight: 900, fontFamily: 'monospace' }}>
-                {loading ? 'LOADING...' : 'LIVE CONNECTION ACTIVE'}
-              </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={loadData} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.05)', border: `1px solid ${BORDER}`, color: '#fff', padding: '7px 14px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                <RefreshCw size={12} /> 새로고침
+              </button>
+              <button onClick={startScrape} disabled={scraping} style={{ display: 'flex', alignItems: 'center', gap: 6, background: scraping ? 'rgba(255,255,255,0.03)' : `${C2}18`, border: `1px solid ${C2}35`, color: scraping ? SEC : C2, padding: '7px 14px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: scraping ? 'not-allowed' : 'pointer' }}>
+                <Activity size={12} /> {scraping ? '수집 중...' : '시장 데이터 수집'}
+              </button>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
-              {report ? new Date(report.generated_at).toLocaleString('ko-KR') : 'PENDING SYNC'}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={loadData}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${C}15`, border: `1px solid ${C}30`, color: C, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  <RefreshCw size={12} /> 새로고침
-                </button>
-                <button
-                  onClick={startScrape}
-                  disabled={scraping}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: scraping ? 'rgba(255,255,255,0.05)' : `${C2}20`, border: `1px solid ${C2}40`, color: scraping ? 'rgba(255,255,255,0.3)' : C2, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: scraping ? 'not-allowed' : 'pointer' }}
-                >
-                  <Activity size={12} /> {scraping ? '수집 중...' : '다나와 수집'}
-                </button>
-              </div>
-              {scrapeMsg && (
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>{scrapeMsg}</div>
-              )}
-            </div>
+            {scrapeMsg && <div style={{ fontSize: 10, color: CG, fontFamily: 'monospace' }}>{scrapeMsg}</div>}
           </div>
-        </header>
+        </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 28 }}>
-          {/* Sidebar */}
-          <aside style={{ position: 'sticky', top: 20, height: 'fit-content' }}>
-            {/* Search */}
-            <div style={sideStyle}>
-              <h3 style={sideTitleStyle}>◈ Search Engine</h3>
-              <div style={{ position: 'relative' }}>
-                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: `${C}60` }} />
-                <input
-                  type="text" placeholder="Model or Vendor..."
-                  value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                  style={{ width: '100%', background: '#000', border: `1px solid ${C}30`, color: '#fff', padding: '10px 10px 10px 32px', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
-                />
-              </div>
+        {/* View tabs */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
+          <TabBtn id="overview" label="개요 & 통계" icon={<BarChart3 size={13} />} />
+          <TabBtn id="products" label="제품 목록" icon={<Package size={13} />} />
+          <TabBtn id="makers" label="제조사 분석" icon={<Building2 size={13} />} />
+          <TabBtn id="categories" label="카테고리 분석" icon={<Layers size={13} />} />
+        </div>
+
+        {/* ── OVERVIEW ── */}
+        {viewTab === 'overview' && (
+          <div>
+            {/* KPI */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 }}>
+              <StatCard label="총 제품" value={loading ? '...' : (report?.total_count || 0).toLocaleString()} sub="수집된 제품 수" color={C} icon={<Package size={16} />} />
+              <StatCard label="제조사" value={loading ? '...' : (report?.total_makers || 0).toLocaleString()} sub="고유 제조사 수" color={C2} icon={<Building2 size={16} />} />
+              <StatCard label="카테고리" value={loading ? '...' : (report?.total_categories || 0)} sub="제품 분류 수" color={CG} icon={<Layers size={16} />} />
+              <StatCard label="평균 가격" value={loading ? '...' : `₩${((report?.avg_price || 0)).toLocaleString()}`} sub={`중간값 ₩${(report?.median_price || 0).toLocaleString()}`} color={CW} icon={<DollarSign size={16} />} />
+              <StatCard label="링크 보유" value={loading ? '...' : `${report?.products_with_link || 0}`} sub="상품 페이지 연결" color="#4ea6fa" icon={<ExternalLink size={16} />} />
             </div>
 
-            {/* Category */}
-            <div style={sideStyle}>
-              <h3 style={sideTitleStyle}>◈ Category</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 300, overflowY: 'auto' }}>
-                {categories.map(cat => (
-                  <button key={cat} onClick={() => setActiveCategory(cat)} style={filterBtnStyle(activeCategory === cat)}>
-                    <span style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                      <span>{cat === 'all' ? 'ALL CATEGORIES' : cat.toUpperCase()}</span>
-                      <span style={{ opacity: 0.5, fontSize: 10 }}>
-                        {cat === 'all' ? products.length : products.filter(p => p.category === cat).length}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
+            {/* AI Commentary */}
+            <div style={{ ...card({ marginBottom: 24, borderLeft: `4px solid ${C}`, background: `linear-gradient(135deg, ${C}08, transparent)` }) }}>
+              <div style={{ fontSize: 9, fontFamily: 'monospace', color: C, marginBottom: 8 }}>◈ AI MARKET INSIGHT</div>
+              <p style={{ fontSize: 13, lineHeight: 1.7, color: '#e0e0e0', margin: 0 }}>
+                {report?.ai_commentary || '데이터 수집 후 AI 인사이트가 표시됩니다.'}
+              </p>
             </div>
 
-            {/* Origin */}
-            <div style={sideStyle}>
-              <h3 style={sideTitleStyle}>◈ Product Origin</h3>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {(['all', 'korea', 'china'] as const).map(o => (
-                  <button key={o} onClick={() => setOriginFilter(o)} style={{ ...filterBtnStyle(originFilter === o), flex: 1, textAlign: 'center' as const }}>
-                    {o.toUpperCase()}
-                  </button>
-                ))}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18, marginBottom: 18 }}>
+              {/* 원산지 분포 */}
+              <div style={card()}>
+                <div style={{ fontSize: 11, color: C, fontWeight: 800, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Globe size={13} /> 원산지 분포
+                </div>
+                {report?.origin ? (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                      {[
+                        { label: '국산', pct: report.origin.korea_pct, count: report.origin.korea, color: CG },
+                        { label: '중국산', pct: report.origin.china_pct, count: report.origin.china, color: CDANGER },
+                        { label: '미상', pct: 100 - report.origin.korea_pct - report.origin.china_pct, count: report.origin.unknown, color: SEC },
+                      ].map(o => (
+                        <div key={o.label} style={{ flex: 1, textAlign: 'center', padding: '10px 6px', background: `${o.color}10`, borderRadius: 8, border: `1px solid ${o.color}20` }}>
+                          <div style={{ fontSize: 18, fontWeight: 900, color: o.color }}>{o.pct.toFixed(1)}%</div>
+                          <div style={{ fontSize: 9, color: SEC, marginTop: 2 }}>{o.label}</div>
+                          <div style={{ fontSize: 10, color: o.color, marginTop: 1 }}>{o.count.toLocaleString()}개</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ height: 8, borderRadius: 4, overflow: 'hidden', display: 'flex' }}>
+                      <div style={{ width: `${report.origin.korea_pct}%`, background: CG }} />
+                      <div style={{ width: `${report.origin.china_pct}%`, background: CDANGER }} />
+                      <div style={{ flex: 1, background: 'rgba(255,255,255,0.1)' }} />
+                    </div>
+                  </>
+                ) : <div style={{ color: SEC, fontSize: 12 }}>데이터 없음</div>}
               </div>
-            </div>
 
-            {/* Price */}
-            <div style={sideStyle}>
-              <h3 style={sideTitleStyle}>◈ Price Segmentation</h3>
-              <input type="range" min="0" max="200000" step="5000" value={priceMax}
-                onChange={e => setPriceMax(Number(e.target.value))}
-                style={{ width: '100%', accentColor: C }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace', color: `${C}80`, marginTop: 6 }}>
-                <span>₩0</span><span>₩{priceMax.toLocaleString()}</span>
+              {/* 가격 분포 */}
+              <div style={card()}>
+                <div style={{ fontSize: 11, color: CW, fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <DollarSign size={13} /> 가격 구간 분포
+                </div>
+                {report?.price_tiers ? Object.entries(report.price_tiers).map(([tier, cnt]) => (
+                  <BarRow key={tier} label={tier} value={cnt as number}
+                    max={Math.max(...Object.values(report.price_tiers!) as number[])} color={CW} suffix="개" />
+                )) : <div style={{ color: SEC, fontSize: 12 }}>데이터 없음</div>}
               </div>
-            </div>
 
-            {/* Brand rankings */}
-            {marketDepth && marketDepth.topBrands.length > 0 && (
-              <div style={sideStyle}>
-                <h3 style={sideTitleStyle}>◈ Brand Portfolio (Top 10)</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {marketDepth.topBrands.map(([name, count], i) => (
-                    <div key={name}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 900 }}>#{i + 1} {name}</span>
-                        <span style={{ color: C, fontWeight: 900 }}>{count}</span>
+              {/* 가격 백분위 */}
+              <div style={card()}>
+                <div style={{ fontSize: 11, color: C2, fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <TrendingUp size={13} /> 가격 백분위
+                </div>
+                {report?.price_percentiles ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {Object.entries(report.price_percentiles).map(([key, val]) => (
+                      <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <span style={{ color: SEC }}>{key.toUpperCase()}</span>
+                        <span style={{ fontWeight: 700, color: C2 }}>₩{(val as number).toLocaleString()}</span>
                       </div>
-                      <div style={{ height: 3, background: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
-                        <div style={{ height: '100%', width: `${(count / (marketDepth.topBrands[0][1] || 1)) * 100}%`, background: C, borderRadius: 2 }} />
+                    ))}
+                    <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 8, marginTop: 4 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <span style={{ color: SEC }}>최저</span>
+                        <span style={{ color: CG, fontWeight: 700 }}>₩{(report.min_price || 0).toLocaleString()}</span>
                       </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 4 }}>
+                        <span style={{ color: SEC }}>최고</span>
+                        <span style={{ color: CDANGER, fontWeight: 700 }}>₩{(report.max_price || 0).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : <div style={{ color: SEC, fontSize: 12 }}>데이터 없음</div>}
+              </div>
+            </div>
+
+            {/* 제조사 유형 + 상위 제조사 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 18 }}>
+              <div style={card()}>
+                <div style={{ fontSize: 11, color: CG, fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Building2 size={13} /> 제조사 유형
+                </div>
+                {report?.maker_type_dist ? Object.entries(report.maker_type_dist).map(([type, cnt]) => (
+                  <BarRow key={type} label={type} value={cnt as number}
+                    max={Math.max(...Object.values(report.maker_type_dist!) as number[])} color={CG} suffix="개" />
+                )) : <div style={{ color: SEC, fontSize: 12 }}>데이터 없음</div>}
+              </div>
+
+              <div style={card()}>
+                <div style={{ fontSize: 11, color: C, fontWeight: 800, marginBottom: 14 }}>◈ TOP 10 제조사</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(report?.maker_stats || []).slice(0, 10).map((m, i) => (
+                    <div key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 10, color: SEC, width: 20, textAlign: 'right' }}>#{i + 1}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
+                          <div style={{ height: '100%', width: `${(m.count / ((report?.maker_stats?.[0]?.count || 1)))*100}%`, background: m.origin === 'korea' ? CG : m.origin === 'china' ? CDANGER : C, borderRadius: 2 }} />
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 100, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</span>
+                      <span style={{ fontSize: 10, color: C, minWidth: 40, textAlign: 'right' }}>{m.count}개</span>
+                      <span style={{ fontSize: 10, color: CW, minWidth: 70, textAlign: 'right' }}>₩{m.avg_price.toLocaleString()}</span>
+                      <OriginBadge origin={m.origin} />
                     </div>
                   ))}
                 </div>
               </div>
-            )}
-          </aside>
-
-          {/* Main */}
-          <main>
-            {/* AI Commentary */}
-            <div style={{ ...cardStyle, background: `linear-gradient(135deg, ${C}10 0%, transparent 100%)`, borderLeft: `4px solid ${C}`, marginBottom: 24 }}>
-              <div style={{ fontSize: 10, fontFamily: 'monospace', color: C, marginBottom: 10 }}>◈ AI STRATEGIC PARTNER // LOOVBASE-ALPHA</div>
-              <p style={{ fontSize: 14, lineHeight: 1.7, color: '#e0e0e0', margin: 0 }}>
-                {report?.ai_commentary || '현재 LED 제품 데이터를 분석 중입니다. Danawa에서 수집된 제품 정보를 기반으로 시장 인사이트를 제공합니다. 수집 버튼을 눌러 최신 데이터를 동기화하세요.'}
-              </p>
             </div>
+          </div>
+        )}
 
-            {/* Analytics row */}
-            {marketDepth && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
-                {/* Origin ratio */}
-                <div style={cardStyle}>
-                  <div style={{ fontSize: 11, color: `${C}cc`, fontWeight: 700, marginBottom: 14 }}>◈ ORIGIN RATIO</div>
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <div style={{ textAlign: 'center', flex: 1 }}>
-                      <div style={{ fontSize: 24, fontWeight: 900, color: '#4efaa6' }}>{marketDepth.korea_ratio}%</div>
-                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>KOREA</div>
-                    </div>
-                    <div style={{ textAlign: 'center', flex: 1 }}>
-                      <div style={{ fontSize: 24, fontWeight: 900, color: C2 }}>{marketDepth.china_ratio}%</div>
-                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>CHINA</div>
-                    </div>
-                    <div style={{ textAlign: 'center', flex: 1 }}>
-                      <div style={{ fontSize: 24, fontWeight: 900, color: 'rgba(255,255,255,0.6)' }}>
-                        {parseFloat((100 - marketDepth.korea_ratio - marketDepth.china_ratio).toFixed(1))}%
-                      </div>
-                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>OTHER</div>
-                    </div>
-                  </div>
-                </div>
-                {/* Price distribution */}
-                <div style={cardStyle}>
-                  <div style={{ fontSize: 11, color: `${C}cc`, fontWeight: 700, marginBottom: 14 }}>◈ PRICE DISTRIBUTION</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {marketDepth.price_distribution.map(({ tier, ratio }) => (
-                      <div key={tier}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 3 }}>
-                          <span style={{ color: 'rgba(255,255,255,0.6)' }}>{tier}</span>
-                          <span style={{ color: C, fontWeight: 700 }}>{ratio}%</span>
-                        </div>
-                        <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
-                          <div style={{ height: '100%', width: `${ratio}%`, background: `linear-gradient(90deg, ${C}, ${C2})`, borderRadius: 2 }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+        {/* ── PRODUCTS ── */}
+        {viewTab === 'products' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 20 }}>
+            {/* Sidebar */}
+            <aside>
+              <div style={{ ...card({ marginBottom: 10 }) }}>
+                <div style={{ fontSize: 9, color: `${C}80`, fontWeight: 800, marginBottom: 10 }}>◈ SEARCH</div>
+                <div style={{ position: 'relative' }}>
+                  <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: `${C}50` }} />
+                  <input type="text" placeholder="제품명 / 제조사..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    style={{ width: '100%', background: '#000', border: `1px solid ${C}25`, color: '#fff', padding: '8px 8px 8px 28px', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
                 </div>
               </div>
-            )}
 
-            {/* Controls */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
-                {loading ? '로딩 중...' : `${filteredProducts.length.toLocaleString()}개 제품`}
+              <div style={{ ...card({ marginBottom: 10 }) }}>
+                <div style={{ fontSize: 9, color: `${C}80`, fontWeight: 800, marginBottom: 8 }}>◈ 원산지</div>
+                {(['all', 'korea', 'china', 'unknown'] as const).map(o => (
+                  <button key={o} onClick={() => setOriginFilter(o)} style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${originFilter === o ? C : 'transparent'}`, background: originFilter === o ? `${C}12` : 'transparent', color: originFilter === o ? C : SEC, fontSize: 11, fontWeight: 700, cursor: 'pointer', marginBottom: 2 }}>
+                    <span>{{ all: '전체', korea: '🇰🇷 국산', china: '🇨🇳 중국산', unknown: '미상' }[o]}</span>
+                    <span style={{ opacity: 0.5 }}>{o === 'all' ? products.length : products.filter(p => p.origin === o).length}</span>
+                  </button>
+                ))}
               </div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <select
-                  value={sort} onChange={e => setSort(e.target.value)}
-                  style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${BORDER}`, color: '#fff', padding: '6px 10px', borderRadius: 8, fontSize: 11, outline: 'none' }}
-                >
-                  <option value="latest">최신순</option>
-                  <option value="price_asc">가격 낮은순</option>
-                  <option value="price_desc">가격 높은순</option>
-                </select>
-                <button onClick={() => setViewMode('grid')} style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${viewMode === 'grid' ? C : BORDER}`, background: viewMode === 'grid' ? `${C}15` : 'transparent', color: viewMode === 'grid' ? C : 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
-                  <Grid3X3 size={14} />
-                </button>
-                <button onClick={() => setViewMode('list')} style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${viewMode === 'list' ? C : BORDER}`, background: viewMode === 'list' ? `${C}15` : 'transparent', color: viewMode === 'list' ? C : 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
-                  <List size={14} />
-                </button>
+
+              <div style={{ ...card({ marginBottom: 10 }) }}>
+                <div style={{ fontSize: 9, color: `${C}80`, fontWeight: 800, marginBottom: 8 }}>◈ 카테고리</div>
+                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                  {categories.map(cat => (
+                    <button key={cat} onClick={() => setActiveCategory(cat)} style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '5px 8px', borderRadius: 6, border: `1px solid ${activeCategory === cat ? C : 'transparent'}`, background: activeCategory === cat ? `${C}12` : 'transparent', color: activeCategory === cat ? C : SEC, fontSize: 10, fontWeight: 700, cursor: 'pointer', marginBottom: 2 }}>
+                      <span>{cat === 'all' ? '전체' : cat}</span>
+                      <span style={{ opacity: 0.5 }}>{cat === 'all' ? products.length : products.filter(p => p.category === cat).length}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+
+              <div style={card()}>
+                <div style={{ fontSize: 9, color: `${C}80`, fontWeight: 800, marginBottom: 8 }}>◈ 최대 가격</div>
+                <input type="range" min="0" max="1000000" step="10000" value={priceMax} onChange={e => setPriceMax(Number(e.target.value))} style={{ width: '100%', accentColor: C }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, fontFamily: 'monospace', color: `${C}70`, marginTop: 4 }}>
+                  <span>₩0</span><span>₩{priceMax.toLocaleString()}</span>
+                </div>
+              </div>
+            </aside>
 
             {/* Products */}
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: '80px 0', color: 'rgba(255,255,255,0.4)' }}>
-                <Activity size={32} style={{ margin: '0 auto 12px' }} />
-                <p style={{ fontFamily: 'monospace', fontSize: 12 }}>INTELLIGENCE HARVEST IN PROGRESS...</p>
+            <main>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <span style={{ fontSize: 12, color: SEC }}>{filtered.length.toLocaleString()}개 제품</span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select value={sort} onChange={e => setSort(e.target.value)} style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${BORDER}`, color: '#fff', padding: '5px 8px', borderRadius: 7, fontSize: 11, outline: 'none' }}>
+                    <option value="latest">최신순</option>
+                    <option value="price_asc">가격 낮은순</option>
+                    <option value="price_desc">가격 높은순</option>
+                  </select>
+                  <button onClick={() => setViewMode('grid')} style={{ padding: '5px 7px', borderRadius: 7, border: `1px solid ${viewMode === 'grid' ? C : BORDER}`, background: viewMode === 'grid' ? `${C}15` : 'transparent', color: viewMode === 'grid' ? C : SEC, cursor: 'pointer' }}><Grid3X3 size={13} /></button>
+                  <button onClick={() => setViewMode('list')} style={{ padding: '5px 7px', borderRadius: 7, border: `1px solid ${viewMode === 'list' ? C : BORDER}`, background: viewMode === 'list' ? `${C}15` : 'transparent', color: viewMode === 'list' ? C : SEC, cursor: 'pointer' }}><List size={13} /></button>
+                </div>
               </div>
-            ) : filteredProducts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '80px 0', border: `1px dashed ${BORDER}`, borderRadius: 20 }}>
-                <Filter size={40} style={{ margin: '0 auto 16px', color: 'rgba(255,255,255,0.2)' }} />
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>
-                  아직 수집된 LED 제품 데이터가 없습니다.
-                </p>
-                <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 12, marginTop: 8 }}>
-                  GitHub Actions의 Danawa 스크래퍼를 실행하여 데이터를 수집하세요.
-                </p>
-              </div>
-            ) : viewMode === 'grid' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-                {filteredProducts.slice(0, 100).map(p => (
-                  <div key={p.id} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {p.image_url && (
-                      <img src={p.image_url} alt={p.name} style={{ width: '100%', height: 140, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.03)' }} />
-                    )}
-                    <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.4 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{p.maker}</div>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: C }}>
-                      {p.price > 0 ? `₩${p.price.toLocaleString()}` : '가격 정보 없음'}
+
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '80px 0', color: SEC }}>
+                  <Activity size={28} style={{ margin: '0 auto 12px' }} />
+                  <p style={{ fontFamily: 'monospace', fontSize: 11 }}>데이터 로딩 중...</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '80px 0', border: `1px dashed ${BORDER}`, borderRadius: 16 }}>
+                  <Filter size={36} style={{ margin: '0 auto 14px', color: SEC }} />
+                  <p style={{ color: SEC, fontSize: 13 }}>수집된 데이터가 없습니다.</p>
+                  <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, marginTop: 6 }}>상단 "시장 데이터 수집" 버튼을 눌러 수집하세요.</p>
+                </div>
+              ) : viewMode === 'grid' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
+                  {filtered.slice(0, 200).map(p => (
+                    <div key={p.id} style={card({ display: 'flex', flexDirection: 'column', gap: 8 })}>
+                      {p.image_url && <img src={p.image_url} alt={p.name} style={{ width: '100%', height: 130, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.03)' }} />}
+                      <div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.4 }}>{p.name}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: 10, color: SEC }}>{p.maker}</div>
+                        <OriginBadge origin={p.origin} />
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: C }}>{p.price > 0 ? `₩${p.price.toLocaleString()}` : '-'}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3, background: `${C}12`, color: C, fontWeight: 700 }}>{p.category}</span>
+                        {p.product_url && (
+                          <a href={p.product_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: CG, fontWeight: 700, textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
+                            보러가기 <ExternalLink size={10} />
+                          </a>
+                        )}
+                      </div>
                     </div>
-                    {p.category && (
-                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: `${C}15`, color: C, fontWeight: 700, width: 'fit-content' }}>
-                        {p.category}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {filteredProducts.slice(0, 200).map(p => (
-                  <div key={p.id} style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 16, padding: '12px 20px' }}>
-                    {p.image_url && (
-                      <img src={p.image_url} alt={p.name} style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 8, flexShrink: 0 }} />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{p.maker} · {p.category}</div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {filtered.slice(0, 500).map(p => (
+                    <div key={p.id} style={{ ...card({ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px' }) }}>
+                      {p.image_url && <img src={p.image_url} alt={p.name} style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 6, flexShrink: 0 }} />}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{p.name}</div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, color: SEC }}>{p.maker}</span>
+                          <OriginBadge origin={p.origin} />
+                          <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: `${C}12`, color: C, fontWeight: 700 }}>{p.category}</span>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: C, flexShrink: 0 }}>{p.price > 0 ? `₩${p.price.toLocaleString()}` : '-'}</div>
+                      {p.product_url && (
+                        <a href={p.product_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: CG, fontWeight: 700, textDecoration: 'none', flexShrink: 0, padding: '4px 8px', border: `1px solid ${CG}30`, borderRadius: 6 }}>
+                          <ExternalLink size={11} /> 보러가기
+                        </a>
+                      )}
                     </div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: C, flexShrink: 0 }}>
-                      {p.price > 0 ? `₩${p.price.toLocaleString()}` : '-'}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+            </main>
+          </div>
+        )}
+
+        {/* ── MAKERS ── */}
+        {viewTab === 'makers' && (
+          <div>
+            <div style={{ ...card({ marginBottom: 20 }) }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 16 }}>제조사 전체 현황 ({(report?.maker_stats || []).length}개)</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 5px', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ fontSize: 9, color: SEC, fontWeight: 800 }}>
+                      {['순위', '제조사', '유형', '원산지', '제품수', '평균가', '최저가', '최고가', '카테고리'].map(h => (
+                        <th key={h} style={{ textAlign: 'left', padding: '4px 10px 10px' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(report?.maker_stats || []).map((m, i) => (
+                      <tr key={m.name} style={{ background: 'rgba(255,255,255,0.02)' }}>
+                        <td style={{ padding: '10px', borderRadius: '8px 0 0 8px', color: SEC, fontSize: 11 }}>#{i + 1}</td>
+                        <td style={{ padding: '10px', fontWeight: 700 }}>{m.name}</td>
+                        <td style={{ padding: '10px', fontSize: 10, color: SEC }}>{m.maker_type}</td>
+                        <td style={{ padding: '10px' }}><OriginBadge origin={m.origin} /></td>
+                        <td style={{ padding: '10px', color: C, fontWeight: 700 }}>{m.count}</td>
+                        <td style={{ padding: '10px', color: CW, fontWeight: 700 }}>₩{m.avg_price.toLocaleString()}</td>
+                        <td style={{ padding: '10px', color: CG, fontSize: 11 }}>-</td>
+                        <td style={{ padding: '10px', color: CDANGER, fontSize: 11 }}>-</td>
+                        <td style={{ padding: '10px', borderRadius: '0 8px 8px 0', fontSize: 9 }}>
+                          {m.categories.slice(0, 2).map(c => (
+                            <span key={c} style={{ marginRight: 4, padding: '1px 4px', background: `${C}10`, color: C, borderRadius: 3 }}>{c}</span>
+                          ))}
+                          {m.categories.length > 2 && <span style={{ color: SEC }}>+{m.categories.length - 2}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </main>
-        </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CATEGORIES ── */}
+        {viewTab === 'categories' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+            {(report?.category_stats || []).map(cat => (
+              <div key={cat.name} style={card()}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800 }}>{cat.name}</div>
+                  <span style={{ fontSize: 20, fontWeight: 900, color: C }}>{cat.count}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                  {[
+                    { label: '평균가', val: `₩${cat.avg_price.toLocaleString()}`, color: CW },
+                    { label: '중간값', val: `₩${cat.median_price.toLocaleString()}`, color: C2 },
+                    { label: '최저가', val: `₩${cat.min_price.toLocaleString()}`, color: CG },
+                    { label: '최고가', val: `₩${cat.max_price.toLocaleString()}`, color: CDANGER },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 9, color: SEC, marginBottom: 2 }}>{s.label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: s.color }}>{s.val}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* 원산지 바 */}
+                <div style={{ fontSize: 9, color: SEC, marginBottom: 6 }}>국산 비율</div>
+                <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3 }}>
+                  <div style={{ height: '100%', width: `${cat.korea_pct}%`, background: CG, borderRadius: 3 }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, marginTop: 4 }}>
+                  <span style={{ color: CG }}>국산 {cat.korea_pct}%</span>
+                  <span style={{ color: CDANGER }}>중국산 {(100 - cat.korea_pct).toFixed(1)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
