@@ -498,8 +498,211 @@ function GallerySettingsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── NAS 갤러리 ────────────────────────────────────────────────────────────────
+interface NasImage { name: string; path: string; size: number; modTime: number }
+interface NasFolder { name: string; isDir: boolean }
+
+function NasGallery() {
+  const [currentPath, setCurrentPath] = useState('');
+  const [folders, setFolders] = useState<NasFolder[]>([]);
+  const [images, setImages] = useState<NasImage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedImg, setSelectedImg] = useState<string | null>(null);
+  const [newFolder, setNewFolder] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(async (path: string) => {
+    setLoading(true);
+    const res = await fetch(`/api/gallery/nas?action=list&path=${encodeURIComponent(path)}`);
+    if (res.ok) {
+      const d = await res.json() as { folders: NasFolder[]; images: NasImage[]; currentPath: string };
+      setFolders(d.folders); setImages(d.images); setCurrentPath(d.currentPath);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(''); }, [load]);
+
+  const breadcrumbs = currentPath ? currentPath.split('/') : [];
+
+  const createFolder = async () => {
+    if (!newFolder.trim()) return;
+    setCreating(true);
+    const path = currentPath ? `${currentPath}/${newFolder.trim()}` : newFolder.trim();
+    await fetch('/api/gallery/nas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder: path }) });
+    setNewFolder(''); await load(currentPath);
+    setCreating(false);
+  };
+
+  return (
+    <div>
+      {/* 경로 탐색 */}
+      <div className="flex items-center gap-1 mb-4 flex-wrap">
+        <button onClick={() => load('')} className="text-xs font-bold text-indigo-600 hover:underline">NAS 갤러리</button>
+        {breadcrumbs.map((b, i) => {
+          const path = breadcrumbs.slice(0, i + 1).join('/');
+          return (
+            <span key={i} className="flex items-center gap-1">
+              <span className="text-gray-300">/</span>
+              <button onClick={() => load(path)} className="text-xs font-bold text-indigo-600 hover:underline">{b}</button>
+            </span>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-2">
+          <input value={newFolder} onChange={e => setNewFolder(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && createFolder()}
+            placeholder="새 폴더명"
+            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 w-28" />
+          <button onClick={createFolder} disabled={creating || !newFolder.trim()}
+            className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg disabled:opacity-50">
+            {creating ? '...' : '+ 폴더'}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" /></div>
+      ) : (
+        <>
+          {/* 하위 폴더 */}
+          {folders.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {folders.map(f => (
+                <button key={f.name} onClick={() => load(currentPath ? `${currentPath}/${f.name}` : f.name)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-sm font-bold text-amber-700 hover:bg-amber-100 transition-colors">
+                  📁 {f.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 이미지 그리드 */}
+          {images.length === 0 && folders.length === 0 && (
+            <div className="text-center py-16 text-gray-400">
+              <div className="text-4xl mb-3">📂</div>
+              <p className="text-sm">폴더가 비어있습니다</p>
+            </div>
+          )}
+          {images.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              {images.map(img => (
+                <div key={img.path} onClick={() => setSelectedImg(img.path)}
+                  className="group relative bg-gray-100 rounded-xl overflow-hidden cursor-pointer hover:shadow-lg transition-all"
+                  style={{ paddingBottom: '75%' }}>
+                  <img
+                    src={`/api/gallery/nas?action=image&path=${encodeURIComponent(img.path)}`}
+                    alt={img.name}
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    loading="lazy"
+                  />
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <p className="text-white text-[10px] truncate">{img.name}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 이미지 전체보기 */}
+      {selectedImg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={() => setSelectedImg(null)}>
+          <button className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full text-white flex items-center justify-center text-lg">✕</button>
+          <img src={`/api/gallery/nas?action=image&path=${encodeURIComponent(selectedImg)}`}
+            alt="" className="max-w-full max-h-full object-contain rounded-lg" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Notion 갤러리 ─────────────────────────────────────────────────────────────
+interface NotionItem {
+  id: string; title: string; image_url: string | null; images: string[];
+  category: string; memo: string; is_favorite: boolean; notion_page_url: string; created_at: string;
+}
+
+function NotionGallery() {
+  const [items, setItems] = useState<NotionItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedImg, setSelectedImg] = useState<NotionItem | null>(null);
+
+  useEffect(() => {
+    fetch('/api/gallery/notion')
+      .then(r => r.json())
+      .then((d: { items?: NotionItem[]; error?: string; needSetup?: boolean }) => {
+        if (d.items) setItems(d.items);
+        else if (d.needSetup) setError('Notion API 키와 DB 설정이 필요합니다. 설정 페이지에서 Notion 연결 후 이용하세요.');
+        else setError(d.error || '불러오기 실패');
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" /></div>;
+  if (error) return <div className="text-center py-16"><div className="text-4xl mb-3">📔</div><p className="text-sm text-gray-500">{error}</p></div>;
+  if (items.length === 0) return (
+    <div className="text-center py-16 text-gray-400">
+      <div className="text-4xl mb-3">📔</div>
+      <p className="text-sm">Notion 갤러리가 비어있습니다</p>
+      <a href="https://notion.so" target="_blank" rel="noopener" className="mt-3 inline-block text-xs text-indigo-600 underline">Notion에서 사진 추가하기</a>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {items.map(item => (
+          <div key={item.id} onClick={() => setSelectedImg(item)}
+            className="group relative bg-white rounded-2xl overflow-hidden border border-gray-100 hover:border-indigo-200 hover:shadow-xl transition-all cursor-pointer">
+            <div className="relative bg-gray-100" style={{ paddingBottom: '75%' }}>
+              {item.image_url ? (
+                <img src={item.image_url} alt={item.title}
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  loading="lazy" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-5xl opacity-20">📔</div>
+              )}
+              {item.is_favorite && <div className="absolute top-2 right-2 text-lg drop-shadow-lg">⭐</div>}
+            </div>
+            <div className="p-3">
+              <h3 className="font-bold text-sm text-gray-900 truncate">{item.title}</h3>
+              {item.memo && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{item.memo}</p>}
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-[10px] text-indigo-500 font-bold">📔 Notion</span>
+                <span className="text-[10px] text-gray-300">{new Date(item.created_at).toLocaleDateString('ko-KR')}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {selectedImg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setSelectedImg(null)}>
+          <div className="relative bg-white rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setSelectedImg(null)} className="absolute top-3 right-3 z-10 w-9 h-9 bg-black/40 text-white rounded-full flex items-center justify-center">✕</button>
+            {selectedImg.image_url && <img src={selectedImg.image_url} alt={selectedImg.title} className="w-full max-h-[50vh] object-contain bg-gray-900" />}
+            <div className="p-5">
+              <h2 className="font-black text-lg text-gray-900">{selectedImg.title}</h2>
+              {selectedImg.memo && <p className="text-sm text-gray-500 mt-2">{selectedImg.memo}</p>}
+              {selectedImg.notion_page_url && (
+                <a href={selectedImg.notion_page_url} target="_blank" rel="noopener"
+                  className="mt-3 inline-flex items-center gap-2 text-xs text-indigo-600 hover:underline">
+                  📔 Notion에서 열기
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 메인 ──────────────────────────────────────────────────────────────────────
 export default function GalleryPage() {
+  const [sourceTab, setSourceTab] = useState<'gallery' | 'nas' | 'notion'>('gallery');
   const [activeCategory, setActiveCategory] = useState<Category | 'all'>('all');
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -606,61 +809,79 @@ export default function GalleryPage() {
                 style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)'}}>🖼️</span>
               사진 갤러리
             </h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-gray-400">개인·업무·비밀 갤러리 · 메모</p>
-              {notionConnected && (
-                <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full font-semibold">📔 Notion 연결됨</span>
-              )}
-            </div>
+            <p className="text-xs text-gray-400 mt-0.5">갤러리 · NAS · Notion</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* 설정 */}
             <button onClick={() => setShowSettings(true)}
-              className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
-              title="갤러리 설정">
-              ⚙️
-            </button>
-            {/* 뷰 모드 */}
-            <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-              {(['grid','masonry'] as const).map(m => (
-                <button key={m} onClick={() => setViewMode(m)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}>
-                  {m === 'grid' ? '⊞ 격자' : '⊟ 폭포'}
+              className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">⚙️</button>
+            {sourceTab === 'gallery' && (
+              <>
+                <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+                  {(['grid','masonry'] as const).map(m => (
+                    <button key={m} onClick={() => setViewMode(m)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}>
+                      {m === 'grid' ? '⊞' : '⊟'}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setShowAddModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
+                  style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)'}}>
+                  <span className="text-base">+</span> 추가
                 </button>
-              ))}
-            </div>
-            <button onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
-              style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)'}}>
-              <span className="text-base">+</span> 추가
-            </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* 카테고리 탭 */}
-        <div className="flex gap-2 overflow-x-auto pb-0.5">
-          <button onClick={() => setActiveCategory('all')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
-              activeCategory === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}>
-            🖼️ 전체 <span className="text-xs opacity-70">({counts.all})</span>
-          </button>
-          {(Object.keys(CAT_CONFIG) as Category[]).map(cat => (
-            <button key={cat} onClick={() => handleCategoryClick(cat)}
+        {/* 소스 탭 */}
+        <div className="flex gap-2 mb-3">
+          {([
+            { key: 'gallery', label: '📁 갤러리', desc: 'DB 저장' },
+            { key: 'nas', label: '💾 NAS', desc: '시놀로지' },
+            { key: 'notion', label: '📔 Notion', desc: '노션 DB' },
+          ] as const).map(tab => (
+            <button key={tab.key} onClick={() => setSourceTab(tab.key)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
-                activeCategory === cat
-                  ? `${CAT_CONFIG[cat].bg} ${CAT_CONFIG[cat].color} ${CAT_CONFIG[cat].border} border-2`
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                sourceTab === tab.key ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}>
-              {CAT_CONFIG[cat].icon} {CAT_CONFIG[cat].label}
-              <span className="text-xs opacity-70">({counts[cat]})</span>
-              {cat === 'secret' && !secretUnlocked && <span className="text-xs">🔒</span>}
+              {tab.label}
             </button>
           ))}
         </div>
+
+        {/* 갤러리 카테고리 탭 (갤러리 탭일 때만) */}
+        {sourceTab === 'gallery' && (
+          <div className="flex gap-2 overflow-x-auto pb-0.5">
+            <button onClick={() => setActiveCategory('all')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
+                activeCategory === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}>
+              🖼️ 전체 <span className="text-xs opacity-70">({counts.all})</span>
+            </button>
+            {(Object.keys(CAT_CONFIG) as Category[]).map(cat => (
+              <button key={cat} onClick={() => handleCategoryClick(cat)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
+                  activeCategory === cat
+                    ? `${CAT_CONFIG[cat].bg} ${CAT_CONFIG[cat].color} ${CAT_CONFIG[cat].border} border-2`
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}>
+                {CAT_CONFIG[cat].icon} {CAT_CONFIG[cat].label}
+                <span className="text-xs opacity-70">({counts[cat]})</span>
+                {cat === 'secret' && !secretUnlocked && <span className="text-xs">🔒</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <div className="p-6">
+        {/* NAS 탭 */}
+        {sourceTab === 'nas' && <NasGallery />}
+        {/* Notion 탭 */}
+        {sourceTab === 'notion' && <NotionGallery />}
+        {/* 갤러리 탭 */}
+        {sourceTab === 'gallery' && <>
         {/* 검색 + 정렬 */}
         <div className="flex items-center gap-3 mb-6">
           <div className="relative flex-1 max-w-xs">
@@ -736,6 +957,7 @@ export default function GalleryPage() {
             )}
           </div>
         )}
+        </>}
       </div>
     </div>
   );
