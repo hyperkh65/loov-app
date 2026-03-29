@@ -1,38 +1,36 @@
-name: LED 데이터 수집 (Danawa)
+name: LED 데이터 수집 (다나와 + 나라장터)
 
 on:
   schedule:
-    # 매일 오전 6시 KST (= 21:00 UTC)
-    - cron: '0 21 * * *'
+    - cron: '0 21 * * *'  # 매일 오전 6시 KST
   workflow_dispatch:
     inputs:
-      reason:
-        description: '수동 실행 이유'
+      mode:
+        description: '수집 대상 (all / danawa / g2b)'
         required: false
-        default: '수동 트리거'
+        default: 'all'
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
-      - name: 코드 체크아웃
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Python 설정
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 의존성 설치
         run: pip install requests boto3
 
-      - name: LED 데이터 수집
+      - name: 데이터 수집
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python scripts/led_scraper.py
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: python scripts/led_scraper.py ${{ github.event.inputs.mode || 'all' }}
