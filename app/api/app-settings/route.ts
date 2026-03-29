@@ -53,6 +53,8 @@ const ALLOWED_KEYS = [
   'R2_SECRET_ACCESS_KEY',
   'R2_BUCKET',
   'R2_PUBLIC_URL',
+  // LED 스크래퍼
+  'LED_SCRAPE_SECRET',
 ] as const;
 
 export async function GET() {

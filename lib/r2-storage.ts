@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 
 const ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
 const BUCKET = process.env.R2_BUCKET || 'loov-storage'
@@ -44,4 +44,17 @@ export async function deleteFromR2(keys: string[]): Promise<void> {
 
 export function getR2PublicUrl(key: string): string {
   return `${PUBLIC_URL}/${key}`
+}
+
+export async function readFromR2(key: string): Promise<string | null> {
+  try {
+    const res = await getClient().send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+    const chunks: Uint8Array[] = []
+    for await (const chunk of res.Body as AsyncIterable<Uint8Array>) {
+      chunks.push(chunk)
+    }
+    return Buffer.concat(chunks).toString('utf-8')
+  } catch {
+    return null
+  }
 }

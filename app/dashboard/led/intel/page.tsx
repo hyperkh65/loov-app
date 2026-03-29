@@ -37,6 +37,8 @@ export default function LedIntelPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [report, setReport] = useState<Report | null>(null)
   const [loading, setLoading] = useState(true)
+  const [scraping, setScraping] = useState(false)
+  const [scrapeMsg, setScrapeMsg] = useState('')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('all')
@@ -57,6 +59,24 @@ export default function LedIntelPage() {
       }
     } catch { /* table not ready */ }
     setLoading(false)
+  }
+
+  async function startScrape() {
+    setScraping(true)
+    setScrapeMsg('다나와 데이터 수집 중...')
+    try {
+      const res = await fetch('/api/led/scrape', { method: 'POST' })
+      const json = await res.json()
+      if (json.ok) {
+        setScrapeMsg(`✅ ${json.collected}개 수집 완료 (총 ${json.total}개)`)
+        await loadData()
+      } else {
+        setScrapeMsg(`❌ 실패: ${json.error}`)
+      }
+    } catch {
+      setScrapeMsg('❌ 수집 실패')
+    }
+    setScraping(false)
   }
 
   const categories = useMemo(() => {
@@ -153,12 +173,26 @@ export default function LedIntelPage() {
             <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
               {report ? new Date(report.generated_at).toLocaleString('ko-KR') : 'PENDING SYNC'}
             </div>
-            <button
-              onClick={loadData}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${C}15`, border: `1px solid ${C}30`, color: C, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
-            >
-              <RefreshCw size={12} /> 데이터 새로고침
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={loadData}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${C}15`, border: `1px solid ${C}30`, color: C, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  <RefreshCw size={12} /> 새로고침
+                </button>
+                <button
+                  onClick={startScrape}
+                  disabled={scraping}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: scraping ? 'rgba(255,255,255,0.05)' : `${C2}20`, border: `1px solid ${C2}40`, color: scraping ? 'rgba(255,255,255,0.3)' : C2, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: scraping ? 'not-allowed' : 'pointer' }}
+                >
+                  <Activity size={12} /> {scraping ? '수집 중...' : '다나와 수집'}
+                </button>
+              </div>
+              {scrapeMsg && (
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>{scrapeMsg}</div>
+              )}
+            </div>
           </div>
         </header>
 
