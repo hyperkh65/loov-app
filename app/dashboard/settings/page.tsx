@@ -23,7 +23,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -279,7 +279,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['backup', '💾 백업/복원']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1738,6 +1738,9 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {/* 백업/복원 탭 */}
+        {activeTab === 'backup' && <BackupRestorePanel />}
+
         {/* LED 인텔 탭 */}
         {activeTab === 'led' && (
           <div className="space-y-6 max-w-2xl">
@@ -1834,5 +1837,138 @@ function LoovSupabaseSetting() {
         {saving ? '저장 중...' : '저장'}
       </button>
     </>
+  );
+}
+
+function BackupRestorePanel() {
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
+
+  const handleExport = async () => {
+    setExporting(true); setMsg('');
+    try {
+      const res = await fetch('/api/app-settings/export');
+      if (!res.ok) { setMsg('❌ 내보내기 실패'); return; }
+      const data = await res.json() as Record<string, unknown>;
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `loov-settings-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMsg('✅ 설정 파일 다운로드 완료');
+    } catch (e) {
+      setMsg(`❌ 오류: ${String(e)}`);
+    }
+    setExporting(false);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string) as Record<string, unknown>;
+        setPreview(data);
+        setMsg('');
+      } catch {
+        setMsg('❌ 잘못된 JSON 파일입니다');
+        setPreview(null);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleImport = async () => {
+    if (!preview) return;
+    if (!confirm('현재 설정을 파일의 내용으로 덮어씁니다. 계속할까요?')) return;
+    setImporting(true); setMsg('');
+    try {
+      const res = await fetch('/api/app-settings/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preview),
+      });
+      const d = await res.json() as { ok?: boolean; results?: string[]; error?: string };
+      if (d.ok) {
+        setMsg(`✅ 복원 완료: ${(d.results || []).join(', ')}`);
+        setPreview(null);
+      } else {
+        setMsg(`❌ ${d.error || '복원 실패'}`);
+      }
+    } catch (e) {
+      setMsg(`❌ 오류: ${String(e)}`);
+    }
+    setImporting(false);
+  };
+
+  const appSettings = preview?.app_settings as Record<string, string> | undefined;
+  const keyCount = appSettings ? Object.keys(appSettings).filter(k => appSettings[k]).length : 0;
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
+        <p className="font-bold mb-1">💾 설정 백업 / 복원</p>
+        <p>API 키, Notion 설정 등 모든 설정을 JSON 파일로 내보내거나 가져올 수 있습니다.</p>
+        <p className="mt-1 text-amber-700 text-xs">⚠️ 내보낸 파일에는 API 키 원문이 포함됩니다. 안전하게 보관하세요.</p>
+      </div>
+
+      {/* 내보내기 */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-3">
+        <h3 className="font-bold text-gray-900">📤 설정 내보내기</h3>
+        <p className="text-sm text-gray-500">현재 저장된 모든 API 키와 설정을 JSON 파일로 다운로드합니다.</p>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors"
+        >
+          {exporting ? '내보내는 중...' : '⬇️ 설정 파일 다운로드'}
+        </button>
+      </div>
+
+      {/* 가져오기 */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-3">
+        <h3 className="font-bold text-gray-900">📥 설정 가져오기</h3>
+        <p className="text-sm text-gray-500">이전에 내보낸 JSON 파일을 선택하면 설정이 자동으로 복원됩니다.</p>
+
+        <label className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors cursor-pointer w-fit">
+          📁 JSON 파일 선택
+          <input type="file" accept=".json,application/json" className="hidden" onChange={handleFileSelect} />
+        </label>
+
+        {preview && (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+            <p className="text-sm font-bold text-gray-700">파일 미리보기</p>
+            <div className="text-xs text-gray-600 space-y-1">
+              <p>📅 내보낸 날짜: {String(preview.exported_at || '').slice(0, 10)}</p>
+              <p>👤 내보낸 계정: {String(preview.exported_by || '-')}</p>
+              <p>🔑 API 키: {keyCount}개</p>
+              {!!(preview.company_settings as Record<string, unknown>)?.notion_config && (
+                <p>📔 Notion 설정 포함</p>
+              )}
+            </div>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors"
+            >
+              {importing ? '복원 중...' : '✅ 이 파일로 설정 복원'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {msg && (
+        <p className={`text-sm font-medium px-4 py-3 rounded-xl ${msg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+          {msg}
+        </p>
+      )}
+    </div>
   );
 }
