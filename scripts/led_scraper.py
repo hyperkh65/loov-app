@@ -300,79 +300,149 @@ def collect_g2b():
 
 # ─── 다나와 수집 ────────────────────────────────────────────────
 
-DANAWA_CATS = [
-    ('LED 전구', 'LED 전구'), ('LED 등기구', 'LED 등기구'),
-    ('LED 투광기', 'LED 투광기'), ('LED 다운라이트', 'LED 다운라이트'),
+LED_SEARCH_QUERIES = [
+    ('LED 전구', 'LED 전구'),
+    ('LED 등기구', 'LED 등기구'),
+    ('LED 투광기', 'LED 투광기'),
+    ('LED 다운라이트', 'LED 다운라이트'),
     ('LED 가로등', 'LED 가로등'),
+    ('LED 조명', 'LED 조명'),
 ]
-DW_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept-Language': 'ko-KR,ko;q=0.9',
-    'Referer': 'https://www.danawa.com/',
-}
 
-def scrape_danawa_cat(query, category):
+NAVER_CLIENT_ID     = os.environ.get('NAVER_CLIENT_ID', '')
+NAVER_CLIENT_SECRET = os.environ.get('NAVER_CLIENT_SECRET', '')
+
+def fetch_naver_shopping_api(query, category, display=100):
+    """네이버 쇼핑 공식 API (키 있을 때)"""
+    url = 'https://openapi.naver.com/v1/search/shop.json'
+    headers = {
+        'X-Naver-Client-Id': NAVER_CLIENT_ID,
+        'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
+    }
     products = []
-    for page in range(1, 4):
-        url = f'https://search.danawa.com/dsearch.php?query={requests.utils.quote(query)}&tab=goods&page={page}&limit=30&sort=saveDESC'
+    for start in range(1, 201, 100):
         try:
-            r = requests.get(url, headers=DW_HEADERS, timeout=15)
+            r = requests.get(url, headers=headers,
+                params={'query': query, 'display': display, 'start': start, 'sort': 'sim'},
+                timeout=15)
             if r.status_code != 200:
                 break
-            html = r.text
-            blocks = re.findall(r'<li[^>]+class="[^"]*prod-item[^"]*"[^>]*>([\s\S]*?)</li>', html)
+            items = r.json().get('items', [])
+            for it in items:
+                name = re.sub(r'<[^>]+>', '', it.get('title', ''))
+                products.append({
+                    'id': f'naver_{uuid.uuid4().hex[:8]}',
+                    'name': name.strip(),
+                    'price': int(it.get('lprice', 0)),
+                    'maker': it.get('maker') or it.get('brand') or '기타',
+                    'category': category,
+                    'image_url': it.get('image', ''),
+                    'product_url': it.get('link', ''),
+                    'collected_at': datetime.utcnow().isoformat() + 'Z',
+                })
+            if len(items) < display:
+                break
+        except Exception as e:
+            print(f'  네이버 API 오류: {e}')
+            break
+    return products
+
+def fetch_naver_shopping_search(query, category):
+    """네이버 쇼핑 검색 JSON (키 불필요)"""
+    products = []
+    for page_idx in range(1, 4):
+        url = (
+            'https://search.shopping.naver.com/api/search'
+            f'?query={requests.utils.quote(query)}'
+            f'&sort=rel&pagingIndex={page_idx}&pagingSize=40&viewType=list'
+        )
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36',
+            'Referer': 'https://search.shopping.naver.com/',
+            'Accept': 'application/json',
+        }
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            if r.status_code != 200:
+                print(f'  네이버 검색 HTTP {r.status_code}')
+                break
+            data = r.json()
+            items = data.get('shoppingResult', {}).get('products', [])
+            if not items:
+                items = data.get('products', [])
             found = 0
-            for block in blocks:
-                name_m  = re.search(r'class="[^"]*prod-name[^"]*"[^>]*>.*?<a[^>]*>([^<]+)</a>', block, re.S)
-                price_m = re.search(r'([\d,]{4,})\s*원', block)
-                maker_m = re.search(r'class="[^"]*maker[^"]*"[^>]*>.*?<a[^>]*>([^<]+)</a>', block, re.S)
-                img_m   = re.search(r'<img[^>]+src="(https?://[^"]+\.(?:jpg|png|webp)[^"]*)"', block, re.I)
-                if not name_m or len(name_m.group(1).strip()) < 3:
+            for it in items:
+                name = it.get('productName') or it.get('name') or ''
+                if not name or 'LED' not in name.upper() and 'led' not in name.lower() and '조명' not in name:
                     continue
                 products.append({
-                    'id': f'danawa_{uuid.uuid4().hex[:8]}',
-                    'name': name_m.group(1).strip(),
-                    'price': int(price_m.group(1).replace(',','')) if price_m else 0,
-                    'maker': maker_m.group(1).strip() if maker_m else '기타',
+                    'id': f'naver_{uuid.uuid4().hex[:8]}',
+                    'name': name.strip(),
+                    'price': int(it.get('price') or it.get('lowPrice') or 0),
+                    'maker': it.get('brand') or it.get('maker') or '기타',
                     'category': category,
-                    'image_url': img_m.group(1) if img_m else '',
+                    'image_url': it.get('imageUrl') or it.get('image') or '',
+                    'product_url': it.get('mallProductUrl') or '',
                     'collected_at': datetime.utcnow().isoformat() + 'Z',
                 })
                 found += 1
+            print(f'  페이지 {page_idx}: {found}개')
             if found == 0:
                 break
-            time.sleep(1.0)
+            time.sleep(0.8)
         except Exception as e:
-            print(f'  다나와 오류: {e}')
+            print(f'  네이버 검색 오류: {e}')
             break
     return products
 
 def collect_danawa():
+    """네이버 쇼핑에서 LED 제품 수집 (다나와 대체)"""
     all_new = []
-    for query, category in DANAWA_CATS:
-        print(f'\n[다나와] {category}...')
-        items = scrape_danawa_cat(query, category)
+    for query, category in LED_SEARCH_QUERIES:
+        print(f'\n[네이버쇼핑] {category}...')
+
+        # 1순위: 공식 API
+        if NAVER_CLIENT_ID and NAVER_CLIENT_SECRET:
+            items = fetch_naver_shopping_api(query, category)
+            print(f'  API: {len(items)}개')
+        else:
+            items = []
+
+        # 2순위: 검색 JSON
+        if not items:
+            items = fetch_naver_shopping_search(query, category)
+
+        # 3순위: Gemini + 네이버 HTML
         if not items and GEMINI_KEY:
-            # Gemini fallback
-            url = f'https://search.danawa.com/dsearch.php?query={requests.utils.quote(query)}&tab=goods&limit=30'
             try:
-                r = requests.get(url, headers=DW_HEADERS, timeout=15)
-                html = r.text[:10000]
-                prompt = f'다음 HTML에서 LED 상품을 추출. 형식: [{{"name":"","price":0,"maker":"","image_url":"","category":"{category}"}}]\nHTML:\n{html}\nJSON만:'
+                r = requests.get(
+                    f'https://search.shopping.naver.com/search/all?query={requests.utils.quote(query)}',
+                    headers={'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'ko-KR'},
+                    timeout=15
+                )
+                html = r.text[:12000]
+                prompt = (
+                    f'다음 HTML에서 LED 조명 상품 목록을 추출하세요. 최대 30개.\n'
+                    f'형식: [{{"name":"","price":0,"maker":"","image_url":"","category":"{category}"}}]\n'
+                    f'HTML:\n{html}\nJSON 배열만:'
+                )
                 res = requests.post(
                     f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}',
                     json={'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0.1}},
                     timeout=60
                 )
                 text = res.json()['candidates'][0]['content']['parts'][0]['text']
-                m = re.search(r'\[[\s\S]*\]', text)
+                m = re.search(r'\[[\s\S]*?\]', text)
                 if m:
-                    items = [{'id': f'danawa_{uuid.uuid4().hex[:8]}', 'collected_at': datetime.utcnow().isoformat()+'Z', **x} for x in json.loads(m.group(0))]
-            except:
-                pass
-        print(f'  {len(items)}개')
+                    raw = json.loads(m.group(0))
+                    items = [{'id': f'naver_{uuid.uuid4().hex[:8]}', 'product_url': '', 'collected_at': datetime.utcnow().isoformat()+'Z', **x} for x in raw if x.get('name')]
+                    print(f'  Gemini: {len(items)}개')
+            except Exception as e:
+                print(f'  Gemini 오류: {e}')
+
+        print(f'  합계: {len(items)}개')
         all_new.extend(items)
-        time.sleep(2)
+        time.sleep(1.5)
 
     existing = r2_read('led-data/products.json') or []
     new_names = {p['name'] for p in all_new}
@@ -383,11 +453,14 @@ def collect_danawa():
         'generated_at': datetime.utcnow().isoformat()+'Z',
         'total_count': len(merged),
         'newly_collected': len(all_new),
-        'ai_commentary': f'총 {len(merged)}개 LED 제품 데이터 수집 완료. 신규 {len(all_new)}개.' if all_new else '다나와 수집 실패.',
+        'ai_commentary': (
+            f'총 {len(merged)}개 LED 제품 데이터 수집 완료 (네이버쇼핑). 신규 {len(all_new)}개 추가.'
+            if all_new else '수집 실패. 네이버 쇼핑 API 키 설정을 확인하세요.'
+        ),
     }
     r2_write('led-data/products.json', merged)
     r2_write('led-data/report.json', report)
-    print(f'다나와 저장 완료: {len(merged)}개')
+    print(f'저장 완료: {len(merged)}개')
     return len(all_new)
 
 # ─── 메인 ───────────────────────────────────────────────────────
