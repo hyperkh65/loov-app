@@ -360,43 +360,151 @@ def collect():
 # ─── G2B 나라장터 수집 ──────────────────────────────────────────
 G2B_KEY = os.environ.get('DATA_GO_KR_SERVICE_KEY', '')
 
+G2B_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'ko-KR,ko;q=0.9',
+    'Referer': 'https://shopping.g2b.go.kr/',
+}
+
+def scrape_g2b_web(keyword: str) -> list:
+    """나라장터 쇼핑 웹 스크래핑 (API 키 불필요)"""
+    products = []
+    for page in range(1, 11):  # 최대 10페이지
+        url = (
+            'https://shopping.g2b.go.kr/sp/na/naby/sp-nabypbblList.do'
+            f'?searchQuery={requests.utils.quote(keyword)}&pageIndex={page}'
+        )
+        try:
+            r = requests.get(url, headers=G2B_HEADERS, timeout=20)
+            if r.status_code != 200:
+                print(f'  G2B HTTP {r.status_code}')
+                break
+            html = r.text
+
+            # 상품 목록 파싱 (나라장터 쇼핑 HTML 구조)
+            # 방법 1: table row 파싱
+            rows = re.findall(r'<tr[^>]*class="[^"]*list[^"]*"[^>]*>([\s\S]*?)</tr>', html, re.I)
+            if not rows:
+                # 방법 2: li 아이템 파싱
+                rows = re.findall(r'<li[^>]*class="[^"]*item[^"]*"[^>]*>([\s\S]*?)</li>', html, re.I)
+
+            found = 0
+            for row in rows:
+                # 품목명
+                name_m = (
+                    re.search(r'class="[^"]*prd[_-]?name[^"]*"[^>]*>([\s\S]*?)</(?:td|span|div|a)>', row, re.I)
+                    or re.search(r'class="[^"]*goods[_-]?name[^"]*"[^>]*>([\s\S]*?)</(?:td|span|div)>', row, re.I)
+                    or re.search(r'title="([^"]{3,80})"', row)
+                    or re.search(r'<a[^>]+href="[^"]*prdct[^"]*"[^>]*>([^<]{3,80})</a>', row)
+                )
+                # 업체명
+                comp_m = (
+                    re.search(r'class="[^"]*comp[_-]?name[^"]*"[^>]*>([\s\S]*?)</(?:td|span|div)>', row, re.I)
+                    or re.search(r'class="[^"]*biz[_-]?name[^"]*"[^>]*>([\s\S]*?)</(?:td|span|div)>', row, re.I)
+                    or re.search(r'업체[명\s]*[：:]\s*([^\s<]{2,30})', row)
+                )
+                # 가격
+                price_m = re.search(r'([\d,]{3,})\s*원', row)
+                # 제품 번호
+                no_m = re.search(r'prdctNo=(\d+)', row) or re.search(r'상품번호[^\d]*(\d{5,})', row)
+                # 상품 URL
+                url_m = re.search(r'href="([^"]*prdct[^"]*\?[^"]+)"', row)
+
+                if not name_m:
+                    continue
+                name = re.sub(r'<[^>]+>', '', name_m.group(1)).strip()
+                if len(name) < 2:
+                    continue
+
+                company = re.sub(r'<[^>]+>', '', comp_m.group(1)).strip() if comp_m else '미상'
+                price = int(price_m.group(1).replace(',', '')) if price_m else 0
+                product_no = no_m.group(1) if no_m else ''
+                product_url = ''
+                if url_m:
+                    u = url_m.group(1)
+                    product_url = u if u.startswith('http') else f'https://shopping.g2b.go.kr{u}'
+
+                products.append({
+                    'name': clean_text(name),
+                    'company': clean_text(company),
+                    'price': price,
+                    'product_no': product_no,
+                    'product_url': product_url,
+                })
+                found += 1
+
+            print(f'  페이지 {page}: {found}개')
+            if found == 0:
+                break
+            time.sleep(1.0)
+        except Exception as e:
+            print(f'  G2B 오류: {e}')
+            break
+    return products
+
+
+def scrape_g2b_api(keyword: str) -> list:
+    """나라장터 공공데이터 API (키 있을 때)"""
+    products = []
+    for page in range(1, 11):
+        try:
+            r = requests.get(
+                'http://apis.data.go.kr/1230000/naraShopInfoService/getProductInfoServc',
+                params={'serviceKey': G2B_KEY, 'pageNo': page, 'numOfRows': 100, 'searchNm': keyword, 'type': 'json'},
+                timeout=15)
+            if r.status_code != 200: break
+            items = r.json().get('response', {}).get('body', {}).get('items', {}).get('item', [])
+            if isinstance(items, dict): items = [items]
+            if not items: break
+            for it in items:
+                name = clean_text(str(it.get('prdctNm') or ''))
+                company = clean_text(str(it.get('bizName') or '미상'))
+                try: price = int(str(it.get('unitPrice') or 0).replace(',', ''))
+                except: price = 0
+                if not name: continue
+                products.append({
+                    'name': name, 'company': company, 'price': price,
+                    'product_no': str(it.get('prdctNo') or ''),
+                    'product_url': '',
+                })
+            time.sleep(0.3)
+        except Exception as e:
+            print(f'  API 오류: {e}'); break
+    return products
+
+
 def collect_g2b():
-    """나라장터 쇼핑 LED 업체/제품 수집"""
-    from collections import defaultdict
+    """나라장터 LED 업체/제품 수집 (웹 스크래핑 우선, API fallback)"""
     all_products, now = [], datetime.utcnow().isoformat() + 'Z'
 
-    for keyword in CATEGORIES[:10]:
-        print(f'[G2B] {keyword}...')
-        for page in range(1, 6):
-            try:
-                params = {'serviceKey': G2B_KEY, 'pageNo': page, 'numOfRows': 100,
-                          'searchNm': keyword, 'type': 'json'}
-                r = requests.get('http://apis.data.go.kr/1230000/naraShopInfoService/getProductInfoServc',
-                                 params=params, timeout=15)
-                if r.status_code != 200: break
-                items = r.json().get('response', {}).get('body', {}).get('items', {}).get('item', [])
-                if isinstance(items, dict): items = [items]
-                if not items: break
-                for it in items:
-                    name = clean_text(str(it.get('prdctNm') or it.get('품목명') or ''))
-                    company = clean_text(str(it.get('bizName') or it.get('업체명') or '미상'))
-                    try: price = int(str(it.get('unitPrice') or it.get('단가') or 0).replace(',',''))
-                    except: price = 0
-                    if not name: continue
-                    origin = detect_origin(name, company)
-                    all_products.append({
-                        'id': f'g2b_{uuid.uuid4().hex[:8]}',
-                        'name': name, 'price': price, 'company': company,
-                        'product_no': str(it.get('prdctNo') or ''),
-                        'category': keyword, 'origin': origin,
-                        'collected_at': now,
-                    })
-                time.sleep(0.5)
-            except Exception as e:
-                print(f'  오류: {e}'); break
+    for keyword in CATEGORIES[:12]:
+        print(f'\n[나라장터] {keyword}...')
+        # API 키 있으면 API 우선, 없으면 웹 스크래핑
+        if G2B_KEY:
+            raw = scrape_g2b_api(keyword)
+            if not raw:
+                raw = scrape_g2b_web(keyword)
+        else:
+            raw = scrape_g2b_web(keyword)
+
+        for item in raw:
+            origin = detect_origin(item['name'], item['company'])
+            all_products.append({
+                'id': f'g2b_{uuid.uuid4().hex[:8]}',
+                'name': item['name'], 'price': item['price'],
+                'company': item['company'], 'product_no': item.get('product_no', ''),
+                'product_url': item.get('product_url', ''),
+                'category': keyword, 'origin': origin,
+                'collected_at': now,
+            })
+        print(f'  소계: {len([p for p in all_products if p["category"] == keyword])}개')
+        time.sleep(1.5)
+
+    print(f'\n나라장터 총 수집: {len(all_products)}개')
 
     if not all_products:
-        print('G2B 데이터 없음')
+        print('수집 실패 - 나라장터 접근 불가')
         return
 
     existing_products = r2_read('g2b-data/products.json') or []
