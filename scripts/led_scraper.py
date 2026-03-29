@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-다나와 LED 제품 스크래퍼 → Cloudflare R2 저장
-환경변수: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, GEMINI_API_KEY (선택)
+LED 데이터 수집기
+1. 다나와 LED 제품 → R2: led-data/products.json
+2. 나라장터 LED 업체/제품 → R2: g2b-data/companies.json, products.json, changes.json
 """
 import os, json, re, time, uuid, boto3, requests
-from datetime import datetime
+from datetime import datetime, date
+from collections import defaultdict
 from botocore.config import Config
 
-# R2 설정
-R2_ACCOUNT_ID   = os.environ['R2_ACCOUNT_ID']
-R2_ACCESS_KEY   = os.environ['R2_ACCESS_KEY_ID']
-R2_SECRET_KEY   = os.environ['R2_SECRET_ACCESS_KEY']
-R2_BUCKET       = os.environ.get('R2_BUCKET', 'loov-storage')
-GEMINI_KEY      = os.environ.get('GEMINI_API_KEY', '')
+R2_ACCOUNT_ID = os.environ['R2_ACCOUNT_ID']
+R2_ACCESS_KEY  = os.environ['R2_ACCESS_KEY_ID']
+R2_SECRET_KEY  = os.environ['R2_SECRET_ACCESS_KEY']
+R2_BUCKET      = os.environ.get('R2_BUCKET', 'loov-storage')
+GEMINI_KEY     = os.environ.get('GEMINI_API_KEY', '')
+G2B_API_KEY    = os.environ.get('DATA_GO_KR_SERVICE_KEY', '')
 
 s3 = boto3.client(
     's3',
@@ -25,27 +27,60 @@ s3 = boto3.client(
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
-    'Referer': 'https://www.danawa.com/',
+    'Accept-Language': 'ko-KR,ko;q=0.9',
+    'Referer': 'https://www.g2b.go.kr/',
 }
 
-CATEGORIES = [
-    ('LED 전구',    'LED 전구'),
-    ('LED 등기구',  'LED 등기구'),
-    ('LED 투광기',  'LED 투광기'),
-    ('LED 다운라이트', 'LED 다운라이트'),
-    ('LED 가로등',  'LED 가로등'),
-    ('LED 조명',    'LED 조명'),
-]
+LED_KEYWORDS = ['LED 전구', 'LED 등기구', 'LED 투광기', 'LED 다운라이트', 'LED 가로등', 'LED 조명', 'LED 형광등', 'LED 패널']
 
-def scrape_danawa(query: str, category: str, max_page: int = 5) -> list:
+# ─── R2 헬퍼 ───────────────────────────────────────────────────
+
+def r2_read(key):
+    try:
+        obj = s3.get_object(Bucket=R2_BUCKET, Key=key)
+        return json.loads(obj['Body'].read().decode())
+    except:
+        return None
+
+def r2_write(key, data):
+    s3.put_object(
+        Bucket=R2_BUCKET, Key=key,
+        Body=json.dumps(data, ensure_ascii=False).encode(),
+        ContentType='application/json',
+    )
+
+# ─── 나라장터 쇼핑 ──────────────────────────────────────────────
+
+def fetch_g2b_api(keyword, page=1):
+    """나라장터 쇼핑 공공데이터 API"""
+    url = 'http://apis.data.go.kr/1230000/naraShopInfoService/getProductInfoServc'
+    params = {
+        'serviceKey': G2B_API_KEY,
+        'pageNo': page,
+        'numOfRows': 100,
+        'searchNm': keyword,
+        'type': 'json',
+    }
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        items = data.get('response', {}).get('body', {}).get('items', {}).get('item', [])
+        if isinstance(items, dict):
+            items = [items]
+        return items
+    except Exception as e:
+        print(f'  G2B API 오류: {e}')
+        return []
+
+def scrape_g2b_web(keyword):
+    """나라장터 쇼핑 웹 스크래핑 (API 키 없을 때)"""
     products = []
-    for page in range(1, max_page + 1):
+    for page in range(1, 4):
         url = (
-            f'https://search.danawa.com/dsearch.php'
-            f'?query={requests.utils.quote(query)}'
-            f'&tab=goods&page={page}&limit=30&sort=saveDESC'
+            f'https://shopping.g2b.go.kr/sp/na/naby/sp-nabypbblList.do'
+            f'?searchQuery={requests.utils.quote(keyword)}&pageIndex={page}'
         )
         try:
             r = requests.get(url, headers=HEADERS, timeout=15)
@@ -53,174 +88,322 @@ def scrape_danawa(query: str, category: str, max_page: int = 5) -> list:
                 break
             html = r.text
 
-            # 상품 블록 추출
-            blocks = re.findall(
-                r'<li[^>]+class="[^"]*prod-item[^"]*"[^>]*>([\s\S]*?)</li>',
-                html
-            )
-            if not blocks:
-                # 다른 패턴 시도
-                blocks = re.findall(
-                    r'class="main-prodlist-item"[^>]*>([\s\S]*?)</li>',
-                    html
-                )
-
+            # 상품 블록 파싱
+            blocks = re.findall(r'class="item_cont"([\s\S]*?)(?=class="item_cont"|</ul>)', html)
             found = 0
             for block in blocks:
-                # 상품명
-                name_m = re.search(r'class="[^"]*prod-name[^"]*"[^>]*>.*?<a[^>]*>([^<]+)</a>', block, re.S)
-                if not name_m:
-                    name_m = re.search(r'title="([^"]{5,80})"', block)
+                name_m = re.search(r'class="item_name"[^>]*>([^<]+)', block)
+                price_m = re.search(r'([\d,]{3,})\s*원', block)
+                comp_m  = re.search(r'class="[^"]*comp[^"]*"[^>]*>([^<]+)', block)
+                no_m    = re.search(r'상품번호[^\d]*([\d]+)', block)
+
                 if not name_m:
                     continue
-                name = name_m.group(1).strip()
-
-                # 가격
-                price_m = re.search(r'([\d,]{4,})\s*원', block)
-                price = int(price_m.group(1).replace(',', '')) if price_m else 0
-
-                # 제조사
-                maker_m = re.search(r'class="[^"]*maker[^"]*"[^>]*>.*?<a[^>]*>([^<]+)</a>', block, re.S)
-                if not maker_m:
-                    maker_m = re.search(r'class="[^"]*brand[^"]*"[^>]*>([^<]+)<', block)
-                maker = maker_m.group(1).strip() if maker_m else '기타'
-
-                # 이미지
-                img_m = re.search(r'<img[^>]+src="(https?://[^"]+\.(?:jpg|png|webp)[^"]*)"', block, re.I)
-                image_url = img_m.group(1) if img_m else ''
-
-                # 상품 URL
-                url_m = re.search(r'href="(https?://prod\.danawa\.com[^"]+)"', block)
-                product_url = url_m.group(1) if url_m else ''
-
-                if len(name) < 3:
-                    continue
-
                 products.append({
-                    'id': f'danawa_{uuid.uuid4().hex[:8]}',
-                    'name': name,
-                    'price': price,
-                    'maker': maker,
-                    'category': category,
-                    'image_url': image_url,
-                    'product_url': product_url,
-                    'collected_at': datetime.utcnow().isoformat() + 'Z',
+                    'name': name_m.group(1).strip(),
+                    'price': int(price_m.group(1).replace(',','')) if price_m else 0,
+                    'company': comp_m.group(1).strip() if comp_m else '미상',
+                    'product_no': no_m.group(1) if no_m else '',
                 })
                 found += 1
 
-            print(f'  [{category}] 페이지 {page}: {found}개')
             if found == 0:
                 break
-            time.sleep(1.0)
+            time.sleep(0.8)
         except Exception as e:
-            print(f'  오류: {e}')
+            print(f'  G2B 웹 스크래핑 오류: {e}')
             break
 
     return products
 
-
-def scrape_with_gemini(query: str, category: str) -> list:
-    """Gemini AI로 HTML 파싱"""
-    url = f'https://search.danawa.com/dsearch.php?query={requests.utils.quote(query)}&tab=goods&limit=30'
+def scrape_g2b_with_gemini(keyword):
+    """Gemini AI로 나라장터 파싱"""
+    url = f'https://shopping.g2b.go.kr/sp/na/naby/sp-nabypbblList.do?searchQuery={requests.utils.quote(keyword)}'
     try:
         r = requests.get(url, headers=HEADERS, timeout=15)
         if r.status_code != 200:
             return []
-        html = r.text[:12000]
+        html = r.text[:10000]
     except:
         return []
 
-    prompt = f"""다음 HTML에서 LED 조명 상품 목록을 JSON 배열로 추출하세요. 최대 30개.
-각 항목 형식: {{"name":"상품명","price":숫자,"maker":"제조사","image_url":"이미지URL","product_url":"상품URL"}}
-가격은 원 단위 정수. 상품명 없는 항목 제외.
+    prompt = f"""다음 나라장터 쇼핑 HTML에서 LED 제품 목록을 추출하세요. 최대 30개.
+형식: [{{"name":"제품명","price":가격숫자,"company":"업체명","product_no":"제품번호","category":"LED카테고리"}}]
 HTML:\n{html}\nJSON 배열만 반환:"""
 
-    api_url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}'
     try:
-        res = requests.post(api_url, json={
-            'contents': [{'parts': [{'text': prompt}]}],
-            'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 8192}
-        }, timeout=60)
+        res = requests.post(
+            f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}',
+            json={'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 4096}},
+            timeout=60
+        )
         text = res.json()['candidates'][0]['content']['parts'][0]['text']
         m = re.search(r'\[[\s\S]*\]', text)
-        if not m:
-            return []
-        items = json.loads(m.group(0))
-        return [{
-            'id': f'danawa_{uuid.uuid4().hex[:8]}',
-            'name': it.get('name', ''),
-            'price': int(it.get('price', 0)),
-            'maker': it.get('maker', '기타'),
-            'category': category,
-            'image_url': it.get('image_url', ''),
-            'product_url': it.get('product_url', ''),
-            'collected_at': datetime.utcnow().isoformat() + 'Z',
-        } for it in items if it.get('name')]
+        return json.loads(m.group(0)) if m else []
     except Exception as e:
         print(f'  Gemini 오류: {e}')
         return []
 
+def collect_g2b():
+    """나라장터 전체 수집 → 업체/제품/변동 분석"""
+    all_products = []
+    now = datetime.utcnow().isoformat() + 'Z'
 
-def load_existing() -> list:
-    try:
-        obj = s3.get_object(Bucket=R2_BUCKET, Key='led-data/products.json')
-        return json.loads(obj['Body'].read().decode())
-    except:
-        return []
+    for keyword in LED_KEYWORDS:
+        print(f'\n[G2B] {keyword} 수집...')
+        raw = []
 
+        if G2B_API_KEY:
+            raw = fetch_g2b_api(keyword)
+            print(f'  API: {len(raw)}개')
+        if not raw and GEMINI_KEY:
+            raw = scrape_g2b_with_gemini(keyword)
+            print(f'  Gemini: {len(raw)}개')
+        if not raw:
+            raw = scrape_g2b_web(keyword)
+            print(f'  Web: {len(raw)}개')
 
-def save_to_r2(products: list, report: dict):
-    s3.put_object(
-        Bucket=R2_BUCKET, Key='led-data/products.json',
-        Body=json.dumps(products, ensure_ascii=False).encode(),
-        ContentType='application/json',
-    )
-    s3.put_object(
-        Bucket=R2_BUCKET, Key='led-data/report.json',
-        Body=json.dumps(report, ensure_ascii=False).encode(),
-        ContentType='application/json',
-    )
-    print(f'R2 저장 완료: {len(products)}개 제품')
+        for item in raw:
+            # API 응답 필드 정규화
+            name    = item.get('name') or item.get('prdctNm') or item.get('품목명') or ''
+            price   = item.get('price') or item.get('unitPrice') or item.get('단가') or 0
+            company = item.get('company') or item.get('bizName') or item.get('업체명') or '미상'
+            prod_no = item.get('product_no') or item.get('prdctNo') or ''
+            cat     = item.get('category') or keyword
 
+            if not name or len(name) < 2:
+                continue
+            try:
+                price = int(str(price).replace(',','').replace('원','').strip())
+            except:
+                price = 0
 
-def main():
-    all_new = []
-    for query, category in CATEGORIES:
-        print(f'\n[{category}] 수집 시작...')
-        if GEMINI_KEY:
-            items = scrape_with_gemini(query, category)
-            print(f'  Gemini 파싱: {len(items)}개')
-            if len(items) < 5:
-                # fallback to regex
-                items = scrape_danawa(query, category)
+            all_products.append({
+                'id': f'g2b_{uuid.uuid4().hex[:8]}',
+                'name': name,
+                'price': price,
+                'company': company,
+                'product_no': prod_no,
+                'category': cat,
+                'collected_at': now,
+            })
+
+        time.sleep(1.5)
+
+    print(f'\n나라장터 신규 수집: {len(all_products)}개')
+
+    # 기존 제품 로드
+    existing_products = r2_read('g2b-data/products.json') or []
+    existing_changes  = r2_read('g2b-data/changes.json') or []
+
+    # 변동 감지 (제품번호 기준)
+    existing_map = {p['product_no']: p for p in existing_products if p.get('product_no')}
+    new_changes = []
+
+    for p in all_products:
+        pno = p.get('product_no')
+        if not pno:
+            continue
+        old = existing_map.get(pno)
+        if old:
+            # 가격 변동
+            if old['price'] and p['price'] and old['price'] != p['price']:
+                change_pct = (p['price'] - old['price']) / old['price'] * 100
+                new_changes.append({
+                    'type': 'price_change',
+                    'company': p['company'],
+                    'product': p['name'],
+                    'old_price': old['price'],
+                    'new_price': p['price'],
+                    'change_pct': round(change_pct, 1),
+                    'detected_at': now,
+                })
+                print(f'  가격변동: {p["name"]} {old["price"]:,}→{p["price"]:,} ({change_pct:+.1f}%)')
+            # 카테고리 변동
+            if old.get('category') != p.get('category') and old.get('category'):
+                new_changes.append({
+                    'type': 'category_change',
+                    'company': p['company'],
+                    'product': p['name'],
+                    'old_category': old['category'],
+                    'new_category': p['category'],
+                    'detected_at': now,
+                })
         else:
-            items = scrape_danawa(query, category)
+            # 신규 등록
+            new_changes.append({
+                'type': 'new_product',
+                'company': p['company'],
+                'product': p['name'],
+                'detected_at': now,
+            })
+
+    # 삭제된 제품 감지
+    if existing_products:
+        new_nos = {p['product_no'] for p in all_products if p.get('product_no')}
+        for old in existing_products:
+            if old.get('product_no') and old['product_no'] not in new_nos:
+                new_changes.append({
+                    'type': 'removed_product',
+                    'company': old['company'],
+                    'product': old['name'],
+                    'detected_at': now,
+                })
+
+    # 제품 병합 (신규 + 기존 중 새 수집에 없는 것)
+    new_nos = {p['product_no'] for p in all_products if p.get('product_no')}
+    new_names = {p['name'] for p in all_products}
+    merged_products = all_products + [
+        p for p in existing_products
+        if p.get('product_no') not in new_nos and p.get('name') not in new_names
+    ]
+    merged_products = merged_products[:5000]
+
+    # 업체별 집계
+    comp_map = defaultdict(lambda: {'products': [], 'prices': []})
+    for p in merged_products:
+        c = p['company']
+        comp_map[c]['products'].append(p)
+        if p['price'] > 0:
+            comp_map[c]['prices'].append(p['price'])
+
+    companies = []
+    for name, data in comp_map.items():
+        prices = data['prices']
+        cats = list(set(p['category'] for p in data['products']))
+        companies.append({
+            'name': name,
+            'product_count': len(data['products']),
+            'categories': cats,
+            'avg_price': int(sum(prices)/len(prices)) if prices else 0,
+            'min_price': min(prices) if prices else 0,
+            'max_price': max(prices) if prices else 0,
+            'last_updated': now,
+        })
+    companies.sort(key=lambda c: c['product_count'], reverse=True)
+
+    # 변동 이력 업데이트 (최근 500건)
+    all_changes = new_changes + existing_changes
+    all_changes = all_changes[:500]
+
+    # 스냅샷 저장
+    snapshot_key = f'g2b-data/snapshots/{date.today().isoformat()}.json'
+    r2_write(snapshot_key, {'products': all_products, 'collected_at': now})
+
+    # 저장
+    r2_write('g2b-data/products.json', merged_products)
+    r2_write('g2b-data/companies.json', companies)
+    r2_write('g2b-data/changes.json', all_changes)
+
+    print(f'G2B 저장 완료: 업체 {len(companies)}개, 제품 {len(merged_products)}개, 변동 {len(new_changes)}건')
+    return len(all_products), len(companies)
+
+# ─── 다나와 수집 ────────────────────────────────────────────────
+
+DANAWA_CATS = [
+    ('LED 전구', 'LED 전구'), ('LED 등기구', 'LED 등기구'),
+    ('LED 투광기', 'LED 투광기'), ('LED 다운라이트', 'LED 다운라이트'),
+    ('LED 가로등', 'LED 가로등'),
+]
+DW_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept-Language': 'ko-KR,ko;q=0.9',
+    'Referer': 'https://www.danawa.com/',
+}
+
+def scrape_danawa_cat(query, category):
+    products = []
+    for page in range(1, 4):
+        url = f'https://search.danawa.com/dsearch.php?query={requests.utils.quote(query)}&tab=goods&page={page}&limit=30&sort=saveDESC'
+        try:
+            r = requests.get(url, headers=DW_HEADERS, timeout=15)
+            if r.status_code != 200:
+                break
+            html = r.text
+            blocks = re.findall(r'<li[^>]+class="[^"]*prod-item[^"]*"[^>]*>([\s\S]*?)</li>', html)
+            found = 0
+            for block in blocks:
+                name_m  = re.search(r'class="[^"]*prod-name[^"]*"[^>]*>.*?<a[^>]*>([^<]+)</a>', block, re.S)
+                price_m = re.search(r'([\d,]{4,})\s*원', block)
+                maker_m = re.search(r'class="[^"]*maker[^"]*"[^>]*>.*?<a[^>]*>([^<]+)</a>', block, re.S)
+                img_m   = re.search(r'<img[^>]+src="(https?://[^"]+\.(?:jpg|png|webp)[^"]*)"', block, re.I)
+                if not name_m or len(name_m.group(1).strip()) < 3:
+                    continue
+                products.append({
+                    'id': f'danawa_{uuid.uuid4().hex[:8]}',
+                    'name': name_m.group(1).strip(),
+                    'price': int(price_m.group(1).replace(',','')) if price_m else 0,
+                    'maker': maker_m.group(1).strip() if maker_m else '기타',
+                    'category': category,
+                    'image_url': img_m.group(1) if img_m else '',
+                    'collected_at': datetime.utcnow().isoformat() + 'Z',
+                })
+                found += 1
+            if found == 0:
+                break
+            time.sleep(1.0)
+        except Exception as e:
+            print(f'  다나와 오류: {e}')
+            break
+    return products
+
+def collect_danawa():
+    all_new = []
+    for query, category in DANAWA_CATS:
+        print(f'\n[다나와] {category}...')
+        items = scrape_danawa_cat(query, category)
+        if not items and GEMINI_KEY:
+            # Gemini fallback
+            url = f'https://search.danawa.com/dsearch.php?query={requests.utils.quote(query)}&tab=goods&limit=30'
+            try:
+                r = requests.get(url, headers=DW_HEADERS, timeout=15)
+                html = r.text[:10000]
+                prompt = f'다음 HTML에서 LED 상품을 추출. 형식: [{{"name":"","price":0,"maker":"","image_url":"","category":"{category}"}}]\nHTML:\n{html}\nJSON만:'
+                res = requests.post(
+                    f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}',
+                    json={'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0.1}},
+                    timeout=60
+                )
+                text = res.json()['candidates'][0]['content']['parts'][0]['text']
+                m = re.search(r'\[[\s\S]*\]', text)
+                if m:
+                    items = [{'id': f'danawa_{uuid.uuid4().hex[:8]}', 'collected_at': datetime.utcnow().isoformat()+'Z', **x} for x in json.loads(m.group(0))]
+            except:
+                pass
+        print(f'  {len(items)}개')
         all_new.extend(items)
         time.sleep(2)
 
-    print(f'\n신규 수집: {len(all_new)}개')
-
-    # 기존 데이터와 병합
-    existing = load_existing()
-    existing_names = {p['name'] for p in all_new}
-    merged = all_new + [p for p in existing if p['name'] not in existing_names]
+    existing = r2_read('led-data/products.json') or []
+    new_names = {p['name'] for p in all_new}
+    merged = all_new + [p for p in existing if p['name'] not in new_names]
     merged = merged[:5000]
 
     report = {
-        'generated_at': datetime.utcnow().isoformat() + 'Z',
+        'generated_at': datetime.utcnow().isoformat()+'Z',
         'total_count': len(merged),
         'newly_collected': len(all_new),
-        'categories': list({p['category'] for p in all_new}),
-        'ai_commentary': (
-            f'총 {len(merged)}개 LED 제품 데이터 수집 완료. '
-            f'신규 {len(all_new)}개 추가. '
-            f'카테고리: {", ".join(set(p["category"] for p in all_new))}.'
-        ) if all_new else '데이터 수집에 실패했습니다.',
+        'ai_commentary': f'총 {len(merged)}개 LED 제품 데이터 수집 완료. 신규 {len(all_new)}개.' if all_new else '다나와 수집 실패.',
     }
+    r2_write('led-data/products.json', merged)
+    r2_write('led-data/report.json', report)
+    print(f'다나와 저장 완료: {len(merged)}개')
+    return len(all_new)
 
-    save_to_r2(merged, report)
-    print(f'완료: 총 {len(merged)}개')
-
+# ─── 메인 ───────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    main()
+    import sys
+    mode = sys.argv[1] if len(sys.argv) > 1 else 'all'
+
+    if mode in ('all', 'danawa'):
+        print('=== 다나와 수집 ===')
+        n = collect_danawa()
+        print(f'다나와 완료: {n}개 신규')
+
+    if mode in ('all', 'g2b'):
+        print('\n=== 나라장터 수집 ===')
+        n_prod, n_comp = collect_g2b()
+        print(f'나라장터 완료: 제품 {n_prod}개, 업체 {n_comp}개')
+
+    print('\n모든 수집 완료!')

@@ -1,63 +1,75 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { readFromR2 } from '@/lib/r2-storage'
+import { readFromR2, uploadToR2 } from '@/lib/r2-storage'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 })
 
-  try {
-    const productsJson = await readFromR2('led-data/products.json')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw: any[] = productsJson ? JSON.parse(productsJson) : []
+  const { searchParams } = new URL(req.url)
+  const companySearch = searchParams.get('company') || ''
 
-    if (raw.length === 0) {
-      return NextResponse.json({
-        events: [], marketOverviews: [],
-        stats: { total_products: 0, total_companies: 0, changes_24h: 0 },
-      })
+  try {
+    const [companiesJson, productsJson, changesJson] = await Promise.all([
+      readFromR2('g2b-data/companies.json'),
+      readFromR2('g2b-data/products.json'),
+      readFromR2('g2b-data/changes.json'),
+    ])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let companies: any[] = companiesJson ? JSON.parse(companiesJson) : []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let products: any[] = productsJson ? JSON.parse(productsJson) : []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes: any[] = changesJson ? JSON.parse(changesJson) : []
+
+    if (companySearch) {
+      companies = companies.filter(c => c.name?.includes(companySearch))
+      products = products.filter(p => p.company?.includes(companySearch))
     }
 
-    // 카테고리별 집계
-    const agg: Record<string, { comps: Set<string>; sku: number; prices: number[] }> = {}
-    raw.forEach((p) => {
-      const cat = p.category || '기타'
-      if (!agg[cat]) agg[cat] = { comps: new Set(), sku: 0, prices: [] }
-      agg[cat].comps.add(p.maker)
-      agg[cat].sku++
-      if (p.price > 0) agg[cat].prices.push(p.price)
-    })
-
-    const marketOverviews = Object.entries(agg).map(([cat, a]) => {
-      const sorted = [...a.prices].sort((x, y) => x - y)
-      return {
-        category_name: cat,
-        total_companies: a.comps.size,
-        total_products: a.sku,
-        min_price: sorted[0] || 0,
-        median_price: sorted[Math.floor(sorted.length / 2)] || 0,
-        avg_efficacy: null,
-      }
-    }).sort((a, b) => b.total_products - a.total_products)
-
-    const uniqueMakers = new Set(raw.map(p => p.maker).filter(Boolean))
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const changes24h = changes.filter(c => c.detected_at > yesterday).length
 
     return NextResponse.json({
-      events: [],
-      marketOverviews,
+      companies: companies.slice(0, 200),
+      products: products.slice(0, 500),
+      changes: changes.slice(0, 100),
       stats: {
-        total_products: raw.length,
-        total_companies: uniqueMakers.size,
-        changes_24h: 0,
+        total_companies: companies.length,
+        total_products: products.length,
+        changes_24h: changes24h,
       },
     })
   } catch {
     return NextResponse.json({
-      events: [], marketOverviews: [],
-      stats: { total_products: 0, total_companies: 0, changes_24h: 0 },
+      companies: [], products: [], changes: [],
+      stats: { total_companies: 0, total_products: 0, changes_24h: 0 },
     })
   }
+}
+
+// 특정 업체 추적 등록/해제
+export async function POST(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 })
+
+  const { action, company_name } = await req.json()
+
+  const watchlistJson = await readFromR2('g2b-data/watchlist.json')
+  const watchlist: string[] = watchlistJson ? JSON.parse(watchlistJson) : []
+
+  if (action === 'add' && !watchlist.includes(company_name)) {
+    watchlist.push(company_name)
+  } else if (action === 'remove') {
+    const idx = watchlist.indexOf(company_name)
+    if (idx >= 0) watchlist.splice(idx, 1)
+  }
+
+  await uploadToR2('g2b-data/watchlist.json', Buffer.from(JSON.stringify(watchlist)), 'application/json')
+  return NextResponse.json({ ok: true, watchlist })
 }
