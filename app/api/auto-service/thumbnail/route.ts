@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { uploadToR2 } from '@/lib/r2-storage';
 
 export const maxDuration = 30;
 
@@ -23,7 +24,6 @@ export async function POST(req: NextRequest) {
   }
   if (!imageUrl) return NextResponse.json({ error: '썸네일 생성 실패' }, { status: 500 });
 
-  // DB 업데이트
   const { error } = await supabase
     .from('bossai_auto_articles')
     .update({ representative_image_url: imageUrl, updated_at: new Date().toISOString() })
@@ -47,16 +47,14 @@ export async function PUT(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const ext = file.name.split('.').pop() || 'jpg';
-  const path = `thumbnails/${user.id}_${Date.now()}.${ext}`;
+  const key = `auto-blog/thumbnails/${user.id}_${Date.now()}.${ext}`;
 
-  const adminSupabase = createAdminClient();
-  const { error: uploadError } = await adminSupabase.storage
-    .from('auto-blog')
-    .upload(path, buffer, { contentType: file.type, upsert: true });
-
-  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
-
-  const { data: { publicUrl } } = adminSupabase.storage.from('auto-blog').getPublicUrl(path);
+  let publicUrl: string;
+  try {
+    publicUrl = await uploadToR2(key, buffer, file.type);
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 
   const { error } = await supabase
     .from('bossai_auto_articles')

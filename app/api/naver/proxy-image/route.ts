@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
+import { uploadToR2 } from '@/lib/r2-storage';
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -9,7 +10,6 @@ export async function POST(req: NextRequest) {
   const { url } = await req.json() as { url?: string };
   if (!url) return NextResponse.json({ error: 'url 필요' }, { status: 400 });
 
-  // 외부 이미지 다운로드
   const res = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
   });
@@ -22,18 +22,12 @@ export async function POST(req: NextRequest) {
     : 'jpg';
 
   const buf = Buffer.from(await res.arrayBuffer());
-  const fileName = `naver/${user.id}/${Date.now()}.${ext}`;
+  const key = `naver/${user.id}/${Date.now()}.${ext}`;
 
-  const admin = createAdminClient();
-  const { error } = await admin.storage
-    .from('notion-uploads')
-    .upload(fileName, buf, { contentType, upsert: false });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const { data: { publicUrl } } = admin.storage
-    .from('notion-uploads')
-    .getPublicUrl(fileName);
-
-  return NextResponse.json({ url: publicUrl });
+  try {
+    const publicUrl = await uploadToR2(key, buf, contentType);
+    return NextResponse.json({ url: publicUrl });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }

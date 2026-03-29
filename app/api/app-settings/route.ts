@@ -44,6 +44,12 @@ const ALLOWED_KEYS = [
   // loov22.vercel.app Supabase (LED 제품/조달 데이터 읽기용)
   'LOOV_SUPABASE_URL',
   'LOOV_SUPABASE_ANON_KEY',
+  // Cloudflare R2 Storage
+  'R2_ACCOUNT_ID',
+  'R2_ACCESS_KEY_ID',
+  'R2_SECRET_ACCESS_KEY',
+  'R2_BUCKET',
+  'R2_PUBLIC_URL',
 ] as const;
 
 export async function GET() {
@@ -61,7 +67,7 @@ export async function GET() {
   const settings = (data?.settings as Record<string, string>) || {};
 
   // 마스킹: 키 앞 4자리만 노출 (비민감 키는 전체 값 반환)
-  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL']);
+  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID']);
   const masked: Record<string, string> = {};
   for (const key of ALLOWED_KEYS) {
     const val = settings[key] || '';
