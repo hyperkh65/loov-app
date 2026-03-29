@@ -33,4 +33,6 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
         run: python scripts/led_scraper.py ${{ github.event.inputs.mode || 'all' }}
