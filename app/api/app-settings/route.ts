@@ -55,6 +55,9 @@ const ALLOWED_KEYS = [
   'R2_PUBLIC_URL',
   // LED 스크래퍼
   'LED_SCRAPE_SECRET',
+  // GitHub Actions trigger
+  'GITHUB_PAT',
+  'GITHUB_REPO',
 ] as const;
 
 export async function GET() {

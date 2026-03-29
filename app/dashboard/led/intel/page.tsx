@@ -63,18 +63,17 @@ export default function LedIntelPage() {
 
   async function startScrape() {
     setScraping(true)
-    setScrapeMsg('다나와 데이터 수집 중...')
+    setScrapeMsg('GitHub Actions 트리거 중...')
     try {
-      const res = await fetch('/api/led/scrape', { method: 'POST' })
+      const res = await fetch('/api/led/trigger', { method: 'POST' })
       const json = await res.json()
       if (json.ok) {
-        setScrapeMsg(`✅ ${json.collected}개 수집 완료 (총 ${json.total}개)`)
-        await loadData()
+        setScrapeMsg('✅ 수집 시작됨 (약 3~5분 후 새로고침)')
       } else {
-        setScrapeMsg(`❌ 실패: ${json.error}`)
+        setScrapeMsg(`❌ ${json.error}`)
       }
     } catch {
-      setScrapeMsg('❌ 수집 실패')
+      setScrapeMsg('❌ 트리거 실패')
     }
     setScraping(false)
   }
