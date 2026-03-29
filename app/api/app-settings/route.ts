@@ -33,6 +33,9 @@ const ALLOWED_KEYS = [
   'GALLERY_NOTION_DB_URL',
   // 숏폼
   'PEXELS_API_KEY',
+  // Edge-TTS (NAS Docker)
+  'EDGE_TTS_SERVER_URL',
+  'EDGE_TTS_SECRET',
   // Ollama
   'OLLAMA_API_KEY',
   'OLLAMA_BASE_URL',
@@ -67,7 +70,7 @@ export async function GET() {
   const settings = (data?.settings as Record<string, string>) || {};
 
   // 마스킹: 키 앞 4자리만 노출 (비민감 키는 전체 값 반환)
-  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID']);
+  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID', 'EDGE_TTS_SERVER_URL']);
   const masked: Record<string, string> = {};
   for (const key of ALLOWED_KEYS) {
     const val = settings[key] || '';
