@@ -26,9 +26,11 @@ interface UploadRecord {
   summary: string | null;
   tags: string[];
   notion_page_id: string | null;
+  notion_page_url?: string | null;
   status: string;
   error_message: string | null;
   created_at: string;
+  source?: 'local' | 'notion';
 }
 
 const FILE_TYPE_BADGE: Record<string, string> = {
@@ -365,7 +367,7 @@ export default function NotionPage() {
             <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
               <div className="text-4xl mb-3">🗂️</div>
               <p className="text-gray-500 font-medium">파일이 없습니다</p>
-              <p className="text-sm text-gray-400 mt-1">업로드 탭에서 파일을 추가하세요.</p>
+              <p className="text-sm text-gray-400 mt-1">업로드 탭에서 파일을 추가하거나 Notion 연결을 확인하세요.</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -391,6 +393,11 @@ export default function NotionPage() {
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${FILE_TYPE_BADGE[row.file_type] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
                             {row.file_type}
                           </span>
+                          {row.source === 'notion' && (
+                            <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full font-medium">
+                              📔 Notion
+                            </span>
+                          )}
                           {row.category && (
                             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
                               {row.category}
@@ -420,9 +427,9 @@ export default function NotionPage() {
                             ⬇️ 다운로드
                           </a>
                         )}
-                        {row.notion_page_id && (
+                        {(row.notion_page_url || row.notion_page_id) && (
                           <a
-                            href={`https://www.notion.so/${row.notion_page_id.replace(/-/g, '')}`}
+                            href={row.notion_page_url || `https://www.notion.so/${row.notion_page_id!.replace(/-/g, '')}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
