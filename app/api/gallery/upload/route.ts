@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
+import { uploadToR2 } from '@/lib/r2-storage';
 import sharp from 'sharp';
 
 export async function POST(req: NextRequest) {
@@ -21,32 +22,22 @@ export async function POST(req: NextRequest) {
   let contentType = 'image/webp';
   try {
     compressed = await sharp(rawBytes)
-      .rotate() // EXIF 방향 자동 보정
+      .rotate()
       .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 80 })
       .toBuffer();
   } catch {
-    // 압축 실패 시 원본 사용 (GIF/SVG 등)
     compressed = rawBytes;
     contentType = file.type;
   }
 
-  // 버킷 없으면 자동 생성
-  const admin = await createAdminClient();
-  const { data: buckets } = await admin.storage.listBuckets();
-  if (!buckets?.find(b => b.name === 'gallery')) {
-    await admin.storage.createBucket('gallery', { public: true });
-  }
-
   const uploadExt = contentType === 'image/webp' ? 'webp' : ext;
-  const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${uploadExt}`;
+  const key = `gallery/${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${uploadExt}`;
 
-  const { error } = await admin.storage
-    .from('gallery')
-    .upload(path, compressed, { contentType, upsert: false });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const { data: { publicUrl } } = admin.storage.from('gallery').getPublicUrl(path);
-  return NextResponse.json({ url: publicUrl, path, originalSize: rawBytes.length, compressedSize: compressed.length });
+  try {
+    const publicUrl = await uploadToR2(key, compressed, contentType);
+    return NextResponse.json({ url: publicUrl, path: key, originalSize: rawBytes.length, compressedSize: compressed.length });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }

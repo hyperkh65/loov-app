@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { uploadToR2, deleteFromR2 } from '@/lib/r2-storage';
 
 export const maxDuration = 120;
 
@@ -18,8 +18,6 @@ async function generateAndStoreCardImage(
   theme: string,
   num: number,
   total: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: SupabaseClient<any>
 ): Promise<string> {
   const params = new URLSearchParams({
     type: slide.type,
@@ -35,16 +33,9 @@ async function generateAndStoreCardImage(
   if (!res.ok) throw new Error(`카드 이미지 생성 실패 (${num}/${total}): HTTP ${res.status}`);
 
   const buffer = await res.arrayBuffer();
-  const fileName = `card-news/${Date.now()}-${num}-${Math.random().toString(36).slice(2)}.png`;
+  const key = `sns-media/card-news/${Date.now()}-${num}-${Math.random().toString(36).slice(2)}.png`;
 
-  const { error: uploadError } = await supabase.storage
-    .from('sns-media')
-    .upload(fileName, buffer, { contentType: 'image/png', upsert: false });
-
-  if (uploadError) throw new Error('Storage 업로드 실패: ' + uploadError.message);
-
-  const { data: urlData } = supabase.storage.from('sns-media').getPublicUrl(fileName);
-  return urlData.publicUrl;
+  return uploadToR2(key, buffer, 'image/png');
 }
 
 export async function POST(req: NextRequest) {
@@ -95,11 +86,11 @@ export async function POST(req: NextRequest) {
     // 갱신 실패해도 기존 토큰으로 시도
   }
 
-  // Generate all card images and upload to Supabase Storage
+  // Generate all card images and upload to R2
   const imageUrls: string[] = [];
   for (let i = 0; i < slides.length; i++) {
     const url = await generateAndStoreCardImage(
-      baseUrl, slides[i], theme, i + 1, slides.length, supabase
+      baseUrl, slides[i], theme, i + 1, slides.length
     );
     imageUrls.push(url);
   }
@@ -122,14 +113,13 @@ export async function POST(req: NextRequest) {
       platform_post_id: postId,
     }).then(() => {/* ignore error */});
 
-    // Cleanup temporary card images from storage
-    const filePaths = imageUrls.map(url => {
-      const marker = '/sns-media/';
-      const idx = url.indexOf(marker);
-      return idx >= 0 ? url.slice(idx + marker.length) : null;
+    // Cleanup temporary card images from R2
+    const r2Keys = imageUrls.map(url => {
+      const publicBase = process.env.R2_PUBLIC_URL || '';
+      return publicBase ? url.replace(publicBase + '/', '') : null;
     }).filter(Boolean) as string[];
-    if (filePaths.length > 0) {
-      await supabase.storage.from('sns-media').remove(filePaths).catch(() => {/* ignore */});
+    if (r2Keys.length > 0) {
+      await deleteFromR2(r2Keys).catch(() => {/* ignore */});
     }
 
     return NextResponse.json({ success: true, postId, imageUrls });

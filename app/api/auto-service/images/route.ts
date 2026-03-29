@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
+import { uploadToR2 } from '@/lib/r2-storage';
 
 // Google Custom Search 이미지 검색 (설정 페이지 DB 키 사용)
 async function searchGoogle(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
@@ -46,7 +47,6 @@ async function searchSnsImages(query: string, limit = 12) {
   const supabase = createAdminClient();
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
-  // 키워드로 tweet_text 또는 username 검색
   let q = supabase
     .from('bossai_x_videos')
     .select('id, username, video_url, tweet_url, tweet_text, collected_at')
@@ -67,7 +67,6 @@ async function searchSnsImages(query: string, limit = 12) {
     })
     .slice(0, limit);
 
-  // 결과 없으면 키워드 없이 최신 이미지 반환
   if (filtered.length === 0 && query) {
     const { data: fallback } = await supabase
       .from('bossai_x_videos')
@@ -139,7 +138,6 @@ export async function GET(req: NextRequest) {
   if (action === 'google') {
     const images = await searchGoogle(q);
     if (images.length === 0) {
-      // Google 없으면 네이버로 폴백
       const fallback = await searchNaver(q);
       return NextResponse.json({ images: fallback, fallback: true });
     }
@@ -159,7 +157,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'action 필요 (naver|google|pixabay|sns)' }, { status: 400 });
 }
 
-// 사용자 파일 업로드 OR 외부 URL 다운로드 → Supabase Storage
+// 사용자 파일 업로드 OR 외부 URL 다운로드 → R2
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -172,7 +170,6 @@ export async function POST(req: NextRequest) {
     const { url } = await req.json();
     if (!url) return NextResponse.json({ error: 'url 필요' }, { status: 400 });
 
-    // 뉴스/블로그 사이트 hotlink 차단 우회: 브라우저처럼 보이도록 헤더 설정
     let origin = '';
     try { origin = new URL(url).origin; } catch { /* skip */ }
 
@@ -192,20 +189,15 @@ export async function POST(req: NextRequest) {
 
     const ct = imgRes.headers.get('content-type') || 'image/jpeg';
     const ext = ct.split('/')[1]?.split(';')[0]?.replace('jpeg', 'jpg') || 'jpg';
-    const path = `uploads/${user.id}/${Date.now()}.${ext}`;
+    const key = `auto-blog/uploads/${user.id}/${Date.now()}.${ext}`;
     const buffer = Buffer.from(await imgRes.arrayBuffer());
 
-    const adminSupabase = createAdminClient();
-    // 버킷 없으면 자동 생성
-    await adminSupabase.storage.createBucket('auto-blog', { public: true }).catch(() => {});
-    const { error } = await adminSupabase.storage
-      .from('auto-blog')
-      .upload(path, buffer, { contentType: ct, upsert: true });
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    const { data: { publicUrl } } = adminSupabase.storage.from('auto-blog').getPublicUrl(path);
-    return NextResponse.json({ url: publicUrl });
+    try {
+      const publicUrl = await uploadToR2(key, buffer, ct);
+      return NextResponse.json({ url: publicUrl });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
   }
 
   // 파일 업로드 방식 (FormData)
@@ -215,17 +207,12 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const ext = file.name.split('.').pop() || 'jpg';
-  const path = `uploads/${user.id}/${Date.now()}.${ext}`;
+  const key = `auto-blog/uploads/${user.id}/${Date.now()}.${ext}`;
 
-  const adminSupabase = createAdminClient();
-  // 버킷 없으면 자동 생성
-  await adminSupabase.storage.createBucket('auto-blog', { public: true }).catch(() => {});
-  const { error } = await adminSupabase.storage
-    .from('auto-blog')
-    .upload(path, buffer, { contentType: file.type, upsert: true });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const { data: { publicUrl } } = adminSupabase.storage.from('auto-blog').getPublicUrl(path);
-  return NextResponse.json({ url: publicUrl });
+  try {
+    const publicUrl = await uploadToR2(key, buffer, file.type);
+    return NextResponse.json({ url: publicUrl });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }
