@@ -21,7 +21,7 @@ export async function POST() {
       'X-GitHub-Api-Version': '2022-11-28',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ ref: 'main', inputs: { reason: '대시보드에서 수동 트리거' } }),
+    body: JSON.stringify({ ref: 'main', inputs: { mode: 'all' } }),
   })
 
   if (res.status === 204) {
