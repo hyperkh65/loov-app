@@ -139,7 +139,15 @@ export default function MemoPage() {
         : await fetch('/api/memo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      showMsg(editId ? '수정됨' : '저장됨');
+      // 스케줄 자동 추가 (저장 직후)
+      if (!editId) {
+        fetch('/api/memo/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content, summary, category, memo_date: memoDate, memo_id: d.memo?.id }),
+        }).catch(() => {});
+      }
+      showMsg(editId ? '수정됨' : '저장됨 · 📅 스케줄 추가 중...');
       setTitle(''); setContent(''); setTags([]); setCategory('기타'); setSummary(''); setEditId(null); setAttachFiles([]);
       setMemoDate(new Date().toISOString().split('T')[0]);
     } catch (e) { showMsg(String(e), true); }
