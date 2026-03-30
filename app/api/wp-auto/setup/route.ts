@@ -102,7 +102,8 @@ export async function POST(req: NextRequest) {
   const WP_URL = `https://${subdomain}.aboda.kr`;
   const MYSQL_ROOT = process.env.NAS_MYSQL_ROOT_PASS || '';
   const SYNO_PASS = process.env.NAS_SYNO_ADMIN_PASS || process.env.NAS_SSH_PASSWORD || '';
-  const WP = `php /usr/local/bin/wp --path=${WP_DIR} --allow-root`;
+  const WP_CLI = '/volume1/homes/urjent/bin/wp';
+  const WP = `php ${WP_CLI} --path=${WP_DIR} --allow-root`;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -142,13 +143,14 @@ export async function POST(req: NextRequest) {
         );
         send('✅ WordPress 파일 설치 완료');
 
-        // ── 3. WP-CLI 확인/설치
+        // ── 3. WP-CLI 확인/설치 (홈 디렉토리에 설치)
         send('🔧 WP-CLI 확인...', 'step');
-        const wpCheck = await nasExec(`which wp 2>/dev/null || ls /usr/local/bin/wp 2>/dev/null || echo missing`);
-        if (wpCheck.stdout.includes('missing') || wpCheck.code !== 0) {
+        const wpCheck = await nasExec(`ls ${WP_CLI} 2>/dev/null && echo installed || echo missing`);
+        if (wpCheck.stdout.includes('missing')) {
           await run('WP-CLI 설치 중...',
-            `curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
-             chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp && echo ok`
+            `mkdir -p /volume1/homes/urjent/bin && \
+             curl -sL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o ${WP_CLI} && \
+             chmod +x ${WP_CLI} && echo ok`
           );
           send('✅ WP-CLI 설치 완료');
         } else {
