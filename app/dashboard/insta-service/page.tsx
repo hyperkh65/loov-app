@@ -196,8 +196,11 @@ export default function InstaServicePage() {
   const [overlayColor, setOverlayColor] = useState('#ffffff');
   const [muteOriginal, setMuteOriginal] = useState(false);
   const [bgm, setBgm] = useState('none');
-  const [xVideos, setXVideos] = useState<{ id: string; title: string; video_url: string; thumbnail_url?: string }[]>([]);
+  const [nasVideos, setNasVideos] = useState<{ username: string; filename: string; url: string; size: number; modified: string }[]>([]);
+  const [nasAccounts, setNasAccounts] = useState<string[]>([]);
+  const [nasAccount, setNasAccount] = useState('');
   const [loadingXVideos, setLoadingXVideos] = useState(false);
+  const [nasScanning, setNasScanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Card News
@@ -237,16 +240,30 @@ export default function InstaServicePage() {
     setLoadingArticles(false);
   }, []);
 
-  // Load X videos
-  const loadXVideos = useCallback(async () => {
+  // Load NAS videos (R2 캐시)
+  const loadXVideos = useCallback(async (account?: string) => {
     setLoadingXVideos(true);
     try {
-      const res = await fetch('/api/x-videos?limit=20');
+      const params = new URLSearchParams();
+      if (account) params.set('username', account);
+      const res = await fetch(`/api/x-videos/nas?${params}`);
       const data = await res.json();
-      setXVideos(data.items || []);
+      setNasVideos(data.videos || []);
+      setNasAccounts(data.accounts || []);
     } catch { /* ignore */ }
     setLoadingXVideos(false);
   }, []);
+
+  const triggerNasScan = async () => {
+    setNasScanning(true);
+    try {
+      const res = await fetch('/api/x-videos/nas-scan', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) alert('NAS 스캔 시작됨. 1~2분 후 새로고침하면 최신 목록이 보입니다.');
+      else alert(data.error || '스캔 시작 실패');
+    } catch { alert('오류 발생'); }
+    setNasScanning(false);
+  };
 
   useEffect(() => { loadArticles(); }, [loadArticles]);
   useEffect(() => { if (tab === 'reels') loadXVideos(); }, [tab, loadXVideos]);
@@ -590,7 +607,51 @@ export default function InstaServicePage() {
           {tab === 'reels' && (
             <>
               <div className="p-3 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-600 mb-2">🐦 X.com 영상 가져오기</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-gray-600">🖥️ NAS 저장 영상</p>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={nasAccount}
+                      onChange={e => { setNasAccount(e.target.value); loadXVideos(e.target.value || undefined); }}
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-purple-400"
+                    >
+                      <option value="">전체 계정</option>
+                      {nasAccounts.map(acc => <option key={acc} value={acc}>@{acc}</option>)}
+                    </select>
+                    <button onClick={() => loadXVideos(nasAccount || undefined)} disabled={loadingXVideos}
+                      title="캐시 새로고침"
+                      className="px-2 py-1 bg-gray-100 rounded-lg text-xs text-gray-600 hover:bg-gray-200 disabled:opacity-50">
+                      {loadingXVideos ? '...' : '↺'}
+                    </button>
+                    <button onClick={triggerNasScan} disabled={nasScanning}
+                      title="NAS 전체 재스캔 (백그라운드)"
+                      className="px-2 py-1 bg-amber-50 rounded-lg text-xs text-amber-600 hover:bg-amber-100 disabled:opacity-50">
+                      {nasScanning ? '...' : '🔍'}
+                    </button>
+                  </div>
+                </div>
+                {loadingXVideos ? (
+                  <p className="text-xs text-gray-400 mt-2 text-center">불러오는 중...</p>
+                ) : nasVideos.length === 0 ? (
+                  <p className="text-xs text-gray-400 mt-2 text-center">NAS에 저장된 영상이 없습니다</p>
+                ) : (
+                  <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                    {nasVideos.map(v => (
+                      <button key={`${v.username}/${v.filename}`} onClick={() => setVideoUrl(v.url)}
+                        className={`w-full text-left flex items-center gap-2 p-1.5 rounded-lg border transition-colors ${videoUrl === v.url ? 'border-purple-500 bg-purple-50' : 'border-gray-100 hover:border-gray-300'}`}>
+                        <div className="w-10 h-8 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center text-gray-400 text-xs">🎬</div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs text-gray-700 truncate block">{v.filename}</span>
+                          <span className="text-[10px] text-gray-400">@{v.username}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-600 mb-2">🐦 X.com URL로 가져오기</p>
                 <div className="flex gap-1.5">
                   <input value={xUrl} onChange={e => setXUrl(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && fetchXVideo()}
@@ -601,24 +662,6 @@ export default function InstaServicePage() {
                     {fetchingX ? '...' : '가져오기'}
                   </button>
                 </div>
-                {loadingXVideos ? (
-                  <p className="text-xs text-gray-400 mt-2 text-center">불러오는 중...</p>
-                ) : xVideos.length > 0 && (
-                  <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                    {xVideos.map(v => (
-                      <button key={v.id} onClick={() => setVideoUrl(v.video_url)}
-                        className={`w-full text-left flex items-center gap-2 p-1.5 rounded-lg border transition-colors ${videoUrl === v.video_url ? 'border-purple-500 bg-purple-50' : 'border-gray-100 hover:border-gray-300'}`}>
-                        {v.thumbnail_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={v.thumbnail_url} alt="" className="w-10 h-8 object-cover rounded flex-shrink-0" />
-                        ) : (
-                          <div className="w-10 h-8 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center text-gray-400 text-xs">🎬</div>
-                        )}
-                        <span className="text-xs text-gray-700 truncate">{v.title || '영상'}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div className="p-3 border-b border-gray-100">
