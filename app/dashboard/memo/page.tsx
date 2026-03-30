@@ -46,6 +46,7 @@ export default function MemoPage() {
   // 작성 폼
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [attachFiles, setAttachFiles] = useState<{name: string; base64: string; type: string}[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [category, setCategory] = useState('기타');
   const [summary, setSummary] = useState('');
@@ -139,7 +140,7 @@ export default function MemoPage() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       showMsg(editId ? '수정됨' : '저장됨');
-      setTitle(''); setContent(''); setTags([]); setCategory('기타'); setSummary(''); setEditId(null);
+      setTitle(''); setContent(''); setTags([]); setCategory('기타'); setSummary(''); setEditId(null); setAttachFiles([]);
       setMemoDate(new Date().toISOString().split('T')[0]);
     } catch (e) { showMsg(String(e), true); }
     setSaving(false);
@@ -169,7 +170,7 @@ export default function MemoPage() {
     try {
       const r = await fetch('/api/memo/backup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, memo: memoData, notionToken: token, notionDbId: dbId, nasPath: nPath }),
+        body: JSON.stringify({ id, memo: memoData, files: attachFiles.slice(0, 4), notionToken: token, notionDbId: dbId, nasPath: nPath, addToCalendar: true }),
       });
       const d = await r.json();
       setMsg(d.message || `노션: ${d.notion ? '✅' : '❌'} NAS: ${d.nas ? '✅' : '❌'}`);
@@ -304,6 +305,39 @@ export default function MemoPage() {
                   }
                 }}
               />
+            </div>
+
+            {/* 파일 첨부 (최대 4개) */}
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">📎 파일 첨부 (최대 4개 · 백업 시 NAS+Notion 저장)</label>
+              <label className="flex items-center gap-2 w-full cursor-pointer border border-dashed border-gray-200 rounded-xl px-3 py-2.5 hover:border-indigo-400 hover:bg-indigo-50/50 transition-colors">
+                <span className="text-base">📎</span>
+                <span className="text-xs text-gray-400">
+                  {attachFiles.length > 0 ? `${attachFiles.length}개 선택됨 (클릭으로 추가)` : '이미지, PDF, 동영상 등 모든 파일'}
+                </span>
+                <input type="file" multiple className="hidden"
+                  onChange={async (e) => {
+                    const newFiles = Array.from(e.target.files || []).slice(0, 4 - attachFiles.length);
+                    const converted = await Promise.all(newFiles.map(f => new Promise<{name: string; base64: string; type: string}>(res => {
+                      const reader = new FileReader();
+                      reader.onload = () => res({ name: f.name, base64: (reader.result as string).split(',')[1], type: f.type });
+                      reader.readAsDataURL(f);
+                    })));
+                    setAttachFiles(prev => [...prev, ...converted].slice(0, 4));
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {attachFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {attachFiles.map((f, i) => (
+                    <span key={i} className="flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                      {f.type.startsWith('image/') ? '🖼️' : f.type.startsWith('video/') ? '🎬' : '📄'} {f.name}
+                      <button onClick={() => setAttachFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 ml-0.5">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 버튼 */}
