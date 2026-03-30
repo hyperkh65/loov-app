@@ -89,6 +89,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/automation', icon: '🤖', label: 'n8n 자동화 관리' },
       { href: '/dashboard/nas',        icon: '🖥️', label: '시놀로지 NAS' },
       { href: '/dashboard/cctv',       icon: '📷', label: 'CCTV 뷰어' },
+      { href: '/dashboard/wp-auto',    icon: '🌐', label: 'WordPress 자동세팅' },
     ],
   },
   {
