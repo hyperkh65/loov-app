@@ -11,6 +11,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
@@ -23,6 +24,19 @@ export default function SignupPage() {
     }
     setLoading(true);
     setError('');
+
+    // 서버에서 초대 코드 검증
+    const checkRes = await fetch('/api/auth/check-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: inviteCode }),
+    });
+    if (!checkRes.ok) {
+      const { error: msg } = await checkRes.json();
+      setError(msg || '초대 코드가 올바르지 않습니다.');
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -139,6 +153,18 @@ export default function SignupPage() {
               />
             </div>
 
+            <div>
+              <label className="text-xs font-semibold text-gray-400 mb-1.5 block">초대 코드 *</label>
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                required
+                className="w-full bg-white/10 border border-white/15 rounded-xl px-4 py-3 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400"
+                placeholder="초대 코드를 입력하세요"
+              />
+            </div>
+
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
                 {error}
@@ -147,7 +173,7 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              disabled={loading || !email || !password || !name}
+              disabled={loading || !email || !password || !name || !inviteCode}
               className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm transition-all">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
