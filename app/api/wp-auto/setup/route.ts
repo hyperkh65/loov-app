@@ -98,7 +98,15 @@ export async function POST(req: NextRequest) {
   const WP_DIR = `${WEB_ROOT}/${subdomain}`;
   const DB_NAME = `wp_${subdomain.replace(/-/g, '_')}`;
   const DB_USER = `wp_${subdomain.replace(/-/g, '_').slice(0, 16)}`;
-  const DB_PASS = Math.random().toString(36).slice(2, 14) + Math.random().toString(36).slice(2, 6);
+  const DB_PASS = (() => {
+    const lower = 'abcdefghijklmnopqrstuvwxyz';
+    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const digits = '0123456789';
+    const special = '!@#$%^&*';
+    const rand = (s: string) => s[Math.floor(Math.random() * s.length)];
+    const base = Array.from({ length: 10 }, () => rand(lower + upper + digits)).join('');
+    return rand(upper) + rand(special) + base + rand(digits);
+  })();
   const WP_URL = `https://${subdomain}.aboda.kr`;
   const MYSQL_ROOT = process.env.NAS_MYSQL_ROOT_PASS || '';
   const SYNO_PASS = process.env.NAS_SYNO_ADMIN_PASS || process.env.NAS_SSH_PASSWORD || '';
