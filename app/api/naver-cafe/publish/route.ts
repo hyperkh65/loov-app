@@ -68,36 +68,32 @@ export async function POST(req: NextRequest) {
   const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
 
-  // 커버 이미지를 content 맨 앞에 <img> 태그로 삽입 (가장 안정적인 방법)
+  // 커버 이미지를 content 맨 앞에 <img> 태그로 삽입
   let finalContent = content;
   if (cover_image_url) {
     finalContent = `<img src="${cover_image_url}" style="max-width:100%;margin-bottom:16px;" />\n` + content;
   }
 
-  // URLSearchParams로 전송 (한글 인코딩 문제 방지)
-  const params = new URLSearchParams();
-  params.append('subject', title);
-  params.append('content', finalContent);
-  params.append('openYn', open_yn);
+  // FormData로 전송 (네이버 카페 API 스펙)
+  // 각 필드를 Blob으로 명시해서 UTF-8 인코딩 보장
+  const form = new FormData();
+  form.append('subject', new Blob([title], { type: 'text/plain; charset=utf-8' }), '');
+  form.append('content', new Blob([finalContent], { type: 'text/html; charset=utf-8' }), '');
+  form.append('openYn', open_yn);
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
   });
 
-  const resData = await res.json() as {
-    message?: { result?: { articleId?: number } };
-    errorCode?: string;
-    errorMessage?: string;
-  };
+  const rawText = await res.text();
+  let resData: { message?: { result?: { articleId?: number } }; errorCode?: string; errorMessage?: string } = {};
+  try { resData = JSON.parse(rawText); } catch {}
 
   if (!res.ok || resData.errorCode) {
-    const errMsg = resData.errorMessage || `HTTP ${res.status}`;
+    const errMsg = resData.errorMessage || `HTTP ${res.status}: ${rawText.slice(0, 200)}`;
     return NextResponse.json({ error: `카페 발행 실패: ${errMsg}` }, { status: 400 });
   }
 
