@@ -69,14 +69,16 @@ export async function POST(req: NextRequest) {
   }
 
   // 발행 이력 저장
-  await supabase.from('naver_cafe_history').insert({
-    user_id: user.id,
-    club_id: clubId,
-    menu_id: menuId,
-    article_id: String(data.articleId || data.id || ''),
-    subject,
-    open_yn: openyn,
-  }).catch(() => {});
+  try {
+    await supabase.from('naver_cafe_history').insert({
+      user_id: user.id,
+      club_id: clubId,
+      menu_id: menuId,
+      article_id: String(data.articleId || data.id || ''),
+      subject,
+      open_yn: openyn,
+    });
+  } catch {}
 
   return NextResponse.json({ ok: true, articleId: data.articleId || data.id, ...data });
 }
