@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { nasExec } from '@/lib/nas-ssh';
+import { scanAndCache } from '@/app/api/x-videos/nas/route';
 
 export const maxDuration = 300;
 
@@ -105,6 +106,10 @@ export async function POST(req: NextRequest) {
         .ilike('video_url', '%supabase.co%');
 
       send({ type: 'complete', migrated, failed, remaining: remaining ?? 0 });
+
+      // 마이그레이션 후 NAS 캐시 갱신 (background)
+      if (migrated > 0) scanAndCache().catch(() => {});
+
       controller.close();
     },
   });

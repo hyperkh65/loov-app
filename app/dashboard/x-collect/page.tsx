@@ -14,18 +14,12 @@ interface Job {
   skipped?: number;
 }
 
-interface XVideo {
-  id: string;
-  tweet_id: string;
+interface NasVideo {
   username: string;
-  tweet_url: string;
-  tweet_text: string;
-  tweet_date: string | null;
-  video_url: string;   // Supabase Storage 공개 URL
-  file_size: number | null;
-  collected_at: string;
-  posted_at: string | null;
-  posted_platforms: string[];
+  filename: string;
+  url: string;
+  size: number;
+  modified: string;
 }
 
 interface SnsConnection {
@@ -73,13 +67,12 @@ export default function XCollectPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Tab 2: SNS 발행 ────────────────────────────────────────
-  const [filterUsername, setFilterUsername] = useState('');
-  const [videos, setVideos] = useState<XVideo[]>([]);
+  const [nasVideos, setNasVideos] = useState<NasVideo[]>([]);
+  const [nasAccounts, setNasAccounts] = useState<string[]>([]);
+  const [nasAccount, setNasAccount] = useState('');
+  const [nasVideosLoading, setNasVideosLoading] = useState(false);
   const [videosTotal, setVideosTotal] = useState(0);
-  const [videosOffset, setVideosOffset] = useState(0);
-  const [videosLoading, setVideosLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [selectedVideo, setSelectedVideo] = useState<XVideo | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<NasVideo | null>(null);
   const [aiModel, setAiModel] = useState('qwen3');
   const [aiLoading, setAiLoading] = useState(false);
   const [editedText, setEditedText] = useState('');
@@ -101,7 +94,7 @@ export default function XCollectPage() {
     setOllamaKey(localStorage.getItem('freeai_ollama_key') || '');
     loadJobs();
     loadConnections();
-    loadVideos();
+    loadNasVideos();
     loadNasStatus();
   }, []);
 
@@ -211,7 +204,16 @@ export default function XCollectPage() {
           clearInterval(pollRef.current!);
           setCollecting(false);
           loadJobs();
-          loadVideos(); // 수집 완료 시 영상 목록 새로고침
+          // 수집 완료 → 자동 NAS 이동 후 NAS 영상 목록 갱신
+          if (data.status === 'done') {
+            fetch('/api/x-videos/migrate-to-nas', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ limit: 100 }),
+            }).finally(() => { loadNasVideos(); loadNasStatus(); });
+          } else {
+            loadNasVideos();
+          }
         }
       } catch {}
     }, 3000);
@@ -227,39 +229,43 @@ export default function XCollectPage() {
     } catch {}
   };
 
-  // ── 영상 목록 (Supabase) ──────────────────────────────────
-  const loadVideos = async (uname?: string) => {
-    setVideosLoading(true);
-    setVideosOffset(0);
+  // ── NAS 영상 목록 ─────────────────────────────────────────
+  const [nasCachedAt, setNasCachedAt] = useState('');
+  const [nasScanning, setNasScanning] = useState(false);
+
+  const loadNasVideos = async (account?: string) => {
+    setNasVideosLoading(true);
     try {
-      const params = new URLSearchParams({ offset: '0' });
-      if (uname) params.set('username', uname);
-      const res = await fetch(`/api/x-videos?${params}`);
+      const params = new URLSearchParams();
+      if (account) params.set('username', account);
+      const res = await fetch(`/api/x-videos/nas?${params}`);
       if (res.ok) {
         const data = await res.json();
-        setVideos(data.items || []);
+        setNasVideos(data.videos || []);
+        setNasAccounts(data.accounts || []);
         setVideosTotal(data.total || 0);
+        if (data.cached_at) setNasCachedAt(data.cached_at);
       }
     } catch {}
-    setVideosLoading(false);
+    setNasVideosLoading(false);
   };
 
-  const loadMore = async () => {
-    setLoadingMore(true);
-    const nextOffset = videosOffset + 20;
+  const triggerNasScan = async () => {
+    setNasScanning(true);
     try {
-      const params = new URLSearchParams({ offset: String(nextOffset) });
-      if (filterUsername) params.set('username', filterUsername);
-      const res = await fetch(`/api/x-videos?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setVideos(prev => [...prev, ...(data.items || [])]);
-        setVideosTotal(data.total || 0);
-        setVideosOffset(nextOffset);
+      const res = await fetch('/api/x-videos/nas-scan', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        alert('NAS 스캔 시작됨. 1~2분 후 새로고침하면 최신 목록이 보입니다.');
+      } else {
+        alert(data.error || '스캔 시작 실패');
       }
-    } catch {}
-    setLoadingMore(false);
+    } catch {
+      alert('오류 발생');
+    }
+    setNasScanning(false);
   };
+
 
   // ── AI 글 생성 ───────────────────────────────────────────
   const generatePost = useCallback(async () => {
@@ -267,9 +273,9 @@ export default function XCollectPage() {
     setAiLoading(true);
     setEditedText('');
 
-    const prompt = `다음 X(트위터) 영상 게시물을 SNS 발행용으로 한국어로 재작성해줘.
+    const prompt = `다음 X(트위터) 영상 파일명을 참고해 SNS 발행용 글을 한국어로 써줘.
 
-원문: ${selectedVideo.tweet_text || '(내용 없음)'}
+파일명: ${selectedVideo.filename}
 계정: @${selectedVideo.username}
 
 조건:
@@ -327,28 +333,14 @@ export default function XCollectPage() {
         body: JSON.stringify({
           content: editedText,
           platforms: selectedPlatforms,
-          media_urls: [selectedVideo.video_url], // Supabase Storage URL 직접 사용
+          media_urls: [selectedVideo.url], // NAS 영상 URL
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
       const results: { platform: string; success: boolean }[] = data.results || [];
-      const successPlatforms = results.filter(r => r.success).map(r => r.platform);
       setPublishResult(results.map(r => `${PLATFORM_ICONS[r.platform] || r.platform} ${r.success ? '✅' : '❌'}`).join('  '));
-
-      // 발행 완료 기록
-      if (successPlatforms.length) {
-        await fetch('/api/x-videos', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: selectedVideo.id, platforms: successPlatforms }),
-        });
-        setVideos(prev => prev.map(v => v.id === selectedVideo.id
-          ? { ...v, posted_at: new Date().toISOString(), posted_platforms: successPlatforms }
-          : v
-        ));
-      }
     } catch (e: unknown) {
       setPublishResult(`오류: ${e instanceof Error ? e.message : '알 수 없음'}`);
     }
@@ -368,7 +360,7 @@ export default function XCollectPage() {
       <div className="max-w-5xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-black">X 수집 / SNS 발행</h1>
-          <p className="text-sm text-slate-400 mt-1">X 영상 수집 → Supabase 저장 → SNS 직접 발행</p>
+          <p className="text-sm text-slate-400 mt-1">X 영상 수집 → NAS 저장 → SNS 직접 발행</p>
         </div>
 
         {/* 탭 */}
@@ -429,7 +421,7 @@ export default function XCollectPage() {
                 {activeJob.status === 'running' && (
                   <div className="flex items-center gap-2 mb-3">
                     {[0,1,2].map(i => <div key={i} className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
-                    <span className="text-xs text-slate-400">Supabase Storage에 업로드 중...</span>
+                    <span className="text-xs text-slate-400">수집 중 (완료 후 NAS 자동 이동)...</span>
                   </div>
                 )}
                 {activeJob.uploaded !== undefined && (
@@ -568,71 +560,69 @@ export default function XCollectPage() {
         {/* ── Tab 2: SNS 발행 ──────────────────────────────────── */}
         {tab === 'publish' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* 영상 목록 */}
+            {/* NAS 영상 목록 */}
             <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
-              <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-base font-bold flex-1">수집된 영상</h2>
-                <input value={filterUsername} onChange={e => setFilterUsername(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && loadVideos(filterUsername || undefined)}
-                  placeholder="계정 필터"
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 w-28"
-                />
-                <button onClick={() => loadVideos(filterUsername || undefined)} disabled={videosLoading}
+              <div className="flex items-center gap-2 mb-3">
+                <h2 className="text-base font-bold flex-1">🖥️ NAS 영상</h2>
+                <select
+                  value={nasAccount}
+                  onChange={e => { setNasAccount(e.target.value); loadNasVideos(e.target.value || undefined); }}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">전체 계정</option>
+                  {nasAccounts.map(acc => <option key={acc} value={acc}>@{acc}</option>)}
+                </select>
+                <button onClick={() => loadNasVideos(nasAccount || undefined)} disabled={nasVideosLoading}
+                  title="캐시 새로고침"
                   className="text-xs text-slate-400 hover:text-white px-2 py-1.5 bg-slate-800 rounded-lg border border-slate-700"
                 >
-                  {videosLoading ? '...' : '조회'}
+                  {nasVideosLoading ? '...' : '↺'}
+                </button>
+                <button onClick={triggerNasScan} disabled={nasScanning}
+                  title="NAS 전체 재스캔 (백그라운드)"
+                  className="text-xs text-slate-400 hover:text-amber-300 px-2 py-1.5 bg-slate-800 rounded-lg border border-slate-700"
+                >
+                  {nasScanning ? '...' : '🔍'}
                 </button>
               </div>
+              {nasCachedAt && (
+                <p className="text-[10px] text-slate-600 mb-3">캐시: {new Date(nasCachedAt).toLocaleString('ko-KR')}</p>
+              )}
 
-              {videos.length === 0 ? (
+              {nasVideosLoading ? (
+                <div className="text-center py-8 text-slate-500 text-sm">불러오는 중...</div>
+              ) : nasVideos.length === 0 ? (
                 <div className="text-center py-8">
                   <div className="text-3xl mb-2">🎬</div>
-                  <p className="text-sm text-slate-500">수집된 미디어가 없습니다<br />X 수집 탭에서 먼저 수집하세요</p>
+                  <p className="text-sm text-slate-500">NAS에 저장된 영상이 없습니다<br />X 수집 탭에서 먼저 수집하세요</p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                  {videos.map(video => (
-                    <button key={video.id} onClick={() => { setSelectedVideo(video); setEditedText(''); setPublishResult(''); }}
-                      className={`w-full text-left rounded-xl overflow-hidden transition-all border-2 ${
-                        selectedVideo?.id === video.id ? 'border-indigo-500' : 'border-transparent'
-                      }`}
-                    >
-                      <div className="relative bg-slate-800">
-                        {/* 영상 미리보기 */}
-                        <video
-                          src={video.video_url}
-                          className="w-full h-32 object-cover"
-                          muted preload="metadata"
-                        />
-                        {video.posted_at && (
-                          <div className="absolute top-2 right-2 bg-emerald-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                            발행됨
-                          </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2">
-                          <div className="text-xs text-slate-300 truncate">{video.tweet_text || '내용 없음'}</div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] text-slate-400">@{video.username}</span>
-                            {video.file_size && <span className="text-[10px] text-slate-500">{fmtSize(video.file_size)}</span>}
+                <>
+                  <p className="text-xs text-slate-500 mb-3">총 {nasVideos.length}개{nasAccount ? ` (@${nasAccount})` : ''}</p>
+                  <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                    {nasVideos.map(video => (
+                      <button key={`${video.username}/${video.filename}`}
+                        onClick={() => { setSelectedVideo(video); setEditedText(''); setPublishResult(''); }}
+                        className={`w-full text-left rounded-xl overflow-hidden transition-all border-2 ${
+                          selectedVideo?.filename === video.filename && selectedVideo?.username === video.username
+                            ? 'border-indigo-500' : 'border-transparent'
+                        }`}
+                      >
+                        <div className="relative bg-slate-800 rounded-xl">
+                          <video src={video.url} className="w-full h-32 object-cover rounded-xl" muted preload="metadata" />
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 rounded-b-xl">
+                            <div className="text-xs text-slate-200 truncate">{video.filename}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] text-slate-400">@{video.username}</span>
+                              <span className="text-[10px] text-slate-500">{fmtSize(video.size)}</span>
+                              <span className="text-[10px] text-slate-500">{video.modified}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </button>
-                  ))}
-                  {/* 더 보기 버튼 */}
-                  {videos.length < videosTotal && (
-                    <button
-                      onClick={loadMore}
-                      disabled={loadingMore}
-                      className="w-full py-2.5 mt-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-xl text-sm text-slate-300 font-semibold transition-all border border-slate-700"
-                    >
-                      {loadingMore ? '로딩 중...' : `더 보기 (${videos.length}/${videosTotal}개)`}
-                    </button>
-                  )}
-                  {videos.length > 0 && videos.length >= videosTotal && (
-                    <p className="text-center text-xs text-slate-500 py-2">전체 {videosTotal}개 로드됨</p>
-                  )}
-                </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
@@ -647,11 +637,15 @@ export default function XCollectPage() {
                 <>
                   {/* 선택된 영상 */}
                   <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-700/50">
-                    <video src={selectedVideo.video_url} controls className="w-full max-h-52 object-contain bg-black" />
+                    <video src={selectedVideo.url} controls className="w-full max-h-52 object-contain bg-black" />
                     <div className="p-3">
-                      <p className="text-xs text-slate-400 line-clamp-2">{selectedVideo.tweet_text || '내용 없음'}</p>
-                      <a href={selectedVideo.tweet_url} target="_blank" rel="noreferrer"
-                        className="text-[10px] text-indigo-400 hover:underline mt-1 block">원본 보기 →</a>
+                      <p className="text-xs text-slate-300 font-medium truncate">{selectedVideo.filename}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[10px] text-slate-400">@{selectedVideo.username}</span>
+                        <span className="text-[10px] text-slate-500">{fmtSize(selectedVideo.size)}</span>
+                        <a href={selectedVideo.url} target="_blank" rel="noreferrer"
+                          className="text-[10px] text-indigo-400 hover:underline ml-auto">NAS 링크 →</a>
+                      </div>
                     </div>
                   </div>
 
@@ -687,7 +681,7 @@ export default function XCollectPage() {
                     <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700/50">
                       <h2 className="text-base font-bold mb-3">SNS 발행</h2>
                       <div className="bg-slate-800 rounded-lg px-3 py-2 text-xs text-emerald-400 mb-3">
-                        📎 영상 직접 첨부 ({fmtSize(selectedVideo.file_size)})
+                        📎 NAS 영상 첨부 ({fmtSize(selectedVideo.size)})
                       </div>
                       {connections.filter(c => c.is_active).length === 0 ? (
                         <p className="text-sm text-slate-400 text-center py-2">
