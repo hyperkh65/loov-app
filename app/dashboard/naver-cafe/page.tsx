@@ -72,6 +72,7 @@ export default function NaverCafePage() {
   interface NotionArticle { id: string; title: string; status: string; lastEdited: string; coverImg?: string; }
   const [notionArticles, setNotionArticles] = useState<NotionArticle[]>([]);
   const [notionLoading, setNotionLoading] = useState(false);
+  const [notionContentLoading, setNotionContentLoading] = useState(false);
   const [showNotionList, setShowNotionList] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [savingConn, setSavingConn] = useState(false);
@@ -147,30 +148,29 @@ export default function NaverCafePage() {
     setShowNotionList(false);
     setAttachFiles([]);
     setCoverImageUrl('');
+    setContent('');
+    setNotionContentLoading(true);
 
     try {
       const params = new URLSearchParams({ action: 'content', token: notionToken, pageId: article.id });
       const r = await fetch(`/api/naver-cafe/notion-news?${params}`);
-      if (r.ok) {
-        const d = await r.json();
-        setContent(htmlToPlainText(d.html || ''));
-
-        // 커버이미지 자동 첨부
-        const imgUrl = article.coverImg || d.coverImg || '';
-        if (imgUrl) {
-          setCoverImageUrl(imgUrl);
-          // 서버 프록시로 이미지 fetch → base64 → attachFiles에 자동 추가
-          fetch(`/api/naver-cafe/fetch-image?url=${encodeURIComponent(imgUrl)}`)
-            .then(r2 => r2.json())
-            .then(img => {
-              if (img.base64) {
-                setAttachFiles([{ name: img.name || 'cover.jpg', base64: img.base64, type: img.type || 'image/jpeg' }]);
-              }
-            })
-            .catch(() => {});
-        }
+      const d = await r.json();
+      if (!r.ok) {
+        alert('내용 로딩 실패: ' + (d.error || r.status));
+        setNotionContentLoading(false);
+        return;
       }
-    } catch {}
+      const text = d.html || '';
+      setContent(text ? htmlToPlainText(text) : '(노션 페이지 내용이 비어 있습니다. 직접 입력하세요)');
+
+      // 커버이미지 자동 설정
+      const imgUrl = article.coverImg || d.coverImg || '';
+      if (imgUrl) setCoverImageUrl(imgUrl);
+    } catch (e) {
+      alert('내용 로딩 중 오류: ' + String(e));
+    } finally {
+      setNotionContentLoading(false);
+    }
   };
 
   const rewriteWithAI = async () => {
@@ -678,7 +678,7 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
 
             {/* 내용 */}
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1 block">내용 * (HTML 가능)</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">내용 *{notionContentLoading && <span className="ml-2 text-violet-500 font-normal">노션에서 불러오는 중...</span>}</label>
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
