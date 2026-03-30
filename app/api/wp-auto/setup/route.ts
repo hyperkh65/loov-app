@@ -327,6 +327,11 @@ export async function POST(req: NextRequest) {
 
       } catch (e) {
         send(String(e), 'error');
+        // 실패 시 자동 롤백
+        send('🧹 실패 — 생성된 파일/DB 정리 중...', 'warn');
+        await nasExec(`rm -rf ${WP_DIR}`).catch(() => {});
+        await nasExec(`${MYSQL_BIN} -u root -p"${MYSQL_ROOT}" -e "DROP DATABASE IF EXISTS \\\`${DB_NAME}\\\`; DROP USER IF EXISTS '${DB_USER}'@'localhost';" 2>/dev/null`).catch(() => {});
+        send('🧹 정리 완료 — 다시 시도할 수 있습니다', 'warn');
       } finally {
         try { controller.close(); } catch { /* ok */ }
       }
