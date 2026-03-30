@@ -70,6 +70,8 @@ export default function MemoPage() {
   const [notionToken, setNotionToken] = useState('');
   const [notionDbId, setNotionDbId] = useState('');
   const [nasPath, setNasPath] = useState('/volume1/memos');
+  const [notionPageId, setNotionPageId] = useState('');
+  const [creatingDb, setCreatingDb] = useState(false);
 
   const showMsg = (m: string, isErr = false) => {
     setMsg((isErr ? '❌ ' : '✅ ') + m);
@@ -421,18 +423,68 @@ export default function MemoPage() {
           <div className="space-y-4">
             <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-4">
               <p className="text-sm font-bold text-gray-800">📔 Notion 백업 설정</p>
+
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Notion API 키 (Integration Token)</label>
                 <input value={notionToken} onChange={e => setNotionToken(e.target.value)} type="password"
                   placeholder="secret_xxxx..."
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 font-mono" />
-                <p className="text-xs text-gray-400 mt-1">없으면 네이버 카페 설정에서 입력한 Notion 키를 자동 사용</p>
+                <p className="text-xs text-gray-400 mt-1">없으면 네이버 카페 설정의 Notion 키 자동 사용</p>
               </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Notion 메모 DB ID</label>
-                <input value={notionDbId} onChange={e => setNotionDbId(e.target.value)}
-                  placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 font-mono" />
+
+              {/* DB ID 입력 또는 자동 생성 */}
+              <div className="space-y-2">
+                <label className="text-xs text-gray-500 block">Notion 메모 DB ID</label>
+                {notionDbId ? (
+                  <div className="flex gap-2 items-center">
+                    <input value={notionDbId} onChange={e => setNotionDbId(e.target.value)}
+                      className="flex-1 border border-green-200 bg-green-50 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400" />
+                    <button onClick={() => setNotionDbId('')} className="text-xs text-red-400 hover:text-red-600 px-2">✕</button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                      DB가 없습니다. 아래에서 자동 생성하거나 기존 DB ID를 입력하세요.
+                    </p>
+                    <input value={notionDbId} onChange={e => setNotionDbId(e.target.value)}
+                      placeholder="기존 DB ID 직접 입력 (선택)"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400" />
+                    <div className="border border-indigo-100 bg-indigo-50 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-semibold text-indigo-700">✨ Notion DB 자동 생성</p>
+                      <p className="text-xs text-indigo-500">Notion에서 통합(Integration)이 접근할 수 있는 페이지 ID를 입력하면 메모 DB가 자동으로 만들어집니다.</p>
+                      <input value={notionPageId} onChange={e => setNotionPageId(e.target.value)}
+                        placeholder="부모 페이지 ID (Notion URL 마지막 32자리)"
+                        className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none bg-white" />
+                      <button
+                        onClick={async () => {
+                          const t = notionToken || localStorage.getItem('cafe_notion_token') || '';
+                          if (!t) { showMsg('Notion API 키를 먼저 입력하세요', true); return; }
+                          if (!notionPageId.trim()) { showMsg('부모 페이지 ID를 입력하세요', true); return; }
+                          setCreatingDb(true);
+                          try {
+                            const r = await fetch('/api/memo/notion-setup', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ token: t, pageId: notionPageId }),
+                            });
+                            const d = await r.json();
+                            if (d.dbId) {
+                              setNotionDbId(d.dbId);
+                              localStorage.setItem('memo_notion_dbid', d.dbId);
+                              showMsg('✨ Notion DB 자동 생성 완료!');
+                            } else {
+                              showMsg(d.error || 'DB 생성 실패', true);
+                            }
+                          } catch (e) { showMsg(String(e), true); }
+                          setCreatingDb(false);
+                        }}
+                        disabled={creatingDb}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold rounded-lg">
+                        {creatingDb ? '생성 중...' : '🚀 DB 자동 생성'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
