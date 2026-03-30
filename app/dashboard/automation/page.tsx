@@ -58,6 +58,7 @@ function formatDuration(sec: number) {
 export default function AutomationPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [toggling, setToggling] = useState<string | null>(null);
   const [executing, setExecuting] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -67,12 +68,14 @@ export default function AutomationPage() {
 
   const loadWorkflows = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const res = await fetch('/api/n8n/workflows');
       const data = await res.json();
-      setWorkflows(data.workflows || []);
-    } catch {
-      // ignore
+      if (data.error) { setLoadError(data.error); setWorkflows([]); }
+      else setWorkflows(data.workflows || []);
+    } catch (e) {
+      setLoadError(String(e));
     } finally {
       setLoading(false);
     }
@@ -239,8 +242,18 @@ export default function AutomationPage() {
               {workflows.length === 0 && !loading && (
                 <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
                   <div className="text-4xl mb-3">🤖</div>
-                  <p className="font-medium">워크플로우가 없습니다</p>
-                  <p className="text-sm mt-1">NAS n8n에 워크플로우를 먼저 추가하세요</p>
+                  {loadError ? (
+                    <>
+                      <p className="font-medium text-red-500">연결 오류</p>
+                      <p className="text-xs mt-2 text-red-400 font-mono break-all max-w-md mx-auto">{loadError}</p>
+                      <p className="text-xs mt-3 text-gray-400">n8n이 NAS에서 실행 중인지 확인하세요</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium">워크플로우가 없습니다</p>
+                      <p className="text-sm mt-1">NAS n8n에 워크플로우를 먼저 추가하세요</p>
+                    </>
+                  )}
                 </div>
               )}
             </div>

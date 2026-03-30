@@ -54,6 +54,10 @@ function fmtSize(bytes: number | null) {
   return `${(bytes / 1024).toFixed(0)}KB`;
 }
 
+function proxyUrl(url: string) {
+  return `/api/x-videos/proxy?url=${encodeURIComponent(url)}`;
+}
+
 export default function XCollectPage() {
   const [tab, setTab] = useState<Tab>('collect');
 
@@ -67,12 +71,13 @@ export default function XCollectPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Tab 2: SNS 발행 ────────────────────────────────────────
-  const [nasVideos, setNasVideos] = useState<NasVideo[]>([]);
+  const [allNasVideos, setAllNasVideos] = useState<NasVideo[]>([]);
   const [nasAccounts, setNasAccounts] = useState<string[]>([]);
   const [nasAccount, setNasAccount] = useState('');
   const [nasVideosLoading, setNasVideosLoading] = useState(false);
-  const [videosTotal, setVideosTotal] = useState(0);
   const [selectedVideo, setSelectedVideo] = useState<NasVideo | null>(null);
+  // 클라이언트 필터링 — API 재호출 없음
+  const nasVideos = nasAccount ? allNasVideos.filter(v => v.username === nasAccount) : allNasVideos;
   const [aiModel, setAiModel] = useState('qwen3');
   const [aiLoading, setAiLoading] = useState(false);
   const [editedText, setEditedText] = useState('');
@@ -233,17 +238,15 @@ export default function XCollectPage() {
   const [nasCachedAt, setNasCachedAt] = useState('');
   const [nasScanning, setNasScanning] = useState(false);
 
-  const loadNasVideos = async (account?: string) => {
+  // 전체 목록 한 번만 로드, 필터는 클라이언트에서
+  const loadNasVideos = async () => {
     setNasVideosLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (account) params.set('username', account);
-      const res = await fetch(`/api/x-videos/nas?${params}`);
+      const res = await fetch('/api/x-videos/nas');
       if (res.ok) {
         const data = await res.json();
-        setNasVideos(data.videos || []);
+        setAllNasVideos(data.videos || []);
         setNasAccounts(data.accounts || []);
-        setVideosTotal(data.total || 0);
         if (data.cached_at) setNasCachedAt(data.cached_at);
       }
     } catch {}
@@ -566,13 +569,13 @@ export default function XCollectPage() {
                 <h2 className="text-base font-bold flex-1">🖥️ NAS 영상</h2>
                 <select
                   value={nasAccount}
-                  onChange={e => { setNasAccount(e.target.value); loadNasVideos(e.target.value || undefined); }}
+                  onChange={e => setNasAccount(e.target.value)}
                   className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
                 >
                   <option value="">전체 계정</option>
                   {nasAccounts.map(acc => <option key={acc} value={acc}>@{acc}</option>)}
                 </select>
-                <button onClick={() => loadNasVideos(nasAccount || undefined)} disabled={nasVideosLoading}
+                <button onClick={() => loadNasVideos()} disabled={nasVideosLoading}
                   title="캐시 새로고침"
                   className="text-xs text-slate-400 hover:text-white px-2 py-1.5 bg-slate-800 rounded-lg border border-slate-700"
                 >
@@ -608,8 +611,8 @@ export default function XCollectPage() {
                             ? 'border-indigo-500' : 'border-transparent'
                         }`}
                       >
-                        <div className="relative bg-slate-800 rounded-xl">
-                          <video src={video.url} className="w-full h-32 object-cover rounded-xl" muted preload="metadata" />
+                        <div className="relative bg-slate-800 rounded-xl h-32 flex items-center justify-center">
+                          <div className="text-4xl">🎬</div>
                           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 rounded-b-xl">
                             <div className="text-xs text-slate-200 truncate">{video.filename}</div>
                             <div className="flex items-center gap-2 mt-0.5">

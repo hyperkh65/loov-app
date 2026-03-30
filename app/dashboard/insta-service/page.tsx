@@ -196,7 +196,7 @@ export default function InstaServicePage() {
   const [overlayColor, setOverlayColor] = useState('#ffffff');
   const [muteOriginal, setMuteOriginal] = useState(false);
   const [bgm, setBgm] = useState('none');
-  const [nasVideos, setNasVideos] = useState<{ username: string; filename: string; url: string; size: number; modified: string }[]>([]);
+  const [allNasVideos, setAllNasVideos] = useState<{ username: string; filename: string; url: string; size: number; modified: string }[]>([]);
   const [nasAccounts, setNasAccounts] = useState<string[]>([]);
   const [nasAccount, setNasAccount] = useState('');
   const [loadingXVideos, setLoadingXVideos] = useState(false);
@@ -240,19 +240,20 @@ export default function InstaServicePage() {
     setLoadingArticles(false);
   }, []);
 
-  // Load NAS videos (R2 캐시)
-  const loadXVideos = useCallback(async (account?: string) => {
+  // Load NAS videos (R2 캐시, 전체 한 번만)
+  const loadXVideos = useCallback(async () => {
     setLoadingXVideos(true);
     try {
-      const params = new URLSearchParams();
-      if (account) params.set('username', account);
-      const res = await fetch(`/api/x-videos/nas?${params}`);
+      const res = await fetch('/api/x-videos/nas');
       const data = await res.json();
-      setNasVideos(data.videos || []);
+      setAllNasVideos(data.videos || []);
       setNasAccounts(data.accounts || []);
     } catch { /* ignore */ }
     setLoadingXVideos(false);
   }, []);
+
+  // 클라이언트 필터링
+  const nasVideos = nasAccount ? allNasVideos.filter(v => v.username === nasAccount) : allNasVideos;
 
   const triggerNasScan = async () => {
     setNasScanning(true);
@@ -612,13 +613,13 @@ export default function InstaServicePage() {
                   <div className="flex items-center gap-1.5">
                     <select
                       value={nasAccount}
-                      onChange={e => { setNasAccount(e.target.value); loadXVideos(e.target.value || undefined); }}
+                      onChange={e => setNasAccount(e.target.value)}
                       className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-purple-400"
                     >
                       <option value="">전체 계정</option>
                       {nasAccounts.map(acc => <option key={acc} value={acc}>@{acc}</option>)}
                     </select>
-                    <button onClick={() => loadXVideos(nasAccount || undefined)} disabled={loadingXVideos}
+                    <button onClick={() => loadXVideos()} disabled={loadingXVideos}
                       title="캐시 새로고침"
                       className="px-2 py-1 bg-gray-100 rounded-lg text-xs text-gray-600 hover:bg-gray-200 disabled:opacity-50">
                       {loadingXVideos ? '...' : '↺'}

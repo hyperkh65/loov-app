@@ -42,11 +42,21 @@ export default function NaverCafePage() {
   const [loadingConn, setLoadingConn] = useState(true);
   const [oauthSuccess, setOauthSuccess] = useState(false);
 
-  // settings
+  // settings (localStorage)
   const [clubId, setClubId] = useState('');
   const [cafeName, setCafeName] = useState('');
   const [cafeUrl, setCafeUrl] = useState('');
   const [cafeSlugInput, setCafeSlugInput] = useState('');
+  const [notionToken, setNotionToken] = useState('');
+  const [notionDbId, setNotionDbId] = useState('30a1f4ff-9a0e-8030-aade-f3de90c1e3ed');
+  const [ollamaKey, setOllamaKey] = useState('');
+  const [openrouterKey, setOpenrouterKey] = useState('');
+
+  // 노션 AI 뉴스 DB
+  interface NotionArticle { id: string; title: string; status: string; lastEdited: string; coverImg?: string; }
+  const [notionArticles, setNotionArticles] = useState<NotionArticle[]>([]);
+  const [notionLoading, setNotionLoading] = useState(false);
+  const [showNotionList, setShowNotionList] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [savingConn, setSavingConn] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState('');
@@ -55,12 +65,17 @@ export default function NaverCafePage() {
   const [newMenuName, setNewMenuName] = useState('');
   const [savingMenus, setSavingMenus] = useState(false);
 
+  // AI 리라이팅
+  const [rewriting, setRewriting] = useState(false);
+  const [aiModel, setAiModel] = useState('qwen3');
+
   // write
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [menuId, setMenuId] = useState('');
   const [openYn, setOpenYn] = useState<'Y' | 'N'>('Y');
   const [attachFiles, setAttachFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
+  const [coverImageUrl, setCoverImageUrl] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<{ ok?: boolean; url?: string; error?: string } | null>(null);
 
@@ -97,6 +112,99 @@ export default function NaverCafePage() {
     setResolving(false);
   };
 
+  const loadNotionArticles = async () => {
+    if (!notionToken) { alert('설정 탭에서 Notion API 키를 먼저 입력하세요'); setTab('settings'); return; }
+    setNotionLoading(true);
+    try {
+      const params = new URLSearchParams({ action: 'list', token: notionToken, dbId: notionDbId });
+      const r = await fetch(`/api/naver-cafe/notion-news?${params}`);
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || '노션 로드 실패'); setNotionLoading(false); return; }
+      setNotionArticles(d.articles || []);
+      setShowNotionList(true);
+    } catch (e) { alert('노션 로드 실패: ' + String(e)); }
+    setNotionLoading(false);
+  };
+
+  const selectNotionArticle = async (article: NotionArticle) => {
+    setTitle(article.title);
+    setShowNotionList(false);
+    setAttachFiles([]);
+    setCoverImageUrl('');
+
+    try {
+      const params = new URLSearchParams({ action: 'content', token: notionToken, pageId: article.id });
+      const r = await fetch(`/api/naver-cafe/notion-news?${params}`);
+      if (r.ok) {
+        const d = await r.json();
+        setContent(d.html || '');
+
+        // 커버이미지 자동 첨부
+        const imgUrl = article.coverImg || d.coverImg || '';
+        if (imgUrl) {
+          setCoverImageUrl(imgUrl);
+          // 서버 프록시로 이미지 fetch → base64 → attachFiles에 자동 추가
+          fetch(`/api/naver-cafe/fetch-image?url=${encodeURIComponent(imgUrl)}`)
+            .then(r2 => r2.json())
+            .then(img => {
+              if (img.base64) {
+                setAttachFiles([{ name: img.name || 'cover.jpg', base64: img.base64, type: img.type || 'image/jpeg' }]);
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    } catch {}
+  };
+
+  const rewriteWithAI = async () => {
+    if (!content.trim()) { alert('먼저 내용을 불러오세요'); return; }
+    setRewriting(true);
+    const prompt = `다음 AI 뉴스 기사를 네이버 카페 독자에게 적합하게 다듬어 주세요.
+
+제목: ${title}
+
+원문:
+${content.replace(/<[^>]+>/g, ' ').slice(0, 3000)}
+
+규칙:
+- 반말/1인칭 금지, 과장 금지
+- 자연스러운 한국어, 소제목 구조 유지
+- HTML 태그 사용 가능 (<h3>, <p>, <ul>, <li>)
+- 마지막에 해시태그 3~5개
+- 원문 내용은 유지하되 더 읽기 쉽게
+
+다듬어진 HTML 본문만 출력하세요.`;
+
+    try {
+      const r = await fetch('/api/free-ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: aiModel,
+          clientOllamaKey: ollamaKey,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!r.body) throw new Error('스트림 없음');
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = ''; let full = '';
+      setContent('');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try { const j = JSON.parse(line.slice(6)); if (j.chunk) { full += j.chunk; setContent(full); } } catch {}
+        }
+      }
+    } catch (e) { alert('리라이팅 오류: ' + String(e)); }
+    setRewriting(false);
+  };
+
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
     const res = await fetch('/api/naver-cafe/articles');
@@ -106,6 +214,11 @@ export default function NaverCafePage() {
   }, []);
 
   useEffect(() => {
+    // localStorage에서 API 키 복원
+    setNotionToken(localStorage.getItem('cafe_notion_token') || '');
+    setNotionDbId(localStorage.getItem('cafe_notion_dbid') || '30a1f4ff-9a0e-8030-aade-f3de90c1e3ed');
+    setOllamaKey(localStorage.getItem('freeai_ollama_key') || '');
+    setOpenrouterKey(localStorage.getItem('cafe_openrouter_key') || '');
     loadConn();
     const params = new URLSearchParams(window.location.search);
     if (params.get('oauth') === 'success') {
@@ -125,7 +238,13 @@ export default function NaverCafePage() {
   }, [tab, loadHistory]);
 
   const saveSettings = async () => {
-    if (!clubId) { setSettingsMsg('카페 ID를 입력하세요'); return; }
+    // localStorage에 API 키 저장
+    localStorage.setItem('cafe_notion_token', notionToken);
+    localStorage.setItem('cafe_notion_dbid', notionDbId);
+    localStorage.setItem('freeai_ollama_key', ollamaKey);
+    localStorage.setItem('cafe_openrouter_key', openrouterKey);
+
+    if (!clubId) { setSettingsMsg('✅ API 키 저장됨 (카페 ID를 입력하면 카페 설정도 저장됩니다)'); return; }
     setSavingConn(true);
     const res = await fetch('/api/naver-cafe/connect', {
       method: 'POST',
@@ -133,7 +252,7 @@ export default function NaverCafePage() {
       body: JSON.stringify({ club_id: clubId, cafe_name: cafeName, cafe_url: cafeUrl }),
     });
     const data = await res.json();
-    setSettingsMsg(data.ok ? '✅ 설정 저장됨' : `❌ ${data.error}`);
+    setSettingsMsg(data.ok ? '✅ 모든 설정 저장됨' : `❌ ${data.error}`);
     if (data.ok) loadConn();
     setSavingConn(false);
   };
@@ -380,6 +499,46 @@ export default function NaverCafePage() {
             )}
           </div>
 
+          {/* API 키 설정 */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-800">🔑 API 키 설정</p>
+
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Notion API 키 (Integration Token)</label>
+              <input value={notionToken} onChange={e => setNotionToken(e.target.value)}
+                placeholder="secret_xxxx..."
+                type="password"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Notion DB ID (AI 뉴스)</label>
+              <input value={notionDbId} onChange={e => setNotionDbId(e.target.value)}
+                placeholder="30a1f4ff-9a0e-8030-aade-f3de90c1e3ed"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Ollama Cloud API 키 (리라이팅용)</label>
+              <input value={ollamaKey} onChange={e => setOllamaKey(e.target.value)}
+                placeholder="ollama cloud api key..."
+                type="password"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">OpenRouter API 키 (선택, 폴백용)</label>
+              <input value={openrouterKey} onChange={e => setOpenrouterKey(e.target.value)}
+                placeholder="sk-or-v1-..."
+                type="password"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+          </div>
+
           {settingsMsg && (
             <p className={`text-sm text-center ${settingsMsg.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
               {settingsMsg}
@@ -397,7 +556,63 @@ export default function NaverCafePage() {
             </div>
           )}
 
+          {/* 노션 AI 뉴스 불러오기 */}
+          <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-violet-700">📰 노션 AI 뉴스에서 불러오기</p>
+              <button onClick={loadNotionArticles} disabled={notionLoading}
+                className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg">
+                {notionLoading ? '로딩...' : '목록 불러오기'}
+              </button>
+            </div>
+            {showNotionList && notionArticles.length > 0 && (
+              <div className="max-h-56 overflow-y-auto space-y-1 mt-2">
+                {notionArticles.map(a => (
+                  <button key={a.id} onClick={() => selectNotionArticle(a)}
+                    className="w-full text-left px-3 py-2 bg-white hover:bg-violet-50 rounded-lg border border-violet-100 transition-colors flex items-center gap-2">
+                    {a.coverImg && <img src={a.coverImg} alt="" className="w-10 h-10 object-cover rounded flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <span className="font-medium text-gray-800 text-xs block truncate">{a.title}</span>
+                      <span className="text-[10px] text-gray-400">{a.status} · {new Date(a.lastEdited).toLocaleDateString('ko-KR')}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {showNotionList && notionArticles.length === 0 && (
+              <p className="text-xs text-violet-500 mt-1">노션 DB에 아티클이 없습니다</p>
+            )}
+          </div>
+
+          {/* AI 리라이팅 */}
+          {content && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+              <p className="text-sm font-semibold text-amber-700">🤖 AI 리라이팅 (Ollama)</p>
+              <div className="flex gap-2 flex-wrap">
+                {['qwen3', 'llama3.3', 'mistral', 'gemma3'].map(m => (
+                  <button key={m} onClick={() => setAiModel(m)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${aiModel === m ? 'bg-amber-600 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+              <button onClick={rewriteWithAI} disabled={rewriting}
+                className="w-full py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-bold rounded-lg transition-all">
+                {rewriting ? '리라이팅 중...' : '✨ 리라이팅하기'}
+              </button>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+            {/* 커버이미지 (노션에서 자동 로드) */}
+            {coverImageUrl && (
+              <div className="relative">
+                <img src={coverImageUrl} alt="커버" className="w-full h-32 object-cover rounded-lg" />
+                <button onClick={() => setCoverImageUrl('')}
+                  className="absolute top-1 right-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded">✕ 제거</button>
+              </div>
+            )}
+
             {/* 제목 */}
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1 block">제목 *</label>
