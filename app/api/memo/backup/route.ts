@@ -24,12 +24,11 @@ async function saveFilesToNas(
   const results = [];
   for (const f of files.slice(0, 4)) {
     try {
-      // base64를 파일로 저장 (한 줄씩 나눠서 전달)
+      const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const { code, stderr } = await nasExec(
-        `echo "${nasPass}" | sudo -S mkdir -p "${dir}" && ` +
-        `echo "${f.base64}" | base64 -d > "${dir}/${f.name.replace(/[^a-zA-Z0-9._-]/g, '_')}" && echo OK`
+        `echo "${f.base64}" | base64 -d > "${dir}/${safeName}" && echo OK`
       );
-      results.push({ name: f.name, ok: code === 0, error: code !== 0 ? stderr : '' });
+      results.push({ name: f.name, ok: code === 0, error: code !== 0 ? (stderr || `exit ${code}`) : '' });
     } catch (e) {
       results.push({ name: f.name, ok: false, error: String(e) });
     }
@@ -128,14 +127,18 @@ async function backupToNotion(
   return { pageId: data.id || null, error: '', skippedFiles };
 }
 
-// ── Google Calendar 연동 ──────────────────────────────────────
-async function addToSchedule(memo: Memo, userId: string, supabase: Awaited<ReturnType<typeof createClient>>) {
+// ── Google Calendar + 로컬 스케줄 연동 ───────────────────────
+async function syncToCalendar(memo: Memo, userId: string, supabase: Awaited<ReturnType<typeof createClient>>) {
+  const eventTitle = memo.title || memo.content.slice(0, 40);
+  const eventDesc  = memo.summary || memo.content.slice(0, 200);
+
+  // 1. 로컬 스케줄 테이블 추가
   try {
     await supabase.from('bossai_schedule_events').insert({
       id: crypto.randomUUID(),
       user_id: userId,
-      title: memo.title || memo.content.slice(0, 40),
-      description: memo.summary || memo.content.slice(0, 200),
+      title: eventTitle,
+      description: eventDesc,
       date: memo.memo_date,
       time: null,
       type: memo.category === '일정' ? 'meeting' : 'other',
@@ -144,7 +147,55 @@ async function addToSchedule(memo: Memo, userId: string, supabase: Awaited<Retur
       source: 'memo',
       color: '#6366f1',
     });
-  } catch { /* 실패해도 백업은 계속 */ }
+  } catch {}
+
+  // 2. Google Calendar API 직접 추가
+  try {
+    const { data: tokenRow } = await supabase
+      .from('bossai_google_tokens')
+      .select('access_token, refresh_token, expires_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!tokenRow) return;
+
+    let accessToken = tokenRow.access_token;
+
+    // 토큰 만료 시 갱신
+    if (new Date(tokenRow.expires_at) <= new Date()) {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: process.env.GOOGLE_CLIENT_ID!,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+          refresh_token: tokenRow.refresh_token,
+          grant_type: 'refresh_token',
+        }),
+      });
+      const d = await res.json() as { access_token?: string; expires_in?: number };
+      if (d.access_token) {
+        accessToken = d.access_token;
+        await supabase.from('bossai_google_tokens').update({
+          access_token: d.access_token,
+          expires_at: new Date(Date.now() + (d.expires_in || 3600) * 1000).toISOString(),
+        }).eq('user_id', userId);
+      }
+    }
+
+    await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        summary: `📓 ${eventTitle}`,
+        description: eventDesc,
+        start: { date: memo.memo_date },
+        end: { date: memo.memo_date },
+        colorId: '9', // 블루베리
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {}
 }
 
 // ── 메인 핸들러 ───────────────────────────────────────────────
@@ -179,12 +230,12 @@ export async function POST(req: NextRequest) {
   const nasPass = process.env.NAS_SSH_PASSWORD || 'Aa050677##7759';
   const nasDir  = `${nasBase}/${memo.memo_date}_${id.slice(0, 8)}`;
 
-  // 1. NAS: JSON 메타 저장
+  // 1. NAS: 디렉토리 생성 (sudo) + JSON 메타 저장
   const memoJson = JSON.stringify({ ...memo, files: files.map(f => ({ name: f.name, type: f.type })) }, null, 2)
     .replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-  const { code: jsonCode } = await nasExec(
-    `echo "${nasPass}" | sudo -S mkdir -p "${nasDir}" && printf '%s' '${memoJson}' > "${nasDir}/memo.json" && echo OK`
-  ).catch(() => ({ code: 1, stdout: '', stderr: 'SSH 연결 실패' }));
+  const { code: jsonCode, stderr: jsonErr } = await nasExec(
+    `echo "${nasPass}" | sudo -S sh -c 'mkdir -p "${nasDir}" && chmod 777 "${nasDir}"' && printf '%s' '${memoJson}' > "${nasDir}/memo.json" && echo OK`
+  ).catch((e) => ({ code: 1, stdout: '', stderr: String(e) }));
 
   // 2. NAS: 첨부파일 저장
   const fileResults = files.length > 0 ? await saveFilesToNas(files.slice(0, 4), nasDir, nasPass) : [];
@@ -196,7 +247,7 @@ export async function POST(req: NextRequest) {
 
   // 4. Google Calendar 연동
   if (addToCalendar) {
-    await addToSchedule(memo, user.id, supabase);
+    await syncToCalendar(memo, user.id, supabase);
   }
 
   // 5. Supabase 상태 업데이트
@@ -210,7 +261,7 @@ export async function POST(req: NextRequest) {
   const notionMsg = notionResult.pageId
     ? `📔 Notion 저장됨${notionResult.skippedFiles.length ? ` (파일 ${notionResult.skippedFiles.length}개 용량초과→NAS만)` : ''}`
     : `📔 Notion 실패: ${notionResult.error}`;
-  const nasMsg    = nasOk ? `🖥️ NAS 저장됨${fileResults.length ? ` (파일 ${fileResults.filter(f=>f.ok).length}/${fileResults.length}개)` : ''}` : '🖥️ NAS 실패';
+  const nasMsg    = nasOk ? `🖥️ NAS 저장됨${fileResults.length ? ` (파일 ${fileResults.filter(f=>f.ok).length}/${fileResults.length}개)` : ''}` : `🖥️ NAS 실패: ${jsonErr || 'SSH 오류'}`;
   const calMsg    = addToCalendar ? ' · 📅 캘린더 추가됨' : '';
 
   return NextResponse.json({
