@@ -11,6 +11,14 @@ export async function GET() {
        FROM workflow_entity w ORDER BY w."createdAt" DESC`
     );
 
+    // stderr에 내용이 있거나 exit code != 0이면 에러 반환
+    if (wfResult.code !== 0 || (!wfResult.stdout && wfResult.stderr)) {
+      return NextResponse.json(
+        { error: `n8n DB 오류 (exit ${wfResult.code}): ${wfResult.stderr || '빈 응답'}` },
+        { status: 500 }
+      );
+    }
+
     const workflows = wfResult.stdout
       .split('\n')
       .filter(Boolean)

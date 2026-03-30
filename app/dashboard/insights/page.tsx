@@ -94,6 +94,8 @@ export default function InsightsPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
+  // 네이버 발행 상태 (insightId → 'blog'|'cafe'|null)
+  const [publishing, setPublishing] = useState<Record<string, string>>({});
 
   const fetchInsights = useCallback(async () => {
     setLoading(true);
@@ -159,6 +161,29 @@ export default function InsightsPage() {
 
   const formatDate = (iso: string) => {
     return new Date(iso).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
+  };
+
+  const publishToNaver = async (card: Insight, target: 'blog' | 'cafe') => {
+    const key = `${card.id}-${target}`;
+    setPublishing(prev => ({ ...prev, [key]: 'loading' }));
+    const htmlContent = `<h2>${card.title}</h2>\n<p>${card.summary}</p>\n${card.content ? `<p>${card.content}</p>\n` : ''}<p>${(card.tags || []).map(t => '#' + t).join(' ')}</p>`;
+    try {
+      const res = await fetch(target === 'blog' ? '/api/naver/publish' : '/api/naver-cafe/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(target === 'blog'
+          ? { title: card.title, content: htmlContent, tags: card.tags || [], categoryNo: 0, status: 'publish' }
+          : { title: card.title, content: htmlContent, open_yn: 'Y' }
+        ),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '발행 실패');
+      setPublishing(prev => ({ ...prev, [key]: 'done' }));
+      setTimeout(() => setPublishing(prev => { const n = { ...prev }; delete n[key]; return n; }), 3000);
+    } catch (e) {
+      alert(`${target === 'blog' ? '블로그' : '카페'} 발행 실패: ${String(e)}`);
+      setPublishing(prev => { const n = { ...prev }; delete n[key]; return n; });
+    }
   };
 
   return (
@@ -253,6 +278,27 @@ export default function InsightsPage() {
                           {card.tags.map((tag) => (
                             <span key={tag} className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium">#{tag}</span>
                           ))}
+                        </div>
+                      )}
+                      {/* 네이버 발행 버튼 */}
+                      {!card.id.startsWith('sample') && (
+                        <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-100">
+                          {(['blog', 'cafe'] as const).map(target => {
+                            const key = `${card.id}-${target}`;
+                            const state = publishing[key];
+                            return (
+                              <button key={target} onClick={() => publishToNaver(card, target)} disabled={!!state}
+                                className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all ${
+                                  state === 'done' ? 'bg-emerald-100 text-emerald-700' :
+                                  state === 'loading' ? 'bg-gray-100 text-gray-400 cursor-wait' :
+                                  target === 'blog' ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200' :
+                                  'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                                }`}
+                              >
+                                {state === 'done' ? '✅ 발행됨' : state === 'loading' ? '...' : target === 'blog' ? '📰 블로그' : '☕ 카페'}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
