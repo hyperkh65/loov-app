@@ -36,6 +36,22 @@ const OPEN_OPTIONS: { val: 'Y' | 'N'; label: string }[] = [
   { val: 'N', label: '🔒 비공개' },
 ];
 
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<h[1-3][^>]*>/gi, '\n\n## ')
+    .replace(/<\/h[1-3]>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<li>/gi, '\n• ')
+    .replace(/<\/li>/gi, '')
+    .replace(/<blockquote[^>]*>/gi, '\n> ')
+    .replace(/<\/blockquote>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export default function NaverCafePage() {
   const [tab, setTab] = useState<Tab>('write');
   const [conn, setConn] = useState<CafeConnection>({ connected: false, oauth_connected: false });
@@ -137,7 +153,7 @@ export default function NaverCafePage() {
       const r = await fetch(`/api/naver-cafe/notion-news?${params}`);
       if (r.ok) {
         const d = await r.json();
-        setContent(d.html || '');
+        setContent(htmlToPlainText(d.html || ''));
 
         // 커버이미지 자동 첨부
         const imgUrl = article.coverImg || d.coverImg || '';
@@ -165,16 +181,17 @@ export default function NaverCafePage() {
 제목: ${title}
 
 원문:
-${content.replace(/<[^>]+>/g, ' ').slice(0, 3000)}
+${content.slice(0, 3000)}
 
 규칙:
 - 반말/1인칭 금지, 과장 금지
-- 자연스러운 한국어, 소제목 구조 유지
-- HTML 태그 사용 가능 (<h3>, <p>, <ul>, <li>)
+- HTML 태그 절대 사용 금지 (plain text만)
+- 소제목은 ## 으로 표시
+- 목록은 • 으로 표시
 - 마지막에 해시태그 3~5개
-- 원문 내용은 유지하되 더 읽기 쉽게
+- 원문 내용 유지하되 더 읽기 쉽게
 
-다듬어진 HTML 본문만 출력하세요.`;
+plain text 본문만 출력하세요. HTML 태그 없이.`;
 
     try {
       const r = await fetch('/api/free-ai/chat', {
