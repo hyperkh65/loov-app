@@ -28,8 +28,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const body = await req.json() as { title: string; content: string; menu_id?: string; open_yn?: string; attachments?: { name: string; base64: string; type: string }[] };
-  const { title, content, menu_id, open_yn = 'Y', attachments = [] } = body;
+  const body = await req.json() as {
+    title: string;
+    content: string;
+    menu_id?: string;
+    open_yn?: string;
+    cover_image_url?: string;
+  };
+  const { title, content, menu_id, open_yn = 'Y', cover_image_url } = body;
   if (!title || !content) return NextResponse.json({ error: '제목과 내용 필요' }, { status: 400 });
 
   const { data: conn } = await supabase.from('naver_cafe_connections')
@@ -59,29 +65,29 @@ export async function POST(req: NextRequest) {
 
   if (!accessToken) return NextResponse.json({ error: 'OAuth 토큰 없음. 재연결 필요' }, { status: 400 });
 
-  // 게시글 작성 (multipart/form-data)
-  // 네이버 카페 API: POST /v1/cafe/{clubId}/menu/{menuId}/articles
   const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
 
-  const form = new FormData();
-  form.append('subject', title);
-  form.append('content', content);
-  form.append('openYn', open_yn);
-
-  // 파일/이미지 첨부 (base64 → Blob)
-  for (const file of attachments.slice(0, 5)) {
-    try {
-      const buf = Buffer.from(file.base64, 'base64');
-      form.append('attach', new Blob([buf], { type: file.type || 'application/octet-stream' }), file.name || `file_${Date.now()}`);
-    } catch { /* 첨부 실패 무시 */ }
+  // 커버 이미지를 content 맨 앞에 <img> 태그로 삽입 (가장 안정적인 방법)
+  let finalContent = content;
+  if (cover_image_url) {
+    finalContent = `<img src="${cover_image_url}" style="max-width:100%;margin-bottom:16px;" />\n` + content;
   }
+
+  // URLSearchParams로 전송 (한글 인코딩 문제 방지)
+  const params = new URLSearchParams();
+  params.append('subject', title);
+  params.append('content', finalContent);
+  params.append('openYn', open_yn);
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: form,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
   });
 
   const resData = await res.json() as {
@@ -101,23 +107,24 @@ export async function POST(req: NextRequest) {
     ? `https://cafe.naver.com/${cafeSlug}/articles/${articleId}`
     : undefined;
 
-  // 이력 저장
   const menuItem = conn.menu_list && menu_id
     ? (conn.menu_list as { menuId: number; menuName: string }[]).find(
         (m) => String(m.menuId) === String(menu_id)
       )
     : null;
 
-  await supabase.from('naver_cafe_history').insert({
-    user_id: user.id,
-    club_id: conn.club_id,
-    article_id: articleId ? String(articleId) : null,
-    article_url: articleUrl || null,
-    title,
-    menu_id: menu_id ? String(menu_id) : null,
-    menu_name: menuItem?.menuName || null,
-    open_yn,
-  });
+  try {
+    await supabase.from('naver_cafe_history').insert({
+      user_id: user.id,
+      club_id: conn.club_id,
+      article_id: articleId ? String(articleId) : null,
+      article_url: articleUrl || null,
+      title,
+      menu_id: menu_id ? String(menu_id) : null,
+      menu_name: menuItem?.menuName || null,
+      open_yn,
+    });
+  } catch {}
 
   return NextResponse.json({ ok: true, article_id: articleId, url: articleUrl });
 }

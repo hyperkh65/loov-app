@@ -296,7 +296,7 @@ ${content.replace(/<[^>]+>/g, ' ').slice(0, 3000)}
       const res = await fetch('/api/naver-cafe/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, attachments: attachFiles }),
+        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, cover_image_url: coverImageUrl || undefined }),
       });
       const data = await res.json();
       setPublishResult(data);
