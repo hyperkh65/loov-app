@@ -112,6 +112,7 @@ export async function POST(req: NextRequest) {
   const SYNO_PASS = process.env.NAS_SYNO_ADMIN_PASS || process.env.NAS_SSH_PASSWORD || '';
   const WP_CLI = '/volume1/homes/urjent/bin/wp';
   const WP = `/usr/bin/php ${WP_CLI} --path=${WP_DIR} --allow-root`;
+  const MYSQL_BIN = '/usr/local/bin/mysql';
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -166,7 +167,6 @@ export async function POST(req: NextRequest) {
         }
 
         // ── 4. 데이터베이스 생성
-        const MYSQL_BIN = '/usr/local/bin/mysql';
         const mysqlAuth = MYSQL_ROOT ? `-u root -p"${MYSQL_ROOT}"` : `-u root`;
         await run('🗄️ MySQL 데이터베이스 생성...',
           `${MYSQL_BIN} ${mysqlAuth} -e "
