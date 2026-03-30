@@ -11,6 +11,7 @@ const NAV_GROUPS = [
     label: '홈',
     items: [
       { href: '/dashboard',           icon: '🏠', label: '대시보드' },
+      { href: '/dashboard/memo',      icon: '📓', label: '세컨드 브레인' },
       { href: '/dashboard/directives', icon: '📋', label: '대표 지시사항' },
       { href: '/dashboard/chat',       icon: '💬', label: '채팅 센터' },
       { href: '/dashboard/free-ai',    icon: '🆓', label: '무료AI 체험하기' },
