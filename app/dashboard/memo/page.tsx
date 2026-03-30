@@ -160,15 +160,20 @@ export default function MemoPage() {
   };
 
   // 백업
-  const backup = async (id: string) => {
+  const backup = async (id: string, memoData?: Memo) => {
     setBackingUp(id);
+    // 최신 localStorage 값 읽기 (저장 버튼 없이도 동작)
+    const token = notionToken || localStorage.getItem('memo_notion_token') || localStorage.getItem('cafe_notion_token') || '';
+    const dbId  = notionDbId  || localStorage.getItem('memo_notion_dbid') || '';
+    const nPath = nasPath     || localStorage.getItem('memo_nas_path') || '/volume1/memos';
     try {
       const r = await fetch('/api/memo/backup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, notionToken, notionDbId, nasPath }),
+        body: JSON.stringify({ id, memo: memoData, notionToken: token, notionDbId: dbId, nasPath: nPath }),
       });
       const d = await r.json();
-      showMsg(d.message || `노션: ${d.notion ? '✅' : '❌'} NAS: ${d.nas ? '✅' : '❌'}`);
+      setMsg(d.message || `노션: ${d.notion ? '✅' : '❌'} NAS: ${d.nas ? '✅' : '❌'}`);
+      setTimeout(() => setMsg(''), 8000); // 에러 메시지 8초 유지
       if (tab === 'list') loadMemos();
     } catch (e) { showMsg('백업 오류: ' + String(e), true); }
     setBackingUp(null);
@@ -527,7 +532,7 @@ function MemoCard({ memo, onEdit, onDelete, onBackup, backingUp }: {
   memo: Memo;
   onEdit: (m: Memo) => void;
   onDelete: (id: string) => void;
-  onBackup: (id: string) => void;
+  onBackup: (id: string, memo: Memo) => void;
   backingUp: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -543,7 +548,7 @@ function MemoCard({ memo, onEdit, onDelete, onBackup, backingUp }: {
           {memo.backup_nas && <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">🖥️ NAS</span>}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={() => onBackup(memo.id)} disabled={backingUp === memo.id}
+          <button onClick={() => onBackup(memo.id, memo)} disabled={backingUp === memo.id}
             className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg disabled:opacity-50">
             {backingUp === memo.id ? '...' : '☁️ 백업'}
           </button>
