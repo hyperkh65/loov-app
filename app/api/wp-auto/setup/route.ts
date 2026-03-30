@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
         // ── 15. Synology WebStation 가상호스트 설정
         send('🌐 WebStation 가상호스트 설정 중...', 'step');
         const synoSid = await nasExec(
-          `curl -sk "http://localhost:5000/webapi/auth.cgi?api=SYNO.API.Auth&version=3&method=login&account=admin&passwd=${SYNO_PASS}&session=WebStation&format=cookie" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data']['sid'] if d.get('success') else '')" 2>/dev/null || echo ""`
+          `curl -sk "http://localhost:5000/webapi/entry.cgi?api=SYNO.API.Auth&version=7&method=login&account=urjent&passwd=${encodeURIComponent(SYNO_PASS)}&session=WebStation&format=cookie" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data']['sid'] if d.get('success') else '')" 2>/dev/null || echo ""`
         );
 
         if (synoSid.stdout.trim()) {
