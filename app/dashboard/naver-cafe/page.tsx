@@ -193,6 +193,7 @@ ${content.slice(0, 3000)}
 
 plain text 본문만 출력하세요. HTML 태그 없이.`;
 
+    const prevContent = content; // 원본 백업
     try {
       const r = await fetch('/api/free-ai/chat', {
         method: 'POST',
@@ -218,7 +219,15 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
           try { const j = JSON.parse(line.slice(6)); if (j.chunk) { full += j.chunk; setContent(full); } } catch {}
         }
       }
-    } catch (e) { alert('리라이팅 오류: ' + String(e)); }
+      // 결과가 비어있으면 원본 복원
+      if (!full.trim()) {
+        setContent(prevContent);
+        alert('리라이팅 결과가 비어있어 원본을 복원했습니다.');
+      }
+    } catch (e) {
+      setContent(prevContent); // 오류 시 원본 복원
+      alert('리라이팅 오류: ' + String(e));
+    }
     setRewriting(false);
   };
 
