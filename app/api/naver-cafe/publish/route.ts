@@ -68,17 +68,37 @@ export async function POST(req: NextRequest) {
   const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
 
-  // 커버 이미지를 content 맨 앞에 <img> 태그로 삽입
-  let finalContent = content;
-  if (cover_image_url) {
-    finalContent = `<img src="${cover_image_url}" style="max-width:100%;margin-bottom:16px;" />\n` + content;
-  }
+  // HTML 태그 제거 → plain text (네이버 카페 API는 HTML 미지원)
+  const plainContent = content
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<h[1-3][^>]*>/gi, '\n## ')
+    .replace(/<\/h[1-3]>/gi, '\n')
+    .replace(/<li>/gi, '\n• ').replace(/<\/li>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n').trim();
 
-  // FormData로 전송 (네이버 카페 API 스펙)
   const form = new FormData();
   form.append('subject', title);
-  form.append('content', finalContent);
+  form.append('content', plainContent);
   form.append('openYn', open_yn);
+
+  // 커버 이미지를 서버에서 fetch → attach 파일로 첨부
+  if (cover_image_url) {
+    try {
+      const imgRes = await fetch(cover_image_url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (imgRes.ok) {
+        const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+        const buffer = await imgRes.arrayBuffer();
+        const ext = contentType.includes('png') ? 'png' : contentType.includes('gif') ? 'gif' : 'jpg';
+        form.append('attach', new Blob([buffer], { type: contentType }), `cover.${ext}`);
+      }
+    } catch { /* 이미지 첨부 실패 무시 */ }
+  }
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
