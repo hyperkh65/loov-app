@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-type ViewTab = 'write' | 'calendar' | 'list';
+type ViewTab = 'write' | 'calendar' | 'list' | 'settings';
 const CATEGORIES = ['전체', '업무', '아이디어', '학습', '개인', '프로젝트', '회의', '일정', '기타'];
 const CATEGORY_COLOR: Record<string, string> = {
   '업무': 'bg-blue-100 text-blue-700',
@@ -66,6 +66,11 @@ export default function MemoPage() {
   const [search, setSearch] = useState('');
   const [backingUp, setBackingUp] = useState<string | null>(null);
 
+  // 백업 설정 (localStorage)
+  const [notionToken, setNotionToken] = useState('');
+  const [notionDbId, setNotionDbId] = useState('');
+  const [nasPath, setNasPath] = useState('/volume1/memos');
+
   const showMsg = (m: string, isErr = false) => {
     setMsg((isErr ? '❌ ' : '✅ ') + m);
     setTimeout(() => setMsg(''), 3000);
@@ -91,6 +96,12 @@ export default function MemoPage() {
     const d = await r.json();
     setCalMemos(d.memos || []);
   }, [calYear, calMonth]);
+
+  useEffect(() => {
+    setNotionToken(localStorage.getItem('memo_notion_token') || localStorage.getItem('cafe_notion_token') || '');
+    setNotionDbId(localStorage.getItem('memo_notion_dbid') || '');
+    setNasPath(localStorage.getItem('memo_nas_path') || '/volume1/memos');
+  }, []);
 
   useEffect(() => { if (tab === 'list') loadMemos(); }, [tab, loadMemos]);
   useEffect(() => { if (tab === 'calendar') loadCalMemos(); }, [tab, loadCalMemos]);
@@ -149,13 +160,15 @@ export default function MemoPage() {
   // 백업
   const backup = async (id: string) => {
     setBackingUp(id);
-    const r = await fetch('/api/memo/backup', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
-    const d = await r.json();
-    showMsg(`백업 완료 (노션: ${d.notion ? '✅' : '❌'} NAS: ${d.nas ? '✅' : '❌'})`);
-    loadMemos();
+    try {
+      const r = await fetch('/api/memo/backup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, notionToken, notionDbId, nasPath }),
+      });
+      const d = await r.json();
+      showMsg(d.message || `노션: ${d.notion ? '✅' : '❌'} NAS: ${d.nas ? '✅' : '❌'}`);
+      if (tab === 'list') loadMemos();
+    } catch (e) { showMsg('백업 오류: ' + String(e), true); }
     setBackingUp(null);
   };
 
@@ -193,6 +206,7 @@ export default function MemoPage() {
             { key: 'write', label: editId ? '✏️ 편집' : '✏️ 새 메모' },
             { key: 'calendar', label: '📅 달력' },
             { key: 'list', label: '📋 전체 목록' },
+            { key: 'settings', label: '⚙️ 백업 설정' },
           ] as { key: ViewTab; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setTab(key)}
               className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === key ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
@@ -399,6 +413,57 @@ export default function MemoPage() {
                 ? <div className="text-center py-10 text-gray-400 text-sm">메모가 없습니다. 첫 메모를 작성해보세요!</div>
                 : memos.map(m => <MemoCard key={m.id} memo={m} onEdit={startEdit} onDelete={deleteMemo} onBackup={backup} backingUp={backingUp} />)
             }
+          </div>
+        )}
+
+        {/* ── 백업 설정 탭 ── */}
+        {tab === 'settings' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-4">
+              <p className="text-sm font-bold text-gray-800">📔 Notion 백업 설정</p>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Notion API 키 (Integration Token)</label>
+                <input value={notionToken} onChange={e => setNotionToken(e.target.value)} type="password"
+                  placeholder="secret_xxxx..."
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 font-mono" />
+                <p className="text-xs text-gray-400 mt-1">없으면 네이버 카페 설정에서 입력한 Notion 키를 자동 사용</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Notion 메모 DB ID</label>
+                <input value={notionDbId} onChange={e => setNotionDbId(e.target.value)}
+                  placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 font-mono" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-4">
+              <p className="text-sm font-bold text-gray-800">🖥️ NAS 백업 설정</p>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">NAS 저장 경로</label>
+                <input value={nasPath} onChange={e => setNasPath(e.target.value)}
+                  placeholder="/volume1/memos"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 font-mono" />
+                <p className="text-xs text-gray-400 mt-1">NAS SSH 접속 정보는 서버 환경변수에서 자동 사용</p>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">💡 백업 방법</p>
+              <p>메모 저장 후 각 메모 카드의 <strong>☁️ 백업</strong> 버튼을 누르면 Notion + NAS 동시 저장됩니다.</p>
+              <p>Notion DB는 이름, 카테고리, 태그, 날짜, 내용, 액션아이템이 구조화되어 저장됩니다.</p>
+              <p>NAS는 <code>{nasPath || '/volume1/memos'}/날짜_ID.json</code> 형식으로 저장됩니다.</p>
+            </div>
+
+            <button
+              onClick={() => {
+                localStorage.setItem('memo_notion_token', notionToken);
+                localStorage.setItem('memo_notion_dbid', notionDbId);
+                localStorage.setItem('memo_nas_path', nasPath);
+                showMsg('설정 저장됨');
+              }}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl">
+              💾 설정 저장
+            </button>
           </div>
         )}
       </div>
