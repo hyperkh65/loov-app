@@ -75,10 +75,9 @@ export async function POST(req: NextRequest) {
   }
 
   // FormData로 전송 (네이버 카페 API 스펙)
-  // 각 필드를 Blob으로 명시해서 UTF-8 인코딩 보장
   const form = new FormData();
-  form.append('subject', new Blob([title], { type: 'text/plain; charset=utf-8' }), '');
-  form.append('content', new Blob([finalContent], { type: 'text/html; charset=utf-8' }), '');
+  form.append('subject', title);
+  form.append('content', finalContent);
   form.append('openYn', open_yn);
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
