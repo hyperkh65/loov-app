@@ -14,30 +14,36 @@ function nHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, 'Notion-Version': NOTION_VERSION, 'Content-Type': 'application/json' };
 }
 
-function blocksToHtml(blocks: { type: string; [k: string]: unknown }[]): string {
+type NotionRichText = { plain_text?: string };
+type NotionBlock = { type: string; [k: string]: unknown };
+
+function getRichText(b: NotionBlock): string {
+  const inner = b[b.type] as { rich_text?: NotionRichText[]; title?: NotionRichText[] } | undefined;
+  const arr = inner?.rich_text || inner?.title || [];
+  return arr.map((r) => r.plain_text || '').join('');
+}
+
+function blocksToText(blocks: NotionBlock[]): string {
   const lines: string[] = [];
   for (const b of blocks) {
-    const richText = (b[b.type] as { rich_text?: { plain_text: string }[] })?.rich_text || [];
-    const text = richText.map((r) => r.plain_text).join('');
-    if (!text && b.type !== 'image') continue;
+    const text = getRichText(b);
     switch (b.type) {
-      case 'heading_1': lines.push(`<h1>${text}</h1>`); break;
-      case 'heading_2': lines.push(`<h2>${text}</h2>`); break;
-      case 'heading_3': lines.push(`<h3>${text}</h3>`); break;
-      case 'bulleted_list_item': lines.push(`<li>${text}</li>`); break;
-      case 'numbered_list_item': lines.push(`<li>${text}</li>`); break;
-      case 'quote': lines.push(`<blockquote>${text}</blockquote>`); break;
-      case 'code': lines.push(`<pre><code>${text}</code></pre>`); break;
-      case 'image': {
-        const img = b['image'] as { type: string; external?: { url: string }; file?: { url: string } };
-        const url = img?.external?.url || img?.file?.url || '';
-        if (url) lines.push(`<img src="${url}" style="max-width:100%" />`);
-        break;
-      }
-      default: if (text) lines.push(`<p>${text}</p>`);
+      case 'heading_1': if (text) lines.push(`\n# ${text}\n`); break;
+      case 'heading_2': if (text) lines.push(`\n## ${text}\n`); break;
+      case 'heading_3': if (text) lines.push(`\n### ${text}\n`); break;
+      case 'paragraph': if (text) lines.push(text); break;
+      case 'bulleted_list_item': if (text) lines.push(`• ${text}`); break;
+      case 'numbered_list_item': if (text) lines.push(`- ${text}`); break;
+      case 'quote': if (text) lines.push(`> ${text}`); break;
+      case 'code': if (text) lines.push(text); break;
+      case 'callout': if (text) lines.push(`💡 ${text}`); break;
+      case 'toggle': if (text) lines.push(text); break;
+      case 'to_do': if (text) lines.push(`☐ ${text}`); break;
+      case 'divider': lines.push('---'); break;
+      default: if (text) lines.push(text); break;
     }
   }
-  return lines.join('\n');
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 export async function GET(req: NextRequest) {
@@ -88,8 +94,8 @@ export async function GET(req: NextRequest) {
       headers: nHeaders(token),
     });
     if (!res.ok) return NextResponse.json({ error: `블록 조회 실패 (${res.status})` }, { status: 400 });
-    const data = await res.json() as { results: { type: string; [k: string]: unknown }[] };
-    const html = blocksToHtml(data.results || []);
+    const data = await res.json() as { results: NotionBlock[] };
+    const html = blocksToText(data.results || []);
 
     // 페이지 메타 (cover image)
     const pageRes = await fetch(`https://api.notion.com/v1/pages/${pageId.replace(/-/g, '')}`, {
