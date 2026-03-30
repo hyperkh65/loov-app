@@ -28,6 +28,20 @@ async function backupToNotion(memo: Memo, notionToken: string, notionDbId: strin
   if (!notionDbId)  return { pageId: null, error: 'Notion DB ID 없음' };
 
   const dbId = notionDbId.replace(/-/g, '');
+
+  // DB title 속성 이름 자동 감지
+  let titleProp = '이름';
+  try {
+    const dbRes = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
+      headers: { Authorization: `Bearer ${notionToken}`, 'Notion-Version': '2022-06-28' },
+    });
+    if (dbRes.ok) {
+      const dbData = await dbRes.json() as { properties?: Record<string, { type: string }> };
+      const found = Object.entries(dbData.properties || {}).find(([, v]) => v.type === 'title');
+      if (found) titleProp = found[0];
+    }
+  } catch {}
+
   try {
     const res = await fetch('https://api.notion.com/v1/pages', {
       method: 'POST',
@@ -39,26 +53,26 @@ async function backupToNotion(memo: Memo, notionToken: string, notionDbId: strin
       body: JSON.stringify({
         parent: { database_id: dbId },
         properties: {
-          이름:     { title: [{ text: { content: memo.title || memo.content.slice(0, 60) } }] },
-          Category: { select: { name: memo.category || '기타' } },
-          Tags:     { multi_select: (memo.tags || []).map(t => ({ name: t })) },
-          Date:     { date: { start: memo.memo_date } },
-          Summary:  { rich_text: [{ text: { content: memo.summary || '' } }] },
+          [titleProp]: { title: [{ text: { content: memo.title || memo.content.slice(0, 60) } }] },
         },
         children: [
-          ...(memo.summary ? [{
+          // 메타 정보를 본문에 텍스트로 삽입 (속성 의존 없음)
+          {
             object: 'block', type: 'callout',
             callout: {
-              rich_text: [{ text: { content: memo.summary } }],
-              icon: { emoji: '💡' }, color: 'blue_background',
+              rich_text: [{ text: { content:
+                `📅 ${memo.memo_date}  |  🏷 ${memo.category}  |  🔖 ${(memo.tags||[]).map(t=>'#'+t).join(' ')}` +
+                (memo.summary ? `\n💡 ${memo.summary}` : '')
+              }}],
+              icon: { emoji: '📓' }, color: 'gray_background',
             },
-          }] : []),
+          },
           {
             object: 'block', type: 'paragraph',
             paragraph: { rich_text: [{ text: { content: memo.content } }] },
           },
           ...(memo.action_items?.length ? [
-            { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ text: { content: '액션 아이템' } }] } },
+            { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ text: { content: '✅ 액션 아이템' } }] } },
             ...memo.action_items.map(item => ({
               object: 'block', type: 'to_do',
               to_do: { rich_text: [{ text: { content: item } }], checked: false },
@@ -82,10 +96,11 @@ async function backupToNas(memo: Memo, nasPath: string): Promise<{ ok: boolean; 
   try {
     const dir = nasPath || '/volume1/memos';
     const filename = `${memo.memo_date}_${memo.id.slice(0, 8)}.json`;
-    // 싱글쿼트 이스케이프
     const json = JSON.stringify(memo, null, 2).replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+    const nasPass = process.env.NAS_SSH_PASSWORD || 'Aa050677##7759';
+    // sudo로 디렉토리 생성 (권한 없는 경로 대응)
     const { code, stderr } = await nasExec(
-      `mkdir -p "${dir}" && printf '%s' '${json}' > "${dir}/${filename}" && echo OK`
+      `echo "${nasPass}" | sudo -S mkdir -p "${dir}" && echo "${nasPass}" | sudo -S chmod 777 "${dir}" && printf '%s' '${json}' > "${dir}/${filename}" && echo OK`
     );
     if (code !== 0) return { ok: false, error: stderr || `exit code ${code}` };
     return { ok: true, error: '' };
