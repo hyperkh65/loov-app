@@ -201,13 +201,14 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
         body: JSON.stringify({
           model: aiModel,
           clientOllamaKey: ollamaKey,
+          clientOpenrouterKey: openrouterKey,
           messages: [{ role: 'user', content: prompt }],
         }),
       });
       if (!r.body) throw new Error('스트림 없음');
       const reader = r.body.getReader();
       const dec = new TextDecoder();
-      let buf = ''; let full = '';
+      let buf = ''; let full = ''; let apiError = '';
       setContent('');
       while (true) {
         const { done, value } = await reader.read();
@@ -216,16 +217,19 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
         const lines = buf.split('\n'); buf = lines.pop() || '';
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
-          try { const j = JSON.parse(line.slice(6)); if (j.chunk) { full += j.chunk; setContent(full); } } catch {}
+          try {
+            const j = JSON.parse(line.slice(6));
+            if (j.chunk) { full += j.chunk; setContent(full); }
+            if (j.error) apiError = j.error;
+          } catch {}
         }
       }
-      // 결과가 비어있으면 원본 복원
       if (!full.trim()) {
         setContent(prevContent);
-        alert('리라이팅 결과가 비어있어 원본을 복원했습니다.');
+        alert(apiError || 'AI 응답이 없습니다. 설정 탭에서 Ollama 또는 OpenRouter API 키를 입력하세요.');
       }
     } catch (e) {
-      setContent(prevContent); // 오류 시 원본 복원
+      setContent(prevContent);
       alert('리라이팅 오류: ' + String(e));
     }
     setRewriting(false);
