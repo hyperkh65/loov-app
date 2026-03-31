@@ -236,22 +236,28 @@ export async function POST(req: NextRequest) {
         );
         send('✅ GeneratePress 테마 설치 완료');
 
-        // ── 10. 플러그인 설치
-        await run('🔌 플러그인 설치 중 (시간이 걸릴 수 있습니다)...',
-          `${WP} plugin install \
-            advanced-ads \
-            rank-math-seo \
-            litespeed-cache \
-            smush \
-            wordfence \
-            really-simple-ssl \
-            contact-form-7 \
-            wp-optimize \
-            table-of-contents-plus \
-            --activate && \
-           ${WP} plugin delete hello akismet 2>/dev/null; \
-           echo ok`
-        );
+        // ── 10. 플러그인 설치 (하나씩 설치 - 실패해도 계속 진행)
+        const plugins = [
+          'advanced-ads',
+          'rank-math-seo',
+          'litespeed-cache',
+          'smush',
+          'wordfence',
+          'really-simple-ssl',
+          'contact-form-7',
+          'wp-optimize',
+          'table-of-contents-plus',
+        ];
+        for (const plugin of plugins) {
+          send(`🔌 플러그인 설치: ${plugin}`, 'step');
+          const pr = await nasExec(`${WP} plugin install ${plugin} --activate 2>&1 && echo ok`);
+          if (pr.stdout.includes('ok') || pr.stdout.includes('Success')) {
+            send(`✅ ${plugin}`);
+          } else {
+            send(`⚠️ ${plugin} 설치 실패 (건너뜀): ${pr.stdout.slice(0, 100)}`, 'warn');
+          }
+        }
+        await nasExec(`${WP} plugin delete hello akismet 2>/dev/null`);
         send('✅ 플러그인 설치 완료');
 
         // ── 11. Rank Math SEO 기본 설정
