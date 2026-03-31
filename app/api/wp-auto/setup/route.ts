@@ -294,29 +294,12 @@ export async function POST(req: NextRequest) {
           true
         );
 
-        // ── 15. Synology WebStation 가상호스트 설정
-        send('🌐 WebStation 가상호스트 설정 중...', 'step');
-        const synoSid = await nasExec(
-          `curl -sk "http://localhost:5000/webapi/entry.cgi?api=SYNO.API.Auth&version=7&method=login&account=urjent&passwd=${encodeURIComponent(SYNO_PASS)}&session=WebStation&format=cookie" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data']['sid'] if d.get('success') else '')" 2>/dev/null || echo ""`
-        );
-
-        if (synoSid.stdout.trim()) {
-          const sid = synoSid.stdout.trim();
-          const vsResult = await nasExec(
-            `curl -sk "http://localhost:5000/webapi/entry.cgi" \
-              --cookie "id=${sid}" \
-              --data "api=SYNO.WebStation.VirtualHost&version=1&method=create&hostname=${subdomain}.aboda.kr&backend_type=php&port=80,443&root=${WP_DIR}" 2>/dev/null || echo "webstation_failed"`
-          );
-          if (vsResult.stdout.includes('webstation_failed') || vsResult.code !== 0) {
-            send('⚠️ WebStation 자동 설정 실패 — 아래 수동 설정 필요', 'warn');
-            send(`WebStation → 가상호스트 추가: 호스트명=${subdomain}.aboda.kr, 루트=${WP_DIR}`, 'warn');
-          } else {
-            send('✅ WebStation 가상호스트 자동 생성 완료');
-          }
-        } else {
-          send('⚠️ WebStation 로그인 실패 — 수동 설정 필요', 'warn');
-          send(`WebStation 앱 → 가상호스트 → 추가: 호스트명=${subdomain}.aboda.kr, 폴더=${WP_DIR}`, 'warn');
-        }
+        // ── 15. WebStation 수동 설정 안내 (자동화 불가 - nginx reload root 권한 필요)
+        send('📋 WebStation 가상호스트 수동 설정 필요 (30초)', 'step');
+        send(`① DSM → WebStation → 가상호스트 → 만들기`, 'warn');
+        send(`② 호스트명: ${subdomain}.aboda.kr`, 'warn');
+        send(`③ 문서 루트: ${WP_DIR}`, 'warn');
+        send(`④ PHP: PHP 8.2 / HTTP+HTTPS(80,443)`, 'warn');
 
         // ── 완료
         send(JSON.stringify({
@@ -326,6 +309,7 @@ export async function POST(req: NextRequest) {
           adminPass,
           domain: `${subdomain}.aboda.kr`,
           dnsNote: `dnszi.com에서 CNAME: ${subdomain} → hy64.synology.me 추가 필요`,
+          webstationNote: `DSM → WebStation → 가상호스트 → 만들기 → 호스트명: ${subdomain}.aboda.kr / 루트: ${WP_DIR} / PHP 8.2`,
         }), 'done');
 
       } catch (e) {

@@ -416,6 +416,12 @@ export default function WpAutoPage() {
                       <span className="text-sm text-gray-600">비밀번호</span>
                       <span className="text-sm font-mono text-amber-800">{adminPass}</span>
                     </div>
+                    {result.webstationNote && (
+                      <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-800">
+                        <strong>🖥️ WebStation 설정 필요 (30초)</strong><br />
+                        {result.webstationNote}
+                      </div>
+                    )}
                     {result.dnsNote && (
                       <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
                         <strong>📌 DNS 설정 필요</strong><br />
