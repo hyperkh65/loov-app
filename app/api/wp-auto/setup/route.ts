@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
   const MYSQL_ROOT = process.env.NAS_MYSQL_ROOT_PASS || '';
   const SYNO_PASS = process.env.NAS_SYNO_ADMIN_PASS || process.env.NAS_SSH_PASSWORD || '';
   const WP_CLI = '/volume1/homes/urjent/bin/wp';
-  const WP = `/usr/bin/php ${WP_CLI} --path=${WP_DIR} --allow-root`;
+  const WP = `/usr/local/bin/php82 ${WP_CLI} --path=${WP_DIR} --allow-root`;
   const MYSQL_BIN = '/usr/local/bin/mysql';
   const encoder = new TextEncoder();
 
@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
           await run('WP-CLI 설치 중...',
             `mkdir -p /volume1/homes/urjent/bin && \
              curl -sL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o ${WP_CLI} && \
-             chmod +x ${WP_CLI} && /usr/bin/php ${WP_CLI} --version && echo ok`
+             chmod +x ${WP_CLI} && /usr/local/bin/php82 ${WP_CLI} --version && echo ok`
           );
           send('✅ WP-CLI 설치 완료');
         } else {
