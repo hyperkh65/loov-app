@@ -186,6 +186,7 @@ export async function POST(req: NextRequest) {
             --dbpass="${DB_PASS}" \
             --dbhost="localhost" \
             --locale=ko_KR \
+            --force \
             --extra-php="define('WP_DEBUG', false); define('DISALLOW_FILE_EDIT', true); define('WP_POST_REVISIONS', 5);" && echo ok`
         );
         send('✅ wp-config.php 생성 완료');
