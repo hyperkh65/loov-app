@@ -239,10 +239,9 @@ export async function POST(req: NextRequest) {
         // ── 10. 플러그인 설치 (하나씩 설치 - 실패해도 계속 진행)
         const plugins = [
           'advanced-ads',
-          'rank-math-seo',
+          'seo-by-rank-math',
           'litespeed-cache',
-          'smush',
-          'wordfence',
+          'wp-smushit',
           'really-simple-ssl',
           'contact-form-7',
           'wp-optimize',
