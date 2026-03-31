@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
             --dbhost="localhost" \
             --locale=ko_KR \
             --force \
-            --extra-php="define('WP_DEBUG', false); define('DISALLOW_FILE_EDIT', true); define('WP_POST_REVISIONS', 5);" && echo ok`
+            --extra-php="\\$_SERVER['HTTPS']='on'; \\$_SERVER['SERVER_PORT']='443'; define('WP_DEBUG', false); define('DISALLOW_FILE_EDIT', true); define('WP_POST_REVISIONS', 5); define('FORCE_SSL_ADMIN', true);" && echo ok`
         );
         send('✅ wp-config.php 생성 완료');
 
