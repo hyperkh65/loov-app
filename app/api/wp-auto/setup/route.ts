@@ -238,14 +238,11 @@ export async function POST(req: NextRequest) {
 
         // ── 10. 플러그인 설치 (하나씩 설치 - 실패해도 계속 진행)
         const plugins = [
-          'advanced-ads',
-          'seo-by-rank-math',
-          'litespeed-cache',
-          'wp-smushit',
-          'really-simple-ssl',
-          'contact-form-7',
-          'wp-optimize',
-          'table-of-contents-plus',
+          'litespeed-cache',    // 속도
+          'seo-by-rank-math',   // SEO
+          'really-simple-ssl',  // HTTPS
+          'advanced-ads',       // AdSense
+          'wp-smushit',         // 이미지 최적화
         ];
         for (const plugin of plugins) {
           send(`🔌 플러그인 설치: ${plugin}`, 'step');
