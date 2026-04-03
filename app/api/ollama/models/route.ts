@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSetting } from '@/lib/settings';
+import { getSetting } from '@/lib/get-setting';
 
 // ollama.com 인기 모델 목록 (주기적으로 업데이트)
 // https://ollama.com/search 기준 최신 popular 모델

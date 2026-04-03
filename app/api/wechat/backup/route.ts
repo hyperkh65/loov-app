@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { Client } from '@notionhq/client';
-import { getSetting } from '@/lib/settings';
+import { getSetting } from '@/lib/get-setting';
 
 const WECHAT_NOTION_DB = '3371f4ff9a0e803e913cebe199fde98e';
 
