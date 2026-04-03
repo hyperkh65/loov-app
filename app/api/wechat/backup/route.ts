@@ -145,18 +145,20 @@ async function saveToNotion(apiKey: string, payload: BackupPayload & { summary: 
   // DB 프로퍼티 구조 조회해서 title 컬럼명 파악
   const db = await notion.databases.retrieve({ database_id: WECHAT_NOTION_DB });
   const titlePropName = Object.entries(db.properties).find(([, v]) => v.type === 'title')?.[0] ?? 'Name';
+  const hasDate = '날짜' in db.properties || 'Date' in db.properties;
+  const datePropName = '날짜' in db.properties ? '날짜' : 'Date';
+  const hasCount = '메시지수' in db.properties;
 
-  const extraProps: Record<string, unknown> = {};
-  if ('날짜' in db.properties) extraProps['날짜'] = { date: { start: payload.date } };
-  if ('Date' in db.properties) extraProps['Date'] = { date: { start: payload.date } };
-  if ('메시지수' in db.properties) extraProps['메시지수'] = { number: payload.messages.length };
+  type NotionProps = Parameters<typeof notion.pages.create>[0]['properties'];
+  const props: NotionProps = {
+    [titlePropName]: { title: [{ text: { content: `WeChat 백업 ${payload.date} (${payload.messages.length}개)` } }] },
+  };
+  if (hasDate) (props as Record<string, unknown>)[datePropName] = { date: { start: payload.date } };
+  if (hasCount) (props as Record<string, unknown>)['메시지수'] = { number: payload.messages.length };
 
   await notion.pages.create({
     parent: { database_id: WECHAT_NOTION_DB },
-    properties: {
-      [titlePropName]: { title: [{ text: { content: `WeChat 백업 ${payload.date} (${payload.messages.length}개)` } }] },
-      ...extraProps,
-    },
+    properties: props,
     children: [
       {
         object: 'block', type: 'heading_2',
