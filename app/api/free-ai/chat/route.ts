@@ -14,10 +14,11 @@ export const OLLAMA_CLOUD_MODELS = [
 
 // OpenRouter 무료 폴백 모델
 const OPENROUTER_FREE_MODELS = [
-  { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B', emoji: '🦙' },
+  { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen 3 235B', emoji: '🔮' },
+  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', emoji: '🦙' },
+  { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', emoji: '🧠' },
+  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', emoji: '💎' },
   { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B', emoji: '🌪️' },
-  { id: 'google/gemma-2-9b-it:free', name: 'Gemma 2 9B', emoji: '💎' },
-  { id: 'qwen/qwen-2-7b-instruct:free', name: 'Qwen 2 7B', emoji: '🔮' },
 ];
 
 export const maxDuration = 30;

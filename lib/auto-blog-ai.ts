@@ -6,10 +6,11 @@
 import { getSetting } from './get-setting';
 
 const OPENROUTER_MODELS = [
-  'qwen/qwen3-14b:free',
-  'meta-llama/llama-3.1-8b-instruct:free',
+  'qwen/qwen3-235b-a22b:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'deepseek/deepseek-r1:free',
+  'google/gemma-3-27b-it:free',
   'mistralai/mistral-7b-instruct:free',
-  'google/gemma-2-9b-it:free',
 ];
 
 async function callOllama(apiKey: string, model: string, prompt: string): Promise<string> {
@@ -125,7 +126,7 @@ export async function generateText(
     } catch (e) {
       errors.push(`Ollama(${preferModel}): ${e}`);
     }
-    for (const fallback of ['qwen3', 'llama3.3', 'mistral', 'gemma3']) {
+    for (const fallback of ['qwen3.5', 'qwen3', 'llama3.3', 'mistral', 'ministral-3', 'gemma3', 'phi4', 'deepseek-r1']) {
       if (fallback === preferModel) continue;
       try { return await callOllama(ollamaKey, fallback, prompt); } catch { continue; }
     }

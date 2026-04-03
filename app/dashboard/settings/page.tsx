@@ -58,6 +58,10 @@ export default function SettingsPage() {
   const [ollamaUrlSaved, setOllamaUrlSaved] = useState(false);
   const [ollamaTesting, setOllamaTesting] = useState(false);
   const [ollamaTestMsg, setOllamaTestMsg] = useState('');
+  const [ollamaModels, setOllamaModels] = useState<string[]>([
+    'qwen3.5','qwen3','qwen3-coder','llama3.3','mistral','ministral-3','gemma3','deepseek-r1','phi4','phi4-mini','llama3.2','llama3.1',
+  ]);
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
 
   // OpenRouter state
   const [openrouterKey, setOpenrouterKey] = useState('');
@@ -96,6 +100,19 @@ export default function SettingsPage() {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
+
+  // Ollama 모델 목록 동적 로드 (ai 탭 진입 시 + 서버 글로벌 provider 변경 시)
+  useEffect(() => {
+    if (activeTab !== 'ai') return;
+    setOllamaModelsLoading(true);
+    fetch('/api/ollama/models')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: { models?: string[] } | null) => {
+        if (d?.models?.length) setOllamaModels(d.models);
+      })
+      .catch(() => {})
+      .finally(() => setOllamaModelsLoading(false));
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'sns') {
@@ -545,11 +562,11 @@ export default function SettingsPage() {
                     >
                       {[
                         'meta-llama/llama-3.3-70b-instruct:free',
-                        'google/gemma-2-9b-it:free',
+                        'qwen/qwen3-235b-a22b:free',
                         'deepseek/deepseek-r1:free',
+                        'google/gemma-3-27b-it:free',
                         'mistralai/mistral-7b-instruct:free',
-                        'qwen/qwen-2-7b-instruct:free',
-                        'meta-llama/llama-3.1-8b-instruct:free',
+                        'microsoft/phi-4:free',
                         'qwen/qwen3.5',
                         'qwen/qwq-32b',
                         'deepseek/deepseek-r1',
@@ -579,15 +596,31 @@ export default function SettingsPage() {
                       ))}
                     </select>
                   ) : serverGlobalProvider === 'ollama' ? (
-                    <select
-                      value={serverGlobalModel}
-                      onChange={(e) => setServerGlobalModel(e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
-                    >
-                      {['qwen3.5','qwen3','qwen3-coder','llama3.3','mistral','gemma3','deepseek-r1','phi4','llama3.2','llama3.1'].map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
+                    <div className="flex gap-2">
+                      <select
+                        value={serverGlobalModel}
+                        onChange={(e) => setServerGlobalModel(e.target.value)}
+                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+                      >
+                        {ollamaModels.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          setOllamaModelsLoading(true);
+                          fetch('/api/ollama/models')
+                            .then((r) => r.ok ? r.json() : null)
+                            .then((d: { models?: string[] } | null) => { if (d?.models?.length) setOllamaModels(d.models); })
+                            .catch(() => {})
+                            .finally(() => setOllamaModelsLoading(false));
+                        }}
+                        title="모델 목록 새로고침"
+                        className="px-2 py-2 rounded-xl border border-gray-200 text-gray-500 hover:border-violet-400 hover:text-violet-600 text-xs"
+                      >
+                        {ollamaModelsLoading ? '⟳' : '🔄'}
+                      </button>
+                    </div>
                   ) : (
                     <input
                       type="text"
@@ -975,7 +1008,7 @@ export default function SettingsPage() {
               </div>
               <p className="text-xs text-gray-500 mb-2">무료 모델 포함 100+ 모델 접근. <span className="text-emerald-600 font-medium">:free 모델은 완전 무료.</span></p>
               <div className="flex flex-wrap gap-1.5 mb-3">
-                {['meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-2-9b-it:free', 'deepseek/deepseek-r1:free'].map((m) => (
+                {['qwen/qwen3-235b-a22b:free', 'meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-r1:free'].map((m) => (
                   <span key={m} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">{m}</span>
                 ))}
               </div>
@@ -1059,7 +1092,7 @@ export default function SettingsPage() {
                       gemini: 'gemini-2.0-flash',
                       claude: 'claude-sonnet-4-6',
                       openrouter: 'meta-llama/llama-3.3-70b-instruct:free',
-                      ollama: 'llama3.2',
+                      ollama: ollamaModels[0] || 'qwen3.5',
                       gpt4o: 'gpt-4o',
                       gpt4: 'gpt-4-turbo',
                       gpt35: 'gpt-3.5-turbo',
