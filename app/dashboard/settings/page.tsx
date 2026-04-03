@@ -63,6 +63,9 @@ export default function SettingsPage() {
   ]);
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
 
+  // Claude models state (동적 로드)
+  const [claudeModels, setClaudeModels] = useState<string[]>(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001']);
+
   // OpenRouter state
   const [openrouterKey, setOpenrouterKey] = useState('');
   const [openrouterKeySaved, setOpenrouterKeySaved] = useState(false);
@@ -101,7 +104,7 @@ export default function SettingsPage() {
     }
   }, []);
 
-  // Ollama 모델 목록 동적 로드 (ai 탭 진입 시 + 서버 글로벌 provider 변경 시)
+  // Ollama + Claude 모델 목록 동적 로드 (ai 탭 진입 시)
   useEffect(() => {
     if (activeTab !== 'ai') return;
     setOllamaModelsLoading(true);
@@ -112,6 +115,13 @@ export default function SettingsPage() {
       })
       .catch(() => {})
       .finally(() => setOllamaModelsLoading(false));
+    // Claude 모델 목록 (Anthropic API에서 동적 로드)
+    fetch('/api/claude/models')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: { models?: string[] } | null) => {
+        if (d?.models?.length) setClaudeModels(d.models);
+      })
+      .catch(() => {});
   }, [activeTab]);
 
   useEffect(() => {
@@ -591,7 +601,7 @@ export default function SettingsPage() {
                       onChange={(e) => setServerGlobalModel(e.target.value)}
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
                     >
-                      {['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-6'].map((m) => (
+                      {claudeModels.map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -1090,8 +1100,8 @@ export default function SettingsPage() {
                     setNewChainProvider(p);
                     const providerModels: Record<string, string> = {
                       gemini: 'gemini-2.0-flash',
-                      claude: 'claude-sonnet-4-6',
-                      openrouter: 'meta-llama/llama-3.3-70b-instruct:free',
+                      claude: claudeModels[1] || 'claude-sonnet-4-6',
+                      openrouter: 'qwen/qwen3-235b-a22b:free',
                       ollama: ollamaModels[0] || 'qwen3.5',
                       gpt4o: 'gpt-4o',
                       gpt4: 'gpt-4-turbo',
