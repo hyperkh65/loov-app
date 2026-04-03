@@ -32,7 +32,6 @@ export async function GET(req: NextRequest) {
       nas_user: cfg.nas_user || '',
       nas_password: cfg.nas_password || '',
       nas_backup_dir: cfg.nas_backup_dir || '~/wechat_backup',
-      ollama_base_url: cfg.ollama_base_url || 'http://localhost:11434',
       openrouter_api_key: cfg.openrouter_api_key || '',
       anthropic_api_key: cfg.anthropic_api_key || '',
       loov_url: 'https://loov.co.kr',

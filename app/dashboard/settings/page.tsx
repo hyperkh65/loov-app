@@ -1808,7 +1808,7 @@ function WeChatBackupPanel() {
   const [cfg, setCfg] = useState({
     my_wxid: '', nas_host: 'hy64.synology.me', nas_port: 22,
     nas_user: '', nas_password: '', nas_backup_dir: '~/wechat_backup',
-    ollama_base_url: 'http://localhost:11434', openrouter_api_key: '', hours_back: 26,
+    openrouter_api_key: '', hours_back: 26,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1866,7 +1866,9 @@ function WeChatBackupPanel() {
 
       <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
         <h3 className="font-bold text-gray-900">AI 설정 (선택)</h3>
-        {field('Ollama 서버 URL', 'ollama_base_url', 'text', 'http://localhost:11434')}
+        <div className="text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2">
+          Ollama 키는 <strong>AI 설정</strong> 탭에서 설정한 값을 공용으로 사용합니다.
+        </div>
         {field('OpenRouter API Key', 'openrouter_api_key', 'password', 'sk-or-...')}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">백업 주기 (시간)</label>
