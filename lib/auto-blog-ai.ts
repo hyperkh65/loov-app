@@ -88,7 +88,36 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
   return text;
 }
 
+// Claude 모델 캐시 (프로세스 내 1시간)
+let _claudeModelCache: { models: string[]; ts: number } | null = null;
+
+async function getLatestClaudeHaiku(apiKey: string): Promise<string> {
+  const FALLBACK = 'claude-haiku-4-5-20251001';
+  try {
+    const now = Date.now();
+    if (_claudeModelCache && now - _claudeModelCache.ts < 3_600_000) {
+      const haiku = _claudeModelCache.models.find((m) => m.includes('haiku'));
+      return haiku || FALLBACK;
+    }
+    const res = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return FALLBACK;
+    const data = await res.json() as { data: Array<{ id: string; created_at: string }> };
+    const models = (data.data || [])
+      .filter((m) => m.id.startsWith('claude-'))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map((m) => m.id);
+    _claudeModelCache = { models, ts: now };
+    return models.find((m) => m.includes('haiku')) || FALLBACK;
+  } catch {
+    return FALLBACK;
+  }
+}
+
 async function callClaude(apiKey: string, prompt: string): Promise<string> {
+  const model = await getLatestClaudeHaiku(apiKey);
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -97,7 +126,7 @@ async function callClaude(apiKey: string, prompt: string): Promise<string> {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model,
       max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     }),

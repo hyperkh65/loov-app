@@ -59,11 +59,43 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
   }
 }
 
+// ── Claude 모델 캐시 (1시간, /v1/models 동적 조회) ───────────────────────────
+let _claudeCache: { models: string[]; ts: number } | null = null;
+
+async function getLatestClaudeModel(tier: 'sonnet' | 'haiku' | 'opus', apiKey: string): Promise<string> {
+  const FALLBACK: Record<string, string> = {
+    sonnet: 'claude-sonnet-4-6',
+    haiku:  'claude-haiku-4-5-20251001',
+    opus:   'claude-opus-4-6',
+  };
+  try {
+    const now = Date.now();
+    if (!_claudeCache || now - _claudeCache.ts > 3_600_000) {
+      const res = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json() as { data: Array<{ id: string; created_at: string }> };
+        const models = (data.data || [])
+          .filter((m) => m.id.startsWith('claude-'))
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .map((m) => m.id);
+        if (models.length) _claudeCache = { models, ts: now };
+      }
+    }
+    const models = _claudeCache?.models || [];
+    return models.find((m) => m.includes(tier)) || FALLBACK[tier];
+  } catch {
+    return FALLBACK[tier];
+  }
+}
+
 // ── Default model per provider ───────────────────────────────────────────────
 
 function defaultModel(provider: string): string {
   switch (provider) {
-    case 'claude':      return 'claude-sonnet-4-6';
+    case 'claude':      return 'claude-sonnet-4-6';  // 런타임에 getLatestClaudeModel()로 덮어씀
     case 'gemini':      return 'gemini-2.0-flash';
     case 'gpt4o':       return 'gpt-4o';
     case 'gpt4':        return 'gpt-4-turbo';
@@ -274,8 +306,12 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
     } catch { /* use default */ }
   }
 
-  const resolvedModel = primaryModelFallback || defaultModel(primaryProvider);
   const resolvedKey = await resolveApiKey(primaryProvider, keyOverride);
+  // Claude: 모델 미지정 시 Anthropic API에서 최신 sonnet 동적 선택
+  let resolvedModel = primaryModelFallback || defaultModel(primaryProvider);
+  if (primaryProvider === 'claude' && !primaryModelFallback && resolvedKey) {
+    resolvedModel = await getLatestClaudeModel('sonnet', resolvedKey);
+  }
 
   // Try primary provider
   try {
