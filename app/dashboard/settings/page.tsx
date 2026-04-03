@@ -1823,11 +1823,16 @@ function WeChatBackupPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [token, setToken] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     fetch('/api/wechat/config').then(r => r.json()).then(d => {
       if (d.config && Object.keys(d.config).length > 0) setCfg(prev => ({ ...prev, ...d.config }));
     }).finally(() => setLoading(false));
+    fetch('/api/wechat/token').then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.token) setToken(d.token);
+    }).catch(() => {});
   }, []);
 
   const save = async () => {
@@ -1908,17 +1913,23 @@ function WeChatBackupPanel() {
       </div>
       {msg && <p className="text-sm text-center">{msg}</p>}
 
-      <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 text-xs text-gray-600 space-y-2">
-        <p className="font-bold text-gray-800">📌 설치 방법</p>
-        <p>1. 위 설정 저장 → <strong>config.json 다운로드</strong></p>
-        <p>2. 터미널에서:</p>
-        <pre className="bg-white border rounded-lg p-2 font-mono text-[11px] overflow-x-auto">{`mkdir -p ~/.wechat_backup
-mv ~/Downloads/config.json ~/.wechat_backup/config.json`}</pre>
-        <p>3. 파이프라인 스크립트 다운로드:</p>
-        <pre className="bg-white border rounded-lg p-2 font-mono text-[11px] overflow-x-auto">{`curl -o ~/.wechat_backup/wechat_pipeline.py \\
-  https://raw.githubusercontent.com/hyperkh65/loov-app/main/scripts/wechat_pipeline.py`}</pre>
-        <p>4. 테스트: <code className="bg-white px-1 rounded">python3 ~/.wechat_backup/wechat_pipeline.py</code></p>
-      </div>
+      {token && (
+        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
+          <p className="font-bold text-gray-800 text-sm">⚡ 터미널에 이 명령어 한 줄만 실행</p>
+          <p className="text-xs text-gray-500">토큰이 자동으로 config.json에 적용됩니다.</p>
+          <div className="relative">
+            <pre className="bg-white border rounded-xl p-3 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all text-gray-700">{`python3 -c "import json,os; p=os.path.expanduser('~/.wechat_backup/config.json'); c=json.load(open(p)); c['loov_token']='${token}'; json.dump(c,open(p,'w'),ensure_ascii=False,indent=2); print('Done!')"`}</pre>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`python3 -c "import json,os; p=os.path.expanduser('~/.wechat_backup/config.json'); c=json.load(open(p)); c['loov_token']='${token}'; json.dump(c,open(p,'w'),ensure_ascii=False,indent=2); print('Done!')"`);
+                setCopied(true); setTimeout(() => setCopied(false), 2000);
+              }}
+              className="absolute top-2 right-2 bg-gray-900 text-white text-xs px-2 py-1 rounded-lg hover:bg-gray-700"
+            >{copied ? '✅ 복사됨' : '복사'}</button>
+          </div>
+          <p className="text-xs text-gray-400">토큰은 로그인 세션이 만료되면 갱신 필요 (보통 1주일)</p>
+        </div>
+      )}
     </div>
   );
 }
