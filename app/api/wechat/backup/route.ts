@@ -142,12 +142,20 @@ async function saveToNotion(apiKey: string, payload: BackupPayload & { summary: 
     },
   }));
 
+  // DB 프로퍼티 구조 조회해서 title 컬럼명 파악
+  const db = await notion.databases.retrieve({ database_id: WECHAT_NOTION_DB });
+  const titlePropName = Object.entries(db.properties).find(([, v]) => v.type === 'title')?.[0] ?? 'Name';
+
+  const extraProps: Record<string, unknown> = {};
+  if ('날짜' in db.properties) extraProps['날짜'] = { date: { start: payload.date } };
+  if ('Date' in db.properties) extraProps['Date'] = { date: { start: payload.date } };
+  if ('메시지수' in db.properties) extraProps['메시지수'] = { number: payload.messages.length };
+
   await notion.pages.create({
     parent: { database_id: WECHAT_NOTION_DB },
     properties: {
-      '이름': { title: [{ text: { content: `WeChat 백업 ${payload.date}` } }] },
-      '날짜': { date: { start: payload.date } },
-      '메시지수': { number: payload.messages.length },
+      [titlePropName]: { title: [{ text: { content: `WeChat 백업 ${payload.date} (${payload.messages.length}개)` } }] },
+      ...extraProps,
     },
     children: [
       {
