@@ -148,6 +148,23 @@ def fmt_ts(ts):
     try: return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
     except: return str(ts)
 
+ZSTD_MAGIC = b'\x28\xb5\x2f\xfd'
+try:
+    import zstandard as _zstd
+    _dctx = _zstd.ZstdDecompressor()
+    def _zdecompress(b):
+        if isinstance(b, bytes) and b[:4] == ZSTD_MAGIC:
+            try: return _dctx.decompress(b, max_output_size=131072).decode('utf-8', errors='replace')
+            except: pass
+        return None
+except ImportError:
+    def _zdecompress(b): return None
+
+def _col_str(v):
+    """컬럼 값을 문자열로 반환 (zstd 압축된 경우 해제)"""
+    if isinstance(v, str): return v
+    return _zdecompress(v) or ''
+
 def extract_messages(leaves_file, hours_back=26):
     print(f"[2/5] Parsing messages (last {hours_back}h)...")
     data = open(leaves_file,'rb').read()
@@ -157,21 +174,22 @@ def extract_messages(leaves_file, hours_back=26):
 
     for i in range(total):
         for rid,cols in ppage(data, i*PAGE_SIZE):
-            if len(cols) < 13: continue
+            if len(cols) < 12: continue
             create_time = cols[5]
             if not isinstance(create_time,int) or create_time<cutoff: continue
-            source = cols[11]; msg_content = cols[12]
-            if not isinstance(msg_content,str) or len(msg_content.strip())<1: continue
 
-            # source XML fr 태그
+            source = _col_str(cols[11]) if len(cols) > 11 else ''
+            msg_content = _col_str(cols[12]) if len(cols) > 12 else ''
+            if not msg_content.strip(): continue
+
+            # source XML fr 태그 (fr=0: 나, fr=1또는2: 상대방)
             is_other = None
-            if isinstance(source,str):
-                m=re.search(r'<fr>(\d+)</fr>',source)
-                if m: is_other = (int(m.group(1))==1)
+            m = re.search(r'<fr>(\d+)</fr>', source)
+            if m: is_other = (int(m.group(1)) != 0)
 
             # 그룹채팅 발신자 패턴
             sender = None; msg_text = msg_content
-            m2 = re.match(r'^([^\n:]{3,30}):\n(.+)',msg_content,re.DOTALL)
+            m2 = re.match(r'^([^\n:]{3,50}):\n?(.+)', msg_content, re.DOTALL)
             if m2: sender=m2.group(1); msg_text=m2.group(2)
 
             messages.append({
