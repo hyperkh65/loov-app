@@ -170,14 +170,32 @@ async function saveToNotion(apiKey: string, payload: BackupPayload & { summary: 
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
+    const { createAdminClient } = await import('@/lib/supabase-server');
+    const admin = createAdminClient();
 
-    // Bearer 토큰 인증 지원 (wechat_pipeline.py에서 loov_token 사용)
+    // X-WeChat-Key 인증 (만료 없는 전용 키)
+    const wcKey = req.headers.get('x-wechat-key');
+    if (wcKey?.startsWith('wc_')) {
+      const { data: row } = await admin
+        .from('bossai_company_settings')
+        .select('user_id, notion_config')
+        .eq('wechat_api_key', wcKey)
+        .single();
+      if (!row) return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
+      const notionApiKey = row.notion_config?.apiKey;
+      if (!notionApiKey) return NextResponse.json({ error: 'Notion API 키가 설정되지 않았습니다.' }, { status: 400 });
+      const payload = await req.json() as BackupPayload;
+      const summary = payload.summary || await generateSummaryWithOllama(payload.messages, payload.date);
+      await saveToNotion(notionApiKey, { ...payload, summary });
+      return NextResponse.json({ success: true, summary, messageCount: payload.messages.length });
+    }
+
+    // Bearer 토큰 인증 (레거시 - 1시간 만료)
     const authHeader = req.headers.get('authorization');
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
       const { data: { user: tokenUser }, error } = await supabase.auth.getUser(token);
-      if (error || !tokenUser) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-      // token user로 계속 진행
+      if (error || !tokenUser) return NextResponse.json({ error: 'Token expired. Please regenerate API key in loov settings.' }, { status: 401 });
       const { data: settings } = await supabase
         .from('bossai_company_settings')
         .select('notion_config')
