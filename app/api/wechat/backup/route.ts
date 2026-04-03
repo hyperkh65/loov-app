@@ -170,6 +170,27 @@ async function saveToNotion(apiKey: string, payload: BackupPayload & { summary: 
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
+
+    // Bearer 토큰 인증 지원 (wechat_pipeline.py에서 loov_token 사용)
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      const { data: { user: tokenUser }, error } = await supabase.auth.getUser(token);
+      if (error || !tokenUser) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+      // token user로 계속 진행
+      const { data: settings } = await supabase
+        .from('bossai_company_settings')
+        .select('notion_config')
+        .eq('user_id', tokenUser.id)
+        .single();
+      const notionApiKey = settings?.notion_config?.apiKey;
+      if (!notionApiKey) return NextResponse.json({ error: 'Notion API 키가 설정되지 않았습니다.' }, { status: 400 });
+      const payload = await req.json() as BackupPayload;
+      const summary = payload.summary || await generateSummaryWithOllama(payload.messages, payload.date);
+      await saveToNotion(notionApiKey, { ...payload, summary });
+      return NextResponse.json({ success: true, summary, messageCount: payload.messages.length });
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

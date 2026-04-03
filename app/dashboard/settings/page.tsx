@@ -23,7 +23,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -296,7 +296,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['backup', '💾 백업/복원']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1771,6 +1771,9 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {/* 위챗 백업 탭 */}
+        {activeTab === 'wechat' && <WeChatBackupPanel />}
+
         {/* 백업/복원 탭 */}
         {activeTab === 'backup' && <BackupRestorePanel />}
 
@@ -1796,6 +1799,113 @@ export default function SettingsPage() {
           </div>
         )}
 
+      </div>
+    </div>
+  );
+}
+
+function WeChatBackupPanel() {
+  const [cfg, setCfg] = useState({
+    my_wxid: '', nas_host: 'hy64.synology.me', nas_port: 22,
+    nas_user: '', nas_password: '', nas_backup_dir: '~/wechat_backup',
+    ollama_base_url: 'http://localhost:11434', openrouter_api_key: '', hours_back: 26,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    fetch('/api/wechat/config').then(r => r.json()).then(d => {
+      if (d.config && Object.keys(d.config).length > 0) setCfg(prev => ({ ...prev, ...d.config }));
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setMsg('');
+    const r = await fetch('/api/wechat/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    setMsg(r.ok ? '✅ 저장 완료' : '❌ 저장 실패');
+    setSaving(false);
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const download = () => { window.location.href = '/api/wechat/config?download'; };
+
+  if (loading) return <div className="text-gray-400 text-sm py-8 text-center">불러오는 중...</div>;
+
+  const field = (label: string, key: keyof typeof cfg, type = 'text', placeholder = '') => (
+    <div key={key}>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type={type}
+        value={String(cfg[key])}
+        onChange={e => setCfg(prev => ({ ...prev, [key]: type === 'number' ? Number(e.target.value) : e.target.value }))}
+        placeholder={placeholder}
+        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+      />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-900">
+        <p className="font-bold mb-1">💬 WeChat 자동 백업 설정</p>
+        <p>Mac에서 WeChat 메모리를 덤프해 AI 요약 후 NAS + Notion에 자동 저장합니다.</p>
+        <p className="mt-1 text-blue-700">설정 저장 후 <strong>config.json 다운로드</strong>를 클릭하면 로그인 토큰이 자동 포함된 파일이 생성됩니다.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+        <h3 className="font-bold text-gray-900">NAS 설정</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {field('NAS 호스트', 'nas_host', 'text', 'hy64.synology.me')}
+          {field('포트', 'nas_port', 'number', '22')}
+          {field('사용자명', 'nas_user', 'text', 'urjent')}
+          {field('비밀번호', 'nas_password', 'password', '')}
+        </div>
+        {field('백업 디렉토리', 'nas_backup_dir', 'text', '~/wechat_backup')}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+        <h3 className="font-bold text-gray-900">AI 설정 (선택)</h3>
+        {field('Ollama 서버 URL', 'ollama_base_url', 'text', 'http://localhost:11434')}
+        {field('OpenRouter API Key', 'openrouter_api_key', 'password', 'sk-or-...')}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">백업 주기 (시간)</label>
+          <input type="number" min={1} max={72} value={cfg.hours_back}
+            onChange={e => setCfg(prev => ({ ...prev, hours_back: Number(e.target.value) }))}
+            className="w-32 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-400"
+          />
+          <span className="text-xs text-gray-400 ml-2">시간 이내 메시지 수집 (기본 26)</span>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
+        <h3 className="font-bold text-gray-900">내 WeChat ID (선택)</h3>
+        {field('my_wxid', 'my_wxid', 'text', 'wxid_...')}
+        <p className="text-xs text-gray-400">설정하면 그룹채팅에서 내 메시지를 정확히 구분합니다.</p>
+      </div>
+
+      <div className="flex gap-3">
+        <button onClick={save} disabled={saving}
+          className="flex-1 bg-gray-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-gray-700 disabled:opacity-50">
+          {saving ? '저장 중...' : '저장'}
+        </button>
+        <button onClick={download}
+          className="flex-1 bg-violet-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-violet-700">
+          📥 config.json 다운로드
+        </button>
+      </div>
+      {msg && <p className="text-sm text-center">{msg}</p>}
+
+      <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 text-xs text-gray-600 space-y-2">
+        <p className="font-bold text-gray-800">📌 설치 방법</p>
+        <p>1. 위 설정 저장 → <strong>config.json 다운로드</strong></p>
+        <p>2. 터미널에서:</p>
+        <pre className="bg-white border rounded-lg p-2 font-mono text-[11px] overflow-x-auto">{`mkdir -p ~/.wechat_backup
+mv ~/Downloads/config.json ~/.wechat_backup/config.json`}</pre>
+        <p>3. 파이프라인 스크립트 다운로드:</p>
+        <pre className="bg-white border rounded-lg p-2 font-mono text-[11px] overflow-x-auto">{`curl -o ~/.wechat_backup/wechat_pipeline.py \\
+  https://raw.githubusercontent.com/hyperkh65/loov-app/main/scripts/wechat_pipeline.py`}</pre>
+        <p>4. 테스트: <code className="bg-white px-1 rounded">python3 ~/.wechat_backup/wechat_pipeline.py</code></p>
       </div>
     </div>
   );
