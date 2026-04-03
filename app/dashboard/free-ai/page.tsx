@@ -4,18 +4,33 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 // 기본 fallback 목록 (실제는 /api/ollama/models 에서 동적으로 로드됨)
 const DEFAULT_OLLAMA_CLOUD_MODELS = [
-  { id: 'qwen3.5',          name: 'Qwen 3.5',        emoji: '🔮', desc: '멀티모달 · vision · thinking', badge: 'CLOUD' },
-  { id: 'qwen3',            name: 'Qwen 3',           emoji: '🔮', desc: 'Alibaba · 다국어 강점',        badge: 'CLOUD' },
-  { id: 'qwen3-coder',      name: 'Qwen 3 Coder',    emoji: '💻', desc: '코딩 특화 · agentic',          badge: 'CLOUD' },
-  { id: 'qwen3-vl',         name: 'Qwen 3 VL',       emoji: '👁️', desc: 'vision-language 모델',         badge: 'CLOUD' },
-  { id: 'llama3.3',         name: 'Llama 3.3',        emoji: '🦙', desc: 'Meta AI · 범용',               badge: 'CLOUD' },
-  { id: 'mistral',          name: 'Mistral',           emoji: '🌪️', desc: '유럽산 · 빠른 응답',           badge: 'CLOUD' },
-  { id: 'ministral-3',      name: 'Ministral 3',      emoji: '🌪️', desc: 'Mistral · 경량 최신',          badge: 'CLOUD' },
-  { id: 'gemma3',           name: 'Gemma 3',           emoji: '💎', desc: 'Google · 경량 고성능',         badge: 'CLOUD' },
-  { id: 'deepseek-r1',      name: 'DeepSeek R1',       emoji: '🧠', desc: '추론 특화 · 사고과정 표시',    badge: 'CLOUD' },
-  { id: 'phi4',             name: 'Phi 4',             emoji: '⚡', desc: 'Microsoft · 초경량',           badge: 'CLOUD' },
-  { id: 'phi4-mini',        name: 'Phi 4 Mini',        emoji: '⚡', desc: 'Microsoft · 초소형',           badge: 'CLOUD' },
-  { id: 'minimax-m2.7',     name: 'MiniMax M2.7',      emoji: '🤖', desc: 'agentic · productivity',      badge: 'CLOUD' },
+  { id: 'qwen3.5',            name: 'Qwen 3.5',          emoji: '🔮', desc: '멀티모달 · vision · thinking', badge: 'CLOUD' },
+  { id: 'qwen3',              name: 'Qwen 3',             emoji: '🔮', desc: 'Alibaba · 다국어 강점',        badge: 'CLOUD' },
+  { id: 'qwen3-coder',        name: 'Qwen 3 Coder',      emoji: '💻', desc: '코딩 특화 · agentic',          badge: 'CLOUD' },
+  { id: 'qwen3-vl',           name: 'Qwen 3 VL',         emoji: '👁️', desc: 'vision-language 모델',         badge: 'CLOUD' },
+  { id: 'qwen2.5',            name: 'Qwen 2.5',          emoji: '🔮', desc: 'Alibaba · 안정 버전',           badge: 'CLOUD' },
+  { id: 'qwen2.5-coder',      name: 'Qwen 2.5 Coder',   emoji: '💻', desc: '코드 생성 특화',                badge: 'CLOUD' },
+  { id: 'llama3.3',           name: 'Llama 3.3',          emoji: '🦙', desc: 'Meta AI · 범용',               badge: 'CLOUD' },
+  { id: 'llama3.2',           name: 'Llama 3.2',          emoji: '🦙', desc: 'Meta AI · 경량',               badge: 'CLOUD' },
+  { id: 'llama3.1',           name: 'Llama 3.1',          emoji: '🦙', desc: 'Meta AI · 구버전',              badge: 'CLOUD' },
+  { id: 'mistral',            name: 'Mistral',             emoji: '🌪️', desc: '유럽산 · 빠른 응답',           badge: 'CLOUD' },
+  { id: 'mistral-small3.1',   name: 'Mistral Small 3.1', emoji: '🌪️', desc: 'Mistral · 최신 소형',           badge: 'CLOUD' },
+  { id: 'ministral-3',        name: 'Ministral 3',        emoji: '🌪️', desc: 'Mistral · 경량 최신',          badge: 'CLOUD' },
+  { id: 'gemma3',             name: 'Gemma 3',             emoji: '💎', desc: 'Google · 경량 고성능',         badge: 'CLOUD' },
+  { id: 'gemma3:27b',         name: 'Gemma 3 27B',        emoji: '💎', desc: 'Google · 27B 대형',            badge: 'CLOUD' },
+  { id: 'deepseek-r1',        name: 'DeepSeek R1',         emoji: '🧠', desc: '추론 특화 · 사고과정 표시',    badge: 'CLOUD' },
+  { id: 'deepseek-v3',        name: 'DeepSeek V3',         emoji: '🧠', desc: 'DeepSeek · 최신 버전',        badge: 'CLOUD' },
+  { id: 'phi4',               name: 'Phi 4',               emoji: '⚡', desc: 'Microsoft · 초경량',           badge: 'CLOUD' },
+  { id: 'phi4-mini',          name: 'Phi 4 Mini',          emoji: '⚡', desc: 'Microsoft · 초소형',           badge: 'CLOUD' },
+  { id: 'minimax-m2.7',       name: 'MiniMax M2.7',        emoji: '🤖', desc: 'agentic · productivity',      badge: 'CLOUD' },
+  { id: 'command-r',          name: 'Command R',           emoji: '⚙️', desc: 'Cohere · RAG 특화',           badge: 'CLOUD' },
+  { id: 'command-r-plus',     name: 'Command R+',          emoji: '⚙️', desc: 'Cohere · 고성능',             badge: 'CLOUD' },
+  { id: 'granite3.3',         name: 'Granite 3.3',         emoji: '🪨', desc: 'IBM · 기업용',                badge: 'CLOUD' },
+  { id: 'solar-pro',          name: 'Solar Pro',           emoji: '☀️', desc: 'Upstage · 한국어 강점',        badge: 'CLOUD' },
+  { id: 'yi-coder',           name: 'Yi Coder',            emoji: '💻', desc: '01.AI · 코딩 특화',            badge: 'CLOUD' },
+  { id: 'llava',              name: 'LLaVA',               emoji: '👁️', desc: '비전 · 이미지 이해',           badge: 'CLOUD' },
+  { id: 'codellama',          name: 'Code Llama',          emoji: '💻', desc: 'Meta · 코딩 특화',             badge: 'CLOUD' },
+  { id: 'smollm2',            name: 'SmolLM2',             emoji: '🐭', desc: '초소형 · 온디바이스',          badge: 'CLOUD' },
 ];
 
 const OPENROUTER_MODELS = [
@@ -67,8 +82,8 @@ export default function FreeAIPage() {
       .then((d: { models?: string[]; installed?: string[] } | null) => {
         if (!d?.models?.length) return;
         // 설치된 모델 먼저, 나머지는 popular 순
-        const newModels = d.models.slice(0, 20).map((id) => {
-          const existing = DEFAULT_OLLAMA_CLOUD_MODELS.find((m) => m.id === id || id.startsWith(m.id));
+        const newModels = d.models.slice(0, 40).map((id) => {
+          const existing = DEFAULT_OLLAMA_CLOUD_MODELS.find((m) => m.id === id || m.id + ':latest' === id);
           const isInstalled = d.installed?.includes(id);
           return existing
             ? { ...existing, id, badge: isInstalled ? 'LOCAL' : 'CLOUD' as const }
