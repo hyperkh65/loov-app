@@ -47,7 +47,7 @@ function parseBlocks(content: ContentBlock[], existing?: DetailState): DetailSta
       inSummary = false;
     }
     if (inLog && block.type === 'paragraph' && block.text) {
-      const m = block.text.match(/^\[(.+?)\]\s+(.+?):\s+(.+)$/s);
+      const m = block.text.match(/^\[(.+?)\]\s+(.+?):\s+([\s\S]+)$/);
       if (m) {
         const isFile = /^\[(이미지|영상|음성|스티커|공유\/파일|위치|미디어)\]$/.test(m[3].trim());
         messages.push({ time: m[1], sender: m[2], text: m[3], isFile });
