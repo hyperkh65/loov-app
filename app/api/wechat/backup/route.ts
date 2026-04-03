@@ -126,21 +126,29 @@ ${msgText.slice(0, 6000)}
   return `(AI 요약 불가 - 메시지 ${messages.length}개)`;
 }
 
-async function saveToNotion(apiKey: string, payload: BackupPayload & { summary: string }) {
-  const notion = new Client({ auth: apiKey });
+type MsgBlock = {
+  object: 'block';
+  type: 'paragraph';
+  paragraph: { rich_text: [{ type: 'text'; text: { content: string } }] };
+};
 
-  const msgBlocks = payload.messages.slice(0, 80).map((m) => ({
-    object: 'block' as const,
-    type: 'paragraph' as const,
+function makeMsgBlock(m: WeChatMessage): MsgBlock {
+  return {
+    object: 'block',
+    type: 'paragraph',
     paragraph: {
       rich_text: [{
-        type: 'text' as const,
+        type: 'text',
         text: {
-          content: `[${m.time_str}] ${m.is_other === false ? '나' : (m.sender || '상대방')}: ${m.msg.slice(0, 500)}`,
+          content: `[${m.time_str}] ${m.is_other === false ? '나' : (m.sender || '상대방')}: ${m.msg.slice(0, 1900)}`,
         },
       }],
     },
-  }));
+  };
+}
+
+async function saveToNotion(apiKey: string, payload: BackupPayload & { summary: string }) {
+  const notion = new Client({ auth: apiKey });
 
   // DB 프로퍼티 구조 조회해서 title 컬럼명 파악
   const db = await notion.databases.retrieve({ database_id: WECHAT_NOTION_DB });
@@ -156,25 +164,25 @@ async function saveToNotion(apiKey: string, payload: BackupPayload & { summary: 
   if (hasDate) (props as Record<string, unknown>)[datePropName] = { date: { start: payload.date } };
   if (hasCount) (props as Record<string, unknown>)['메시지수'] = { number: payload.messages.length };
 
-  await notion.pages.create({
+  // 첫 번째 호출: 고정 헤더 3개 + 메시지 최대 97개 (합계 100)
+  const firstBatch = payload.messages.slice(0, 97).map(makeMsgBlock);
+  const page = await notion.pages.create({
     parent: { database_id: WECHAT_NOTION_DB },
     properties: props,
     children: [
-      {
-        object: 'block', type: 'heading_2',
-        heading_2: { rich_text: [{ type: 'text', text: { content: 'AI 요약' } }] },
-      },
-      {
-        object: 'block', type: 'paragraph',
-        paragraph: { rich_text: [{ type: 'text', text: { content: payload.summary.slice(0, 2000) } }] },
-      },
-      {
-        object: 'block', type: 'heading_2',
-        heading_2: { rich_text: [{ type: 'text', text: { content: '메시지 로그' } }] },
-      },
-      ...msgBlocks,
+      { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: 'AI 요약' } }] } },
+      { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: payload.summary.slice(0, 2000) } }] } },
+      { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '메시지 로그' } }] } },
+      ...firstBatch,
     ],
   });
+
+  // 나머지 메시지를 100개씩 append
+  const remaining = payload.messages.slice(97);
+  for (let i = 0; i < remaining.length; i += 100) {
+    const batch = remaining.slice(i, i + 100).map(makeMsgBlock);
+    await notion.blocks.children.append({ block_id: page.id, children: batch });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -182,6 +190,9 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient();
     const { createAdminClient } = await import('@/lib/supabase-server');
     const admin = createAdminClient();
+
+    // X-Summary-Only: 요약만 반환, Notion 저장 안 함
+    const summaryOnly = req.headers.get('x-summary-only') === 'true';
 
     // X-WeChat-Key 인증 (만료 없는 전용 키)
     const wcKey = req.headers.get('x-wechat-key');
@@ -192,10 +203,13 @@ export async function POST(req: NextRequest) {
         .eq('wechat_api_key', wcKey)
         .single();
       if (!row) return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
-      const notionApiKey = row.notion_config?.apiKey;
-      if (!notionApiKey) return NextResponse.json({ error: 'Notion API 키가 설정되지 않았습니다.' }, { status: 400 });
       const payload = await req.json() as BackupPayload;
       const summary = payload.summary || await generateSummaryWithOllama(payload.messages, payload.date);
+      if (summaryOnly) {
+        return NextResponse.json({ summary, messageCount: payload.messages.length });
+      }
+      const notionApiKey = row.notion_config?.apiKey;
+      if (!notionApiKey) return NextResponse.json({ error: 'Notion API 키가 설정되지 않았습니다.' }, { status: 400 });
       await saveToNotion(notionApiKey, { ...payload, summary });
       return NextResponse.json({ success: true, summary, messageCount: payload.messages.length });
     }
@@ -206,6 +220,11 @@ export async function POST(req: NextRequest) {
       const token = authHeader.slice(7);
       const { data: { user: tokenUser }, error } = await supabase.auth.getUser(token);
       if (error || !tokenUser) return NextResponse.json({ error: 'Token expired. Please regenerate API key in loov settings.' }, { status: 401 });
+      const payload = await req.json() as BackupPayload;
+      const summary = payload.summary || await generateSummaryWithOllama(payload.messages, payload.date);
+      if (summaryOnly) {
+        return NextResponse.json({ summary, messageCount: payload.messages.length });
+      }
       const { data: settings } = await supabase
         .from('bossai_company_settings')
         .select('notion_config')
@@ -213,14 +232,18 @@ export async function POST(req: NextRequest) {
         .single();
       const notionApiKey = settings?.notion_config?.apiKey;
       if (!notionApiKey) return NextResponse.json({ error: 'Notion API 키가 설정되지 않았습니다.' }, { status: 400 });
-      const payload = await req.json() as BackupPayload;
-      const summary = payload.summary || await generateSummaryWithOllama(payload.messages, payload.date);
       await saveToNotion(notionApiKey, { ...payload, summary });
       return NextResponse.json({ success: true, summary, messageCount: payload.messages.length });
     }
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const payload = await req.json() as BackupPayload;
+    const summary = payload.summary || await generateSummaryWithOllama(payload.messages, payload.date);
+    if (summaryOnly) {
+      return NextResponse.json({ summary, messageCount: payload.messages.length });
+    }
 
     // 사용자의 Notion 설정 가져오기
     const { data: settings } = await supabase
@@ -234,12 +257,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Notion API 키가 설정되지 않았습니다.' }, { status: 400 });
     }
 
-    const payload = await req.json() as BackupPayload;
-
-    // AI 요약 생성 (summary 없으면 자동 생성)
-    const summary = payload.summary || await generateSummaryWithOllama(payload.messages, payload.date);
-
-    // Notion 저장
     await saveToNotion(notionApiKey, { ...payload, summary });
 
     return NextResponse.json({ success: true, summary, messageCount: payload.messages.length });

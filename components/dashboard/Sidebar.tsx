@@ -93,6 +93,13 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: '위챗',
+    items: [
+      { href: '/dashboard/wechat',  icon: '💬', label: '위챗 백업 히스토리' },
+      { href: '/dashboard/settings', icon: '⚙️', label: '위챗 백업 설정' },
+    ],
+  },
+  {
     label: '모바일',
     items: [
       { href: '/dashboard/tracking',   icon: '📍', label: '위치 트래킹' },
