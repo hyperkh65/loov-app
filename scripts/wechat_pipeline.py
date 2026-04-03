@@ -192,6 +192,13 @@ def extract_messages(leaves_file, hours_back=26):
             m2 = re.match(r'^([^\n:]{3,50}):\n?(.+)', msg_content, re.DOTALL)
             if m2: sender=m2.group(1); msg_text=m2.group(2)
 
+            # XML 비텍스트 메시지 처리 (이미지/파일/스티커 등)
+            stripped = msg_text.strip()
+            if stripped.startswith('<?xml') or stripped.startswith('<msg'):
+                tag = re.search(r'<(img|video|voicemsg|emoji|appmsg|location)[^>]', stripped)
+                type_map = {'img':'[이미지]','video':'[영상]','voicemsg':'[음성]','emoji':'[스티커]','appmsg':'[공유/파일]','location':'[위치]'}
+                msg_text = type_map.get(tag.group(1), '[미디어]') if tag else '[미디어]'
+
             messages.append({
                 'time': create_time,
                 'time_str': fmt_ts(create_time),
@@ -309,29 +316,32 @@ def upload_nas(cfg, today, content):
 def create_notion(cfg, today, summary, messages):
     print("[5/5] Notion via loov API...")
     loov_url = cfg.get('loov_url', 'https://loov.co.kr')
-    loov_token = cfg.get('loov_token', '') or cfg.get('loov_session', '')
-    if not loov_token:
-        print("  SKIP: loov_token not configured (loov 설정에서 config.json 다운로드하세요)"); return False
+    # 우선순위: loov_api_key (영구) > loov_token (1시간 만료)
+    api_key = cfg.get('loov_api_key', '')
+    loov_token = cfg.get('loov_token', '')
+    if not api_key and not loov_token:
+        print("  SKIP: loov_api_key 없음 (loov 설정 → 위챗 백업 탭에서 명령어 복사·실행)"); return False
 
     import urllib.request
-    data = {
-        'date': today,
-        'count': len(messages),
-        'messages': messages,
-        'summary': summary,
-    }
+    headers = {'Content-Type': 'application/json'}
+    if api_key:
+        headers['X-WeChat-Key'] = api_key
+    else:
+        headers['Authorization'] = f'Bearer {loov_token}'
+
+    data = {'date': today, 'count': len(messages), 'messages': messages, 'summary': summary}
     req = urllib.request.Request(
         f"{loov_url}/api/wechat/backup",
         data=json.dumps(data).encode('utf-8'),
-        headers={
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {loov_token}',
-        }
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             res = json.loads(r.read())
             print(f"  OK: {res.get('summary','')[:80]}"); return True
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:200]
+        print(f"  FAIL: HTTP {e.code}: {body}"); return False
     except Exception as e:
         print(f"  FAIL: {e}"); return False
 

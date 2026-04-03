@@ -1825,6 +1825,9 @@ function WeChatBackupPanel() {
   const [msg, setMsg] = useState('');
   const [token, setToken] = useState('');
   const [copied, setCopied] = useState(false);
+  const [wcApiKey, setWcApiKey] = useState('');
+  const [wcKeyCopied, setWcKeyCopied] = useState(false);
+  const [wcKeyLoading, setWcKeyLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/wechat/config').then(r => r.json()).then(d => {
@@ -1832,6 +1835,9 @@ function WeChatBackupPanel() {
     }).finally(() => setLoading(false));
     fetch('/api/wechat/token').then(r => r.ok ? r.json() : null).then(d => {
       if (d?.token) setToken(d.token);
+    }).catch(() => {});
+    fetch('/api/wechat/apikey').then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.apiKey) setWcApiKey(d.apiKey);
     }).catch(() => {});
   }, []);
 
@@ -1913,21 +1919,35 @@ function WeChatBackupPanel() {
       </div>
       {msg && <p className="text-sm text-center">{msg}</p>}
 
-      {token && (
+      {wcApiKey && (
         <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
-          <p className="font-bold text-gray-800 text-sm">⚡ 터미널에 이 명령어 한 줄만 실행</p>
-          <p className="text-xs text-gray-500">토큰이 자동으로 config.json에 적용됩니다.</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-bold text-gray-800 text-sm">🔑 위챗 전용 API 키 (만료 없음)</p>
+              <p className="text-xs text-gray-500 mt-0.5">한 번 설정하면 영구적으로 사용 가능합니다.</p>
+            </div>
+            <button
+              onClick={async () => {
+                if (!confirm('API 키를 재발급하면 기존 키는 즉시 무효화됩니다.')) return;
+                setWcKeyLoading(true);
+                const r = await fetch('/api/wechat/apikey', { method: 'POST' });
+                const d = await r.json() as { apiKey?: string };
+                if (d.apiKey) setWcApiKey(d.apiKey);
+                setWcKeyLoading(false);
+              }}
+              className="text-xs text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg px-2 py-1"
+            >{wcKeyLoading ? '...' : '재발급'}</button>
+          </div>
           <div className="relative">
-            <pre className="bg-white border rounded-xl p-3 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all text-gray-700">{`python3 -c "import json,os; p=os.path.expanduser('~/.wechat_backup/config.json'); c=json.load(open(p)); c['loov_token']='${token}'; json.dump(c,open(p,'w'),ensure_ascii=False,indent=2); print('Done!')"`}</pre>
+            <pre className="bg-white border rounded-xl p-3 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all text-gray-700">{`python3 -c "import json,os; p=os.path.expanduser('~/.wechat_backup/config.json'); c=json.load(open(p)); c['loov_api_key']='${wcApiKey}'; json.dump(c,open(p,'w'),ensure_ascii=False,indent=2); print('Done!')"`}</pre>
             <button
               onClick={() => {
-                navigator.clipboard.writeText(`python3 -c "import json,os; p=os.path.expanduser('~/.wechat_backup/config.json'); c=json.load(open(p)); c['loov_token']='${token}'; json.dump(c,open(p,'w'),ensure_ascii=False,indent=2); print('Done!')"`);
-                setCopied(true); setTimeout(() => setCopied(false), 2000);
+                navigator.clipboard.writeText(`python3 -c "import json,os; p=os.path.expanduser('~/.wechat_backup/config.json'); c=json.load(open(p)); c['loov_api_key']='${wcApiKey}'; json.dump(c,open(p,'w'),ensure_ascii=False,indent=2); print('Done!')"`);
+                setWcKeyCopied(true); setTimeout(() => setWcKeyCopied(false), 2000);
               }}
               className="absolute top-2 right-2 bg-gray-900 text-white text-xs px-2 py-1 rounded-lg hover:bg-gray-700"
-            >{copied ? '✅ 복사됨' : '복사'}</button>
+            >{wcKeyCopied ? '✅ 복사됨' : '복사'}</button>
           </div>
-          <p className="text-xs text-gray-400">토큰은 로그인 세션이 만료되면 갱신 필요 (보통 1주일)</p>
         </div>
       )}
     </div>
