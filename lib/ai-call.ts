@@ -32,7 +32,7 @@ interface FallbackEntry {
 }
 
 const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
-  { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  { provider: 'openrouter', model: 'qwen/qwen3-235b-a22b:free' },
 ];
 
 // ── Resolve API key for a provider ──────────────────────────────────────────
@@ -68,7 +68,7 @@ function defaultModel(provider: string): string {
     case 'gpt4o':       return 'gpt-4o';
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
-    case 'openrouter':  return 'meta-llama/llama-3.3-70b-instruct:free';
+    case 'openrouter':  return 'qwen/qwen3-235b-a22b:free';
     case 'ollama':      return 'qwen3.5';
     default:            return 'qwen3.5';
   }

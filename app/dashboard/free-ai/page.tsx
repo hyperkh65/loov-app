@@ -2,25 +2,31 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-const OLLAMA_CLOUD_MODELS = [
-  { id: 'qwen3.5',          name: 'Qwen 3.5',       emoji: '🔮', desc: '멀티모달 · vision · thinking', badge: 'CLOUD' },
-  { id: 'qwen3',            name: 'Qwen 3',          emoji: '🔮', desc: 'Alibaba · 다국어 강점',        badge: 'CLOUD' },
-  { id: 'qwen3-coder-next', name: 'Qwen 3 Coder',   emoji: '💻', desc: '코딩 특화 · agentic',          badge: 'CLOUD' },
-  { id: 'llama3.3',         name: 'Llama 3.3',       emoji: '🦙', desc: 'Meta AI · 범용',               badge: 'CLOUD' },
-  { id: 'mistral',          name: 'Mistral',          emoji: '🌪️', desc: '유럽산 · 빠른 응답',           badge: 'CLOUD' },
-  { id: 'gemma3',           name: 'Gemma 3',          emoji: '💎', desc: 'Google · 경량 고성능',         badge: 'CLOUD' },
-  { id: 'deepseek-r1',      name: 'DeepSeek R1',      emoji: '🧠', desc: '추론 특화 · 사고과정 표시',    badge: 'CLOUD' },
-  { id: 'phi4',             name: 'Phi 4',            emoji: '⚡', desc: 'Microsoft · 초경량',           badge: 'CLOUD' },
+// 기본 fallback 목록 (실제는 /api/ollama/models 에서 동적으로 로드됨)
+const DEFAULT_OLLAMA_CLOUD_MODELS = [
+  { id: 'qwen3.5',          name: 'Qwen 3.5',        emoji: '🔮', desc: '멀티모달 · vision · thinking', badge: 'CLOUD' },
+  { id: 'qwen3',            name: 'Qwen 3',           emoji: '🔮', desc: 'Alibaba · 다국어 강점',        badge: 'CLOUD' },
+  { id: 'qwen3-coder',      name: 'Qwen 3 Coder',    emoji: '💻', desc: '코딩 특화 · agentic',          badge: 'CLOUD' },
+  { id: 'qwen3-vl',         name: 'Qwen 3 VL',       emoji: '👁️', desc: 'vision-language 모델',         badge: 'CLOUD' },
+  { id: 'llama3.3',         name: 'Llama 3.3',        emoji: '🦙', desc: 'Meta AI · 범용',               badge: 'CLOUD' },
+  { id: 'mistral',          name: 'Mistral',           emoji: '🌪️', desc: '유럽산 · 빠른 응답',           badge: 'CLOUD' },
+  { id: 'ministral-3',      name: 'Ministral 3',      emoji: '🌪️', desc: 'Mistral · 경량 최신',          badge: 'CLOUD' },
+  { id: 'gemma3',           name: 'Gemma 3',           emoji: '💎', desc: 'Google · 경량 고성능',         badge: 'CLOUD' },
+  { id: 'deepseek-r1',      name: 'DeepSeek R1',       emoji: '🧠', desc: '추론 특화 · 사고과정 표시',    badge: 'CLOUD' },
+  { id: 'phi4',             name: 'Phi 4',             emoji: '⚡', desc: 'Microsoft · 초경량',           badge: 'CLOUD' },
+  { id: 'phi4-mini',        name: 'Phi 4 Mini',        emoji: '⚡', desc: 'Microsoft · 초소형',           badge: 'CLOUD' },
+  { id: 'minimax-m2.7',     name: 'MiniMax M2.7',      emoji: '🤖', desc: 'agentic · productivity',      badge: 'CLOUD' },
 ];
 
 const OPENROUTER_MODELS = [
-  { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B', emoji: '🦙', desc: 'Meta AI', badge: 'FREE' },
+  { id: 'qwen/qwen3-235b-a22b:free',             name: 'Qwen 3 235B',  emoji: '🔮', desc: 'Alibaba', badge: 'FREE' },
+  { id: 'meta-llama/llama-3.3-70b-instruct:free',name: 'Llama 3.3 70B',emoji: '🦙', desc: 'Meta AI', badge: 'FREE' },
+  { id: 'deepseek/deepseek-r1:free',             name: 'DeepSeek R1',  emoji: '🧠', desc: '추론 특화', badge: 'FREE' },
+  { id: 'google/gemma-3-27b-it:free',            name: 'Gemma 3 27B',  emoji: '💎', desc: 'Google',  badge: 'FREE' },
   { id: 'mistralai/mistral-7b-instruct:free',    name: 'Mistral 7B',   emoji: '🌪️', desc: 'Mistral', badge: 'FREE' },
-  { id: 'google/gemma-2-9b-it:free',             name: 'Gemma 2 9B',   emoji: '💎', desc: 'Google',  badge: 'FREE' },
-  { id: 'qwen/qwen-2-7b-instruct:free',          name: 'Qwen 2 7B',    emoji: '🔮', desc: 'Alibaba', badge: 'FREE' },
 ];
 
-const ALL_MODELS = [...OLLAMA_CLOUD_MODELS, ...OPENROUTER_MODELS];
+const ALL_MODELS = [...DEFAULT_OLLAMA_CLOUD_MODELS, ...OPENROUTER_MODELS];
 
 interface Message {
   id: string;
@@ -35,7 +41,8 @@ export default function FreeAIPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(OLLAMA_CLOUD_MODELS[0].id);
+  const [ollamaCloudModels, setOllamaCloudModels] = useState(DEFAULT_OLLAMA_CLOUD_MODELS);
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_OLLAMA_CLOUD_MODELS[0].id);
   const [currentProvider, setCurrentProvider] = useState<string>('');
   const [currentModel, setCurrentModel] = useState<string>('');
   const [currentEmoji, setCurrentEmoji] = useState<string>('');
@@ -43,7 +50,7 @@ export default function FreeAIPage() {
   const [systemPrompt, setSystemPrompt] = useState('당신은 친절하고 유능한 AI 어시스턴트입니다. 한국어로 답변해주세요.');
   const [showSettings, setShowSettings] = useState(false);
   const [ollamaUrl, setOllamaUrl] = useState('');
-  const [ollamaModel, setOllamaModel] = useState('llama3.2');
+  const [ollamaModel, setOllamaModel] = useState('qwen3.5');
   const [showSidebar, setShowSidebar] = useState(false);
   const [ollamaApiKey, setOllamaApiKey] = useState('');
   const [openrouterApiKey, setOpenrouterApiKey] = useState('');
@@ -54,6 +61,22 @@ export default function FreeAIPage() {
   useEffect(() => {
     setOllamaApiKey(localStorage.getItem('freeai_ollama_key') || '');
     setOpenrouterApiKey(localStorage.getItem('freeai_openrouter_key') || '');
+    // Ollama 모델 목록 동적 로드
+    fetch('/api/ollama/models')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: { models?: string[]; installed?: string[] } | null) => {
+        if (!d?.models?.length) return;
+        // 설치된 모델 먼저, 나머지는 popular 순
+        const newModels = d.models.slice(0, 20).map((id) => {
+          const existing = DEFAULT_OLLAMA_CLOUD_MODELS.find((m) => m.id === id || id.startsWith(m.id));
+          const isInstalled = d.installed?.includes(id);
+          return existing
+            ? { ...existing, id, badge: isInstalled ? 'LOCAL' : 'CLOUD' as const }
+            : { id, name: id, emoji: '🤖', desc: isInstalled ? '로컬 설치됨' : 'ollama.com', badge: isInstalled ? 'LOCAL' : 'CLOUD' as const };
+        });
+        setOllamaCloudModels(newModels);
+      })
+      .catch(() => {});
   }, []);
 
   // AI 키를 localStorage + DB 설정 모두에 저장 (자동실행/서버 기능에서도 사용)
@@ -188,7 +211,7 @@ export default function FreeAIPage() {
           <div className="px-1 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest flex items-center gap-1">
             ☁️ Ollama Cloud
           </div>
-          {OLLAMA_CLOUD_MODELS.map(m => (
+          {ollamaCloudModels.map(m => (
             <button
               key={m.id}
               onClick={() => { setSelectedModel(m.id); localStorage.setItem('freeai_last_model', m.id); setShowSidebar(false); }}
@@ -340,7 +363,7 @@ export default function FreeAIPage() {
             </h1>
             <p className="text-xs text-slate-400 truncate">
               {ALL_MODELS.find(m => m.id === selectedModel)?.name || 'AI 모델'} ·{' '}
-              {OLLAMA_CLOUD_MODELS.find(m => m.id === selectedModel) ? 'Ollama Cloud' : 'OpenRouter'}
+              {ollamaCloudModels.find(m => m.id === selectedModel) ? 'Ollama Cloud' : 'OpenRouter'}
             </p>
           </div>
           {messages.length > 0 && (

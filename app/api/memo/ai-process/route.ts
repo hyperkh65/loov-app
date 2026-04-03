@@ -42,7 +42,7 @@ async function callAI(prompt: string): Promise<string> {
           'HTTP-Referer': 'https://loov.co.kr',
         },
         body: JSON.stringify({
-          model: 'meta-llama/llama-3.1-8b-instruct:free',
+          model: 'meta-llama/llama-3.3-70b-instruct:free',
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 300,
         }),

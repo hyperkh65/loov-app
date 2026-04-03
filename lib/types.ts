@@ -30,18 +30,19 @@ export const AI_PROVIDER_INFO: Record<AIProvider, { label: string; models: strin
       'deepseek/deepseek-r1',                       // DeepSeek R1 · 추론 특화
       'microsoft/phi-4',                            // Phi 4 · 초경량
       // ── FREE (무료) ──────────────────────────────────
-      'meta-llama/llama-3.1-8b-instruct:free',      // Llama 3.1 8B FREE
-      'mistralai/mistral-7b-instruct:free',         // Mistral 7B FREE
-      'google/gemma-2-9b-it:free',                  // Gemma 2 9B FREE
-      'qwen/qwen-2-7b-instruct:free',               // Qwen 2 7B FREE
-      'deepseek/deepseek-r1:free',                  // DeepSeek R1 FREE
+      'qwen/qwen3-235b-a22b:free',                  // Qwen 3 235B FREE
       'meta-llama/llama-3.3-70b-instruct:free',     // Llama 3.3 70B FREE
+      'deepseek/deepseek-r1:free',                  // DeepSeek R1 FREE
+      'google/gemma-3-27b-it:free',                 // Gemma 3 27B FREE
+      'mistralai/mistral-7b-instruct:free',         // Mistral 7B FREE
+      'microsoft/phi-4:free',                       // Phi 4 FREE
     ],
     placeholder: 'sk-or-...',
   },
   ollama:      {
     label: 'Ollama (로컬서버)',
-    models: ['qwen2.5', 'qwen2.5-coder', 'llama3.2', 'llama3.3', 'mistral', 'phi4', 'gemma2', 'deepseek-r1', 'llama3.1:70b'],
+    // 기본 fallback 목록 — 실제 목록은 /api/ollama/models 에서 동적으로 가져옴
+    models: ['qwen3.5', 'qwen3', 'qwen3-coder', 'llama3.3', 'mistral', 'ministral-3', 'gemma3', 'deepseek-r1', 'phi4', 'phi4-mini', 'llama3.2', 'llama3.1'],
     placeholder: 'no key needed',
   },
   custom:      { label: '커스텀 API',         models: [],                                                                     placeholder: 'API Key...' },
