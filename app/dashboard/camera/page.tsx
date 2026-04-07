@@ -461,24 +461,30 @@ export default function CameraPage() {
             </div>
           </div>
 
-          {/* 셔터 바: touch-action manipulation */}
-          <div className="bg-black pt-3 pb-safe-bottom pb-4 flex items-center justify-around px-8"
-            style={{ touchAction: 'manipulation' }}>
-            {/* 마지막 사진 썸네일 */}
-            <button onTouchEnd={() => setTab('gallery')} className="relative w-14 h-14">
-              {photos[0] ? (
-                <img src={photos[0].dataUrl} alt="" className="w-14 h-14 rounded-xl object-cover border-2 border-white/30"
-                  style={{ filter: photos[0].filterCss || 'none' }}
-                  onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }} />
-              ) : (
-                <div className="w-14 h-14 rounded-xl border border-white/20 flex items-center justify-center text-white/30 text-xl">🖼</div>
-              )}
-              {photos.length > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-blue-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                  {photos.length > 99 ? '99+' : photos.length}
-                </span>
-              )}
+          {/* 사진첩 버튼 2개 */}
+          <div className="bg-black flex gap-px flex-shrink-0" style={{ touchAction: 'manipulation' }}>
+            <button
+              onTouchEnd={() => setTab('gallery')}
+              className="flex-1 py-2.5 flex flex-col items-center gap-0.5 bg-white/5 active:bg-white/10 transition-colors">
+              <span className="text-base">🖼️</span>
+              <span className="text-white text-[10px]">일반사진첩{photos.length > 0 ? ` (${photos.length})` : ''}</span>
             </button>
+            <button
+              onTouchEnd={() => {
+                if (secretAuthed) { setTab('secret'); }
+                else { setShowSecretModal(true); }
+              }}
+              className="flex-1 py-2.5 flex flex-col items-center gap-0.5 bg-purple-950/40 active:bg-purple-900/50 transition-colors">
+              <span className="text-base">🔒</span>
+              <span className="text-purple-300 text-[10px]">특수사진첩{secretPhotos.length > 0 ? ` (${secretPhotos.length})` : ''}</span>
+            </button>
+          </div>
+
+          {/* 셔터 바 */}
+          <div className="bg-black pt-3 pb-4 flex items-center justify-around px-8"
+            style={{ touchAction: 'manipulation' }}>
+            {/* 빈 공간 (대칭) */}
+            <div className="w-14 h-14" />
 
             {/* 셔터 */}
             <button onTouchEnd={capture} disabled={capturing}
@@ -807,29 +813,23 @@ export default function CameraPage() {
       >
         {([
           ['camera', '📷', '카메라'],
-          ['gallery', '🖼', `갤러리${photos.length ? ` ${photos.length}` : ''}`],
+          ['gallery', '🖼️', '일반'],
+          ['secret', '🔒', '특수'],
           ['edit', '✏️', '편집'],
           ['bg', '✂️', '누끼'],
           ['3d', '🎡', '3D'],
         ] as [Tab, string, string][]).map(([t, icon, label]) => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t}
+            onClick={() => {
+              if (t === 'secret' && !secretAuthed) { setShowSecretModal(true); return; }
+              setTab(t);
+            }}
             className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-opacity ${tab === t ? 'opacity-100' : 'opacity-35'}`}
             style={{ touchAction: 'manipulation' }}>
             <span className="text-lg leading-none">{icon}</span>
-            <span className={`text-[10px] ${tab === t ? 'text-blue-400 font-semibold' : 'text-white'}`}>{label}</span>
+            <span className={`text-[10px] ${tab === t ? (t === 'secret' ? 'text-purple-400' : 'text-blue-400') + ' font-semibold' : 'text-white'}`}>{label}</span>
           </button>
         ))}
-        {/* 비밀 탭 */}
-        <button
-          onClick={() => {
-            if (secretAuthed) { setTab('secret'); }
-            else { setShowSecretModal(true); }
-          }}
-          className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-opacity ${tab === 'secret' ? 'opacity-100' : 'opacity-35'}`}
-          style={{ touchAction: 'manipulation' }}>
-          <span className="text-lg leading-none">🔒</span>
-          <span className={`text-[10px] ${tab === 'secret' ? 'text-purple-400 font-semibold' : 'text-white'}`}>비밀</span>
-        </button>
       </div>
 
       {/* 비밀번호 입력 모달 */}
@@ -839,23 +839,23 @@ export default function CameraPage() {
           <div className="fixed bottom-0 inset-x-0 z-50 bg-gray-950 rounded-t-2xl px-5 py-6 space-y-4 border-t border-white/10"
             style={{ touchAction: 'pan-y' }}>
             <div className="w-10 h-1 bg-white/20 rounded-full mx-auto" />
-            <p className="text-white font-bold text-center text-lg">🔒 비밀 갤러리</p>
-            <p className="text-white/40 text-xs text-center">Vercel CAMERA_SECRET_PASSWORD로 설정한 비밀번호</p>
+            <p className="text-white font-bold text-center text-lg">🔒 특수사진첩</p>
             <input
               type="password"
+              inputMode="numeric"
               value={secretPw}
               onChange={e => setSecretPw(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && verifySecretPassword()}
-              placeholder="비밀번호 입력"
+              placeholder="비밀번호"
               autoFocus
-              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base text-center tracking-widest"
+              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-4 text-white text-2xl text-center tracking-[1rem]"
               style={{ touchAction: 'manipulation' }}
             />
             {secretPwError && <p className="text-red-400 text-sm text-center">{secretPwError}</p>}
             <button
               onClick={verifySecretPassword}
               disabled={secretPwLoading || !secretPw}
-              className="w-full py-3.5 rounded-xl bg-purple-600 text-white font-bold text-base disabled:opacity-40 active:scale-[0.98]"
+              className="w-full py-4 rounded-xl bg-purple-600 text-white font-bold text-lg disabled:opacity-40 active:scale-[0.98]"
               style={{ touchAction: 'manipulation' }}>
               {secretPwLoading ? '확인 중...' : '입장'}
             </button>
