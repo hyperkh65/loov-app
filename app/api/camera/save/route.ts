@@ -117,8 +117,8 @@ export async function GET(req: NextRequest) {
     // 비밀 갤러리 요청: 비밀번호 헤더 검증
     if (wantSecret) {
       const pw = req.headers.get('x-secret-password');
-      const envPw = process.env.CAMERA_SECRET_PASSWORD;
-      if (!envPw || pw !== envPw) {
+      const envPw = process.env.CAMERA_SECRET_PASSWORD || '0506';
+      if (pw !== envPw) {
         return NextResponse.json({ error: '인증 실패' }, { status: 401 });
       }
     }
@@ -126,13 +126,32 @@ export async function GET(req: NextRequest) {
     let query = sbAdmin
       .from('camera_photos')
       .select('*')
-      .eq('is_secret', wantSecret)
       .order('created_at', { ascending: false })
       .limit(200);
+
+    if (wantSecret) {
+      // 비밀사진: is_secret = true 만
+      query = query.eq('is_secret', true);
+    } else {
+      // 일반사진: is_secret = false 또는 NULL (컬럼 없거나 기존 데이터)
+      query = query.or('is_secret.eq.false,is_secret.is.null');
+    }
+
     if (user) query = query.eq('user_id', user.id);
 
     const { data, error } = await query;
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // is_secret 컬럼 미존재 등 오류 시 전체 반환 (비밀 요청이 아닐 때만)
+    if (error) {
+      if (!wantSecret) {
+        const { data: fallback } = await sbAdmin
+          .from('camera_photos')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(200);
+        return NextResponse.json({ photos: fallback || [] });
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({ photos: data || [] });
   } catch (err: any) {
@@ -144,8 +163,8 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const { id, isSecret, password } = await req.json();
-    const envPw = process.env.CAMERA_SECRET_PASSWORD;
-    if (!envPw || password !== envPw) {
+    const envPw = process.env.CAMERA_SECRET_PASSWORD || '0506';
+    if (password !== envPw) {
       return NextResponse.json({ error: '인증 실패' }, { status: 401 });
     }
     const sbAdmin = createAdminClient();
