@@ -24,7 +24,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat' | 'erp'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat' | 'erp' | 'camera'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -51,6 +51,16 @@ export default function SettingsPage() {
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [apiKeysSaving, setApiKeysSaving] = useState(false);
   const [apiKeysMsg, setApiKeysMsg] = useState('');
+
+  // 카메라 설정 state
+  const [camSettings, setCamSettings] = useState({ NOTION_API_KEY: '', NOTION_CAMERA_DB_ID: '', CAMERA_SECRET_PASSWORD: '', NAS_WEB_BASE_URL: '' });
+  const [camHasKey, setCamHasKey] = useState<Record<string, boolean>>({});
+  const [camSaving, setCamSaving] = useState(false);
+  const [camMsg, setCamMsg] = useState('');
+  const [nasCheckResult, setNasCheckResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [notionCheckResult, setNotionCheckResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [nasChecking, setNasChecking] = useState(false);
+  const [notionChecking, setNotionChecking] = useState(false);
 
   // Ollama state
   const [ollamaApiKey, setOllamaApiKey] = useState('');
@@ -183,6 +193,18 @@ export default function SettingsPage() {
           } catch { /* ignore */ }
         });
     }
+    if (activeTab === 'camera') {
+      fetch('/api/app-settings')
+        .then(r => r.ok ? r.json() : {})
+        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string> }) => {
+          setCamHasKey(d.hasKey || {});
+          setCamSettings(prev => ({
+            ...prev,
+            NOTION_CAMERA_DB_ID: d.settings?.NOTION_CAMERA_DB_ID || '',
+            NAS_WEB_BASE_URL: d.settings?.NAS_WEB_BASE_URL || '',
+          }));
+        });
+    }
     if (activeTab === 'google') {
       fetch('/api/google/status')
         .then((r) => r.ok ? r.json() : { connected: false })
@@ -307,7 +329,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['erp', '📊 ERP DB 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['camera', '📷 카메라'], ['erp', '📊 ERP DB 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1787,6 +1809,158 @@ export default function SettingsPage() {
 
         {/* 백업/복원 탭 */}
         {activeTab === 'backup' && <BackupRestorePanel />}
+
+        {/* 카메라 설정 탭 */}
+        {activeTab === 'camera' && (
+          <div className="space-y-8 max-w-2xl">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800 mb-1">📷 카메라 설정</h2>
+              <p className="text-sm text-gray-500">NAS 백업, Notion 연동, 특수사진첩 비밀번호를 설정합니다.</p>
+            </div>
+
+            {/* NAS 설정 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-800">🖥️ NAS 백업</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">사진을 NAS /volume1/web/camera_photos/ 에 저장합니다</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    setNasChecking(true);
+                    setNasCheckResult(null);
+                    const res = await fetch('/api/camera/check?target=nas');
+                    setNasCheckResult(await res.json());
+                    setNasChecking(false);
+                  }}
+                  disabled={nasChecking}
+                  className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {nasChecking ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />확인 중</> : '🔌 연결 체크'}
+                </button>
+              </div>
+              {nasCheckResult && (
+                <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium ${nasCheckResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  <span>{nasCheckResult.ok ? '✅' : '❌'}</span>
+                  <span>{nasCheckResult.message}</span>
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">NAS 웹 기본 URL (사진 URL 생성에 사용)</label>
+                <input
+                  value={camSettings.NAS_WEB_BASE_URL}
+                  onChange={e => setCamSettings(p => ({ ...p, NAS_WEB_BASE_URL: e.target.value }))}
+                  placeholder="http://hy64.synology.me"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono"
+                />
+                <p className="text-xs text-gray-400 mt-1">미설정 시 http://hy64.synology.me 사용</p>
+              </div>
+            </div>
+
+            {/* Notion 설정 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-800">📔 Notion 카메라롤</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">사진을 Notion DB에 자동 저장합니다</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    setNotionChecking(true);
+                    setNotionCheckResult(null);
+                    const res = await fetch('/api/camera/check?target=notion');
+                    setNotionCheckResult(await res.json());
+                    setNotionChecking(false);
+                  }}
+                  disabled={notionChecking}
+                  className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {notionChecking ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />확인 중</> : '🔌 연결 체크'}
+                </button>
+              </div>
+              {notionCheckResult && (
+                <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium ${notionCheckResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  <span>{notionCheckResult.ok ? '✅' : '❌'}</span>
+                  <span>{notionCheckResult.message}</span>
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">
+                  Notion API 키 {camHasKey['NOTION_API_KEY'] && <span className="text-green-600 ml-1">✓ 설정됨</span>}
+                </label>
+                <input
+                  type="password"
+                  value={camSettings.NOTION_API_KEY}
+                  onChange={e => setCamSettings(p => ({ ...p, NOTION_API_KEY: e.target.value }))}
+                  placeholder={camHasKey['NOTION_API_KEY'] ? '변경하려면 새 키 입력' : 'secret_...'}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">
+                  카메라롤 DB ID {camHasKey['NOTION_CAMERA_DB_ID'] && <span className="text-green-600 ml-1">✓ 설정됨</span>}
+                </label>
+                <input
+                  value={camSettings.NOTION_CAMERA_DB_ID}
+                  onChange={e => setCamSettings(p => ({ ...p, NOTION_CAMERA_DB_ID: e.target.value }))}
+                  placeholder="32자리 Notion DB ID"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono"
+                />
+              </div>
+            </div>
+
+            {/* 특수사진첩 비밀번호 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+              <div>
+                <h3 className="font-semibold text-gray-800">🔒 특수사진첩 비밀번호</h3>
+                <p className="text-xs text-gray-500 mt-0.5">현재 기본값: 0506</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">
+                  비밀번호 {camHasKey['CAMERA_SECRET_PASSWORD'] && <span className="text-green-600 ml-1">✓ 설정됨</span>}
+                </label>
+                <input
+                  type="password"
+                  value={camSettings.CAMERA_SECRET_PASSWORD}
+                  onChange={e => setCamSettings(p => ({ ...p, CAMERA_SECRET_PASSWORD: e.target.value }))}
+                  placeholder={camHasKey['CAMERA_SECRET_PASSWORD'] ? '변경하려면 새 비밀번호 입력' : '0506'}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                />
+              </div>
+            </div>
+
+            {/* 저장 버튼 */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={async () => {
+                  setCamSaving(true);
+                  setCamMsg('');
+                  const body: Record<string, string> = {};
+                  if (camSettings.NAS_WEB_BASE_URL) body.NAS_WEB_BASE_URL = camSettings.NAS_WEB_BASE_URL;
+                  if (camSettings.NOTION_API_KEY) body.NOTION_API_KEY = camSettings.NOTION_API_KEY;
+                  if (camSettings.NOTION_CAMERA_DB_ID) body.NOTION_CAMERA_DB_ID = camSettings.NOTION_CAMERA_DB_ID;
+                  if (camSettings.CAMERA_SECRET_PASSWORD) body.CAMERA_SECRET_PASSWORD = camSettings.CAMERA_SECRET_PASSWORD;
+                  const res = await fetch('/api/app-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                  });
+                  setCamMsg(res.ok ? '✅ 저장됨' : '❌ 저장 실패');
+                  setCamSaving(false);
+                  setTimeout(() => setCamMsg(''), 2500);
+                  // 저장 후 상태 갱신
+                  const d = await fetch('/api/app-settings').then(r => r.json());
+                  if (d.hasKey) setCamHasKey(d.hasKey);
+                }}
+                disabled={camSaving}
+                className="px-6 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+              >
+                {camSaving ? '저장 중...' : '💾 설정 저장'}
+              </button>
+              {camMsg && <span className="text-sm font-medium text-gray-600">{camMsg}</span>}
+            </div>
+          </div>
+        )}
 
         {/* LED 인텔 탭 */}
         {activeTab === 'erp' && <ErpDbSettingsPanel />}

@@ -58,6 +58,11 @@ const ALLOWED_KEYS = [
   // GitHub Actions trigger
   'GITHUB_PAT',
   'GITHUB_REPO',
+  // 카메라 설정
+  'NOTION_API_KEY',
+  'NOTION_CAMERA_DB_ID',
+  'CAMERA_SECRET_PASSWORD',
+  'NAS_WEB_BASE_URL',
 ] as const;
 
 export async function GET() {
@@ -75,7 +80,7 @@ export async function GET() {
   const settings = (data?.settings as Record<string, string>) || {};
 
   // 마스킹: 키 앞 4자리만 노출 (비민감 키는 전체 값 반환)
-  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID', 'EDGE_TTS_SERVER_URL']);
+  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID', 'EDGE_TTS_SERVER_URL', 'NAS_WEB_BASE_URL', 'NOTION_CAMERA_DB_ID']);
   const masked: Record<string, string> = {};
   for (const key of ALLOWED_KEYS) {
     const val = settings[key] || '';
