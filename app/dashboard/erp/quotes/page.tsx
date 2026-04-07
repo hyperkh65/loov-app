@@ -138,8 +138,8 @@ export default function QuotesPage() {
         try {
             setLoading(true);
             const [qRes, cRes] = await Promise.all([
-                notionQuery(DB_QUOTES, { sorts: [{ property: 'Date', direction: 'descending' }] }),
-                notionQuery(DB_CLIENTS)
+                notionQuery(DB_QUOTES(), { sorts: [{ property: 'Date', direction: 'descending' }] }),
+                notionQuery(DB_CLIENTS())
             ]);
 
             const groupedQuotes: { [key: string]: QuoteRecord } = {};
@@ -226,7 +226,7 @@ export default function QuotesPage() {
 
             for (let i = 0; i < form.items.length; i++) {
                 const item = form.items[i];
-                await notionCreate(DB_QUOTES, {
+                await notionCreate(DB_QUOTES(), {
                     EstimateNo1: TITLE(form.no),
                     index: RT(String(i + 1)),
                     Date: dateISO(form.date),

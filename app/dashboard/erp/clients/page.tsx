@@ -80,7 +80,7 @@ export default function ClientsPage() {
     async function fetchClients() {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_CLIENTS, { sorts: [{ property: 'ClientName', direction: 'ascending' }] });
+            const res = await notionQuery(DB_CLIENTS(), { sorts: [{ property: 'ClientName', direction: 'ascending' }] });
             setClients(res.results);
         } finally {
             setLoading(false);
@@ -142,7 +142,7 @@ export default function ClientsPage() {
             };
 
             if (selectedClient) await notionUpdate(selectedClient.id, props);
-            else await notionCreate(DB_CLIENTS, props);
+            else await notionCreate(DB_CLIENTS(), props);
 
             setIsModalOpen(false);
             fetchClients();

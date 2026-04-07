@@ -22,7 +22,7 @@ export default function QuotePicker({ isOpen, onClose, onSelect }: QuotePickerPr
     const fetchQuotes = async () => {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_QUOTES, {
+            const res = await notionQuery(DB_QUOTES(), {
                 sorts: [{ property: 'Date', direction: 'descending' }]
             });
 

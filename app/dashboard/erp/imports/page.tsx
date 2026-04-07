@@ -239,8 +239,8 @@ export default function ImportsPage() {
         try {
             setLoading(true);
             const [impRes, clientRes] = await Promise.all([
-                notionQuery(DB_IMPORTS_MASTER, { sorts: [{ property: 'Date', direction: 'descending' }] }),
-                notionQuery(DB_CLIENTS)
+                notionQuery(DB_IMPORTS_MASTER(), { sorts: [{ property: 'Date', direction: 'descending' }] }),
+                notionQuery(DB_CLIENTS())
             ]);
 
             setClients(clientRes.results);
@@ -376,16 +376,16 @@ export default function ImportsPage() {
                 await notionUpdate(form.id, masterProps);
 
                 // Details (Delete and Re-create)
-                const existingDetails = await notionQuery(DB_IMPORTS_DETAIL, { filter: { property: 'ImportNo', rich_text: { equals: form.importNo } } });
+                const existingDetails = await notionQuery(DB_IMPORTS_DETAIL(), { filter: { property: 'ImportNo', rich_text: { equals: form.importNo } } });
                 for (const r of existingDetails.results) await notionDelete(r.id);
             } else {
                 // Create
-                await notionCreate(DB_IMPORTS_MASTER, masterProps);
+                await notionCreate(DB_IMPORTS_MASTER(), masterProps);
             }
 
             // 2. Items Save (calculatedData에서 최신 계산된 항목들 사용)
             for (const it of (calculatedData.items || [])) {
-                await notionCreate(DB_IMPORTS_DETAIL, {
+                await notionCreate(DB_IMPORTS_DETAIL(), {
                     ImportNo: RT(form.importNo),
                     Product: RT(it.product),
                     ProductCode: RT(it.productCode),
@@ -456,7 +456,7 @@ export default function ImportsPage() {
         try {
             setLoading(true);
             setUnipassData(null);
-            const res = await notionQuery(DB_IMPORTS_DETAIL, {
+            const res = await notionQuery(DB_IMPORTS_DETAIL(), {
                 filter: { property: 'ImportNo', rich_text: { equals: imp.importNo } }
             });
             const details = res.results.map((r: any) => {
@@ -484,7 +484,7 @@ export default function ImportsPage() {
                 };
             });
 
-            const masterRes = await notionQuery(DB_IMPORTS_MASTER, {
+            const masterRes = await notionQuery(DB_IMPORTS_MASTER(), {
                 filter: { property: 'ImportNo', title: { equals: imp.importNo } }
             });
             const fullMaster = masterRes.results[0]?.properties;
@@ -1105,7 +1105,7 @@ export default function ImportsPage() {
                                     if (confirm('이 수입 내역과 모든 상세 항목을 삭제하시겠습니까?')) {
                                         await notionDelete(selectedImport.id);
                                         // Detail delete requires query by ImportNo first
-                                        const details = await notionQuery(DB_IMPORTS_DETAIL, { filter: { property: 'ImportNo', rich_text: { equals: selectedImport.importNo } } });
+                                        const details = await notionQuery(DB_IMPORTS_DETAIL(), { filter: { property: 'ImportNo', rich_text: { equals: selectedImport.importNo } } });
                                         for (const r of details.results) await notionDelete(r.id);
                                         setSelectedImport(null);
                                         fetchInitialData();

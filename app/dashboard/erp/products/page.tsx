@@ -55,7 +55,7 @@ export default function ProductsPage() {
     async function fetchProducts() {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_PRODUCTS, { sorts: [{ property: 'ProductCode', direction: 'ascending' }] });
+            const res = await notionQuery(DB_PRODUCTS(), { sorts: [{ property: 'ProductCode', direction: 'ascending' }] });
             setProducts(res.results);
         } catch (e) {
             console.error('제품 로드 실패:', e);
@@ -144,7 +144,7 @@ export default function ProductsPage() {
             'FileEtc': getF(data.fileEtc)
         };
         if (id) await notionUpdate(id, props);
-        else await notionCreate(DB_PRODUCTS, props);
+        else await notionCreate(DB_PRODUCTS(), props);
     };
 
     const [priceHistory, setPriceHistory] = useState<any[]>([]);
@@ -154,8 +154,8 @@ export default function ProductsPage() {
         try {
             setLoadingHistory(true);
             const [poRes, qRes] = await Promise.all([
-                notionQuery(DB_PURCHASE_ORDERS),
-                notionQuery(DB_QUOTES)
+                notionQuery(DB_PURCHASE_ORDERS()),
+                notionQuery(DB_QUOTES())
             ]);
             const history: any[] = [];
             poRes.results.forEach((r: any) => {

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { AIProvider, AI_PROVIDER_INFO, SUBSCRIPTION_PLANS, SubscriptionTier, ANIMAL_EMOJI } from '@/lib/types';
+import { saveErpDbIds, getErpDbIds, ERP_DB_LABELS } from '@/lib/notion-erp';
 
 const PLATFORM_INFO: Record<string, { label: string; icon: string; color: string; connectUrl?: string }> = {
   youtube:  { label: '유튜브',    icon: '▶️', color: 'from-red-500 to-red-700', connectUrl: '/api/youtube/connect?return=/dashboard/settings' },
@@ -23,7 +24,7 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat' | 'erp'>('ai');
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -306,7 +307,7 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원']].map(([v, l]) => (
+          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['erp', '📊 ERP DB 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원']].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1788,6 +1789,8 @@ export default function SettingsPage() {
         {activeTab === 'backup' && <BackupRestorePanel />}
 
         {/* LED 인텔 탭 */}
+        {activeTab === 'erp' && <ErpDbSettingsPanel />}
+
         {activeTab === 'led' && (
           <div className="space-y-6 max-w-2xl">
             <div className="bg-cyan-50 border border-cyan-200 rounded-2xl p-4 text-sm text-cyan-900 space-y-2">
@@ -2155,6 +2158,80 @@ function BackupRestorePanel() {
           {msg}
         </p>
       )}
+    </div>
+  );
+}
+
+function ErpDbSettingsPanel() {
+  const defaultIds = getErpDbIds();
+  const [ids, setIds] = useState<Record<string, string>>(defaultIds as Record<string, string>);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    saveErpDbIds(ids as any);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleReset = () => {
+    // Clear localStorage to revert to hardcoded defaults
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('loov_erp_db_ids');
+    }
+    // Reload defaults
+    setIds(getErpDbIds() as Record<string, string>);
+    setSaved(false);
+  };
+
+  const dbEntries = Object.entries(ERP_DB_LABELS) as [string, string][];
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-900 space-y-1">
+        <p className="font-bold">📊 ERP Notion 데이터베이스 ID 설정</p>
+        <p>각 ERP 기능에서 사용할 Notion 데이터베이스 ID를 입력하세요.</p>
+        <p className="text-blue-600">비워두면 기본값(newerp 원본 DB)을 사용합니다. 본인의 Notion DB ID로 교체하면 해당 DB를 사용합니다.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {dbEntries.map(([key, label]) => (
+            <div key={key}>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">{label} <span className="font-mono text-gray-400">({key})</span></label>
+              <input
+                type="text"
+                value={ids[key] ?? ''}
+                onChange={e => setIds(prev => ({ ...prev, [key]: e.target.value }))}
+                placeholder="32자리 Notion DB ID"
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3 mt-6">
+          <button
+            onClick={handleSave}
+            className="px-6 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors"
+          >
+            {saved ? '✅ 저장됨' : '💾 저장'}
+          </button>
+          <button
+            onClick={handleReset}
+            className="px-6 py-2.5 bg-gray-100 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-200 transition-colors"
+          >
+            🔄 기본값 복원
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600 space-y-1">
+        <p className="font-semibold text-gray-800 mb-2">📋 Notion DB ID 찾는 방법</p>
+        <p>1. Notion에서 해당 데이터베이스 페이지 열기</p>
+        <p>2. 주소창 URL 확인 예: <code className="bg-gray-200 px-1 rounded">notion.so/workspace/<strong>2a01f4ff9a0e8016aa33c239d64eb482</strong>?v=...</code></p>
+        <p>3. <code className="bg-gray-200 px-1 rounded">?v=</code> 앞의 32자리 ID 복사</p>
+        <p className="mt-2 text-gray-500">* ID는 브라우저 localStorage에 저장되므로 이 기기에서만 적용됩니다.</p>
+      </div>
     </div>
   );
 }
