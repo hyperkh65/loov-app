@@ -33,26 +33,13 @@ const PLANS = [
   },
 ];
 
+// 카카오톡 채널 URL (개설 후 변경: https://pf.kakao.com/_xxxxx)
+const KAKAO_CHANNEL_URL = process.env.NEXT_PUBLIC_KAKAO_CHANNEL_URL || 'https://pf.kakao.com/_loov';
+
 interface UserPlan {
   plan: string;
   plan_expires_at?: string;
   plan_billing_day?: number;
-}
-
-// 채널톡 열기
-function openChannelTalk(planName?: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ChannelIO = (window as any).ChannelIO;
-  if (ChannelIO) {
-    ChannelIO('show');
-    if (planName) {
-      ChannelIO('openChat', undefined, `안녕하세요! ${planName} 플랜 업그레이드를 신청하고 싶습니다.`);
-    } else {
-      ChannelIO('openChat');
-    }
-  } else {
-    alert('채널톡을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.');
-  }
 }
 
 export default function BillingPage() {
@@ -83,10 +70,15 @@ export default function BillingPage() {
   }, []);
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
-
   useEffect(() => {
     if (searchParams.get('success')) showToast('문의가 확인되었습니다!');
   }, [searchParams]);
+
+  const openKakao = (planName?: string) => {
+    const msg = planName ? `${planName} 플랜 업그레이드 신청합니다.` : '';
+    const url = `${KAKAO_CHANNEL_URL}/chat${msg ? `?text=${encodeURIComponent(msg)}` : ''}`;
+    window.open(url, '_blank');
+  };
 
   const currentPlan = userPlan?.plan || 'free';
 
@@ -108,9 +100,7 @@ export default function BillingPage() {
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-white capitalize">{currentPlan}</h2>
           {currentPlan !== 'free' && (
-            <span className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-0.5 rounded-full">
-              활성
-            </span>
+            <span className="text-xs bg-green-600/20 text-green-400 border border-green-600/30 px-2 py-0.5 rounded-full">활성</span>
           )}
         </div>
         {userPlan?.plan_expires_at && (
@@ -133,12 +123,8 @@ export default function BillingPage() {
               } ${isCurrent ? 'ring-2 ring-green-500' : ''}`}
             >
               <div className="flex gap-1.5 flex-wrap mb-3">
-                {plan.highlight && (
-                  <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">추천</span>
-                )}
-                {isCurrent && (
-                  <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">현재</span>
-                )}
+                {plan.highlight && <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">추천</span>}
+                {isCurrent && <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">현재</span>}
               </div>
               <h3 className="text-lg font-bold text-white">{plan.name}</h3>
               <div className="mt-1 mb-3">
@@ -159,18 +145,16 @@ export default function BillingPage() {
                 </button>
               ) : isCurrent ? (
                 <button
-                  onClick={() => openChannelTalk()}
+                  onClick={() => openKakao()}
                   className="w-full py-2.5 rounded-xl bg-gray-700 hover:bg-gray-600 text-white text-sm transition"
                 >
                   구독 변경 문의
                 </button>
               ) : (
                 <button
-                  onClick={() => openChannelTalk(plan.name)}
+                  onClick={() => openKakao(plan.name)}
                   className={`w-full py-2.5 rounded-xl text-sm font-medium transition ${
-                    plan.highlight
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'bg-gray-700 hover:bg-gray-600 text-white'
+                    plan.highlight ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'
                   }`}
                 >
                   업그레이드 신청
@@ -182,41 +166,42 @@ export default function BillingPage() {
       </div>
 
       {/* 결제 안내 */}
-      <div className="bg-gray-800/60 border border-gray-700 rounded-2xl p-6 space-y-3">
-        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-          💬 결제 안내
-        </h3>
-        <ul className="space-y-2 text-sm text-gray-400">
+      <div className="bg-gray-800/60 border border-gray-700 rounded-2xl p-6 space-y-4">
+        <h3 className="text-white font-semibold text-sm">💬 결제 안내</h3>
+        <ul className="space-y-2.5 text-sm text-gray-400">
           <li className="flex items-start gap-2">
-            <span className="text-blue-400 mt-0.5 flex-shrink-0">①</span>
-            <span>원하는 플랜의 <strong className="text-white">업그레이드 신청</strong> 버튼을 누르면 채널톡 상담창이 열립니다.</span>
+            <span className="text-yellow-400 mt-0.5 flex-shrink-0">①</span>
+            <span>원하는 플랜의 <strong className="text-white">업그레이드 신청</strong> 버튼을 누르면 카카오톡 채널 상담창이 열립니다.</span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-blue-400 mt-0.5 flex-shrink-0">②</span>
-            <span>담당자가 <strong className="text-white">계좌번호와 입금 안내</strong>를 채팅으로 보내드립니다.</span>
+            <span className="text-yellow-400 mt-0.5 flex-shrink-0">②</span>
+            <span>담당자가 <strong className="text-white">계좌번호와 입금 안내</strong>를 카카오톡으로 보내드립니다.</span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-blue-400 mt-0.5 flex-shrink-0">③</span>
-            <span>입금 확인 후 <strong className="text-white">1시간 이내</strong> 플랜이 활성화됩니다. (평일 9시~18시 기준)</span>
+            <span className="text-yellow-400 mt-0.5 flex-shrink-0">③</span>
+            <span>입금 확인 후 <strong className="text-white">1시간 이내</strong> 플랜이 활성화됩니다. <span className="text-gray-500">(평일 9시~18시 기준)</span></span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-blue-400 mt-0.5 flex-shrink-0">④</span>
-            <span>구독 취소·변경도 채널톡으로 문의해 주세요. 당월 결제일 전 요청 시 다음 달부터 적용됩니다.</span>
+            <span className="text-yellow-400 mt-0.5 flex-shrink-0">④</span>
+            <span>구독 취소·변경도 카카오톡으로 문의해 주세요. 당월 결제일 전 요청 시 다음 달부터 적용됩니다.</span>
           </li>
         </ul>
+
+        {/* 카카오톡 버튼 */}
         <button
-          onClick={() => openChannelTalk()}
-          className="mt-2 flex items-center gap-2 px-4 py-2.5 bg-[#1BCD90] hover:bg-[#17b880] text-white text-sm font-medium rounded-xl transition"
+          onClick={() => openKakao()}
+          className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold transition hover:opacity-90"
+          style={{ backgroundColor: '#FEE500', color: '#191919' }}
         >
-          <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current flex-shrink-0">
-            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="#191919">
+            <path d="M12 3C6.477 3 2 6.477 2 10.5c0 2.554 1.408 4.8 3.563 6.207L4.5 21l4.438-2.344C9.908 18.878 10.94 19 12 19c5.523 0 10-3.477 10-7.5S17.523 3 12 3z"/>
           </svg>
-          채널톡으로 문의하기
+          카카오톡으로 문의하기
         </button>
       </div>
 
       <p className="text-center text-xs text-gray-600">
-        계좌이체 방식으로 운영됩니다 · 세금계산서 발행 문의는 채널톡으로 요청해 주세요
+        계좌이체 방식으로 운영됩니다 · 세금계산서 발행 문의는 카카오톡으로 요청해 주세요
       </p>
     </div>
   );
