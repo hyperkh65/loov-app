@@ -128,6 +128,7 @@ const NAV_GROUPS = [
   {
     label: '설정',
     items: [
+      { href: '/dashboard/billing',  icon: '💳', label: '플랜 & 결제' },
       { href: '/dashboard/settings', icon: '⚙️', label: 'AI 설정' },
     ],
   },

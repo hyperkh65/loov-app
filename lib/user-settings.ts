@@ -20,6 +20,7 @@ export interface UserSettings {
   // Plan
   plan?: 'free' | 'pro' | 'business';
   stripe_customer_id?: string;
+  stripe_subscription_id?: string;
   plan_expires_at?: string;
 }
 
