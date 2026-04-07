@@ -33,6 +33,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return;
       }
 
+      // 도메인 분리 로직: loov.co.kr ↔ service.loov.co.kr
+      const OWNER_USER_ID = process.env.NEXT_PUBLIC_OWNER_USER_ID || '0a7e3d43-0159-411e-b171-0aebb70a4893';
+      const ownerDomain = process.env.NEXT_PUBLIC_OWNER_DOMAIN || 'loov.co.kr';
+      const serviceDomain = process.env.NEXT_PUBLIC_SERVICE_DOMAIN || 'service.loov.co.kr';
+      const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+      const userId = session.user.id;
+      const isOwner = userId === OWNER_USER_ID;
+
+      if (currentHostname === ownerDomain && !isOwner) {
+        // loov.co.kr에서 로그인했는데 대표님이 아님 → service 도메인으로 이동
+        window.location.replace(`https://${serviceDomain}/dashboard`);
+        return;
+      }
+      if (currentHostname === serviceDomain && isOwner) {
+        // service.loov.co.kr에서 로그인했는데 대표님 → 메인 도메인으로 이동
+        window.location.replace(`https://${ownerDomain}/dashboard`);
+        return;
+      }
+
       try {
         const data = await loadAllData();
         if (!mounted) return;
