@@ -18,35 +18,45 @@ const ERP_MENUS = [
 
 export default function ErpHomePage() {
     return (
-        <div className="p-8">
-            <div className="mb-8">
-                <h1 className="text-3xl font-black text-gray-900">ERP 시스템</h1>
-                <p className="text-gray-500 mt-2">Notion 기반 통합 ERP — 영업, 재고, 수입, 인사를 한곳에서</p>
+        <div style={{ padding: '2rem' }}>
+            <div style={{ marginBottom: '2rem' }}>
+                <h1 style={{ fontSize: '2rem', fontWeight: 900, color: '#ffffff', margin: '0 0 0.5rem' }}>ERP 시스템</h1>
+                <p style={{ color: 'rgba(255,255,255,0.5)', margin: 0 }}>Notion 기반 통합 ERP — 영업, 재고, 수입, 인사를 한곳에서</p>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
                 {ERP_MENUS.map(menu => (
                     <Link
                         key={menu.href}
                         href={menu.href}
-                        className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md hover:border-blue-200 transition-all group"
+                        style={{
+                            display: 'block',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '16px',
+                            padding: '1.5rem',
+                            textDecoration: 'none',
+                            transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,112,243,0.4)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; }}
                     >
-                        <div className="text-4xl mb-3">{menu.icon}</div>
-                        <h3 className="font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">{menu.label}</h3>
-                        <p className="text-xs text-gray-500">{menu.desc}</p>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{menu.icon}</div>
+                        <h3 style={{ fontWeight: 700, color: '#ffffff', margin: '0 0 0.25rem', fontSize: '0.95rem' }}>{menu.label}</h3>
+                        <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', margin: 0 }}>{menu.desc}</p>
                     </Link>
                 ))}
             </div>
 
-            <div className="mt-12 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 text-white">
-                <h2 className="text-xl font-black mb-2">💡 Notion 연동 안내</h2>
-                <p className="text-blue-100 text-sm mb-4">
+            <div style={{ marginTop: '3rem', background: 'linear-gradient(135deg, rgba(0,112,243,0.2), rgba(108,92,231,0.2))', border: '1px solid rgba(0,112,243,0.3)', borderRadius: '16px', padding: '1.5rem' }}>
+                <h2 style={{ color: '#fff', fontWeight: 800, margin: '0 0 0.5rem', fontSize: '1.1rem' }}>💡 Notion 연동 안내</h2>
+                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.875rem', margin: '0 0 1rem' }}>
                     이 ERP 시스템은 Notion 데이터베이스를 백엔드로 사용합니다.<br />
                     NOTION_API_KEY 환경변수가 설정되어 있어야 데이터를 불러올 수 있습니다.
                 </p>
                 <Link
                     href="/dashboard/erp/settings"
-                    className="inline-block bg-white text-blue-700 font-bold px-5 py-2 rounded-full text-sm hover:bg-blue-50 transition-colors"
+                    style={{ display: 'inline-block', background: 'rgba(0,112,243,0.8)', color: 'white', fontWeight: 700, padding: '0.5rem 1.25rem', borderRadius: '20px', fontSize: '0.875rem', textDecoration: 'none' }}
                 >
                     ERP 설정 바로가기
                 </Link>
