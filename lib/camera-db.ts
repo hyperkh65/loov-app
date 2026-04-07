@@ -13,6 +13,7 @@ export interface StoredPhoto {
   lng?: number;
   uploaded?: boolean;
   cloudinaryUrl?: string;
+  isSecret?: boolean;
 }
 
 function openDB(): Promise<IDBDatabase> {
