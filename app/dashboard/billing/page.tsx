@@ -33,30 +33,33 @@ const PLANS = [
   },
 ];
 
-// 계좌 정보 (환경변수로 관리하거나 여기 직접 입력)
-const BANK_INFO = {
-  bank: '카카오뱅크',
-  account: '3333-XX-XXXXXXX', // ← 실제 계좌번호로 변경
-  holder: '김현', // ← 실제 예금주로 변경
-};
-
-// 카카오톡 채널 URL (카카오 채널 개설 후 변경)
-const KAKAO_CHANNEL_URL = 'https://pf.kakao.com/_XXXXX'; // ← 실제 채널 URL로 변경
-
 interface UserPlan {
   plan: string;
   plan_expires_at?: string;
-  plan_start_at?: string;
   plan_billing_day?: number;
+}
+
+// 채널톡 열기
+function openChannelTalk(planName?: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ChannelIO = (window as any).ChannelIO;
+  if (ChannelIO) {
+    ChannelIO('show');
+    if (planName) {
+      ChannelIO('openChat', undefined, `안녕하세요! ${planName} 플랜 업그레이드를 신청하고 싶습니다.`);
+    } else {
+      ChannelIO('openChat');
+    }
+  } else {
+    alert('채널톡을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.');
+  }
 }
 
 export default function BillingPage() {
   const searchParams = useSearchParams();
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [toast, setToast] = useState('');
-  const [copied, setCopied] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -82,14 +85,8 @@ export default function BillingPage() {
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
   useEffect(() => {
-    if (searchParams.get('success')) showToast('문의가 확인되었습니다. 입금 후 카카오톡으로 알려주세요!');
+    if (searchParams.get('success')) showToast('문의가 확인되었습니다!');
   }, [searchParams]);
-
-  const copyAccount = async () => {
-    await navigator.clipboard.writeText(BANK_INFO.account);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   const currentPlan = userPlan?.plan || 'free';
 
@@ -128,16 +125,12 @@ export default function BillingPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {PLANS.map((plan) => {
           const isCurrent = currentPlan === plan.key;
-          const isSelected = selectedPlan === plan.key;
           return (
             <div
               key={plan.key}
-              onClick={() => plan.key !== 'free' && setSelectedPlan(isSelected ? null : plan.key)}
-              className={`rounded-2xl p-6 border transition-all cursor-pointer ${
+              className={`rounded-2xl p-6 border transition-all ${
                 plan.highlight ? 'bg-blue-600/10 border-blue-500' : 'bg-gray-800 border-gray-700'
-              } ${isCurrent ? 'ring-2 ring-green-500' : ''} ${
-                isSelected ? 'ring-2 ring-yellow-400' : ''
-              } ${plan.key !== 'free' ? 'hover:border-gray-500' : 'cursor-default'}`}
+              } ${isCurrent ? 'ring-2 ring-green-500' : ''}`}
             >
               <div className="flex gap-1.5 flex-wrap mb-3">
                 {plan.highlight && (
@@ -146,9 +139,6 @@ export default function BillingPage() {
                 {isCurrent && (
                   <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">현재</span>
                 )}
-                {isSelected && (
-                  <span className="bg-yellow-500 text-black text-xs px-2 py-0.5 rounded-full">선택됨</span>
-                )}
               </div>
               <h3 className="text-lg font-bold text-white">{plan.name}</h3>
               <div className="mt-1 mb-3">
@@ -156,74 +146,78 @@ export default function BillingPage() {
                 <span className="text-gray-400 text-sm">{plan.period}</span>
               </div>
               <p className="text-gray-400 text-sm mb-4">{plan.desc}</p>
-              <ul className="space-y-1.5">
+              <ul className="space-y-1.5 mb-6">
                 {plan.features.map((f) => (
                   <li key={f} className="flex items-center gap-2 text-sm text-gray-300">
                     <span className="text-green-400">✓</span> {f}
                   </li>
                 ))}
               </ul>
+              {plan.key === 'free' ? (
+                <button disabled className="w-full py-2.5 rounded-xl bg-gray-700 text-gray-400 text-sm cursor-default">
+                  {isCurrent ? '현재 플랜' : '기본 플랜'}
+                </button>
+              ) : isCurrent ? (
+                <button
+                  onClick={() => openChannelTalk()}
+                  className="w-full py-2.5 rounded-xl bg-gray-700 hover:bg-gray-600 text-white text-sm transition"
+                >
+                  구독 변경 문의
+                </button>
+              ) : (
+                <button
+                  onClick={() => openChannelTalk(plan.name)}
+                  className={`w-full py-2.5 rounded-xl text-sm font-medium transition ${
+                    plan.highlight
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'bg-gray-700 hover:bg-gray-600 text-white'
+                  }`}
+                >
+                  업그레이드 신청
+                </button>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* 결제 안내 (플랜 선택 시 표시) */}
-      {selectedPlan && selectedPlan !== 'free' && (
-        <div className="bg-gray-800 border border-yellow-500/30 rounded-2xl p-6 space-y-5">
-          <h3 className="text-white font-semibold text-lg">
-            💳 {PLANS.find(p => p.key === selectedPlan)?.name} 플랜 신청
-          </h3>
-
-          {/* Step 1: 계좌 이체 */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-300">① 아래 계좌로 이체해 주세요</p>
-            <div className="bg-gray-700/50 rounded-xl p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-400">{BANK_INFO.bank} · {BANK_INFO.holder}</p>
-                <p className="text-xl font-mono font-bold text-white mt-0.5">{BANK_INFO.account}</p>
-                <p className="text-sm text-yellow-400 mt-1">
-                  금액: {PLANS.find(p => p.key === selectedPlan)?.price}
-                </p>
-              </div>
-              <button
-                onClick={copyAccount}
-                className="px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded-lg transition"
-              >
-                {copied ? '복사됨 ✓' : '복사'}
-              </button>
-            </div>
-          </div>
-
-          {/* Step 2: 카카오톡 문의 */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-300">② 카카오톡으로 입금 확인 요청</p>
-            <p className="text-xs text-gray-400">입금자명, 연락처, 신청 플랜을 알려주시면 확인 후 활성화해드립니다.</p>
-            <a
-              href={KAKAO_CHANNEL_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-medium transition"
-              style={{ backgroundColor: '#FEE500', color: '#191919' }}
-            >
-              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
-                <path d="M12 3C6.477 3 2 6.477 2 10.5c0 2.554 1.408 4.8 3.563 6.207L4.5 21l4.438-2.344C9.908 18.878 10.94 19 12 19c5.523 0 10-3.477 10-7.5S17.523 3 12 3z"/>
-              </svg>
-              카카오톡 채널 상담하기
-            </a>
-          </div>
-
-          <p className="text-xs text-gray-500 text-center">
-            확인 후 보통 1시간 이내 활성화됩니다 · 평일 9시~18시 기준
-          </p>
-        </div>
-      )}
-
-      {/* 안내 */}
-      <div className="text-center text-sm text-gray-500 space-y-1">
-        <p>계좌이체 후 카카오톡 채널로 입금 확인을 요청해 주세요.</p>
-        <p>플랜 변경 및 취소 문의도 카카오톡 채널을 이용해 주세요.</p>
+      {/* 결제 안내 */}
+      <div className="bg-gray-800/60 border border-gray-700 rounded-2xl p-6 space-y-3">
+        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+          💬 결제 안내
+        </h3>
+        <ul className="space-y-2 text-sm text-gray-400">
+          <li className="flex items-start gap-2">
+            <span className="text-blue-400 mt-0.5 flex-shrink-0">①</span>
+            <span>원하는 플랜의 <strong className="text-white">업그레이드 신청</strong> 버튼을 누르면 채널톡 상담창이 열립니다.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-blue-400 mt-0.5 flex-shrink-0">②</span>
+            <span>담당자가 <strong className="text-white">계좌번호와 입금 안내</strong>를 채팅으로 보내드립니다.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-blue-400 mt-0.5 flex-shrink-0">③</span>
+            <span>입금 확인 후 <strong className="text-white">1시간 이내</strong> 플랜이 활성화됩니다. (평일 9시~18시 기준)</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-blue-400 mt-0.5 flex-shrink-0">④</span>
+            <span>구독 취소·변경도 채널톡으로 문의해 주세요. 당월 결제일 전 요청 시 다음 달부터 적용됩니다.</span>
+          </li>
+        </ul>
+        <button
+          onClick={() => openChannelTalk()}
+          className="mt-2 flex items-center gap-2 px-4 py-2.5 bg-[#1BCD90] hover:bg-[#17b880] text-white text-sm font-medium rounded-xl transition"
+        >
+          <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current flex-shrink-0">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+          </svg>
+          채널톡으로 문의하기
+        </button>
       </div>
+
+      <p className="text-center text-xs text-gray-600">
+        계좌이체 방식으로 운영됩니다 · 세금계산서 발행 문의는 채널톡으로 요청해 주세요
+      </p>
     </div>
   );
 }
