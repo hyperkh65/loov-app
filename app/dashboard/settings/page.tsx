@@ -24,7 +24,8 @@ interface SNSConnection {
 
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat' | 'erp' | 'camera'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat' | 'erp' | 'camera' | 'myconfig'>('ai');
+  const [isServiceDomain, setIsServiceDomain] = useState(false);
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
   // Notion settings state
@@ -100,6 +101,21 @@ export default function SettingsPage() {
   const [gallerySaving, setGallerySaving] = useState(false);
   const [galleryMsg, setGalleryMsg] = useState('');
 
+  // 내 연동 설정 (service 도메인 유저)
+  const [myConfig, setMyConfig] = useState({
+    nas_ssh_host: '', nas_ssh_port: '22', nas_ssh_user: '', nas_ssh_password: '',
+    nas_web_base_url: '', notion_api_key: '', notion_camera_db_id: '',
+    camera_secret_password: '', storage_type: 'r2',
+    cctv_streams: [{ name: '', url: '' }],
+  });
+  const [myConfigHas, setMyConfigHas] = useState<Record<string, boolean>>({});
+  const [myConfigSaving, setMyConfigSaving] = useState(false);
+  const [myConfigMsg, setMyConfigMsg] = useState('');
+  const [myNasCheck, setMyNasCheck] = useState<{ ok: boolean; message: string } | null>(null);
+  const [myNotionCheck, setMyNotionCheck] = useState<{ ok: boolean; message: string } | null>(null);
+  const [myNasChecking, setMyNasChecking] = useState(false);
+  const [myNotionChecking, setMyNotionChecking] = useState(false);
+
   // Google Calendar state
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleEmail, setGoogleEmail] = useState('');
@@ -113,7 +129,31 @@ export default function SettingsPage() {
       setActiveTab('sns');
       window.history.replaceState({}, '', window.location.pathname);
     }
+    const serviceDomain = process.env.NEXT_PUBLIC_SERVICE_DOMAIN || 'service.loov.co.kr';
+    setIsServiceDomain(window.location.hostname === serviceDomain);
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'myconfig') return;
+    fetch('/api/user-settings').then(r => r.ok ? r.json() : {}).then((d: {
+      settings?: Record<string, string | number | Array<{name:string;url:string}>>;
+      hasNas?: boolean; hasNotion?: boolean;
+    }) => {
+      if (d.settings) {
+        setMyConfig(prev => ({
+          ...prev,
+          nas_ssh_host: String(d.settings?.nas_ssh_host || ''),
+          nas_ssh_port: String(d.settings?.nas_ssh_port || '22'),
+          nas_ssh_user: String(d.settings?.nas_ssh_user || ''),
+          nas_web_base_url: String(d.settings?.nas_web_base_url || ''),
+          notion_camera_db_id: String(d.settings?.notion_camera_db_id || ''),
+          storage_type: String(d.settings?.storage_type || 'r2'),
+          cctv_streams: (d.settings?.cctv_streams as Array<{name:string;url:string}>) || [{ name: '', url: '' }],
+        }));
+        setMyConfigHas({ hasNas: !!d.hasNas, hasNotion: !!d.hasNotion });
+      }
+    });
+  }, [activeTab]);
 
   // Ollama + Claude 모델 목록 동적 로드 (ai 탭 진입 시)
   useEffect(() => {
@@ -329,7 +369,10 @@ export default function SettingsPage() {
       <div className="p-6">
         {/* 탭 */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
-          {[['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['camera', '📷 카메라'], ['erp', '📊 ERP DB 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원']].map(([v, l]) => (
+          {[
+            ...(isServiceDomain ? [['myconfig', '🔧 내 연동 설정']] : []),
+            ['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['camera', '📷 카메라'], ['erp', '📊 ERP DB 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원'],
+          ].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === v ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
@@ -1809,6 +1852,174 @@ export default function SettingsPage() {
 
         {/* 백업/복원 탭 */}
         {activeTab === 'backup' && <BackupRestorePanel />}
+
+        {/* 내 연동 설정 (service 도메인 유저 전용) */}
+        {activeTab === 'myconfig' && (
+          <div className="space-y-8 max-w-2xl">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800 mb-1">🔧 내 연동 설정</h2>
+              <p className="text-sm text-gray-500">NAS, Notion, CCTV 등 개인 연동 정보를 설정합니다.</p>
+            </div>
+
+            {/* 저장소 타입 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-3">
+              <h3 className="font-semibold text-gray-800">💾 사진 저장 방식</h3>
+              <div className="flex gap-3">
+                {[['r2', '☁️ 클라우드 (R2)'], ['nas', '🖥️ 내 NAS'], ['none', '📱 기기만']].map(([v, l]) => (
+                  <button key={v} onClick={() => setMyConfig(p => ({ ...p, storage_type: v }))}
+                    className={`flex-1 py-3 rounded-xl text-sm font-medium border-2 transition-colors ${myConfig.storage_type === v ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:border-gray-400'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">NAS 선택 시 아래 SSH 정보가 필요합니다</p>
+            </div>
+
+            {/* NAS 설정 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-800">🖥️ NAS 설정 {myConfigHas.hasNas && <span className="text-green-600 text-xs ml-1">✓ 설정됨</span>}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Synology NAS SSH 연결 정보</p>
+                </div>
+                <button onClick={async () => {
+                  setMyNasChecking(true); setMyNasCheck(null);
+                  const r = await fetch('/api/camera/check?target=nas');
+                  setMyNasCheck(await r.json()); setMyNasChecking(false);
+                }} disabled={myNasChecking}
+                  className="px-3 py-2 rounded-xl bg-gray-800 text-white text-xs font-medium disabled:opacity-50 flex items-center gap-1">
+                  {myNasChecking ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/>확인 중</> : '🔌 연결 체크'}
+                </button>
+              </div>
+              {myNasCheck && (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${myNasCheck.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {myNasCheck.ok ? '✅' : '❌'} {myNasCheck.message}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                {[['SSH 호스트', 'nas_ssh_host', 'mynas.synology.me', 'text'],
+                  ['포트', 'nas_ssh_port', '22', 'text'],
+                  ['사용자명', 'nas_ssh_user', 'admin', 'text'],
+                  ['비밀번호', 'nas_ssh_password', '••••••••', 'password'],
+                ].map(([label, key, ph, type]) => (
+                  <div key={key}>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">{label}</label>
+                    <input type={type} value={myConfig[key as keyof typeof myConfig] as string}
+                      onChange={e => setMyConfig(p => ({ ...p, [key]: e.target.value }))}
+                      placeholder={ph}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300" />
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">웹 기본 URL (사진 URL 생성)</label>
+                <input value={myConfig.nas_web_base_url}
+                  onChange={e => setMyConfig(p => ({ ...p, nas_web_base_url: e.target.value }))}
+                  placeholder="http://mynas.synology.me"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+              </div>
+            </div>
+
+            {/* Notion 설정 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-800">📔 Notion 연동 {myConfigHas.hasNotion && <span className="text-green-600 text-xs ml-1">✓ 설정됨</span>}</h3>
+                </div>
+                <button onClick={async () => {
+                  setMyNotionChecking(true); setMyNotionCheck(null);
+                  const r = await fetch('/api/camera/check?target=notion');
+                  setMyNotionCheck(await r.json()); setMyNotionChecking(false);
+                }} disabled={myNotionChecking}
+                  className="px-3 py-2 rounded-xl bg-gray-800 text-white text-xs font-medium disabled:opacity-50 flex items-center gap-1">
+                  {myNotionChecking ? <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/>확인 중</> : '🔌 연결 체크'}
+                </button>
+              </div>
+              {myNotionCheck && (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${myNotionCheck.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {myNotionCheck.ok ? '✅' : '❌'} {myNotionCheck.message}
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Notion API 키</label>
+                <input type="password" value={myConfig.notion_api_key}
+                  onChange={e => setMyConfig(p => ({ ...p, notion_api_key: e.target.value }))}
+                  placeholder={myConfigHas.hasNotion ? '변경하려면 새 키 입력' : 'secret_...'}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">카메라롤 DB ID</label>
+                <input value={myConfig.notion_camera_db_id}
+                  onChange={e => setMyConfig(p => ({ ...p, notion_camera_db_id: e.target.value }))}
+                  placeholder="32자리 Notion DB ID"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+              </div>
+            </div>
+
+            {/* CCTV 스트림 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
+              <h3 className="font-semibold text-gray-800">📹 CCTV 스트림</h3>
+              <p className="text-xs text-gray-500">RTSP 또는 HTTP 스트림 URL 최대 4개</p>
+              {myConfig.cctv_streams.map((s, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input value={s.name} placeholder={`카메라 ${i + 1}`}
+                    onChange={e => setMyConfig(p => ({ ...p, cctv_streams: p.cctv_streams.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))}
+                    className="w-28 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300" />
+                  <input value={s.url} placeholder="rtsp://... 또는 http://..."
+                    onChange={e => setMyConfig(p => ({ ...p, cctv_streams: p.cctv_streams.map((x, j) => j === i ? { ...x, url: e.target.value } : x) }))}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 font-mono" />
+                  <button onClick={() => setMyConfig(p => ({ ...p, cctv_streams: p.cctv_streams.filter((_, j) => j !== i) }))}
+                    className="text-red-400 hover:text-red-600 px-2 text-lg">✕</button>
+                </div>
+              ))}
+              {myConfig.cctv_streams.length < 4 && (
+                <button onClick={() => setMyConfig(p => ({ ...p, cctv_streams: [...p.cctv_streams, { name: '', url: '' }] }))}
+                  className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+                  + 스트림 추가
+                </button>
+              )}
+            </div>
+
+            {/* 카메라 비밀번호 */}
+            <div className="bg-gray-50 rounded-2xl p-5 space-y-3">
+              <h3 className="font-semibold text-gray-800">🔒 특수사진첩 비밀번호</h3>
+              <input type="password" value={myConfig.camera_secret_password}
+                onChange={e => setMyConfig(p => ({ ...p, camera_secret_password: e.target.value }))}
+                placeholder="기본값: 0506"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300" />
+            </div>
+
+            {/* 저장 */}
+            <div className="flex items-center gap-3">
+              <button onClick={async () => {
+                setMyConfigSaving(true); setMyConfigMsg('');
+                const body: Record<string, unknown> = {};
+                if (myConfig.nas_ssh_host) body.nas_ssh_host = myConfig.nas_ssh_host;
+                if (myConfig.nas_ssh_port) body.nas_ssh_port = parseInt(myConfig.nas_ssh_port);
+                if (myConfig.nas_ssh_user) body.nas_ssh_user = myConfig.nas_ssh_user;
+                if (myConfig.nas_ssh_password) body.nas_ssh_password = myConfig.nas_ssh_password;
+                if (myConfig.nas_web_base_url) body.nas_web_base_url = myConfig.nas_web_base_url;
+                if (myConfig.notion_api_key) body.notion_api_key = myConfig.notion_api_key;
+                if (myConfig.notion_camera_db_id) body.notion_camera_db_id = myConfig.notion_camera_db_id;
+                if (myConfig.camera_secret_password) body.camera_secret_password = myConfig.camera_secret_password;
+                body.storage_type = myConfig.storage_type;
+                body.cctv_streams = myConfig.cctv_streams.filter(s => s.url);
+                const res = await fetch('/api/user-settings', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(body),
+                });
+                setMyConfigMsg(res.ok ? '✅ 저장됨' : '❌ 저장 실패');
+                setMyConfigSaving(false);
+                setTimeout(() => setMyConfigMsg(''), 2500);
+              }} disabled={myConfigSaving}
+                className="px-6 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold disabled:opacity-50">
+                {myConfigSaving ? '저장 중...' : '💾 설정 저장'}
+              </button>
+              {myConfigMsg && <span className="text-sm font-medium text-gray-600">{myConfigMsg}</span>}
+            </div>
+          </div>
+        )}
 
         {/* 카메라 설정 탭 */}
         {activeTab === 'camera' && (

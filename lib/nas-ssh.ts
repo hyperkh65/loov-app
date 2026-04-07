@@ -91,6 +91,72 @@ export async function n8nCli(args: string): Promise<SSHResult> {
   return nasExec(`/usr/local/bin/docker exec n8n-1-redeploy n8n ${args}`);
 }
 
+/** 커스텀 SSH 옵션으로 NAS 명령 실행 (일반 유저용) */
+export function nasExecCustom(command: string, options: {
+  host: string; port?: number; username: string; password: string;
+}): Promise<SSHResult> {
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    let stdout = '';
+    let stderr = '';
+
+    conn.on('ready', () => {
+      conn.exec(command, (err: any, stream: any) => {
+        if (err) { conn.end(); return reject(err); }
+        stream.on('data', (d: Buffer) => { stdout += d.toString(); });
+        stream.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+        stream.on('close', (code: number) => {
+          conn.end();
+          resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code });
+        });
+      });
+    });
+
+    conn.on('error', reject);
+    conn.connect({
+      host: options.host,
+      port: options.port ?? 22,
+      username: options.username,
+      password: options.password,
+      readyTimeout: 10000,
+    });
+  });
+}
+
+/** 커스텀 SSH 옵션으로 stdin pipe 명령 실행 (일반 유저용) */
+export function nasExecWithStdinCustom(command: string, stdinData: Buffer | string, options: {
+  host: string; port?: number; username: string; password: string;
+}): Promise<SSHResult> {
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    let stdout = '';
+    let stderr = '';
+
+    conn.on('ready', () => {
+      conn.exec(command, (err: any, stream: any) => {
+        if (err) { conn.end(); return reject(err); }
+        stream.on('data', (d: Buffer) => { stdout += d.toString(); });
+        stream.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+        stream.on('close', (code: number) => {
+          conn.end();
+          resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code });
+        });
+        stream.write(stdinData);
+        stream.end();
+      });
+    });
+
+    conn.on('error', reject);
+    conn.connect({
+      host: options.host,
+      port: options.port ?? 22,
+      username: options.username,
+      password: options.password,
+      readyTimeout: 15000,
+    });
+  });
+}
+
 /** 2days.kr NAS SSH 명령 실행 */
 export function nas2daysExec(command: string): Promise<SSHResult> {
   return new Promise((resolve, reject) => {

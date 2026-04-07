@@ -52,6 +52,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return;
       }
 
+      // service 도메인 + 일반 유저 → 온보딩 체크
+      if (currentHostname === serviceDomain && !isOwner) {
+        try {
+          const settingsRes = await fetch('/api/user-settings');
+          if (settingsRes.ok) {
+            const settingsData = await settingsRes.json() as { settings: Record<string, unknown> | null };
+            // settings가 null이면 온보딩 미완료
+            if (!settingsData.settings) {
+              router.replace('/onboarding');
+              return;
+            }
+          }
+        } catch {
+          // 온보딩 체크 실패 시 그냥 진행
+        }
+      }
+
       try {
         const data = await loadAllData();
         if (!mounted) return;
