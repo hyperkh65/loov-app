@@ -35,7 +35,7 @@ export const saveSettings = (settings: CompanySettings) => {
 
 export const fetchCompanySettings = async (): Promise<CompanySettings> => {
     try {
-        const res = await notionQuery(DB_SETTINGS);
+        const res = await notionQuery(DB_SETTINGS());
         if (res.results.length > 0) {
             const p = res.results[0].properties;
             const settings: CompanySettings = {
@@ -66,7 +66,7 @@ export const fetchCompanySettings = async (): Promise<CompanySettings> => {
 export const saveCompanySettingsNotion = async (settings: CompanySettings) => {
     saveSettings(settings);
     try {
-        const res = await notionQuery(DB_SETTINGS);
+        const res = await notionQuery(DB_SETTINGS());
 
         const props: any = {
             'name': TITLE(settings.name),
@@ -92,7 +92,7 @@ export const saveCompanySettingsNotion = async (settings: CompanySettings) => {
             if (updateRes.error) throw new Error(updateRes.message || '노션 페이지 업데이트 실패');
             return updateRes;
         } else {
-            const createRes = await notionCreate(DB_SETTINGS, props);
+            const createRes = await notionCreate(DB_SETTINGS(), props);
             if (createRes.error) throw new Error(createRes.message || '노션 페이지 생성 실패');
             return createRes;
         }

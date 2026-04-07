@@ -30,7 +30,7 @@ export default function ClientPicker({ isOpen, onClose, onSelect }: ClientPicker
     async function fetchClients() {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_CLIENTS);
+            const res = await notionQuery(DB_CLIENTS());
             const data = res.results.map((r: any) => ({
                 id: r.id,
                 name: r.properties.ClientName?.title?.[0]?.plain_text || '이름 없음',

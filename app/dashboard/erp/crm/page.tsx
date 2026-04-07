@@ -87,8 +87,8 @@ export default function SalesManagementPage() {
         try {
             setLoading(true);
             const [sRes, cRes] = await Promise.all([
-                notionQuery(DB_SALES, { sorts: [{ property: 'Date', direction: 'descending' }] }),
-                notionQuery(DB_CLIENTS)
+                notionQuery(DB_SALES(), { sorts: [{ property: 'Date', direction: 'descending' }] }),
+                notionQuery(DB_CLIENTS())
             ]);
 
             const grouped: { [key: string]: SalesRecord } = {};
@@ -239,7 +239,7 @@ export default function SalesManagementPage() {
             }
             for (let i = 0; i < form.items.length; i++) {
                 const item = form.items[i];
-                await notionCreate(DB_SALES, {
+                await notionCreate(DB_SALES(), {
                     Name: TITLE(form.code + '_' + (i + 1)),
                     code: RT(form.code),
                     Date: dateISO(form.date),

@@ -29,7 +29,7 @@ export default function SCMPage() {
     async function fetchInventory() {
         try {
             setLoading(true);
-            const productRes = await notionQuery(DB_PRODUCTS, { sorts: [{ property: 'ProductName', direction: 'ascending' }] });
+            const productRes = await notionQuery(DB_PRODUCTS(), { sorts: [{ property: 'ProductName', direction: 'ascending' }] });
             const allProducts = productRes.results.map((r: any) => ({
                 id: r.id,
                 name: r.properties.ProductName?.rich_text?.[0]?.plain_text || r.properties.ProductName?.title?.[0]?.plain_text || '이름 없음',
@@ -42,8 +42,8 @@ export default function SCMPage() {
                 cost: r.properties.Cost?.number || 0,
             }));
 
-            const movementRes = await notionQuery(DB_INVENTORY);
-            const salesRes = await notionQuery(DB_SALES);
+            const movementRes = await notionQuery(DB_INVENTORY());
+            const salesRes = await notionQuery(DB_SALES());
 
             const inMap: Record<string, number> = {};
             const etcMap: Record<string, number> = {};
@@ -108,7 +108,7 @@ export default function SCMPage() {
             if (movementType === '입고') props.Qty = num(movement.qty);
             else if (movementType === '기타출고') props.etcqty = num(movement.qty);
 
-            await notionCreate(DB_INVENTORY, props);
+            await notionCreate(DB_INVENTORY(), props);
 
             alert(`${movementType} 데이터가 저장되었습니다.`);
             setIsMovementModalOpen(false);

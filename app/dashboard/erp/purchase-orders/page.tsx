@@ -125,8 +125,8 @@ export default function PurchaseOrdersPage() {
         try {
             setLoading(true);
             const [poRes, sRes] = await Promise.all([
-                notionQuery(DB_PURCHASE_ORDERS, { sorts: [{ property: 'Date', direction: 'descending' }] }),
-                notionQuery(DB_CLIENTS)
+                notionQuery(DB_PURCHASE_ORDERS(), { sorts: [{ property: 'Date', direction: 'descending' }] }),
+                notionQuery(DB_CLIENTS())
             ]);
 
             const groupedPOs: { [key: string]: PORecord } = {};
@@ -176,7 +176,7 @@ export default function PurchaseOrdersPage() {
             setPos(Object.values(groupedPOs));
             setSuppliers(sRes.results);
             // Fetch products for bulk price application
-            const pRes = await notionQuery(DB_PRODUCTS);
+            const pRes = await notionQuery(DB_PRODUCTS());
             setProducts(pRes.results);
         } catch (e) {
             console.error('발주 데이터 로드 실패:', e);
@@ -233,7 +233,7 @@ export default function PurchaseOrdersPage() {
 
             for (let i = 0; i < form.items.length; i++) {
                 const item = form.items[i];
-                await notionCreate(DB_PURCHASE_ORDERS, {
+                await notionCreate(DB_PURCHASE_ORDERS(), {
                     // 스크린샷 1: "Estimate No"가 제목 속성인 것으로 보임
                     "Estimate No": TITLE(form.supplier),
                     PoNo: RT(form.no),

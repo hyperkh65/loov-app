@@ -96,8 +96,8 @@ export default function AccountingPage() {
         try {
             setLoading(true);
             const [invRes, clientRes] = await Promise.all([
-                notionQuery(DB_INVOICES, { sorts: [{ property: 'IssueDate', direction: 'descending' }] }),
-                notionQuery(DB_CLIENTS)
+                notionQuery(DB_INVOICES(), { sorts: [{ property: 'IssueDate', direction: 'descending' }] }),
+                notionQuery(DB_CLIENTS())
             ]);
             const sortedClients = clientRes.results.sort((a: any, b: any) => {
                 const nameA = a.properties.ClientName?.title?.[0]?.plain_text || '';
@@ -179,7 +179,7 @@ export default function AccountingPage() {
         try {
             setLoading(true);
             const total = form.items.reduce((acc, it) => acc + (it.qty * it.unitPrice), 0);
-            await notionCreate(DB_INVOICES, {
+            await notionCreate(DB_INVOICES(), {
                 '이름': TITLE(form.invoiceNo),
                 InvoiceNo: RT(form.invoiceNo),
                 Client: RT(form.client),
@@ -195,7 +195,7 @@ export default function AccountingPage() {
             });
             if (form.showItems) {
                 for (const it of form.items) {
-                    await notionCreate(DB_INVOICE_DETAIL, {
+                    await notionCreate(DB_INVOICE_DETAIL(), {
                         '이름': TITLE(it.product),
                         InvoiceNo: RT(form.invoiceNo),
                         Product: RT(it.product),
@@ -237,12 +237,12 @@ export default function AccountingPage() {
                 Description: RT(editingInvoice.description),
                 Amount: num(total)
             });
-            const oldItems = await notionQuery(DB_INVOICE_DETAIL, {
+            const oldItems = await notionQuery(DB_INVOICE_DETAIL(), {
                 filter: { property: 'InvoiceNo', rich_text: { equals: editingInvoice.invoiceNo } }
             });
             for (const r of oldItems.results) await notionDelete(r.id);
             for (const it of (editingInvoice.items || [])) {
-                await notionCreate(DB_INVOICE_DETAIL, {
+                await notionCreate(DB_INVOICE_DETAIL(), {
                     '이름': TITLE(it.product),
                     InvoiceNo: RT(editingInvoice.invoiceNo),
                     Product: RT(it.product),
@@ -266,7 +266,7 @@ export default function AccountingPage() {
     const openInvoiceDetail = async (inv: Invoice) => {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_INVOICE_DETAIL, {
+            const res = await notionQuery(DB_INVOICE_DETAIL(), {
                 filter: { property: 'InvoiceNo', rich_text: { equals: inv.invoiceNo } }
             });
             const items = res.results.map((r: any) => {
@@ -292,7 +292,7 @@ export default function AccountingPage() {
     const startPrint = async (inv: Invoice) => {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_INVOICE_DETAIL, {
+            const res = await notionQuery(DB_INVOICE_DETAIL(), {
                 filter: { property: 'InvoiceNo', rich_text: { equals: inv.invoiceNo } }
             });
             const items = res.results.map((r: any) => {

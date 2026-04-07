@@ -46,7 +46,7 @@ export default function ProductPicker({ isOpen, onClose, onSelect }: ProductPick
     async function fetchProducts() {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_PRODUCTS, {
+            const res = await notionQuery(DB_PRODUCTS(), {
                 sorts: [{ property: 'ProductName', direction: 'ascending' }],
             });
             const data = res.results.map((r: any) => {

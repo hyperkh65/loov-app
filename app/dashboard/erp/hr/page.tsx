@@ -26,7 +26,7 @@ export default function HRPage() {
     async function fetchEmployees() {
         try {
             setLoading(true);
-            const res = await notionQuery(DB_HR, { sorts: [{ property: '이름', direction: 'ascending' }] });
+            const res = await notionQuery(DB_HR(), { sorts: [{ property: '이름', direction: 'ascending' }] });
             setEmployees(res.results);
         } finally {
             setLoading(false);
@@ -67,7 +67,7 @@ export default function HRPage() {
                 if (!validatePeriod(form.joinDate)) return;
                 await notionUpdate(selectedEmp.id, props);
             } else {
-                await notionCreate(DB_HR, props);
+                await notionCreate(DB_HR(), props);
             }
 
             setIsModalOpen(false);

@@ -36,8 +36,8 @@ export default function InventoryPage() {
         try {
             setLoading(true);
             const [invRes, prodRes] = await Promise.all([
-                notionQuery(DB_INVENTORY),
-                notionQuery(DB_PRODUCTS)
+                notionQuery(DB_INVENTORY()),
+                notionQuery(DB_PRODUCTS())
             ]);
 
             setProducts(prodRes.results);
@@ -67,7 +67,7 @@ export default function InventoryPage() {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await notionCreate(DB_INVENTORY, {
+            await notionCreate(DB_INVENTORY(), {
                 ProductName: TITLE(form.productName),
                 ProductCode: RT(form.productCode),
                 Qty: num(form.qty),
