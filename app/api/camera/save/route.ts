@@ -7,7 +7,7 @@ const NAS_PHOTO_DIR = '/volume1/web/camera_photos';
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageBase64, filter, filterCss, location, notionDbId, metadata } = await req.json();
+    const { imageBase64, filter, filterCss, location, notionDbId, metadata, isSecret } = await req.json();
     if (!imageBase64) return NextResponse.json({ error: '이미지 없음' }, { status: 400 });
 
     const photoId = metadata?.id || Date.now().toString();
@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
         timestamp: metadata?.timestamp || new Date().toLocaleString('ko-KR'),
         lat: location?.lat ?? null,
         lng: location?.lng ?? null,
+        is_secret: isSecret ?? false,
       }, { onConflict: 'id' })
       .select()
       .single();
@@ -103,19 +104,54 @@ export async function POST(req: NextRequest) {
 }
 
 // 갤러리 로드 (모든 기기에서 공유)
+// ?secret=1 + 올바른 비밀번호 헤더 필요 시 비밀사진 반환
 export async function GET(req: NextRequest) {
   try {
     const sbAdmin = createAdminClient();
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
 
-    let query = sbAdmin.from('camera_photos').select('*').order('created_at', { ascending: false }).limit(200);
+    const url = new URL(req.url);
+    const wantSecret = url.searchParams.get('secret') === '1';
+
+    // 비밀 갤러리 요청: 비밀번호 헤더 검증
+    if (wantSecret) {
+      const pw = req.headers.get('x-secret-password');
+      const envPw = process.env.CAMERA_SECRET_PASSWORD;
+      if (!envPw || pw !== envPw) {
+        return NextResponse.json({ error: '인증 실패' }, { status: 401 });
+      }
+    }
+
+    let query = sbAdmin
+      .from('camera_photos')
+      .select('*')
+      .eq('is_secret', wantSecret)
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (user) query = query.eq('user_id', user.id);
 
     const { data, error } = await query;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     return NextResponse.json({ photos: data || [] });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// 비밀사진 토글
+export async function PATCH(req: NextRequest) {
+  try {
+    const { id, isSecret, password } = await req.json();
+    const envPw = process.env.CAMERA_SECRET_PASSWORD;
+    if (!envPw || password !== envPw) {
+      return NextResponse.json({ error: '인증 실패' }, { status: 401 });
+    }
+    const sbAdmin = createAdminClient();
+    const { error } = await sbAdmin.from('camera_photos').update({ is_secret: isSecret }).eq('id', id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

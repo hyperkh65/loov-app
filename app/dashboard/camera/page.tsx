@@ -33,7 +33,9 @@ const FILTERS = [
 
 const THREE_D_GUIDES = ['정면', '우측45°', '우측90°', '후면', '좌측90°', '좌측45°', '상단'];
 
-type Tab = 'camera' | 'gallery' | 'edit' | 'bg' | '3d';
+type Tab = 'camera' | 'gallery' | 'edit' | 'bg' | '3d' | 'secret';
+
+const SESSION_KEY = 'loov_cam_secret_auth';
 
 export default function CameraPage() {
   const [tab, setTab] = useState<Tab>('camera');
@@ -57,6 +59,14 @@ export default function CameraPage() {
   const [threeDIdx, setThreeDIdx] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [syncing, setSyncing] = useState(false);
+  // 비밀 갤러리
+  const [secretAuthed, setSecretAuthed] = useState(false);
+  const [secretPhotos, setSecretPhotos] = useState<StoredPhoto[]>([]);
+  const [showSecretModal, setShowSecretModal] = useState(false);
+  const [secretPw, setSecretPw] = useState('');
+  const [secretPwError, setSecretPwError] = useState('');
+  const [secretPwLoading, setSecretPwLoading] = useState(false);
+  const [secretSyncing, setSecretSyncing] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -76,41 +86,112 @@ export default function CameraPage() {
     }
     const savedDb = localStorage.getItem('loov_camera_notion_db');
     if (savedDb) setNotionDbId(savedDb);
+    // 세션 인증 복원 (브라우저 세션 동안 유지)
+    if (sessionStorage.getItem(SESSION_KEY) === '1') {
+      setSecretAuthed(true);
+    }
   }, []);
 
-  /* ── Load photos: IndexedDB + Supabase 병합 ── */
+  /* ── URL 유효성 검사 ── */
+  const isValidImgUrl = (url: string) =>
+    url && (url.startsWith('http://') || url.startsWith('https://') || (url.startsWith('data:image/') && url.length > 1000));
+
+  const cloudToStored = (r: any): StoredPhoto => ({
+    id: r.id,
+    dataUrl: r.cloudinary_url,
+    filter: r.filter || 'normal',
+    filterCss: r.filter_css || '',
+    timestamp: r.timestamp || r.created_at,
+    lat: r.lat,
+    lng: r.lng,
+    uploaded: true,
+    cloudinaryUrl: r.thumbnail_url || r.cloudinary_url,
+    isSecret: r.is_secret || false,
+  });
+
+  /* ── Load photos: 일반사진만 (비밀사진 제외) ── */
   const loadPhotos = async () => {
-    const local = await dbGetPhotos();
+    const local = (await dbGetPhotos()).filter(p => !p.isSecret);
     setPhotos(local);
     try {
       setSyncing(true);
-      const res = await fetch('/api/camera/save');
+      const res = await fetch('/api/camera/save'); // is_secret=false 반환
       if (!res.ok) return;
       const { photos: cloudPhotos } = await res.json();
       if (!cloudPhotos?.length) return;
-
-      const isValid = (url: string) =>
-        url && (url.startsWith('http://') || url.startsWith('https://') || (url.startsWith('data:image/') && url.length > 1000));
-
-      const cloud: StoredPhoto[] = cloudPhotos
-        .filter((r: any) => isValid(r.cloudinary_url))
-        .map((r: any) => ({
-          id: r.id,
-          dataUrl: r.cloudinary_url,
-          filter: r.filter || 'normal',
-          filterCss: r.filter_css || '',
-          timestamp: r.timestamp || r.created_at,
-          lat: r.lat,
-          lng: r.lng,
-          uploaded: true,
-          cloudinaryUrl: r.thumbnail_url || r.cloudinary_url,
-        }));
-
-      const cloudIds = new Set(cloud.map(p => p.id));
+      const cloud = cloudPhotos.filter((r: any) => isValidImgUrl(r.cloudinary_url)).map(cloudToStored);
+      const cloudIds = new Set(cloud.map((p: StoredPhoto) => p.id));
       const localPending = local.filter(p => !p.uploaded && !cloudIds.has(p.id));
       setPhotos([...localPending, ...cloud]);
     } catch {}
     finally { setSyncing(false); }
+  };
+
+  /* ── 비밀 갤러리 로드 (인증 후) ── */
+  const loadSecretPhotos = async (password: string) => {
+    const local = (await dbGetPhotos()).filter(p => p.isSecret);
+    setSecretPhotos(local);
+    try {
+      setSecretSyncing(true);
+      const res = await fetch('/api/camera/save?secret=1', {
+        headers: { 'x-secret-password': password },
+      });
+      if (!res.ok) return;
+      const { photos: cloudPhotos } = await res.json();
+      if (!cloudPhotos?.length) return;
+      const cloud = cloudPhotos.filter((r: any) => isValidImgUrl(r.cloudinary_url)).map(cloudToStored);
+      const cloudIds = new Set(cloud.map((p: StoredPhoto) => p.id));
+      const localPending = local.filter(p => !p.uploaded && !cloudIds.has(p.id));
+      setSecretPhotos([...localPending, ...cloud]);
+    } catch {}
+    finally { setSecretSyncing(false); }
+  };
+
+  /* ── 비밀번호 인증 ── */
+  const verifySecretPassword = async () => {
+    setSecretPwLoading(true);
+    setSecretPwError('');
+    try {
+      const res = await fetch('/api/camera/secret-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: secretPw }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem(SESSION_KEY, '1');
+        setSecretAuthed(true);
+        setShowSecretModal(false);
+        await loadSecretPhotos(secretPw);
+        setSecretPw('');
+      } else {
+        const d = await res.json();
+        setSecretPwError(d.error || '오류 발생');
+      }
+    } catch {
+      setSecretPwError('네트워크 오류');
+    }
+    setSecretPwLoading(false);
+  };
+
+  /* ── 비밀사진 토글 ── */
+  const toggleSecret = async (photo: StoredPhoto, pw: string) => {
+    const newVal = !photo.isSecret;
+    await dbUpdatePhoto(photo.id, { isSecret: newVal });
+    // 로컬 상태 업데이트
+    if (newVal) {
+      setPhotos(prev => prev.filter(p => p.id !== photo.id));
+      setSecretPhotos(prev => [{ ...photo, isSecret: true }, ...prev]);
+    } else {
+      setSecretPhotos(prev => prev.filter(p => p.id !== photo.id));
+      setPhotos(prev => [{ ...photo, isSecret: false }, ...prev]);
+    }
+    if (selected?.id === photo.id) setSelected({ ...photo, isSecret: newVal });
+    // Supabase 업데이트
+    fetch('/api/camera/save', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: photo.id, isSecret: newVal, password: pw }),
+    }).catch(() => {});
   };
 
   /* ── Camera ── */
@@ -196,6 +277,7 @@ export default function CameraPage() {
           location: photo.lat ? { lat: photo.lat, lng: photo.lng } : null,
           notionDbId,
           metadata: { id: photo.id, timestamp: photo.timestamp },
+          isSecret: photo.isSecret || false,
         }),
       });
       const data = await res.json();
@@ -513,15 +595,28 @@ export default function CameraPage() {
             ))}
           </div>
 
-          {/* 액션 버튼 2행 그리드 (overflow 없음 → 스크롤 간섭 제거) */}
+          {/* 액션 버튼 2행 그리드 */}
           <div className="bg-black border-t border-white/10 grid grid-cols-3 gap-px flex-shrink-0"
             style={{ touchAction: 'manipulation' }}>
-            <EditBtn icon="←" label="뒤로" onClick={() => setTab('gallery')} />
+            <EditBtn icon="←" label="뒤로" onClick={() => setTab(selected?.isSecret ? 'secret' : 'gallery')} />
             <EditBtn icon="✅" label="적용" onClick={applyEdits} />
             <EditBtn icon="✂️" label="누끼" onClick={() => setTab('bg')} />
             <EditBtn icon={uploading ? '⏳' : '☁️'} label="백업" onClick={uploadSelected} disabled={uploading} />
             <EditBtn icon="💾" label="저장" onClick={() => download(selected)} />
-            <EditBtn icon="🗑️" label="삭제" onClick={() => deletePhoto(selected)} danger />
+            <EditBtn
+              icon={selected?.isSecret ? '🔓' : '🔒'}
+              label={selected?.isSecret ? '공개' : '비밀'}
+              onClick={() => {
+                const pw = sessionStorage.getItem(SESSION_KEY) === '1'
+                  ? (prompt('비밀번호 확인') || '')
+                  : (prompt('비밀 지정 — 비밀번호 입력') || '');
+                if (pw) toggleSecret(selected, pw);
+              }}
+            />
+          </div>
+          {/* 삭제 버튼 별도 (위험하므로 분리) */}
+          <div className="bg-black pb-1 px-3 flex-shrink-0" style={{ touchAction: 'manipulation' }}>
+            <EditBtn icon="🗑️" label="삭제" onClick={() => deletePhoto(selected)} danger fullWidth />
           </div>
           {uploadMsg && (
             <p className="bg-black text-center text-blue-300 text-xs py-2 flex-shrink-0">{uploadMsg}</p>
@@ -658,6 +753,53 @@ export default function CameraPage() {
         </div>
       )}
 
+      {/* ══════════ 비밀 갤러리 ══════════════════════════════════════ */}
+      {tab === 'secret' && (
+        <div className="flex-1 flex flex-col bg-black overflow-hidden min-h-0">
+          <div className="px-4 py-3 flex items-center justify-between border-b border-white/10 flex-shrink-0"
+            style={{ touchAction: 'manipulation' }}>
+            <button onClick={() => setTab('gallery')} className="text-white/60 text-sm px-2 py-1">← 갤러리</button>
+            <span className="text-white font-bold">🔒 비밀 갤러리</span>
+            <button onClick={() => secretAuthed && loadSecretPhotos(prompt('비밀번호') || '')}
+              disabled={secretSyncing}
+              className={`text-sm px-2 py-1 rounded-lg ${secretSyncing ? 'text-white/30' : 'text-blue-400'}`}
+              style={{ touchAction: 'manipulation' }}>
+              {secretSyncing ? '동기화 중...' : '↻'}
+            </button>
+          </div>
+          {secretPhotos.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/30">
+              <span className="text-5xl">🔒</span>
+              <p className="text-sm">비밀사진이 없습니다</p>
+              <p className="text-xs text-white/20">편집 화면에서 🔒 버튼으로 지정</p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto" style={{ touchAction: 'pan-y', overscrollBehavior: 'contain' }}>
+              <div className="grid grid-cols-3 gap-px">
+                {secretPhotos.map(photo => (
+                  <button key={photo.id}
+                    onClick={() => { setSelected(photo); setBrightness(100); setContrast(100); setSaturation(100); setWarmth(0); setTab('edit'); }}
+                    className="relative aspect-square overflow-hidden"
+                    style={{ touchAction: 'manipulation' }}>
+                    <img
+                      src={photo.processedUrl || photo.dataUrl} alt=""
+                      className="w-full h-full object-cover"
+                      style={{ filter: photo.processedUrl ? 'none' : (photo.filterCss || 'none') }}
+                      onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}
+                    />
+                    <div className="absolute inset-0 bg-black/0 active:bg-black/20 transition-colors" />
+                    <span className="absolute top-1.5 right-1.5 text-sm">🔒</span>
+                    {photo.uploaded && (
+                      <span className="absolute bottom-1.5 right-1.5 w-3.5 h-3.5 bg-green-500 rounded-full text-white text-[7px] flex items-center justify-center">✓</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ══════════ 하단 탭바 ══════════════════════════════════════════ */}
       <div
         className="bg-black border-t border-white/10 flex flex-shrink-0"
@@ -677,7 +819,52 @@ export default function CameraPage() {
             <span className={`text-[10px] ${tab === t ? 'text-blue-400 font-semibold' : 'text-white'}`}>{label}</span>
           </button>
         ))}
+        {/* 비밀 탭 */}
+        <button
+          onClick={() => {
+            if (secretAuthed) { setTab('secret'); }
+            else { setShowSecretModal(true); }
+          }}
+          className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-opacity ${tab === 'secret' ? 'opacity-100' : 'opacity-35'}`}
+          style={{ touchAction: 'manipulation' }}>
+          <span className="text-lg leading-none">🔒</span>
+          <span className={`text-[10px] ${tab === 'secret' ? 'text-purple-400 font-semibold' : 'text-white'}`}>비밀</span>
+        </button>
       </div>
+
+      {/* 비밀번호 입력 모달 */}
+      {showSecretModal && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/80" onClick={() => setShowSecretModal(false)} style={{ touchAction: 'manipulation' }} />
+          <div className="fixed bottom-0 inset-x-0 z-50 bg-gray-950 rounded-t-2xl px-5 py-6 space-y-4 border-t border-white/10"
+            style={{ touchAction: 'pan-y' }}>
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto" />
+            <p className="text-white font-bold text-center text-lg">🔒 비밀 갤러리</p>
+            <p className="text-white/40 text-xs text-center">Vercel CAMERA_SECRET_PASSWORD로 설정한 비밀번호</p>
+            <input
+              type="password"
+              value={secretPw}
+              onChange={e => setSecretPw(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && verifySecretPassword()}
+              placeholder="비밀번호 입력"
+              autoFocus
+              className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-base text-center tracking-widest"
+              style={{ touchAction: 'manipulation' }}
+            />
+            {secretPwError && <p className="text-red-400 text-sm text-center">{secretPwError}</p>}
+            <button
+              onClick={verifySecretPassword}
+              disabled={secretPwLoading || !secretPw}
+              className="w-full py-3.5 rounded-xl bg-purple-600 text-white font-bold text-base disabled:opacity-40 active:scale-[0.98]"
+              style={{ touchAction: 'manipulation' }}>
+              {secretPwLoading ? '확인 중...' : '입장'}
+            </button>
+            <button onClick={() => { setShowSecretModal(false); setSecretPw(''); setSecretPwError(''); }}
+              className="w-full py-3 text-white/40 text-sm"
+              style={{ touchAction: 'manipulation' }}>취소</button>
+          </div>
+        </>
+      )}
 
       {/* 설정 바텀시트 (카메라 탭에서만) */}
       {showSettings && tab === 'camera' && (
@@ -713,13 +900,13 @@ export default function CameraPage() {
 }
 
 /* ── 편집 액션 버튼 ── */
-function EditBtn({ icon, label, onClick, disabled, danger }: {
-  icon: string; label: string; onClick: () => void; disabled?: boolean; danger?: boolean;
+function EditBtn({ icon, label, onClick, disabled, danger, fullWidth }: {
+  icon: string; label: string; onClick: () => void; disabled?: boolean; danger?: boolean; fullWidth?: boolean;
 }) {
   return (
     <button
       onClick={onClick} disabled={disabled}
-      className={`flex flex-col items-center justify-center gap-1 py-3 text-xs transition-opacity disabled:opacity-40 ${
+      className={`flex flex-col items-center justify-center gap-1 py-3 text-xs transition-opacity disabled:opacity-40 ${fullWidth ? 'w-full' : ''} ${
         danger ? 'text-red-400 bg-red-950/30' : 'text-white/80 bg-white/5'
       }`}
       style={{ touchAction: 'manipulation' }}>
