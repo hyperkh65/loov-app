@@ -61,9 +61,9 @@ export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  /* ── Init: load DB, GPS ── */
+  /* ── Init: load photos (cloud + local merge), GPS ── */
   useEffect(() => {
-    dbGetPhotos().then(setPhotos);
+    loadPhotos();
     if (navigator.geolocation) {
       navigator.geolocation.watchPosition(
         p => setLocation({ lat: p.coords.latitude, lng: p.coords.longitude }),
@@ -74,6 +74,39 @@ export default function CameraPage() {
     const savedDb = localStorage.getItem('loov_camera_notion_db');
     if (savedDb) setNotionDbId(savedDb);
   }, []);
+
+  /* ── Load: Supabase 클라우드 + IndexedDB 로컬 병합 ── */
+  const loadPhotos = async () => {
+    // 1. 로컬 IndexedDB (빠름 — 먼저 표시)
+    const local = await dbGetPhotos();
+    setPhotos(local);
+
+    // 2. 클라우드 (Supabase) — 모든 기기 공유
+    try {
+      const res = await fetch('/api/camera/save');
+      if (!res.ok) return;
+      const { photos: cloudPhotos } = await res.json();
+      if (!cloudPhotos?.length) return;
+
+      // 클라우드 사진을 StoredPhoto 형태로 변환
+      const cloud: StoredPhoto[] = cloudPhotos.map((r: any) => ({
+        id: r.id,
+        dataUrl: r.cloudinary_url,      // 클라우드 URL을 dataUrl로 사용
+        filter: r.filter || 'normal',
+        filterCss: r.filter_css || '',
+        timestamp: r.timestamp || r.created_at,
+        lat: r.lat,
+        lng: r.lng,
+        uploaded: true,
+        cloudinaryUrl: r.cloudinary_url,
+      }));
+
+      // 로컬에만 있는 pending 사진 + 클라우드 사진 병합 (중복 제거)
+      const cloudIds = new Set(cloud.map(p => p.id));
+      const localPending = local.filter(p => !p.uploaded && !cloudIds.has(p.id));
+      setPhotos([...localPending, ...cloud]);
+    } catch {}
+  };
 
   /* ── Camera start ── */
   const startCamera = useCallback(async () => {
@@ -132,7 +165,7 @@ export default function CameraPage() {
     setTimeout(() => setCapturing(false), 250);
   }, [capturing, filter, facingMode, location]);
 
-  /* ── Cloud upload (silent background) ── */
+  /* ── Cloud upload (Cloudinary + Supabase 동시 저장) ── */
   const uploadToCloud = async (photo: StoredPhoto) => {
     try {
       const res = await fetch('/api/camera/save', {
@@ -141,15 +174,18 @@ export default function CameraPage() {
         body: JSON.stringify({
           imageBase64: photo.dataUrl,
           filter: photo.filter,
+          filterCss: photo.filterCss,
           location: photo.lat ? { lat: photo.lat, lng: photo.lng } : null,
           notionDbId,
-          metadata: { filename: `photo_${photo.id}` },
+          metadata: { id: photo.id, timestamp: photo.timestamp },
         }),
       });
       const data = await res.json();
       if (data.ok && data.cloudinaryUrl) {
         await dbUpdatePhoto(photo.id, { uploaded: true, cloudinaryUrl: data.cloudinaryUrl });
-        setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, uploaded: true, cloudinaryUrl: data.cloudinaryUrl } : p));
+        setPhotos(prev => prev.map(p => p.id === photo.id
+          ? { ...p, uploaded: true, cloudinaryUrl: data.cloudinaryUrl, dataUrl: data.cloudinaryUrl }
+          : p));
       }
     } catch {}
   };
@@ -229,9 +265,16 @@ export default function CameraPage() {
 
   /* ── Delete ── */
   const deletePhoto = async (photo: StoredPhoto) => {
+    // 로컬 삭제
     await dbDeletePhoto(photo.id);
     setPhotos(prev => prev.filter(p => p.id !== photo.id));
     if (selected?.id === photo.id) { setSelected(null); setTab('gallery'); }
+    // 클라우드 삭제 (백그라운드)
+    fetch('/api/camera/save', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: photo.id }),
+    }).catch(() => {});
   };
 
   const filterCss = FILTERS.find(f => f.id === filter)?.css || '';
@@ -367,7 +410,7 @@ export default function CameraPage() {
           <div className="px-4 py-3 flex items-center justify-between border-b border-white/10">
             <button onClick={() => setTab('camera')} className="text-white/60 text-sm">← 카메라</button>
             <h2 className="text-white font-bold">{photos.length}장</h2>
-            <div className="w-12" />
+            <button onClick={loadPhotos} className="text-blue-400 text-sm">↻ 동기화</button>
           </div>
 
           {photos.length === 0 ? (
