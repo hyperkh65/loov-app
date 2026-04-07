@@ -1,350 +1,673 @@
 'use client';
 
-import { useState } from 'react';
-import { useStore } from '@/lib/store';
-import { AccountingEntry, INCOME_CATEGORIES, EXPENSE_CATEGORIES, ANIMAL_EMOJI } from '@/lib/types';
+import React, { useState, useEffect } from 'react';
+import {
+    notionQuery, notionCreate, notionUpdate, notionDelete,
+    isWithinCurrentMonth, validatePeriod,
+    DB_INVOICES, DB_INVOICE_DETAIL, DB_CLIENTS, DB_PRODUCTS,
+    RT, TITLE, num, dateISO, select, FILES, uploadFile
+} from '@/lib/notion-erp';
+import Modal from '@/components/erp/Modal';
+import ProductPicker from '@/components/erp/ProductPicker';
+import QuotePicker from '@/components/erp/QuotePicker';
+import { getSettings, CompanySettings, fetchCompanySettings } from '@/lib/erp-settings';
 
-function fmtMoney(n: number) {
-  return `₩${n.toLocaleString()}`;
+interface InvoiceItem {
+    id: string | number;
+    product: string;
+    productCode: string;
+    description: string;
+    qty: number;
+    unitPrice: number;
+    amount: number;
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
+interface Invoice {
+    id: string;
+    invoiceNo: string;
+    client: string;
+    currency: string;
+    totalAmount: number;
+    issueDate: string;
+    dueDate: string;
+    status: string;
+    category: string;
+    billingReason: string;
+    description: string;
+    attachment?: { name: string; url: string };
+    items?: InvoiceItem[];
+    clientInfo?: {
+        address: string;
+        bizNo: string;
+        ceo: string;
+    };
 }
 
-// ── 항목 추가 모달 ────────────────────────────────────
-function AddEntryModal({ onClose }: { onClose: () => void }) {
-  const { addAccountingEntry, employees } = useStore();
-  const [form, setForm] = useState({
-    type: 'income' as 'income' | 'expense',
-    category: '',
-    description: '',
-    amount: '',
-    date: new Date().toISOString().slice(0, 10),
-    assignedEmployeeId: '',
-    invoiceNumber: '',
-    isRecurring: false,
-    tags: '',
-  });
+export default function AccountingPage() {
+    const [view, setView] = useState<'dashboard' | 'all' | 'print'>('dashboard');
+    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [clients, setClients] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+    const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+    const [isQuotePickerOpen, setIsQuotePickerOpen] = useState(false);
+    const [printData, setPrintData] = useState<Invoice | null>(null);
+    const [company, setCompany] = useState<CompanySettings>(getSettings());
 
-  const categories = form.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('All');
+    const [sortBy, setSortBy] = useState<'issueDate' | 'dueDate' | 'amount'>('issueDate');
 
-  const handleSubmit = () => {
-    if (!form.description.trim() || !form.amount) return;
-    addAccountingEntry({
-      id: crypto.randomUUID(),
-      type: form.type,
-      category: form.category || categories[0],
-      description: form.description,
-      amount: parseInt(form.amount) || 0,
-      date: form.date,
-      assignedEmployeeId: form.assignedEmployeeId || undefined,
-      invoiceNumber: form.invoiceNumber || undefined,
-      isRecurring: form.isRecurring,
-      tags: form.tags ? form.tags.split(',').map((t) => t.trim()) : [],
+    const [form, setForm] = useState<{
+        invoiceNo: string;
+        client: string;
+        currency: string;
+        issueDate: string;
+        dueDate: string;
+        status: string;
+        category: string;
+        billingReason: string;
+        description: string;
+        attachment: any;
+        showItems: boolean;
+        items: InvoiceItem[];
+    }>({
+        invoiceNo: 'INV-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0'),
+        client: '',
+        currency: 'KRW',
+        issueDate: new Date().toISOString().split('T')[0],
+        dueDate: '',
+        status: '대기',
+        category: '매출',
+        billingReason: '',
+        description: '',
+        attachment: null,
+        showItems: true,
+        items: []
     });
-    onClose();
-  };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold">회계 항목 추가</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
-        </div>
+    useEffect(() => {
+        fetchCompanySettings().then(setCompany);
+        fetchData();
+    }, []);
 
-        <div className="flex rounded-xl overflow-hidden border border-gray-200 mb-4">
-          <button onClick={() => setForm({ ...form, type: 'income', category: '' })}
-            className={`flex-1 py-2.5 text-sm font-bold transition-colors ${form.type === 'income' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
-            + 수입
-          </button>
-          <button onClick={() => setForm({ ...form, type: 'expense', category: '' })}
-            className={`flex-1 py-2.5 text-sm font-bold transition-colors ${form.type === 'expense' ? 'bg-red-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
-            - 지출
-          </button>
-        </div>
+    const fetchData = async () => {
+        try {
+            setLoading(true);
+            const [invRes, clientRes] = await Promise.all([
+                notionQuery(DB_INVOICES, { sorts: [{ property: 'IssueDate', direction: 'descending' }] }),
+                notionQuery(DB_CLIENTS)
+            ]);
+            const sortedClients = clientRes.results.sort((a: any, b: any) => {
+                const nameA = a.properties.ClientName?.title?.[0]?.plain_text || '';
+                const nameB = b.properties.ClientName?.title?.[0]?.plain_text || '';
+                return nameA.localeCompare(nameB);
+            });
+            setClients(sortedClients);
+            const mapped = invRes.results.map((r: any) => {
+                const p = r.properties;
+                return {
+                    id: r.id,
+                    invoiceNo: p.InvoiceNo?.rich_text?.[0]?.plain_text || '-',
+                    client: p.Client?.rich_text?.[0]?.plain_text || '-',
+                    currency: p.Currency?.select?.name || 'KRW',
+                    totalAmount: p.Amount?.number || 0,
+                    issueDate: p.IssueDate?.date?.start || '-',
+                    dueDate: p.DueDate?.date?.start || '-',
+                    status: p.Status?.select?.name || '대기',
+                    category: p.Category?.select?.name || '매출',
+                    billingReason: p.BillingReason?.rich_text?.[0]?.plain_text || '',
+                    description: p.Description?.rich_text?.[0]?.plain_text || '',
+                    attachment: p.Attachment?.files?.[0]?.external || p.Attachment?.files?.[0]?.file
+                };
+            });
+            setInvoices(mapped);
+        } catch (e) {
+            console.error('데이터 로드 실패:', e);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">카테고리</label>
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400">
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">날짜</label>
-              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">내용 *</label>
-            <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
-              placeholder="항목 설명..." />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">금액 (원) *</label>
-            <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
-              placeholder="1000000" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">인보이스 번호</label>
-              <input value={form.invoiceNumber} onChange={(e) => setForm({ ...form, invoiceNumber: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
-                placeholder="INV-001" />
-            </div>
-            {employees.length > 0 && (
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">담당 직원</label>
-                <select value={form.assignedEmployeeId} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value })}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400">
-                  <option value="">없음</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.isRecurring} onChange={(e) => setForm({ ...form, isRecurring: e.target.checked })} className="rounded" />
-            <span className="text-sm text-gray-600">반복 항목 (매월)</span>
-          </label>
-        </div>
+    const onProductSelect = (p: any) => {
+        const newItem: InvoiceItem = {
+            id: Date.now(),
+            product: p.name,
+            productCode: p.code,
+            description: p.detail || '',
+            qty: 1,
+            unitPrice: p.cost || 0,
+            amount: p.cost || 0
+        };
+        if (editingInvoice) {
+            setEditingInvoice({ ...editingInvoice, items: [...(editingInvoice.items || []), newItem] });
+        } else {
+            setForm({ ...form, items: [...form.items, newItem], showItems: true });
+        }
+        setIsProductPickerOpen(false);
+    };
 
-        <div className="flex gap-2 mt-5">
-          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50">취소</button>
-          <button onClick={handleSubmit} disabled={!form.description.trim() || !form.amount}
-            className={`flex-1 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-bold transition-colors ${
-              form.type === 'income' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-500 hover:bg-red-400'
-            }`}>
-            추가
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+    const onQuoteSelect = (quote: any) => {
+        const newItems: InvoiceItem[] = quote.items.map((it: any) => {
+            const specParts = [
+                it.description,
+                it.voltage !== '-' ? it.voltage : '',
+                it.watts !== '-' ? it.watts : '',
+                it.luminousEff !== '-' ? it.luminousEff : '',
+                it.lumenOutput !== '-' ? it.lumenOutput : '',
+                it.cct !== '-' ? it.cct : ''
+            ].filter(Boolean);
+            return {
+                id: Date.now() + Math.random(),
+                product: it.product,
+                productCode: '-',
+                description: specParts.join(' / '),
+                qty: it.qty,
+                unitPrice: 0,
+                amount: 0
+            };
+        });
+        setForm(prev => ({ ...prev, client: quote.client, items: newItems }));
+        setIsQuotePickerOpen(false);
+        setIsCreateModalOpen(true);
+        alert(`${quote.no} 견적 내용이 불러와졌습니다. (가격은 0으로 설정되었습니다)`);
+    };
 
-export default function AccountingERPPage() {
-  const { accountingEntries, removeAccountingEntry, employees } = useStore();
-  const [showAdd, setShowAdd] = useState(false);
-  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
-  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+    const handleSave = async () => {
+        if (!form.client) return alert('거래처를 선택하세요.');
+        try {
+            setLoading(true);
+            const total = form.items.reduce((acc, it) => acc + (it.qty * it.unitPrice), 0);
+            await notionCreate(DB_INVOICES, {
+                '이름': TITLE(form.invoiceNo),
+                InvoiceNo: RT(form.invoiceNo),
+                Client: RT(form.client),
+                Currency: select(form.currency),
+                Amount: num(total),
+                IssueDate: dateISO(form.issueDate),
+                DueDate: dateISO(form.dueDate),
+                Status: select(form.status),
+                Category: select(form.category),
+                BillingReason: RT(form.billingReason),
+                Description: RT(form.description),
+                Attachment: form.attachment ? FILES(form.attachment.url, form.attachment.name) : { files: [] }
+            });
+            if (form.showItems) {
+                for (const it of form.items) {
+                    await notionCreate(DB_INVOICE_DETAIL, {
+                        '이름': TITLE(it.product),
+                        InvoiceNo: RT(form.invoiceNo),
+                        Product: RT(it.product),
+                        ProductCode: RT(it.productCode),
+                        Description: RT(it.description),
+                        Qty: num(it.qty),
+                        UnitPrice: num(it.unitPrice),
+                        Amount: num(it.qty * it.unitPrice)
+                    });
+                }
+            }
+            alert('청구서가 성공적으로 생성되었습니다.');
+            setIsCreateModalOpen(false);
+            setForm({
+                ...form,
+                invoiceNo: 'INV-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0'),
+                items: [],
+                billingReason: '',
+                description: '',
+                attachment: null
+            });
+            fetchData();
+        } catch (e: any) {
+            alert('저장 실패: ' + e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  const monthEntries = accountingEntries.filter((e) => e.date.startsWith(filterMonth));
-  const filtered = filterType === 'all' ? monthEntries : monthEntries.filter((e) => e.type === filterType);
-  const sortedFiltered = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+    const handleUpdateInvoice = async () => {
+        if (!editingInvoice) return;
+        if (!validatePeriod(editingInvoice.issueDate)) return;
+        try {
+            setLoading(true);
+            const total = editingInvoice.items?.reduce((acc, it) => acc + (it.qty * it.unitPrice), 0) || editingInvoice.totalAmount;
+            await notionUpdate(editingInvoice.id, {
+                Status: select(editingInvoice.status),
+                BillingReason: RT(editingInvoice.billingReason),
+                Description: RT(editingInvoice.description),
+                Amount: num(total)
+            });
+            const oldItems = await notionQuery(DB_INVOICE_DETAIL, {
+                filter: { property: 'InvoiceNo', rich_text: { equals: editingInvoice.invoiceNo } }
+            });
+            for (const r of oldItems.results) await notionDelete(r.id);
+            for (const it of (editingInvoice.items || [])) {
+                await notionCreate(DB_INVOICE_DETAIL, {
+                    '이름': TITLE(it.product),
+                    InvoiceNo: RT(editingInvoice.invoiceNo),
+                    Product: RT(it.product),
+                    ProductCode: RT(it.productCode),
+                    Description: RT(it.description),
+                    Qty: num(it.qty),
+                    UnitPrice: num(it.unitPrice),
+                    Amount: num(it.qty * it.unitPrice)
+                });
+            }
+            alert('수정되었습니다.');
+            setEditingInvoice(null);
+            fetchData();
+        } catch (e) {
+            alert('업데이트 실패');
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  const income = monthEntries.filter((e) => e.type === 'income').reduce((s, e) => s + e.amount, 0);
-  const expense = monthEntries.filter((e) => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
-  const profit = income - expense;
+    const openInvoiceDetail = async (inv: Invoice) => {
+        try {
+            setLoading(true);
+            const res = await notionQuery(DB_INVOICE_DETAIL, {
+                filter: { property: 'InvoiceNo', rich_text: { equals: inv.invoiceNo } }
+            });
+            const items = res.results.map((r: any) => {
+                const p = r.properties;
+                return {
+                    id: r.id,
+                    product: p.Product?.rich_text?.[0]?.plain_text || '-',
+                    productCode: p.ProductCode?.rich_text?.[0]?.plain_text || '-',
+                    description: p.Description?.rich_text?.[0]?.plain_text || '',
+                    qty: p.Qty?.number || 0,
+                    unitPrice: p.UnitPrice?.number || 0,
+                    amount: p.Amount?.number || 0
+                };
+            });
+            setEditingInvoice({ ...inv, items });
+        } catch (e) {
+            console.error('상세 조회 실패:', e);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  const categoryMap: Record<string, { income: number; expense: number }> = {};
-  monthEntries.forEach((e) => {
-    if (!categoryMap[e.category]) categoryMap[e.category] = { income: 0, expense: 0 };
-    categoryMap[e.category][e.type] += e.amount;
-  });
-  const topCategories = Object.entries(categoryMap)
-    .sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense))
-    .slice(0, 5);
+    const startPrint = async (inv: Invoice) => {
+        try {
+            setLoading(true);
+            const res = await notionQuery(DB_INVOICE_DETAIL, {
+                filter: { property: 'InvoiceNo', rich_text: { equals: inv.invoiceNo } }
+            });
+            const items = res.results.map((r: any) => {
+                const p = r.properties;
+                return {
+                    id: r.id,
+                    product: p.Product?.rich_text?.[0]?.plain_text || '-',
+                    productCode: p.ProductCode?.rich_text?.[0]?.plain_text || '-',
+                    description: p.Description?.rich_text?.[0]?.plain_text || '',
+                    qty: p.Qty?.number || 0,
+                    unitPrice: p.UnitPrice?.number || 0,
+                    amount: p.Amount?.number || 0
+                };
+            });
+            const clientDoc = clients.find(c => c.properties.ClientName?.title?.[0]?.plain_text === inv.client);
+            const clientInfo = clientDoc ? {
+                address: clientDoc.properties.Address?.rich_text?.[0]?.plain_text || clientDoc.properties['주소']?.rich_text?.[0]?.plain_text || '',
+                bizNo: clientDoc.properties.BizNo?.rich_text?.[0]?.plain_text || clientDoc.properties['사업자번호']?.rich_text?.[0]?.plain_text || '',
+                ceo: clientDoc.properties.CEO?.rich_text?.[0]?.plain_text || clientDoc.properties['대표자']?.rich_text?.[0]?.plain_text || ''
+            } : undefined;
+            setPrintData({ ...inv, items, clientInfo });
+            setView('print');
+        } catch (e) {
+            alert('출력 데이터 로드 실패');
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  return (
-    <div className="min-h-full">
-      <header className="bg-white border-b border-gray-100 px-4 md:px-6 py-4 sticky top-0 z-20">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h1 className="text-lg font-black text-gray-900">💰 회계 ERP</h1>
-            <p className="text-sm text-gray-400 hidden sm:block">수입/지출 관리 및 재무 보고</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
-              className="border border-gray-200 rounded-xl px-2 md:px-3 py-2 text-xs md:text-sm focus:outline-none focus:border-indigo-400" />
-            <button onClick={() => setShowAdd(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 md:px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap">
-              + 추가
-            </button>
-          </div>
-        </div>
-      </header>
+    const isLate = (dueDate: string, status: string) => {
+        if (status === '완료') return false;
+        if (!dueDate || dueDate === '-') return false;
+        return new Date(dueDate) < new Date();
+    };
 
-      <div className="p-4 md:p-6">
-        {/* 월간 요약 */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-white rounded-2xl border border-emerald-100 p-4">
-            <div className="text-xs text-gray-500 mb-1">총 수입</div>
-            <div className="text-lg md:text-2xl font-black text-emerald-600">{fmtMoney(income)}</div>
-            <div className="text-[10px] text-gray-400 mt-1">{monthEntries.filter((e) => e.type === 'income').length}건</div>
-          </div>
-          <div className="bg-white rounded-2xl border border-red-100 p-4">
-            <div className="text-xs text-gray-500 mb-1">총 지출</div>
-            <div className="text-lg md:text-2xl font-black text-red-500">{fmtMoney(expense)}</div>
-            <div className="text-[10px] text-gray-400 mt-1">{monthEntries.filter((e) => e.type === 'expense').length}건</div>
-          </div>
-          <div className={`bg-white rounded-2xl border p-4 ${profit >= 0 ? 'border-blue-100' : 'border-orange-100'}`}>
-            <div className="text-xs text-gray-500 mb-1">순이익</div>
-            <div className={`text-lg md:text-2xl font-black ${profit >= 0 ? 'text-blue-600' : 'text-orange-500'}`}>
-              {profit >= 0 ? '' : '-'}{fmtMoney(Math.abs(profit))}
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1">
-              {income > 0 ? `마진율 ${Math.round((profit / income) * 100)}%` : '수입 없음'}
-            </div>
-          </div>
-        </div>
+    const currencySymbol = (cur: string) => {
+        if (cur === 'USD') return '$';
+        if (cur === 'RMB') return '¥';
+        return '₩';
+    };
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* 거래 내역 */}
-          <div className="lg:col-span-2">
-            <div className="flex gap-2 mb-4">
-              {[['all', '전체'], ['income', '수입'], ['expense', '지출']].map(([v, l]) => (
-                <button key={v} onClick={() => setFilterType(v as typeof filterType)}
-                  className={`px-3 md:px-4 py-1.5 rounded-xl text-sm font-medium transition-colors ${
-                    filterType === v ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}>{l}</button>
-              ))}
-            </div>
+    const sortedInvoices = [...invoices]
+        .filter(inv =>
+            (inv.client.toLowerCase().includes(search.toLowerCase()) || inv.invoiceNo.toLowerCase().includes(search.toLowerCase())) &&
+            (statusFilter === 'All' || inv.status === statusFilter)
+        )
+        .sort((a, b) => {
+            if (sortBy === 'amount') return b.totalAmount - a.totalAmount;
+            if (sortBy === 'dueDate') return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+            return new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime();
+        });
 
-            {sortedFiltered.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-100 py-16 text-center">
-                <div className="text-5xl mb-4">💰</div>
-                <h2 className="text-lg font-bold text-gray-700 mb-2">이번달 거래 내역이 없습니다</h2>
-                <button onClick={() => setShowAdd(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm mt-2">
-                  + 항목 추가
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* 모바일: 카드 뷰 */}
-                <div className="md:hidden space-y-2">
-                  {sortedFiltered.map((entry) => {
-                    const emp = employees.find((e) => e.id === entry.assignedEmployeeId);
-                    return (
-                      <div key={entry.id} className="bg-white rounded-2xl border border-gray-100 p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-lg font-bold ${
-                                entry.type === 'income' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                              }`}>{entry.category}</span>
-                              <span className="text-[10px] text-gray-400">{fmtDate(entry.date)}</span>
-                              {entry.isRecurring && <span className="text-[10px] text-gray-400">반복</span>}
+    if (view === 'print' && printData) {
+        return (
+            <div style={{ background: 'white', color: 'black', minHeight: '100vh', padding: '40px' }} id="print-area">
+                <style>{`
+                    @media print {
+                        body * { visibility: hidden !important; }
+                        aside, header, nav, .sidebar, [role="complementary"] { display: none !important; }
+                        #print-area, #print-area * { visibility: visible !important; }
+                        .no-print, .no-print * { display: none !important; }
+                        #print-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; margin: 0 !important; padding: 0 !important; background: white !important; z-index: 9999 !important; }
+                        table { page-break-inside: auto; }
+                        tr { page-break-inside: avoid; page-break-after: auto; }
+                        thead { display: table-header-group; }
+                        tfoot { display: table-footer-group; }
+                        @page { size: auto; margin: 10mm; }
+                    }
+                    .dn-table th { background: #f0f0f0 !important; border: 1px solid #333; padding: 10px; font-size: 13px; text-align: center; font-weight: 700; -webkit-print-color-adjust: exact; }
+                    .dn-table td { border: 1px solid #333; padding: 10px; font-size: 13px; }
+                    .box-container { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid #333; margin-bottom: 30px; }
+                    .box-left { border-right: 1px solid #333; padding: 20px; position: relative; }
+                    .box-right { padding: 20px; position: relative; min-height: 180px; }
+                    .info-label { font-size: 0.9rem; color: #666; margin-bottom: 5px; }
+                `}</style>
+                <div className="no-print" style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+                    <button onClick={() => setView('all')} style={{ padding: '10px 20px', background: '#333', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+                        ◀ 뒤로가기
+                    </button>
+                    <button
+                        onClick={() => {
+                            const originalTitle = document.title;
+                            document.title = `${printData.issueDate}_거래명세표_${printData.invoiceNo}`;
+                            window.print();
+                            document.title = originalTitle;
+                        }}
+                        style={{ padding: '10px 20px', background: '#0070f3', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+                    >
+                        🖨️ 인쇄하기 (PDF 저장)
+                    </button>
+                </div>
+                <div style={{ width: '100%', margin: '0 auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', marginTop: '20px', position: 'relative' }}>
+                        {company.logoUrl && <img src={company.logoUrl} alt="Logo" style={{ height: '80px', maxWidth: '200px', objectFit: 'contain' }} />}
+                        <h1 style={{ fontSize: '3.5rem', fontWeight: 900, textDecoration: 'underline', textUnderlineOffset: '10px', letterSpacing: '10px', margin: 0, flex: 1, textAlign: 'center' }}>거 래 명 세 표</h1>
+                        <div style={{ textAlign: 'right', minWidth: '150px' }}>
+                            <p style={{ fontSize: '1.2rem', fontWeight: 600 }}>No: {printData.invoiceNo}</p>
+                        </div>
+                    </div>
+                    <div className="box-container">
+                        <div className="box-left">
+                            <p className="info-label">공급받는자 (BUYER)</p>
+                            <h2 style={{ fontSize: '1.8rem', fontWeight: 800, margin: '15px 0 25px 0' }}>{printData.client} <span style={{ fontSize: '1.1rem', fontWeight: 400 }}>귀하</span></h2>
+                            <div style={{ fontSize: '1rem', lineHeight: '2' }}>
+                                <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>일자:</span> {printData.issueDate}</p>
+                                <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>P.O No:</span> {printData.invoiceNo}</p>
+                                {printData.clientInfo?.bizNo && <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>등록번호:</span> {printData.clientInfo.bizNo}</p>}
+                                {printData.clientInfo?.address && <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>주소:</span> {printData.clientInfo.address}</p>}
                             </div>
-                            <div className="font-semibold text-sm text-gray-800 truncate">{entry.description}</div>
-                            {emp && <div className="text-xs text-gray-400 mt-0.5">{ANIMAL_EMOJI[emp.animal]} {emp.name}</div>}
-                            {entry.invoiceNumber && <div className="text-xs text-gray-400">#{entry.invoiceNumber}</div>}
-                          </div>
-                          <div className="text-right ml-3 flex-shrink-0">
-                            <div className={`font-bold text-sm ${entry.type === 'income' ? 'text-emerald-600' : 'text-red-500'}`}>
-                              {entry.type === 'income' ? '+' : '-'}{fmtMoney(entry.amount)}
+                        </div>
+                        <div className="box-right">
+                            <p className="info-label">공급자 (SELLER)</p>
+                            <h2 style={{ fontSize: '1.8rem', fontWeight: 800, margin: '15px 0 25px 0', whiteSpace: 'nowrap', display: 'inline-block' }}>{company.name}</h2>
+                            <div style={{ fontSize: '1rem', lineHeight: '1.8' }}>
+                                <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>등록번호:</span> {company.bizNo}</p>
+                                <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>대표자:</span> {company.ceo}<span style={{ marginLeft: '10px' }}>(인)</span></p>
+                                <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>주소:</span> {company.address}</p>
+                                <p><span style={{ fontWeight: 600, display: 'inline-block', width: '80px' }}>업태:</span> {company.bizType} <span style={{ margin: '0 10px' }}>/</span> <span style={{ fontWeight: 600 }}>종목:</span> {company.bizItem}</p>
                             </div>
-                            <button onClick={() => removeAccountingEntry(entry.id)} className="text-red-300 hover:text-red-500 text-xs mt-1">삭제</button>
-                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                    </div>
+                    <table className="dn-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
+                        <thead>
+                            <tr style={{ height: '40px' }}>
+                                <th style={{ width: '50px' }}>No</th>
+                                <th>품명 및 규격 (DESCRIPTION)</th>
+                                <th style={{ width: '80px' }}>수량</th>
+                                <th style={{ width: '100px' }}>단가</th>
+                                <th style={{ width: '120px' }}>공급가액</th>
+                                <th style={{ width: '80px' }}>비고</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(printData.items || []).map((it, idx) => (
+                                <tr key={idx}>
+                                    <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                                    <td>
+                                        <div style={{ fontWeight: 700, fontSize: '1rem' }}>{it.product}</div>
+                                        <div style={{ fontSize: '0.85rem', color: '#555', marginTop: '2px' }}>{it.description}</div>
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>{it.qty}</td>
+                                    <td style={{ textAlign: 'right' }}>{it.unitPrice.toLocaleString()}</td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{it.amount.toLocaleString()}</td>
+                                    <td style={{ textAlign: 'center' }}></td>
+                                </tr>
+                            ))}
+                            {[...Array(Math.max(0, 10 - (printData.items?.length || 0)))].map((_, i) => (
+                                <tr key={`empty-${i}`} style={{ height: '35px' }}><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+                            ))}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colSpan={2} style={{ textAlign: 'center', fontWeight: 700, padding: '15px' }}>부가가치세 (VAT 10%) - 별도 표기 없을 시 포함</td>
+                                <td colSpan={4} style={{ textAlign: 'right', fontWeight: 700, padding: '15px' }}>{Math.round(printData.totalAmount * 0.1).toLocaleString()}</td>
+                            </tr>
+                            <tr style={{ background: '#f9f9f9' }}>
+                                <td colSpan={2} style={{ textAlign: 'center', fontWeight: 800, fontSize: '1.2rem', padding: '15px' }}>합 계 금 액 (GRAND TOTAL)</td>
+                                <td colSpan={4} style={{ textAlign: 'right', fontWeight: 900, fontSize: '1.3rem', padding: '15px' }}>
+                                    {currencySymbol(printData.currency)} {(printData.totalAmount + Math.round(printData.totalAmount * 0.1)).toLocaleString()}
+                                    <span style={{ fontSize: '0.8rem', marginLeft: '10px', fontWeight: 400 }}>(VAT 포함)</span>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                        <div style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px' }}>
+                            <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '10px' }}>[입금계좌 안내]</p>
+                            <p style={{ fontSize: '1.1rem', fontWeight: 800 }}>{company.bank || '-'}</p>
+                        </div>
+                        <div style={{ border: '1px solid #ccc', padding: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', minHeight: '120px' }}>
+                            <h3 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '2px', zIndex: 2 }}>위 금액을 정히 영수(청구)함.</h3>
+                            {company.stampUrl && <img src={company.stampUrl} alt="Stamp" style={{ position: 'absolute', right: '10%', bottom: '5px', width: '320px', height: 'auto', opacity: 0.5, zIndex: 1, transform: 'rotate(-2deg)', pointerEvents: 'none' }} />}
+                        </div>
+                    </div>
+                    <div style={{ marginTop: '30px', textAlign: 'center', fontSize: '0.8rem', color: '#888' }}>
+                        본 명세표는 인터넷으로 발행되었습니다. / 문의: {company.email}
+                    </div>
                 </div>
+            </div>
+        );
+    }
 
-                {/* 데스크탑: 테이블 뷰 */}
-                <div className="hidden md:block bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-100">
-                      <tr>
-                        <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">날짜</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">카테고리</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">내용</th>
-                        <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">금액</th>
-                        <th className="px-4 py-3" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {sortedFiltered.map((entry) => {
-                        const emp = employees.find((e) => e.id === entry.assignedEmployeeId);
-                        return (
-                          <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
-                            <td className="px-5 py-3 text-gray-500 text-xs">{fmtDate(entry.date)}</td>
-                            <td className="px-4 py-3">
-                              <span className={`text-xs px-2 py-0.5 rounded-lg font-medium ${
-                                entry.type === 'income' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                              }`}>{entry.category}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="text-gray-800 font-medium">{entry.description}</div>
-                              {emp && <div className="text-xs text-gray-400 flex items-center gap-1">{ANIMAL_EMOJI[emp.animal]} {emp.name}</div>}
-                              {entry.invoiceNumber && <div className="text-xs text-gray-400">#{entry.invoiceNumber}</div>}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span className={`font-bold ${entry.type === 'income' ? 'text-emerald-600' : 'text-red-500'}`}>
-                                {entry.type === 'income' ? '+' : '-'}{fmtMoney(entry.amount)}
-                              </span>
-                              {entry.isRecurring && <div className="text-[10px] text-gray-400">반복</div>}
-                            </td>
-                            <td className="px-4 py-3">
-                              <button onClick={() => removeAccountingEntry(entry.id)} className="text-red-400 hover:text-red-600 text-xs">삭제</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+    return (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1rem' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem' }}>
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '0.5rem' }}>
+                        <div style={{ padding: '8px', background: 'rgba(0, 112, 243, 0.1)', borderRadius: '10px' }}>
+                            <span style={{ fontSize: '1.5rem' }}>🧾</span>
+                        </div>
+                        <h2 style={{ fontSize: '2.2rem', fontWeight: 900, margin: 0, background: 'linear-gradient(135deg, #0070f3, #6c5ce7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>회계 / 계약 관리</h2>
+                    </div>
+                    <p style={{ color: 'rgba(255, 255, 255, 0.5)', fontWeight: 500 }}>정식 거래처 연동 및 품목별 정산 시스템 (Debit Note 생성 가능)</p>
                 </div>
-              </>
-            )}
-          </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button onClick={() => setIsQuotePickerOpen(true)} style={{ background: 'rgba(0,112,243,0.1)', border: '1px solid rgba(0,112,243,0.3)', padding: '0.8rem 1.5rem', borderRadius: '14px', color: '#0070f3', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        🛒 견적 불러오기 (자동입력)
+                    </button>
+                    <button onClick={() => setView(view === 'dashboard' ? 'all' : 'dashboard')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '0.8rem 1.5rem', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
+                        {view === 'dashboard' ? '전체 내역 보기' : '통합 대시보드'}
+                    </button>
+                    <button onClick={() => setIsCreateModalOpen(true)} style={{ background: 'linear-gradient(135deg, #0070f3 0%, #00dfd8 100%)', border: 'none', padding: '0.8rem 2rem', borderRadius: '14px', color: 'white', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 15px rgba(0, 112, 243, 0.2)', cursor: 'pointer' }}>
+                        + 청구서 작성
+                    </button>
+                </div>
+            </header>
 
-          {/* 카테고리 분석 + 세금 일정 */}
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
-              <h3 className="font-bold text-gray-900 mb-4">카테고리별 집계</h3>
-              {topCategories.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">데이터 없음</p>
-              ) : (
-                <div className="space-y-3">
-                  {topCategories.map(([cat, vals]) => {
-                    const total = vals.income + vals.expense;
-                    const maxVal = Math.max(...topCategories.map(([, v]) => v.income + v.expense));
-                    const pct = maxVal > 0 ? (total / maxVal) * 100 : 0;
-                    return (
-                      <div key={cat}>
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="text-gray-700 font-medium truncate">{cat}</span>
-                          <span className="text-gray-500 text-xs ml-2 flex-shrink-0">{fmtMoney(total)}</span>
+            <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>전체 청구 내역</h3>
+                    <div style={{ display: 'flex', gap: '0.8rem' }}>
+                        <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+                            <input placeholder="거래처, 번호 검색..." value={search} onChange={e => setSearch(e.target.value)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.6rem 1rem 0.6rem 2.5rem', borderRadius: '10px', color: 'white', width: '220px' }} />
                         </div>
-                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
-                            style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
+                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.6rem', borderRadius: '10px', color: 'white' }}>
+                            <option value="All">전체 상태</option>
+                            <option value="대기">대기</option>
+                            <option value="완료">완료</option>
+                            <option value="지체">지체</option>
+                        </select>
+                    </div>
                 </div>
-              )}
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead>
+                            <tr style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                <th style={{ padding: '1rem' }}>청구 번호</th>
+                                <th style={{ padding: '1rem' }}>거래처명 (연동)</th>
+                                <th style={{ padding: '1rem', textAlign: 'right' }}>청구 금액</th>
+                                <th style={{ padding: '1rem' }}>마감 기한</th>
+                                <th style={{ padding: '1rem' }}>청구 사유</th>
+                                <th style={{ padding: '1rem' }}>상태</th>
+                                <th style={{ padding: '1rem' }}>도구</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading && invoices.length === 0 ? (
+                                <tr><td colSpan={7} style={{ padding: '5rem', textAlign: 'center', opacity: 0.5 }}>연동 데이터를 불러오는 중...</td></tr>
+                            ) : sortedInvoices.map(inv => {
+                                const late = isLate(inv.dueDate, inv.status);
+                                return (
+                                    <tr key={inv.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: late ? 'rgba(255,59,48,0.03)' : 'transparent' }}>
+                                        <td onClick={() => openInvoiceDetail(inv)} style={{ padding: '1.2rem 1rem', fontWeight: 800, cursor: 'pointer' }}>{inv.invoiceNo}</td>
+                                        <td style={{ padding: '1.2rem 1rem' }}>{inv.client}</td>
+                                        <td style={{ padding: '1.2rem 1rem', textAlign: 'right', fontWeight: 900 }}>{currencySymbol(inv.currency)} {inv.totalAmount.toLocaleString()}</td>
+                                        <td style={{ padding: '1.2rem 1rem', color: late ? '#ff3b30' : 'rgba(255,255,255,0.5)' }}>{inv.dueDate}</td>
+                                        <td style={{ padding: '1.2rem 1rem', fontSize: '0.8rem', opacity: 0.6 }}>{inv.billingReason || '-'}</td>
+                                        <td style={{ padding: '1.2rem 1rem' }}>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!validatePeriod(inv.issueDate)) return;
+                                                    const nextStatus = inv.status === '완료' ? '대기' : '완료';
+                                                    await notionUpdate(inv.id, { Status: select(nextStatus) });
+                                                    fetchData();
+                                                }}
+                                                style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '20px', border: 'none', cursor: 'pointer', background: inv.status === '완료' ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.05)', color: inv.status === '완료' ? '#00ff88' : 'white' }}
+                                            >
+                                                {inv.status}
+                                            </button>
+                                        </td>
+                                        <td style={{ padding: '1.2rem 1rem' }}>
+                                            <div style={{ display: 'flex', gap: '10px' }}>
+                                                <button onClick={() => startPrint(inv)} title="Debit Note 출력" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>🖨️</button>
+                                                <button onClick={() => openInvoiceDetail(inv)} title="편집" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>✏️</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-              <h3 className="font-bold text-amber-800 mb-3">📋 세금 일정 안내</h3>
-              <div className="space-y-2 text-sm">
-                {[
-                  { label: '부가세 신고', date: '1월 25일 / 7월 25일' },
-                  { label: '종합소득세', date: '5월 31일' },
-                  { label: '4대보험료', date: '매월 10일' },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between">
-                    <span className="text-amber-700">{item.label}</span>
-                    <span className="text-amber-500 text-xs">{item.date}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+            <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="신규 청구서 발행">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>관리 거래처 선택</label>
+                            <select value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} style={{ width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white' }}>
+                                <option value="">-- 거래처 선택 --</option>
+                                {clients.map(c => <option key={c.id} value={c.properties.ClientName?.title?.[0]?.plain_text}>{c.properties.ClientName?.title?.[0]?.plain_text}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>통화</label>
+                            <select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white' }}>
+                                <option value="KRW">KRW</option><option value="USD">USD</option><option value="RMB">RMB</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>청구 사유 (Debit Note 표시용)</label>
+                        <input value={form.billingReason} onChange={e => setForm({ ...form, billingReason: e.target.value })} placeholder="청구 목적 및 내용" style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white' }} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>발행일</label>
+                            <input type="date" value={form.issueDate} onChange={e => setForm({ ...form, issueDate: e.target.value })} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white', colorScheme: 'dark' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>마감기한</label>
+                            <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white', colorScheme: 'dark' }} />
+                        </div>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 800 }}>청구 품목 상세</span>
+                            <button onClick={() => setIsProductPickerOpen(true)} style={{ background: 'rgba(0,112,243,0.1)', border: '1px solid #0070f3', padding: '4px 12px', borderRadius: '20px', color: '#0070f3', fontSize: '0.7rem', cursor: 'pointer' }}>+ 제품 추가</button>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <tbody>
+                                {form.items.map((it, idx) => (
+                                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <td style={{ padding: '8px 0' }}>{it.product}</td>
+                                        <td><input type="number" value={it.qty} onChange={e => { const newItems = [...form.items]; newItems[idx].qty = Number(e.target.value); setForm({ ...form, items: newItems }); }} style={{ width: '50px', background: 'none', border: 'none', color: 'white' }} /></td>
+                                        <td><input type="number" value={it.unitPrice} onChange={e => { const newItems = [...form.items]; newItems[idx].unitPrice = Number(e.target.value); setForm({ ...form, items: newItems }); }} style={{ width: '80px', background: 'none', border: 'none', color: 'white', textAlign: 'right' }} /></td>
+                                        <td style={{ textAlign: 'right' }}><button onClick={() => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) })} style={{ color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <button onClick={handleSave} style={{ width: '100%', padding: '1rem', borderRadius: '15px', background: '#0070f3', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer' }}>청구서 발행</button>
+                </div>
+            </Modal>
+
+            <Modal isOpen={!!editingInvoice} onClose={() => setEditingInvoice(null)} title={`청구서 편집: ${editingInvoice?.invoiceNo}`}>
+                {editingInvoice && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>상태</label>
+                                <select value={editingInvoice.status} onChange={e => setEditingInvoice({ ...editingInvoice, status: e.target.value })} style={{ width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white' }}>
+                                    <option value="대기">대기</option><option value="완료">완료</option><option value="지체">지체</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>청구 합계</label>
+                                <p style={{ fontSize: '1.2rem', fontWeight: 900 }}>{currencySymbol(editingInvoice.currency)} {editingInvoice.items?.reduce((acc, it) => acc + (it.qty * it.unitPrice), 0).toLocaleString()}</p>
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>청구 사유</label>
+                            <input value={editingInvoice.billingReason} onChange={e => setEditingInvoice({ ...editingInvoice, billingReason: e.target.value })} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white' }} />
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                                <span style={{ fontSize: '0.85rem', fontWeight: 800 }}>품목 관리</span>
+                                <button onClick={() => setIsProductPickerOpen(true)} style={{ color: '#0070f3', background: 'none', border: 'none', fontSize: '0.7rem', cursor: 'pointer' }}>+ 추가</button>
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <tbody>
+                                    {editingInvoice.items?.map((it, idx) => (
+                                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                            <td style={{ padding: '8px 0' }}>{it.product}</td>
+                                            <td><input type="number" value={it.qty} onChange={e => { const newItems = [...(editingInvoice.items || [])]; newItems[idx].qty = Number(e.target.value); setEditingInvoice({ ...editingInvoice, items: newItems }); }} style={{ width: '40px', background: 'none', border: 'none', color: 'white' }} /></td>
+                                            <td style={{ textAlign: 'right' }}><input type="number" value={it.unitPrice} onChange={e => { const newItems = [...(editingInvoice.items || [])]; newItems[idx].unitPrice = Number(e.target.value); setEditingInvoice({ ...editingInvoice, items: newItems }); }} style={{ width: '80px', background: 'none', border: 'none', color: 'white', textAlign: 'right' }} /></td>
+                                            <td style={{ textAlign: 'right' }}><button onClick={() => setEditingInvoice({ ...editingInvoice, items: editingInvoice.items?.filter((_, i) => i !== idx) })} style={{ color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={handleUpdateInvoice} style={{ flex: 2, padding: '1rem', background: '#0070f3', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}>수정 내용 저장</button>
+                            <button onClick={() => setEditingInvoice(null)} style={{ flex: 1, padding: '1rem', background: 'rgba(255,255,255,0.05)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer' }}>취소</button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            <ProductPicker isOpen={isProductPickerOpen} onClose={() => setIsProductPickerOpen(false)} onSelect={onProductSelect} />
+            <QuotePicker isOpen={isQuotePickerOpen} onClose={() => setIsQuotePickerOpen(false)} onSelect={onQuoteSelect} />
         </div>
-      </div>
-
-      {showAdd && <AddEntryModal onClose={() => setShowAdd(false)} />}
-    </div>
-  );
+    );
 }

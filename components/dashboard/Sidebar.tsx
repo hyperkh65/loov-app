@@ -27,9 +27,18 @@ const NAV_GROUPS = [
   {
     label: 'ERP 시스템',
     items: [
-      { href: '/dashboard/erp/sales',       icon: '📊', label: '영업 ERP' },
-      { href: '/dashboard/erp/accounting',  icon: '💰', label: '회계 ERP' },
-      { href: '/dashboard/marketing',       icon: '📣', label: '마케팅 허브' },
+      { href: '/dashboard/erp/accounting',      icon: '💰', label: '회계/영업 ERP' },
+      { href: '/dashboard/erp/quotes',          icon: '📋', label: '견적 관리' },
+      { href: '/dashboard/erp/purchase-orders', icon: '🛒', label: '발주 관리' },
+      { href: '/dashboard/erp/imports',         icon: '🚢', label: '수입 관리' },
+      { href: '/dashboard/erp/clients',         icon: '🤝', label: '거래처 관리' },
+      { href: '/dashboard/erp/crm',             icon: '📊', label: 'CRM 영업관리' },
+      { href: '/dashboard/erp/products',        icon: '📦', label: '제품 DB' },
+      { href: '/dashboard/erp/inventory',       icon: '🏭', label: '재고 관리' },
+      { href: '/dashboard/erp/scm',             icon: '🔗', label: 'SCM 공급망' },
+      { href: '/dashboard/erp/hr',              icon: '👥', label: '인사 관리' },
+      { href: '/dashboard/erp/settings',        icon: '⚙️', label: 'ERP 설정' },
+      { href: '/dashboard/marketing',           icon: '📣', label: '마케팅 허브' },
     ],
   },
   {
@@ -65,6 +74,13 @@ const NAV_GROUPS = [
       { href: '/dashboard/notion',        icon: '📔', label: 'Notion 연동' },
       { href: '/dashboard/notion-mirror', icon: '🔗', label: 'Notion 미러' },
       { href: '/dashboard/gallery',   icon: '🖼️', label: '갤러리' },
+    ],
+  },
+  {
+    label: '쇼핑몰',
+    items: [
+      { href: '/dashboard/shop', icon: '🛍️', label: '쇼핑몰 관리' },
+      { href: '/shop',           icon: '🏪', label: '쇼핑몰 바로가기' },
     ],
   },
   {
