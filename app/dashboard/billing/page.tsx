@@ -34,7 +34,7 @@ const PLANS = [
 ];
 
 // 카카오톡 채널 URL (개설 후 변경: https://pf.kakao.com/_xxxxx)
-const KAKAO_CHANNEL_URL = process.env.NEXT_PUBLIC_KAKAO_CHANNEL_URL || 'https://pf.kakao.com/_loov';
+const KAKAO_CHANNEL_URL = process.env.NEXT_PUBLIC_KAKAO_CHANNEL_URL || 'https://pf.kakao.com/_ixeGIX';
 
 interface UserPlan {
   plan: string;
@@ -77,7 +77,7 @@ export default function BillingPage() {
   const openKakao = (planName?: string) => {
     const msg = planName ? `${planName} 플랜 업그레이드 신청합니다.` : '';
     const url = `${KAKAO_CHANNEL_URL}/chat${msg ? `?text=${encodeURIComponent(msg)}` : ''}`;
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const currentPlan = userPlan?.plan || 'free';
