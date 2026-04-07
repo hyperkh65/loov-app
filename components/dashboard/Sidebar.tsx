@@ -118,9 +118,11 @@ const NAV_GROUPS = [
   {
     label: '모바일',
     items: [
-      { href: '/dashboard/camera',   icon: '📷', label: '스마트 카메라' },
-      { href: '/dashboard/tracking', icon: '📍', label: '위치 트래킹' },
-      { href: '/dashboard/backup',   icon: '💾', label: '백업 관리' },
+      { href: '/dashboard/camera',         icon: '📷', label: '스마트 카메라' },
+      { href: '/dashboard/camera/gallery', icon: '🖼️', label: '일반사진첩' },
+      { href: '/dashboard/camera/secret',  icon: '🔒', label: '특수사진첩' },
+      { href: '/dashboard/tracking',       icon: '📍', label: '위치 트래킹' },
+      { href: '/dashboard/backup',         icon: '💾', label: '백업 관리' },
     ],
   },
   {
