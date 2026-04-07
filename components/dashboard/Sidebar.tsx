@@ -146,10 +146,15 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
   const router = useRouter();
   const { employees, companySettings, directives } = useStore();
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isOwnerUser, setIsOwnerUser] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUserEmail(session?.user.email ?? null);
+      const email = session?.user.email ?? null;
+      setUserEmail(email);
+      const ownerEmail = process.env.NEXT_PUBLIC_OWNER_EMAIL || '2days.kr@gmail.com';
+      const ownerId = process.env.NEXT_PUBLIC_OWNER_USER_ID || '0a7e3d43-0159-411e-b171-0aebb70a4893';
+      setIsOwnerUser(email === ownerEmail || session?.user.id === ownerId);
     });
   }, []);
 
@@ -299,6 +304,30 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
           </div>
         ))}
       </nav>
+
+      {/* 관리자 메뉴 (대표님 전용) */}
+      {isOwnerUser && (
+        <div className="px-2 pb-2 border-b border-slate-700/50">
+          {(!collapsed || isMobile) && (
+            <div className="px-2 mb-1">
+              <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-widest">관리자</span>
+            </div>
+          )}
+          <Link
+            href="/dashboard/admin/users"
+            onClick={handleNavClick}
+            title={collapsed && !isMobile ? '회원 관리' : undefined}
+            className={`flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm font-medium transition-all ${
+              pathname.startsWith('/dashboard/admin')
+                ? 'bg-amber-600 text-white'
+                : 'text-amber-400 hover:text-white hover:bg-amber-600/20'
+            }`}
+          >
+            <span className="text-base flex-shrink-0">👥</span>
+            {(!collapsed || isMobile) && <span className="truncate">회원 관리</span>}
+          </Link>
+        </div>
+      )}
 
       {/* 하단 */}
       <div className="p-2 border-t border-slate-700/50 flex-shrink-0 space-y-0.5">
