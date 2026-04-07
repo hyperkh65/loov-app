@@ -31,6 +31,9 @@ export async function GET() {
       storage_type: settings.storage_type || 'r2',
       camera_secret_password: settings.camera_secret_password ? '••••' : '',
       plan: settings.plan || 'free',
+      plan_expires_at: settings.plan_expires_at || '',
+      stripe_customer_id: settings.stripe_customer_id ? maskValue(settings.stripe_customer_id, 4) : '',
+      stripe_subscription_id: settings.stripe_subscription_id ? maskValue(settings.stripe_subscription_id, 4) : '',
     } : null;
 
     const hasNas = !!(settings?.nas_ssh_host && settings?.nas_ssh_user && settings?.nas_ssh_password);
