@@ -2,8 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  // pdfjs-dist(unpdf 내부)는 canvas 등 브라우저 API 참조 → 번들링 제외
   serverExternalPackages: ['canvas', 'ssh2'],
+  turbopack: {
+    resolveAlias: {
+      'onnxruntime-web': './lib/empty-stub.ts',
+      'onnxruntime-web/webgpu': './lib/empty-stub.ts',
+    },
+  },
   images: {
     remotePatterns: [
       {
