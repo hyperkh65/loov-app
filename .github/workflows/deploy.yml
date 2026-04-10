@@ -69,6 +69,7 @@ jobs:
           command_timeout: 30m
           script: |
             set -e
+            export PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:$PATH
             APP_DIR=/volume1/web/loov-app
             WEBHOOK_URL=https://loov.co.kr/api/deploy/webhook
 
