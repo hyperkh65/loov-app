@@ -215,9 +215,9 @@ export default function XCollectPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ limit: 100 }),
-            }).finally(() => { loadNasVideos(); loadNasStatus(); });
+            }).finally(() => { loadNasVideos(true); loadNasStatus(); });
           } else {
-            loadNasVideos();
+            loadNasVideos(true);
           }
         }
       } catch {}
@@ -239,10 +239,10 @@ export default function XCollectPage() {
   const [nasScanning, setNasScanning] = useState(false);
 
   // 전체 목록 한 번만 로드, 필터는 클라이언트에서
-  const loadNasVideos = async () => {
+  const loadNasVideos = async (refresh = false) => {
     setNasVideosLoading(true);
     try {
-      const res = await fetch('/api/x-videos/nas');
+      const res = await fetch(`/api/x-videos/nas${refresh ? '?refresh=1' : ''}`);
       if (res.ok) {
         const data = await res.json();
         setAllNasVideos(data.videos || []);
