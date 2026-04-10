@@ -209,13 +209,30 @@ export default function XCollectPage() {
           clearInterval(pollRef.current!);
           setCollecting(false);
           loadJobs();
-          // 수집 완료 → 자동 NAS 이동 후 NAS 영상 목록 갱신
+          // 수집 완료 → SSE 스트림 끝까지 읽고 NAS 영상 목록 갱신
           if (data.status === 'done') {
-            fetch('/api/x-videos/migrate-to-nas', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ limit: 100 }),
-            }).finally(() => { loadNasVideos(true); loadNasStatus(); });
+            (async () => {
+              try {
+                const res = await fetch('/api/x-videos/migrate-to-nas', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ limit: 100 }),
+                });
+                const reader = res.body?.getReader();
+                const dec = new TextDecoder();
+                if (reader) {
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const text = dec.decode(value);
+                    if (text.includes('"type":"complete"')) break;
+                  }
+                  reader.cancel();
+                }
+              } catch {}
+              loadNasVideos(true);
+              loadNasStatus();
+            })();
           } else {
             loadNasVideos(true);
           }
