@@ -121,16 +121,10 @@ export default function CCTVViewerPage() {
         setStatus('idle');
         setStatusMsg('카메라 연결 끊김 — 재연결 중...');
         stopRecording();
-        // retryTimer 정리 후 재연결
-        if (retryTimerRef.current) clearInterval(retryTimerRef.current);
+        // 2초 후 자동 재연결
         setTimeout(() => {
-          if (pcRef.current === pc) {
-            pcRef.current = null;
-            pc.close();
-            channelRef.current?.unsubscribe();
-            connect();
-          }
-        }, 1500);
+          if (pcRef.current === pc) connect();
+        }, 2000);
       }
     };
 

@@ -251,7 +251,7 @@ export default function Cam1Page() {
       if (next === CCTV_PIN) {
         setPhase('active');
         setPin('');
-        startCamera();
+        startCamera().catch(console.error);
       } else {
         setPinError(true);
         setTimeout(() => { setPin(''); setPinError(false); }, 600);
@@ -406,10 +406,8 @@ export default function Cam1Page() {
     watchdogRef.current = setInterval(() => {
       if (!isRecordingRef.current) return;
 
-      // WakeLock 살아있는지 확인 → 해제됐으면 재요청
-      if (!wakeLockRef.current || (wakeLockRef.current as WakeLockSentinel & { released?: boolean }).released) {
-        requestWakeLock();
-      }
+      // WakeLock 살아있는지 확인 → 재요청 시도 (idempotent)
+      requestWakeLock();
       // noSleep 비디오 재생 중인지 확인
       if (noSleepVideoRef.current?.paused) {
         noSleepVideoRef.current.play().catch(() => {});
