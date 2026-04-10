@@ -63,7 +63,12 @@ export default function Cam1Page() {
   const [date, setDate] = useState('');
   const [clockTaps, setClockTaps] = useState(0);
   const [showPwaHint, setShowPwaHint] = useState(false);
+  const [showStopPin, setShowStopPin] = useState(false);
+  const [stopPin, setStopPin] = useState('');
+  const [stopPinError, setStopPinError] = useState(false);
+  const [longPressProgress, setLongPressProgress] = useState(0);
   const clockTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -495,33 +500,157 @@ export default function Cam1Page() {
     );
   }
 
-  // ── 활성화 (거의 검은 화면 — 진단 정보 아주 작게) ────
-  return (
-    <div className="fixed inset-0 bg-black select-none">
-      {/* 좌하단: 업로드 카운터 (아주 작고 어둡게) */}
+  // ── 길게 누르기 핸들러 ────────────────────────────────
+  const handleLongPressStart = () => {
+    let progress = 0;
+    longPressTimerRef.current = setInterval(() => {
+      progress += 10;
+      setLongPressProgress(progress);
+      if (progress >= 100) {
+        if (longPressTimerRef.current) clearInterval(longPressTimerRef.current);
+        setLongPressProgress(0);
+        setShowStopPin(true);
+      }
+    }, 1000); // 10초 = 1초마다 10% 증가
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimerRef.current) clearInterval(longPressTimerRef.current);
+    setLongPressProgress(0);
+  };
+
+  const handleStopPinKey = (k: string) => {
+    if (k === '←') { setStopPin(p => p.slice(0, -1)); setStopPinError(false); return; }
+    const next = stopPin + k;
+    setStopPin(next);
+    if (next.length === 4) {
+      if (next === CCTV_PIN) {
+        setShowStopPin(false);
+        setStopPin('');
+        stopCamera();
+      } else {
+        setStopPinError(true);
+        setTimeout(() => { setStopPin(''); setStopPinError(false); }, 600);
+      }
+    }
+  };
+
+  // ── 활성화: 이메일 위장 UI ────────────────────────────
+  const FAKE_EMAILS = [
+    { from: '네이버 알림', subject: '로그인 보안 알림이 도착했습니다', preview: '새로운 기기에서 로그인이 감지되었습니다. 본인이 아니라면...', time: '오전 9:12', unread: true },
+    { from: '카카오페이', subject: '[카카오페이] 송금 완료 안내', preview: '홍길동님께 30,000원이 송금 완료되었습니다.', time: '어제', unread: false },
+    { from: '쿠팡', subject: '주문하신 상품이 출고되었습니다', preview: '[주문번호 3847291] 오늘 배송 예정입니다. 배송 조회...', time: '어제', unread: false },
+    { from: '구글', subject: 'Security alert for your Google Account', preview: 'Your account was just signed in from a new device.', time: '월요일', unread: false },
+    { from: '토스', subject: '이번 달 소비 리포트가 도착했어요', preview: '4월 지출이 지난달보다 12% 줄었어요 🎉 자세히 보기', time: '일요일', unread: true },
+    { from: '삼성카드', subject: '[삼성카드] 4월 결제 예정 안내', preview: '4월 18일 결제 예정금액: 284,000원 / 청구서 확인...', time: '토요일', unread: false },
+    { from: 'GitHub', subject: '[GitHub] A new public key was added', preview: 'Hey, a new public key was added to your account.', time: '4/8', unread: false },
+    { from: '배달의민족', subject: '리뷰 감사해요! 포인트 100P 지급', preview: '소중한 리뷰 작성에 감사드립니다. 포인트가 적립되었습니다.', time: '4/7', unread: false },
+  ];
+
+  // ── 종료 PIN 입력 팝업 ────────────────────────────────
+  if (showStopPin) {
+    return (
       <div
-        className="absolute text-[10px] font-mono"
-        style={{
-          bottom: 'max(1.5rem, env(safe-area-inset-bottom))',
-          left: '1rem',
-          color: uploadError ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.15)',
-        }}
+        className="fixed inset-0 flex flex-col items-center justify-center select-none"
+        style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', background: 'rgba(0,0,0,0.85)' }}
       >
-        {uploadError ? 'ERR' : uploadCount > 0 ? `↑${uploadCount}` : '●'}
+        <div className="text-white text-center mb-8">
+          <div className="text-lg font-light opacity-80">암호 입력</div>
+          <div className={`flex gap-4 justify-center mt-4 ${stopPinError ? 'animate-pulse' : ''}`}>
+            {[0,1,2,3].map(i => (
+              <div key={i} className={`w-4 h-4 rounded-full border-2 border-white/60 ${i < stopPin.length ? 'bg-white' : 'bg-transparent'}`} />
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 text-white">
+          {['1','2','3','4','5','6','7','8','9','','0','←'].map((k, i) => (
+            <button key={i} onClick={() => k && handleStopPinKey(k)}
+              className={`w-20 h-20 rounded-full text-2xl font-light active:bg-white/20 transition-colors ${k === '' ? 'invisible' : 'bg-white/10 hover:bg-white/20'}`}>
+              {k}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => { setShowStopPin(false); setStopPin(''); }} className="mt-8 text-white/50 text-sm">취소</button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-white overflow-hidden select-none"
+      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}
+      onMouseDown={handleLongPressStart}
+      onMouseUp={handleLongPressEnd}
+      onMouseLeave={handleLongPressEnd}
+      onTouchStart={handleLongPressStart}
+      onTouchEnd={handleLongPressEnd}
+      onTouchCancel={handleLongPressEnd}
+    >
+      {/* 길게 누르기 진행 바 (투명하게, 아주 얇게) */}
+      {longPressProgress > 0 && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 z-50">
+          <div className="h-full bg-blue-400/40 transition-all" style={{ width: `${longPressProgress}%` }} />
+        </div>
+      )}
+
+      {/* 상단 헤더 */}
+      <div className="flex items-center px-4 py-3 border-b border-gray-200"
+        style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+        <div className="text-xl font-semibold text-gray-900 flex-1">받은편지함</div>
+        <div className="flex items-center gap-3 text-blue-500">
+          <span className="text-sm">편집</span>
+          <span className="text-2xl">✏️</span>
+        </div>
       </div>
 
-      {/* 우하단: 투명 중지 버튼 */}
-      <button
-        onClick={stopCamera}
-        className="absolute opacity-0"
+      {/* 검색 바 */}
+      <div className="px-4 py-2 bg-gray-50">
+        <div className="flex items-center bg-gray-200 rounded-xl px-3 py-2 gap-2">
+          <span className="text-gray-400 text-sm">🔍</span>
+          <span className="text-gray-400 text-sm">검색</span>
+        </div>
+      </div>
+
+      {/* 이메일 목록 */}
+      <div className="overflow-y-auto" style={{ height: 'calc(100dvh - 110px)' }}>
+        {FAKE_EMAILS.map((email, i) => (
+          <div key={i} className="flex items-start px-4 py-3 border-b border-gray-100 active:bg-gray-50">
+            {/* 읽음/안읽음 표시 */}
+            <div className="mt-2 mr-3 flex-shrink-0">
+              {email.unread
+                ? <div className="w-2 h-2 rounded-full bg-blue-500" />
+                : <div className="w-2 h-2" />}
+            </div>
+            {/* 아바타 */}
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-sm font-bold mr-3 flex-shrink-0"
+              style={{ background: `hsl(${i * 45},60%,55%)` }}>
+              {email.from[0]}
+            </div>
+            {/* 내용 */}
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between items-baseline">
+                <span className={`text-sm ${email.unread ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>{email.from}</span>
+                <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{email.time}</span>
+              </div>
+              <div className={`text-sm truncate ${email.unread ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{email.subject}</div>
+              <div className="text-xs text-gray-400 truncate mt-0.5">{email.preview}</div>
+            </div>
+            <span className="text-gray-300 ml-2 flex-shrink-0">›</span>
+          </div>
+        ))}
+      </div>
+
+      {/* 우하단: 업로드 상태 (아주 작게) */}
+      <div
+        className="absolute text-[9px] font-mono"
         style={{
-          bottom: 'max(1.5rem, env(safe-area-inset-bottom))',
-          right: '1rem',
-          width: '3rem',
-          height: '3rem',
+          bottom: 'max(1rem, env(safe-area-inset-bottom))',
+          right: '0.75rem',
+          color: uploadError ? 'rgba(239,68,68,0.4)' : 'rgba(0,0,0,0.1)',
         }}
-        aria-hidden="true"
-      />
+      >
+        {uploadError ? '!' : uploadCount > 0 ? `${uploadCount}` : ''}
+      </div>
     </div>
   );
 }
