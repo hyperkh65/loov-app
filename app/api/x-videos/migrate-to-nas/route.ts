@@ -17,12 +17,15 @@ function extractStoragePath(url: string): string | null {
 // GET: 현재 상태 (Supabase vs NAS 개수)
 export async function GET() {
   const supabase = createAdminClient();
-  const [{ count: total }, { count: remaining }] = await Promise.all([
+  const [{ count: total }, { count: supabaseCount }, { count: localCount }] = await Promise.all([
     supabase.from('bossai_x_videos').select('*', { count: 'exact', head: true }),
     supabase.from('bossai_x_videos').select('*', { count: 'exact', head: true })
       .ilike('video_url', '%supabase.co%'),
+    supabase.from('bossai_x_videos').select('*', { count: 'exact', head: true })
+      .ilike('video_url', '/downloads/%'),
   ]);
-  return NextResponse.json({ total: total ?? 0, remaining: remaining ?? 0, done: (total ?? 0) - (remaining ?? 0) });
+  const remaining = (supabaseCount ?? 0) + (localCount ?? 0);
+  return NextResponse.json({ total: total ?? 0, remaining, done: (total ?? 0) - remaining });
 }
 
 // POST: SSE 스트리밍으로 배치 마이그레이션
