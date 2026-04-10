@@ -116,14 +116,17 @@ export default function CCTVViewerPage() {
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      const state = pc.connectionState;
+      if (state === 'disconnected' || state === 'failed') {
         setStatus('idle');
         setStatusMsg('카메라 연결 끊김 — 재연결 중...');
         stopRecording();
-        // 2초 후 자동 재연결
+        pc.close();
+        channelRef.current?.unsubscribe();
+        // 1초 후 자동 재연결
         setTimeout(() => {
           if (pcRef.current === pc) connect();
-        }, 2000);
+        }, 1000);
       }
     };
 
@@ -162,7 +165,7 @@ export default function CCTVViewerPage() {
       }
     };
     sendRequest();
-    retryTimerRef.current = setInterval(sendRequest, 3000);
+    retryTimerRef.current = setInterval(sendRequest, 2000);
   }, [selectedCam]);
 
   const disconnect = useCallback(() => {

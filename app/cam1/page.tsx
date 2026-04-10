@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 const CCTV_PIN = process.env.NEXT_PUBLIC_CCTV_PIN || '0609';
 const CHANNEL = 'cctv-cam1';
 const CAM_ID = 'cam1';
-const CHUNK_MS = 30 * 1000; // 30초 청크
+const CHUNK_MS = 5 * 60 * 1000; // 5분 청크 (연속 녹화처럼 보이도록)
 // TURN 서버: 모바일 LTE/5G 대칭형 NAT(CGNAT) 환경에서 필수
 function getIceServers(): RTCIceServer[] {
   const servers: RTCIceServer[] = [
