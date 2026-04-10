@@ -216,16 +216,27 @@ export default function XCollectPage() {
                 const res = await fetch('/api/x-videos/migrate-to-nas', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ limit: 100 }),
+                  body: JSON.stringify({ limit: 200 }),
                 });
                 const reader = res.body?.getReader();
                 const dec = new TextDecoder();
                 if (reader) {
-                  while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const text = dec.decode(value);
-                    if (text.includes('"type":"complete"')) break;
+                  let buf = '';
+                  let done = false;
+                  while (!done) {
+                    const { done: streamDone, value } = await reader.read();
+                    if (streamDone) break;
+                    buf += dec.decode(value, { stream: true });
+                    const lines = buf.split('\n');
+                    buf = lines.pop() || '';
+                    for (const line of lines) {
+                      if (line.startsWith('data: ')) {
+                        try {
+                          const parsed = JSON.parse(line.slice(6));
+                          if (parsed.type === 'complete') { done = true; break; }
+                        } catch {}
+                      }
+                    }
                   }
                   reader.cancel();
                 }
@@ -496,7 +507,7 @@ export default function XCollectPage() {
               {[
                 { label: '전체', value: nasStatus?.total ?? '-', color: 'text-white' },
                 { label: 'NAS 이동됨', value: nasStatus?.done ?? '-', color: 'text-emerald-400' },
-                { label: 'Supabase 남음', value: nasStatus?.remaining ?? '-', color: 'text-orange-400' },
+                { label: '미이동 (NAS 필요)', value: nasStatus?.remaining ?? '-', color: 'text-orange-400' },
               ].map(({ label, value, color }) => (
                 <div key={label} className="bg-slate-900 rounded-2xl p-4 border border-slate-700/50 text-center">
                   <div className={`text-2xl font-black ${color}`}>{value}</div>
