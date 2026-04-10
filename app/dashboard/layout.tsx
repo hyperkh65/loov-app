@@ -33,41 +33,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return;
       }
 
-      // 도메인 분리 로직: loov.co.kr ↔ service.loov.co.kr
       const OWNER_USER_ID = process.env.NEXT_PUBLIC_OWNER_USER_ID || '0a7e3d43-0159-411e-b171-0aebb70a4893';
-      const ownerDomain = process.env.NEXT_PUBLIC_OWNER_DOMAIN || 'loov.co.kr';
-      const serviceDomain = process.env.NEXT_PUBLIC_SERVICE_DOMAIN || 'service.loov.co.kr';
-      const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
       const userId = session.user.id;
       const isOwner = userId === OWNER_USER_ID;
 
-      if (currentHostname === ownerDomain && !isOwner) {
-        // loov.co.kr에서 로그인했는데 대표님이 아님 → service 도메인으로 이동
-        window.location.replace(`https://${serviceDomain}/dashboard`);
-        return;
-      }
-      if (currentHostname === serviceDomain && isOwner) {
-        // service.loov.co.kr에서 로그인했는데 대표님 → 메인 도메인으로 이동
-        window.location.replace(`https://${ownerDomain}/dashboard`);
-        return;
-      }
-
-      // service 도메인 + 일반 유저 → 온보딩 체크
-      if (currentHostname === serviceDomain && !isOwner) {
-        try {
-          const settingsRes = await fetch('/api/user-settings');
-          if (settingsRes.ok) {
-            const settingsData = await settingsRes.json() as { settings: Record<string, unknown> | null };
-            // settings가 null이면 온보딩 미완료
-            if (!settingsData.settings) {
-              router.replace('/onboarding');
-              return;
-            }
-          }
-        } catch {
-          // 온보딩 체크 실패 시 그냥 진행
-        }
-      }
+      // service.loov.co.kr 미운영 상태 — 도메인 분리 리다이렉트 비활성화
+      // 모든 유저가 loov.co.kr/dashboard 에서 접근 (데이터는 DB 레벨에서 격리)
+      void isOwner;
 
       try {
         const data = await loadAllData();
