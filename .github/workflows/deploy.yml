@@ -69,6 +69,7 @@ jobs:
           command_timeout: 30m
           script: |
             set -e
+            set -o pipefail
             export PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:$PATH
             APP_DIR=/volume1/web/loov-app
             WEBHOOK_URL=https://loov.co.kr/api/deploy/webhook
@@ -121,12 +122,18 @@ jobs:
             DEPLOY_SECRET=${DEPLOY_SECRET}
             ENVEOF
 
+            # ── 파일 확인 ─────────────────────────────────────
+            echo "=== 소스 파일 확인 ==="
+            ls app/api/deploy/ 2>/dev/null && echo "✓ deploy API 있음" || echo "✗ deploy API 없음"
+            ls app/dashboard/deploy/ 2>/dev/null && echo "✓ deploy 페이지 있음" || echo "✗ deploy 페이지 없음"
+
             # ── Docker 빌드 (NAS 로컬 캐시 자동 활용 — 빠름) ──
             notify "building" "Docker 이미지 빌드 중 (로컬 캐시)"
-            DOCKER_BUILDKIT=1 docker build \
+            docker build \
+              --build-arg CACHEBUST="${SHA}" \
               -t loov-app:latest \
-              -t loov-app:${SHA:0:7} \
-              . 2>&1 | tail -10
+              -t "loov-app:${SHA:0:7}" \
+              .
 
             # ── 배포 ─────────────────────────────────────────
             notify "deploying" "컨테이너 교체 중"
