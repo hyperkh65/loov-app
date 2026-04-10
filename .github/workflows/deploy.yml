@@ -131,6 +131,15 @@ jobs:
             notify "building" "Docker 이미지 빌드 중 (로컬 캐시)"
             docker build \
               --build-arg CACHEBUST="${SHA}" \
+              --build-arg NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL}" \
+              --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="${NEXT_PUBLIC_SUPABASE_ANON_KEY}" \
+              --build-arg NEXT_PUBLIC_APP_URL="https://loov.co.kr" \
+              --build-arg NEXT_PUBLIC_MAIN_DOMAIN="loov.co.kr" \
+              --build-arg NEXT_PUBLIC_OWNER_DOMAIN="loov.co.kr" \
+              --build-arg NEXT_PUBLIC_SERVICE_DOMAIN="service.loov.co.kr" \
+              --build-arg NEXT_PUBLIC_OWNER_USER_ID="${OWNER_USER_ID}" \
+              --build-arg NEXT_PUBLIC_OWNER_EMAIL="${OWNER_EMAIL}" \
+              --build-arg NEXT_PUBLIC_KAKAO_CHANNEL_URL="https://pf.kakao.com/_ixeGIX" \
               -t loov-app:latest \
               -t "loov-app:${SHA:0:7}" \
               .
