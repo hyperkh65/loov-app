@@ -11,6 +11,9 @@ RUN npm install --frozen-lockfile || npm install
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+# 캐시 버스팅 — SHA가 바뀌면 이하 레이어 전체 재빌드
+ARG CACHEBUST=1
+RUN echo "Build SHA: $CACHEBUST"
 COPY . .
 RUN npm run build
 
