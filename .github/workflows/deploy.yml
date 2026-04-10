@@ -1,0 +1,160 @@
+name: Deploy to NAS
+
+on:
+  push:
+    branches: [main]
+
+env:
+  WEBHOOK_URL: https://loov.co.kr/api/deploy/webhook
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Notify — 배포 시작
+        run: |
+          curl -s -X POST $WEBHOOK_URL \
+            -H "Content-Type: application/json" \
+            -d '{
+              "secret": "${{ secrets.DEPLOY_SECRET }}",
+              "status": "queued",
+              "step": "GitHub Actions 시작",
+              "sha": "${{ github.sha }}",
+              "branch": "${{ github.ref_name }}",
+              "triggered_by": "${{ github.actor }}"
+            }' || true
+
+      - name: Notify — NAS 빌드 시작
+        run: |
+          curl -s -X POST $WEBHOOK_URL \
+            -H "Content-Type: application/json" \
+            -d '{
+              "secret": "${{ secrets.DEPLOY_SECRET }}",
+              "status": "building",
+              "step": "NAS에서 소스 업데이트 및 Docker 빌드 중",
+              "sha": "${{ github.sha }}"
+            }' || true
+
+      - name: Build & Deploy on NAS
+        uses: appleboy/ssh-action@v1
+        env:
+          SHA: ${{ github.sha }}
+          DEPLOY_SECRET: ${{ secrets.DEPLOY_SECRET }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OWNER_USER_ID: ${{ secrets.OWNER_USER_ID }}
+          OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+          NAS_SSH_USER: ${{ secrets.NAS_SSH_USER }}
+          NAS_SSH_PASSWORD: ${{ secrets.NAS_SSH_PASSWORD }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_CAMERA_DB_ID: ${{ secrets.NOTION_CAMERA_DB_ID }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          INVITE_CODE: ${{ secrets.INVITE_CODE }}
+          NAS_MYSQL_ROOT_PASS: ${{ secrets.NAS_MYSQL_ROOT_PASS }}
+          NAS_SYNO_ADMIN_PASS: ${{ secrets.NAS_SYNO_ADMIN_PASS }}
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 22
+          envs: SHA,DEPLOY_SECRET,GEMINI_API_KEY,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,OWNER_USER_ID,OWNER_EMAIL,NAS_SSH_USER,NAS_SSH_PASSWORD,R2_ACCOUNT_ID,R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY,R2_BUCKET,R2_PUBLIC_URL,NOTION_API_KEY,NOTION_CAMERA_DB_ID,PAT_TOKEN,INVITE_CODE,NAS_MYSQL_ROOT_PASS,NAS_SYNO_ADMIN_PASS
+          command_timeout: 30m
+          script: |
+            set -e
+            APP_DIR=/volume1/web/loov-app
+            WEBHOOK_URL=https://loov.co.kr/api/deploy/webhook
+
+            notify() {
+              curl -s -X POST "$WEBHOOK_URL" \
+                -H "Content-Type: application/json" \
+                -d "{\"secret\":\"$DEPLOY_SECRET\",\"status\":\"$1\",\"step\":\"$2\",\"sha\":\"$SHA\"}" || true
+            }
+
+            # ── 소스 동기화 ──────────────────────────────────
+            if [ -d "$APP_DIR/.git" ]; then
+              cd "$APP_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              mkdir -p "$(dirname $APP_DIR)"
+              git clone https://x-access-token:${PAT_TOKEN}@github.com/hyperkh65/loov-app.git "$APP_DIR"
+              cd "$APP_DIR"
+            fi
+
+            # ── .env.production 작성 ─────────────────────────
+            cat > .env.production << ENVEOF
+            GEMINI_API_KEY=${GEMINI_API_KEY}
+            NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+            SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+            OWNER_USER_ID=${OWNER_USER_ID}
+            OWNER_EMAIL=${OWNER_EMAIL}
+            NEXT_PUBLIC_OWNER_USER_ID=${OWNER_USER_ID}
+            NEXT_PUBLIC_OWNER_EMAIL=${OWNER_EMAIL}
+            NEXT_PUBLIC_OWNER_DOMAIN=loov.co.kr
+            NEXT_PUBLIC_SERVICE_DOMAIN=service.loov.co.kr
+            NEXT_PUBLIC_APP_URL=https://loov.co.kr
+            NEXT_PUBLIC_MAIN_DOMAIN=loov.co.kr
+            NAS_SSH_HOST=host.docker.internal
+            NAS_SSH_PORT=22
+            NAS_SSH_USER=${NAS_SSH_USER}
+            NAS_SSH_PASSWORD=${NAS_SSH_PASSWORD}
+            R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+            R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+            R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+            R2_BUCKET=${R2_BUCKET}
+            R2_PUBLIC_URL=${R2_PUBLIC_URL}
+            NOTION_API_KEY=${NOTION_API_KEY}
+            NOTION_CAMERA_DB_ID=${NOTION_CAMERA_DB_ID}
+            GITHUB_PAT=${PAT_TOKEN}
+            GITHUB_REPO=hyperkh65/loov-app
+            INVITE_CODE=${INVITE_CODE}
+            NAS_MYSQL_ROOT_PASS=${NAS_MYSQL_ROOT_PASS}
+            NAS_SYNO_ADMIN_PASS=${NAS_SYNO_ADMIN_PASS}
+            NEXT_PUBLIC_KAKAO_CHANNEL_URL=https://pf.kakao.com/_ixeGIX
+            DEPLOY_SECRET=${DEPLOY_SECRET}
+            ENVEOF
+
+            # ── Docker 빌드 (NAS 로컬 캐시 자동 활용 — 빠름) ──
+            notify "building" "Docker 이미지 빌드 중 (로컬 캐시)"
+            DOCKER_BUILDKIT=1 docker build \
+              -t loov-app:latest \
+              -t loov-app:${SHA:0:7} \
+              . 2>&1 | tail -10
+
+            # ── 배포 ─────────────────────────────────────────
+            notify "deploying" "컨테이너 교체 중"
+            docker rm -f loov-app 2>/dev/null || true
+            docker run -d \
+              --name loov-app \
+              --restart unless-stopped \
+              -p 3100:3000 \
+              --add-host=host.docker.internal:host-gateway \
+              --env-file .env.production \
+              loov-app:latest
+
+            # 오래된 이미지 정리 (latest + 최근 3개 제외)
+            docker image prune -f --filter "until=48h" 2>/dev/null || true
+
+            notify "success" "배포 완료 ✓"
+
+      - name: Notify — 실패
+        if: failure()
+        run: |
+          curl -s -X POST $WEBHOOK_URL \
+            -H "Content-Type: application/json" \
+            -d '{
+              "secret": "${{ secrets.DEPLOY_SECRET }}",
+              "status": "failed",
+              "step": "배포 실패",
+              "message": "GitHub Actions 로그를 확인하세요: https://github.com/hyperkh65/loov-app/actions",
+              "sha": "${{ github.sha }}"
+            }' || true

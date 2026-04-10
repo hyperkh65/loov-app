@@ -1,0 +1,14 @@
+services:
+  loov:
+    image: loov-app:latest
+    container_name: loov-app
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - NAS_SSH_HOST=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
