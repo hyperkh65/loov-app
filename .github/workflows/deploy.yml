@@ -158,6 +158,8 @@ jobs:
             # 오래된 이미지 정리 (latest + 최근 3개 제외)
             docker image prune -f --filter "until=48h" 2>/dev/null || true
 
+            # 새 컨테이너 기동 대기 후 성공 알림
+            sleep 20
             notify "success" "배포 완료 ✓"
 
       - name: Notify — 실패
