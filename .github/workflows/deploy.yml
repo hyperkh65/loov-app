@@ -78,16 +78,13 @@ jobs:
                 -d "{\"secret\":\"$DEPLOY_SECRET\",\"status\":\"$1\",\"step\":\"$2\",\"sha\":\"$SHA\"}" || true
             }
 
-            # ── 소스 동기화 ──────────────────────────────────
-            if [ -d "$APP_DIR/.git" ]; then
-              cd "$APP_DIR"
-              git fetch origin main
-              git reset --hard origin/main
-            else
-              mkdir -p "$(dirname $APP_DIR)"
-              git clone https://x-access-token:${PAT_TOKEN}@github.com/hyperkh65/loov-app.git "$APP_DIR"
-              cd "$APP_DIR"
-            fi
+            # ── 소스 동기화 (git 없이 curl로 다운로드) ──────────
+            mkdir -p "$APP_DIR"
+            curl -sL \
+              -H "Authorization: token ${PAT_TOKEN}" \
+              "https://api.github.com/repos/hyperkh65/loov-app/tarball/main" \
+              | tar -xz --strip-components=1 -C "$APP_DIR"
+            cd "$APP_DIR"
 
             # ── .env.production 작성 ─────────────────────────
             cat > .env.production << ENVEOF
