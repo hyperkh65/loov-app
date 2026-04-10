@@ -603,8 +603,8 @@ export default function XCollectPage() {
                   <option value="">전체 계정</option>
                   {nasAccounts.map(acc => <option key={acc} value={acc}>@{acc}</option>)}
                 </select>
-                <button onClick={() => loadNasVideos()} disabled={nasVideosLoading}
-                  title="캐시 새로고침"
+                <button onClick={() => loadNasVideos(true)} disabled={nasVideosLoading}
+                  title="NAS 재스캔"
                   className="text-xs text-slate-400 hover:text-white px-2 py-1.5 bg-slate-800 rounded-lg border border-slate-700"
                 >
                   {nasVideosLoading ? '...' : '↺'}
