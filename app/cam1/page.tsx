@@ -101,9 +101,15 @@ export default function Cam1Page() {
 
   const requestWakeLock = async () => {
     try {
-      if ('wakeLock' in navigator) {
-        wakeLockRef.current = await (navigator as Navigator & { wakeLock: { request: (t: string) => Promise<WakeLockSentinel> } }).wakeLock.request('screen');
-      }
+      if (!('wakeLock' in navigator)) return;
+      const wl = await (navigator as Navigator & { wakeLock: { request: (t: string) => Promise<WakeLockSentinel> } }).wakeLock.request('screen');
+      wakeLockRef.current = wl;
+      // 시스템이 WakeLock 해제하면 자동 재요청 (배터리 절약 모드 등)
+      wl.addEventListener('release', () => {
+        if (isRecordingRef.current) {
+          setTimeout(() => requestWakeLock(), 1000);
+        }
+      });
     } catch { /* ignore */ }
   };
 
@@ -400,17 +406,24 @@ export default function Cam1Page() {
     watchdogRef.current = setInterval(() => {
       if (!isRecordingRef.current) return;
 
+      // WakeLock 살아있는지 확인 → 해제됐으면 재요청
+      if (!wakeLockRef.current || (wakeLockRef.current as WakeLockSentinel & { released?: boolean }).released) {
+        requestWakeLock();
+      }
+      // noSleep 비디오 재생 중인지 확인
+      if (noSleepVideoRef.current?.paused) {
+        noSleepVideoRef.current.play().catch(() => {});
+      }
+
       const stream = localStreamRef.current;
       const recState = mediaRecorderRef.current?.state;
       const tracksAlive = stream?.getTracks().every(t => t.readyState === 'live') ?? false;
       const dataSilent = Date.now() - lastDataRef.current > 20_000; // 20초 데이터 없음
 
       if (!tracksAlive) {
-        // 스트림 트랙 자체가 죽음 → 카메라 전체 재시작
         console.warn('[cam1] watchdog: stream tracks dead, restarting camera');
         startCamera().catch(console.error);
       } else if (recState === 'inactive' || dataSilent) {
-        // Recorder만 죽음 → chunk 재시작
         console.warn('[cam1] watchdog: recorder dead/silent, restarting chunk');
         if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
         startChunk(stream!);
