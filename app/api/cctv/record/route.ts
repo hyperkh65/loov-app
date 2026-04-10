@@ -51,7 +51,7 @@ for f in os.listdir(d):
         files.append({'name': f, 'size': st.st_size, 'modTime': int(st.st_mtime)})
     except: pass
 files.sort(key=lambda x: -x['modTime'])
-print(json.dumps(files[:200]))
+print(json.dumps(files))
 "`
     );
     const files = JSON.parse(result.stdout.trim() || '[]');
