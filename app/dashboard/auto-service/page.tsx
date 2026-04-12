@@ -422,6 +422,8 @@ export default function AutoServicePage() {
     setImgError('');
     const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
     const data = await res.json();
+    console.log('[imageSearch]', tab, data);
+    if (data.error || data.images?.length === 0) alert(`[${tab}] 결과: ${JSON.stringify(data)}`);
     setImgResults(data.images || []);
     if (data.error) setImgError(data.error);
     setImgLoading(false);
