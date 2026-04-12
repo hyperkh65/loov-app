@@ -417,18 +417,16 @@ export default function AutoServicePage() {
 
   // 이미지 검색 (Naver, Google, Pixabay, SNS)
   const searchImages = async (tab: 'naver' | 'google' | 'pixabay' | 'sns', q: string) => {
-    setImgError(`🔍 검색 시작: tab=${tab}, q=${q}`);
     setImgLoading(true);
     setImgResults([]);
+    setImgError('');
     try {
       const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
-      const text = await res.text();
-      setImgError(`HTTP ${res.status}: ${text.slice(0, 300)}`);
-      const data = JSON.parse(text);
+      const data = await res.json();
       setImgResults(data.images || []);
-      if (data.images?.length > 0) setImgError('');
+      if (data.error) setImgError(data.error);
     } catch(e) {
-      setImgError(`fetch 실패: ${e}`);
+      setImgError(`검색 실패: ${e}`);
     }
     setImgLoading(false);
   };
