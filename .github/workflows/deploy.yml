@@ -135,6 +135,7 @@ jobs:
               --add-host=host.docker.internal:host-gateway \
               -v "${DIST_DIR}:/app" \
               -w /app \
+              -e DEPLOY_SECRET="$DEPLOY_SECRET" \
               node:20-alpine \
               node server.js
 
