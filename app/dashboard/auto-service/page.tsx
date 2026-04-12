@@ -417,9 +417,9 @@ export default function AutoServicePage() {
 
   // 이미지 검색 (Naver, Google, Pixabay, SNS)
   const searchImages = async (tab: 'naver' | 'google' | 'pixabay' | 'sns', q: string) => {
+    setImgError(`🔍 검색 시작: tab=${tab}, q=${q}`);
     setImgLoading(true);
     setImgResults([]);
-    setImgError('');
     try {
       const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
       const text = await res.text();
