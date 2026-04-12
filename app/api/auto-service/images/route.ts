@@ -102,9 +102,11 @@ async function searchSnsImages(query: string, limit = 12) {
 
 // 네이버 이미지 검색
 async function searchNaver(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
-  const clientId = process.env.NAVER_CLIENT_ID;
-  const clientSecret = process.env.NAVER_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new Error('NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경변수가 없습니다');
+  const [clientId, clientSecret] = await Promise.all([
+    getSetting('NAVER_CLIENT_ID'),
+    getSetting('NAVER_CLIENT_SECRET'),
+  ]);
+  if (!clientId || !clientSecret) throw new Error('NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 키가 없습니다 (AI 설정에서 입력하세요)');
   const res = await fetch(
     `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count}&sort=sim`,
     { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
