@@ -89,6 +89,8 @@ jobs:
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REDIRECT_URI=https://loov.co.kr/api/google/callback
+          GOOGLE_BLOGGER_REDIRECT_URI=https://loov.co.kr/api/blogger/callback
+          GOOGLE_YOUTUBE_REDIRECT_URI=https://loov.co.kr/api/youtube/callback
           ENVEOF
 
       - name: Notify — 전송 중
