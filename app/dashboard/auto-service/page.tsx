@@ -423,12 +423,12 @@ export default function AutoServicePage() {
     try {
       const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
       const text = await res.text();
-      alert(`HTTP ${res.status}\n${text.slice(0, 500)}`);
+      setImgError(`HTTP ${res.status}: ${text.slice(0, 300)}`);
       const data = JSON.parse(text);
       setImgResults(data.images || []);
-      if (data.error) setImgError(data.error);
+      if (data.images?.length > 0) setImgError('');
     } catch(e) {
-      alert(`fetch 실패: ${e}`);
+      setImgError(`fetch 실패: ${e}`);
     }
     setImgLoading(false);
   };
