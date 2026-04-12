@@ -10,27 +10,27 @@ const CHANNELS = {
 } as const;
 type CamChannel = keyof typeof CHANNELS;
 
-function getIceServers(): RTCIceServer[] {
-  const servers: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turns:openrelay.metered.ca:443',
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ];
-  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
-  const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME;
-  const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
-  if (turnUrl) servers.push({ urls: turnUrl, username: turnUser ?? '', credential: turnCred ?? '' });
-  return servers;
+// ICE 서버는 서버 API에서 가져옴 (Metered.ca → 커스텀 → openrelay 폴백)
+const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443'],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
+
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch('/api/cctv/iceservers', { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.iceServers?.length) return data.iceServers;
+    }
+  } catch { /* fallback */ }
+  return FALLBACK_ICE_SERVERS;
 }
-const ICE_SERVERS = getIceServers();
 
 interface Recording {
   name: string;
@@ -96,13 +96,16 @@ export default function CCTVViewerPage() {
     setStatus('waiting');
     setStatusMsg('카메라 연결 대기중...');
 
+    // ICE 서버 설정 (서버에서 Metered.ca 에페머럴 자격증명 가져옴)
+    const iceServers = await fetchIceServers();
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
     supabaseRef.current = supabase;
 
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
     const channel = selectedCam;
 
@@ -121,10 +124,15 @@ export default function CCTVViewerPage() {
         setStatus('idle');
         setStatusMsg('카메라 연결 끊김 — 재연결 중...');
         stopRecording();
-        // 2초 후 자동 재연결
+        // 기존 채널/연결 즉시 정리 (재연결 시 채널 중복 구독 방지)
+        if (retryTimerRef.current) clearInterval(retryTimerRef.current);
+        channelRef.current?.unsubscribe();
+        channelRef.current = null;
+        pc.close();
+        // 5초 후 자동 재연결 (pcRef가 아직 이 PC를 가리키면 재연결)
         setTimeout(() => {
           if (pcRef.current === pc) connect();
-        }, 2000);
+        }, 5000);
       }
     };
 
@@ -163,7 +171,7 @@ export default function CCTVViewerPage() {
       }
     };
     sendRequest();
-    retryTimerRef.current = setInterval(sendRequest, 2000);
+    retryTimerRef.current = setInterval(sendRequest, 5000); // 5초마다 재시도 (2초→5초: 채널 노이즈 감소)
   }, [selectedCam]);
 
   const disconnect = useCallback(() => {

@@ -14,27 +14,27 @@ const CHANNEL = 'cctv-cam1';
 const CAM_ID = 'cam1';
 const CHUNK_MS = 5 * 60 * 1000; // 5분 청크 (연속 녹화처럼 보이도록)
 // TURN 서버: 모바일 LTE/5G 대칭형 NAT(CGNAT) 환경에서 필수
-function getIceServers(): RTCIceServer[] {
-  const servers: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turns:openrelay.metered.ca:443',
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ];
-  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
-  const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME;
-  const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
-  if (turnUrl) servers.push({ urls: turnUrl, username: turnUser ?? '', credential: turnCred ?? '' });
-  return servers;
+// ICE 서버는 서버 API에서 가져옴 (Metered.ca → 커스텀 → openrelay 폴백)
+const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443'],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
+
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch('/api/cctv/iceservers', { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.iceServers?.length) return data.iceServers;
+    }
+  } catch { /* fallback */ }
+  return FALLBACK_ICE_SERVERS;
 }
-const ICE_SERVERS = getIceServers();
 
 // 전체화면 진입 (iOS Safari는 미지원 → 홈화면 추가 안내)
 function requestFullscreen() {
@@ -306,7 +306,10 @@ export default function Cam1Page() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
     supabaseRef.current = supabase;
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+    // ICE 서버 설정 (Metered.ca 에페머럴 자격증명)
+    const iceServers = await fetchIceServers();
+    const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
 

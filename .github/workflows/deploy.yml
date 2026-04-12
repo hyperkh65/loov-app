@@ -91,6 +91,8 @@ jobs:
           GOOGLE_REDIRECT_URI=https://loov.co.kr/api/google/callback
           GOOGLE_BLOGGER_REDIRECT_URI=https://loov.co.kr/api/blogger/callback
           GOOGLE_YOUTUBE_REDIRECT_URI=https://loov.co.kr/api/youtube/callback
+          METERED_API_KEY=${{ secrets.METERED_API_KEY }}
+          METERED_APP_NAME=${{ secrets.METERED_APP_NAME }}
           ENVEOF
 
       - name: Notify — 전송 중
