@@ -122,20 +122,18 @@ jobs:
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             WEBHOOK_URL=https://loov.co.kr/api/deploy/webhook
 
-            # 컨테이너가 있으면 재시작, 없으면 새로 생성
-            if docker ps -a --format '{{.Names}}' | grep -q "^loov-app$"; then
-              docker restart loov-app
-            else
-              docker run -d \
-                --name loov-app \
-                --restart unless-stopped \
-                -p 3100:3000 \
-                --add-host=host.docker.internal:host-gateway \
-                -v "${DIST_DIR}:/app" \
-                -w /app \
-                node:20-alpine \
-                node server.js
-            fi
+            # 항상 컨테이너 재생성 (볼륨 마운트로 최신 빌드 적용)
+            docker stop loov-app 2>/dev/null || true
+            docker rm loov-app 2>/dev/null || true
+            docker run -d \
+              --name loov-app \
+              --restart unless-stopped \
+              -p 3100:3000 \
+              --add-host=host.docker.internal:host-gateway \
+              -v "${DIST_DIR}:/app" \
+              -w /app \
+              node:20-alpine \
+              node server.js
 
             sleep 20
 
