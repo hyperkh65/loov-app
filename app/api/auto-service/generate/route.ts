@@ -49,8 +49,7 @@ async function scrapeArticleImages(
 }
 
 async function searchNaver(type: 'news' | 'blog', query: string) {
-  const clientId = process.env.NAVER_CLIENT_ID;
-  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+  const [clientId, clientSecret] = await Promise.all([getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET')]);
   if (!clientId || !clientSecret) return [];
   try {
     const res = await fetch(
@@ -229,8 +228,7 @@ async function searchInlineImages(query: string, count = 3): Promise<{ displayUr
   // 1순위: 네이버 이미지 검색 (한글 키워드 최적화)
   // displayUrls: item.link (원본, 브라우저 로드용)
   // thumbUrl: item.thumbnail (CDN URL search.pstatic.net, 서버 fetch 가능 → 대표이미지 배경용)
-  const naverClientId = process.env.NAVER_CLIENT_ID;
-  const naverClientSecret = process.env.NAVER_CLIENT_SECRET;
+  const [naverClientId, naverClientSecret] = await Promise.all([getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET')]);
   if (naverClientId && naverClientSecret) {
     try {
       const res = await fetch(
