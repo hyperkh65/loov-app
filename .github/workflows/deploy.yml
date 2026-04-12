@@ -138,11 +138,15 @@ jobs:
               node:20-alpine \
               node server.js
 
-            sleep 20
-
-            curl -s -X POST "$WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              -d "{\"secret\":\"$DEPLOY_SECRET\",\"status\":\"success\",\"step\":\"배포 완료 ✓\",\"sha\":\"$SHA\"}" || true
+            # 서버 기동 대기 후 웹훅 재시도 (최대 3회)
+            sleep 25
+            for i in 1 2 3; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+                -H "Content-Type: application/json" \
+                -d "{\"secret\":\"$DEPLOY_SECRET\",\"status\":\"success\",\"step\":\"배포 완료 ✓\",\"sha\":\"$SHA\"}")
+              [ "$STATUS" = "200" ] && break
+              sleep 10
+            done
 
       - name: Notify — 실패
         if: failure()
