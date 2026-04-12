@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
       expires_at: expiresAt,
       email: userInfo.email,
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: 'user_id' });
 
     if (upsertError) {
       console.error('Blogger token save error:', upsertError);
