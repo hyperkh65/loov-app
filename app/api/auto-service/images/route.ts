@@ -104,22 +104,23 @@ async function searchSnsImages(query: string, limit = 12) {
 async function searchNaver(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return [];
-  try {
-    const res = await fetch(
-      `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count}&sort=sim`,
-      { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.items || [])
-      .filter((item: { link: string }) => item.link?.startsWith('http'))
-      .map((item: { link: string; thumbnail: string; title: string }) => ({
-        url: item.link,
-        thumb: item.thumbnail || item.link,
-        author: item.title?.replace(/<[^>]+>/g, '') || '네이버',
-      }));
-  } catch { return []; }
+  if (!clientId || !clientSecret) throw new Error('NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경변수가 없습니다');
+  const res = await fetch(
+    `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count}&sort=sim`,
+    { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
+  );
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`네이버 API 오류 ${res.status}: ${errText}`);
+  }
+  const data = await res.json();
+  return (data.items || [])
+    .filter((item: { link: string }) => item.link?.startsWith('http'))
+    .map((item: { link: string; thumbnail: string; title: string }) => ({
+      url: item.link,
+      thumb: item.thumbnail || item.link,
+      author: item.title?.replace(/<[^>]+>/g, '') || '네이버',
+    }));
 }
 
 export async function GET(req: NextRequest) {
@@ -131,22 +132,40 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get('q') || '';
 
   if (action === 'naver') {
-    const images = await searchNaver(q);
-    return NextResponse.json({ images });
+    try {
+      const images = await searchNaver(q);
+      return NextResponse.json({ images });
+    } catch (err) {
+      console.error('[Naver image]', err);
+      return NextResponse.json({ images: [], error: String(err) });
+    }
   }
 
   if (action === 'google') {
-    const images = await searchGoogle(q);
-    if (images.length === 0) {
-      const fallback = await searchNaver(q);
-      return NextResponse.json({ images: fallback, fallback: true });
+    try {
+      const images = await searchGoogle(q);
+      if (images.length === 0) {
+        try {
+          const fallback = await searchNaver(q);
+          return NextResponse.json({ images: fallback, fallback: true });
+        } catch (naverErr) {
+          return NextResponse.json({ images: [], error: `Google: 결과없음, Naver: ${String(naverErr)}` });
+        }
+      }
+      return NextResponse.json({ images });
+    } catch (err) {
+      console.error('[Google image]', err);
+      return NextResponse.json({ images: [], error: String(err) });
     }
-    return NextResponse.json({ images });
   }
 
   if (action === 'pixabay') {
-    const images = await searchPixabay(q);
-    return NextResponse.json({ images });
+    try {
+      const images = await searchPixabay(q);
+      return NextResponse.json({ images });
+    } catch (err) {
+      return NextResponse.json({ images: [], error: String(err) });
+    }
   }
 
   if (action === 'sns') {

@@ -103,6 +103,7 @@ export default function AutoServicePage() {
   const [imgSearchTab, setImgSearchTab] = useState<'naver' | 'google' | 'pixabay' | 'sns' | 'upload'>('naver');
   const [imgQuery, setImgQuery] = useState('');
   const [imgResults, setImgResults] = useState<{ url: string; thumb: string; author: string; caption?: string }[]>([]);
+  const [imgError, setImgError] = useState<string>('');
   const [imgLoading, setImgLoading] = useState(false);
   const [replacingImgSrc, setReplacingImgSrc] = useState<string | null>(null);
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null); // 다운로드 중인 이미지 URL
@@ -418,9 +419,11 @@ export default function AutoServicePage() {
   const searchImages = async (tab: 'naver' | 'google' | 'pixabay' | 'sns', q: string) => {
     setImgLoading(true);
     setImgResults([]);
+    setImgError('');
     const res = await fetch(`/api/auto-service/images?action=${tab}&q=${encodeURIComponent(q)}`);
     const data = await res.json();
     setImgResults(data.images || []);
+    if (data.error) setImgError(data.error);
     setImgLoading(false);
   };
 
@@ -1317,6 +1320,12 @@ export default function AutoServicePage() {
                       파일 선택
                     </label>
                     {!replacingImgSrc && <p className="text-xs text-orange-500 mt-2">⚠️ 먼저 위에서 교체할 이미지를 클릭하세요</p>}
+                  </div>
+                )}
+
+                {imgError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 break-all">
+                    ❌ {imgError}
                   </div>
                 )}
 
