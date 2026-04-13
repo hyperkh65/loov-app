@@ -71,6 +71,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/community', icon: '🤝', label: '커뮤니티' },
       { href: '/dashboard/language',  icon: '🌍', label: '외국어 학습' },
       { href: '/dashboard/chinese',   icon: '🇨🇳', label: '중국어 학습센터' },
+      { href: '/dashboard/translate', icon: '🎙️', label: '실시간 번역기' },
       { href: '/dashboard/sme',       icon: '🏢', label: '지원사업 검색' },
       { href: '/dashboard/notion',        icon: '📔', label: 'Notion 연동' },
       { href: '/dashboard/notion-mirror', icon: '🔗', label: 'Notion 미러' },
