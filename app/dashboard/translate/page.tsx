@@ -72,36 +72,62 @@ export default function TranslatePage() {
     setSupported(ok);
   }, []);
 
-  // ── 번역 함수 ────────────────────────────────────────────────────────────
+  // ── 번역 함수 (SSE 스트리밍) ────────────────────────────────────────────
   const translateText = useCallback(async (text: string) => {
     if (!text.trim()) return;
     setTranslating(true);
+    setTranslated('');
     setError('');
+
+    let content = '';
+    let modelName = '';
+
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, from: fromLang, to: 'ko-KR' }),
       });
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-        return;
-      }
-      setTranslated(data.translation ?? '');
-      setActiveModel(data.model ?? '');
 
-      // 히스토리 추가
-      setHistory(prev => [
-        {
-          id: Date.now().toString(),
-          original: text,
-          translated: data.translation ?? '',
-          from: fromLang,
-          timestamp: new Date(),
-        },
-        ...prev.slice(0, 49), // 최대 50개
-      ]);
+      if (!res.body) throw new Error('응답 없음');
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const j = JSON.parse(line.slice(6));
+            if (j.error) { setError(j.error); return; }
+            if (j.model) { modelName = j.model; setActiveModel(j.model); }
+            if (j.chunk) {
+              content += j.chunk;
+              setTranslated(content); // 글자 나올 때마다 즉시 화면 업데이트
+            }
+          } catch {}
+        }
+      }
+
+      // 히스토리 추가 (완료 후)
+      if (content.trim()) {
+        setHistory(prev => [
+          {
+            id: Date.now().toString(),
+            original: text,
+            translated: content.trim(),
+            from: fromLang,
+            timestamp: new Date(),
+          },
+          ...prev.slice(0, 49),
+        ]);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
