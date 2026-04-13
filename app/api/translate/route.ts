@@ -37,7 +37,44 @@ export async function POST(req: NextRequest) {
       { role: 'user',   content: text },
     ];
 
-    // ── 1. Ollama Cloud (non-streaming) ──────────────────────────────
+    // ── 스트리밍 청크 수집 헬퍼 ──────────────────────────────────────
+    async function collectOllamaStream(body: ReadableStream): Promise<string> {
+      const reader = body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', content = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try { const j = JSON.parse(line); if (j.message?.content) content += j.message.content; } catch {}
+        }
+      }
+      return content.trim();
+    }
+
+    async function collectOpenRouterStream(body: ReadableStream): Promise<string> {
+      const reader = body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', content = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+          try { const j = JSON.parse(line.slice(6)); const c = j.choices?.[0]?.delta?.content; if (c) content += c; } catch {}
+        }
+      }
+      return content.trim();
+    }
+
+    // ── 1. Ollama Cloud (streaming 수집) ──────────────────────────
     const ollamaKey = await getSetting('OLLAMA_API_KEY');
     if (ollamaKey) {
       try {
@@ -47,18 +84,17 @@ export async function POST(req: NextRequest) {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${ollamaKey}`,
           },
-          body: JSON.stringify({ model: 'qwen3', messages, stream: false }),
-          signal: AbortSignal.timeout(12000),
+          body: JSON.stringify({ model: 'qwen3', messages, stream: true }),
+          signal: AbortSignal.timeout(20000),
         });
-        if (res.ok) {
-          const j = await res.json();
-          const translation = j.message?.content?.trim();
+        if (res.ok && res.body) {
+          const translation = await collectOllamaStream(res.body);
           if (translation) return NextResponse.json({ translation, model: 'qwen3 (Ollama)' });
         }
       } catch {}
     }
 
-    // ── 2. OpenRouter 무료 폴백 ────────────────────────────────────
+    // ── 2. OpenRouter 무료 폴백 (streaming 수집) ──────────────────
     const orKey = await getSetting('OPENROUTER_API_KEY');
     if (orKey) {
       const orModels = [
@@ -74,12 +110,11 @@ export async function POST(req: NextRequest) {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${orKey}`,
             },
-            body: JSON.stringify({ model, messages, stream: false }),
-            signal: AbortSignal.timeout(15000),
+            body: JSON.stringify({ model, messages, stream: true }),
+            signal: AbortSignal.timeout(20000),
           });
-          if (res.ok) {
-            const j = await res.json();
-            const translation = j.choices?.[0]?.message?.content?.trim();
+          if (res.ok && res.body) {
+            const translation = await collectOpenRouterStream(res.body);
             if (translation) return NextResponse.json({ translation, model });
           }
         } catch { continue; }
