@@ -187,6 +187,23 @@ export default function WeChatPage() {
             if (p.status === 'done') {
               // 목록 갱신
               fetch('/api/wechat/rooms').then(r => r.json()).then(d => setRooms(d.rooms ?? []));
+              // 현재 열려있는 대화방 메시지도 갱신
+              setSelectedRoom(prev => {
+                if (prev) {
+                  setMsgLoading(true);
+                  fetch(`/api/wechat/messages?room=${encodeURIComponent(prev.filename)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                      if (!data.error) {
+                        setMessages(data.messages ?? []);
+                        setRoomName(data.name ?? prev.name);
+                        setRoomHash(data.roomHash ?? '');
+                      }
+                    })
+                    .finally(() => setMsgLoading(false));
+                }
+                return prev;
+              });
             }
           } catch { /**/ }
         }
@@ -401,6 +418,11 @@ export default function WeChatPage() {
                   {Object.entries(mediaSummary).slice(0,3).map(([t, c]) => (
                     <span key={t} className="text-[10px] px-1.5 py-0.5 bg-slate-700 rounded-full text-slate-300">{t} {c}</span>
                   ))}
+                  <button onClick={() => openRoom(selectedRoom)} disabled={msgLoading}
+                    className="text-[10px] px-2.5 py-1 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+                    title="메시지 새로고침">
+                    {msgLoading ? '⟳' : '↺'}
+                  </button>
                   <button onClick={generateSummary} disabled={aiLoading || messages.length === 0}
                     className="text-[10px] px-2.5 py-1 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white rounded-lg transition-colors">
                     {aiLoading ? '⟳ 요약 중' : '✦ AI 요약'}
