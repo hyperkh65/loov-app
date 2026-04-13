@@ -71,10 +71,10 @@ jobs:
           NAS_SSH_HOST=host.docker.internal
           NAS_SSH_PORT=22
           NAS_SSH_USER=${{ secrets.NAS_SSH_USER }}
-          NAS_SSH_PASSWORD=${{ secrets.NAS_SSH_PASSWORD }}
+          NAS_SSH_PASSWORD="${{ secrets.NAS_SSH_PASSWORD }}"
           R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}"
           R2_BUCKET=${{ secrets.R2_BUCKET }}
           R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}
           NOTION_API_KEY=${{ secrets.NOTION_API_KEY }}
@@ -82,8 +82,8 @@ jobs:
           GITHUB_PAT=${{ secrets.PAT_TOKEN }}
           GITHUB_REPO=hyperkh65/loov-app
           INVITE_CODE=${{ secrets.INVITE_CODE }}
-          NAS_MYSQL_ROOT_PASS=${{ secrets.NAS_MYSQL_ROOT_PASS }}
-          NAS_SYNO_ADMIN_PASS=${{ secrets.NAS_SYNO_ADMIN_PASS }}
+          NAS_MYSQL_ROOT_PASS="${{ secrets.NAS_MYSQL_ROOT_PASS }}"
+          NAS_SYNO_ADMIN_PASS="${{ secrets.NAS_SYNO_ADMIN_PASS }}"
           NEXT_PUBLIC_KAKAO_CHANNEL_URL=https://pf.kakao.com/_ixeGIX
           DEPLOY_SECRET=${{ secrets.DEPLOY_SECRET }}
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
