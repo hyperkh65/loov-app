@@ -34,6 +34,7 @@ export function nasExec(command: string): Promise<SSHResult> {
       port: parseInt(process.env.NAS_SSH_PORT || '22'),
       username: process.env.NAS_SSH_USER || 'urjent',
       password: process.env.NAS_SSH_PASSWORD || 'Aa050677##7759',
+      tryKeyboard: true, // Synology NAS keyboard-interactive 인증 지원
       readyTimeout: 10000,
     });
   });
@@ -74,6 +75,7 @@ export function nasExecWithStdin(command: string, stdinData: Buffer | string): P
       port: parseInt(process.env.NAS_SSH_PORT || '22'),
       username: process.env.NAS_SSH_USER || 'urjent',
       password: process.env.NAS_SSH_PASSWORD || 'Aa050677##7759',
+      tryKeyboard: true,
       readyTimeout: 15000,
     });
   });
@@ -118,6 +120,7 @@ export function nasExecCustom(command: string, options: {
       port: options.port ?? 22,
       username: options.username,
       password: options.password,
+      tryKeyboard: true,
       readyTimeout: 10000,
     });
   });
@@ -152,6 +155,7 @@ export function nasExecWithStdinCustom(command: string, stdinData: Buffer | stri
       port: options.port ?? 22,
       username: options.username,
       password: options.password,
+      tryKeyboard: true,
       readyTimeout: 15000,
     });
   });
@@ -182,6 +186,7 @@ export function nas2daysExec(command: string): Promise<SSHResult> {
       port: parseInt(process.env.NAS2_SSH_PORT || '22'),
       username: process.env.NAS2_SSH_USER || 'urjent',
       password: process.env.NAS2_SSH_PASSWORD || 'Fpahs60577##7759',
+      tryKeyboard: true,
       readyTimeout: 15000,
     });
   });
