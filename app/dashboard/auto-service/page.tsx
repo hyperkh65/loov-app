@@ -232,7 +232,7 @@ export default function AutoServicePage() {
     setRunResult(null);
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 270_000); // 4.5분 타임아웃
+      const timeout = setTimeout(() => controller.abort(), 600_000); // 10분 타임아웃
       const res = await fetch('/api/auto-service/auto-run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

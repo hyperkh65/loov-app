@@ -22,7 +22,7 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
       messages: [{ role: 'user', content: prompt }],
       stream: false,
     }),
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(540_000),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -45,7 +45,7 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
       messages: [{ role: 'user', content: prompt }],
       stream: false,
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(540_000),
   });
   if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
   const data = await res.json();
@@ -61,7 +61,7 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(540_000),
     }
   );
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
@@ -79,7 +79,7 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(540_000),
   });
   if (!res.ok) throw new Error(`OpenAI ${res.status}`);
   const data = await res.json();
@@ -130,7 +130,7 @@ async function callClaude(apiKey: string, prompt: string): Promise<string> {
       max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(540_000),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${await res.text()}`);
   const data = await res.json();
