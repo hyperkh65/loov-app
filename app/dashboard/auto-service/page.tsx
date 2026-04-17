@@ -251,7 +251,7 @@ export default function AutoServicePage() {
         throw new Error(`서버 응답 오류 (${res.status}) — AI 생성 시간이 너무 걸렸거나 서버 에러. 초안 탭에서 생성된 글을 확인해보세요.`);
       }
       setRunResult({ generated: data.generated || 0, keywords: data.keywords || [], errors: data.errors || [] });
-      if (data.generated > 0) {
+      if ((data.generated ?? 0) > 0) {
         setTab('drafts');
         await loadArticles();
       }
