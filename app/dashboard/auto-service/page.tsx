@@ -2,14 +2,25 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-const AI_MODELS = [
-  { id: 'qwen3', name: 'Qwen 3', emoji: '🔮' },
-  { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮' },
-  { id: 'llama3.3', name: 'Llama 3.3', emoji: '🦙' },
-  { id: 'mistral', name: 'Mistral', emoji: '🌪️' },
-  { id: 'gemma3', name: 'Gemma 3', emoji: '💎' },
-  { id: 'deepseek-r1', name: 'DeepSeek R1', emoji: '🧠' },
-];
+function modelEmoji(id: string): string {
+  if (id.includes('qwen')) return '🔮';
+  if (id.includes('llama')) return '🦙';
+  if (id.includes('mistral') || id.includes('ministral')) return '🌪️';
+  if (id.includes('gemma')) return '💎';
+  if (id.includes('deepseek')) return '🧠';
+  if (id.includes('phi')) return '🔵';
+  if (id.includes('gemini')) return '✨';
+  if (id.includes('command')) return '⚡';
+  if (id.includes('granite')) return '🪨';
+  if (id.includes('smol') || id.includes('mini')) return '🐣';
+  if (id.includes('codellama') || id.includes('coder')) return '💻';
+  if (id.includes('solar')) return '☀️';
+  return '🤖';
+}
+
+function modelLabel(id: string): string {
+  return id.replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
 const BLOG_PLATFORMS = [
   { id: 'naver', name: '네이버 블로그', icon: '🟢' },
@@ -70,6 +81,14 @@ export default function AutoServicePage() {
     enabled: false, ai_model: 'qwen3', max_per_run: 3,
     custom_keywords: [], last_run_at: null, last_run_status: null, last_run_count: 0,
   });
+  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string }[]>([
+    { id: 'qwen3', name: 'Qwen 3', emoji: '🔮' },
+    { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮' },
+    { id: 'llama3.3', name: 'Llama 3.3', emoji: '🦙' },
+    { id: 'mistral', name: 'Mistral', emoji: '🌪️' },
+    { id: 'gemma3', name: 'Gemma 3', emoji: '💎' },
+    { id: 'deepseek-r1', name: 'DeepSeek R1', emoji: '🧠' },
+  ]);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState('');
   const [customKwInput, setCustomKwInput] = useState('');
@@ -146,6 +165,20 @@ export default function AutoServicePage() {
     fetch('/api/wordpress/sites')
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setWpSites(d); });
+    // Ollama 모델 목록 동적 로드
+    fetch('/api/ollama/models')
+      .then(r => r.json())
+      .then(d => {
+        const popular: string[] = d.popular || d.models || [];
+        if (popular.length > 0) {
+          setOllamaModels(popular.map((id: string) => ({
+            id,
+            name: modelLabel(id),
+            emoji: modelEmoji(id),
+          })));
+        }
+      })
+      .catch(() => { /* fallback 유지 */ });
   }, []);
 
   const loadArticles = useCallback(async (status?: string) => {
@@ -655,7 +688,7 @@ export default function AutoServicePage() {
             <div>
               <label className="text-sm font-medium text-gray-700 mb-2 block">AI 모델</label>
               <div className="flex flex-wrap gap-2">
-                {AI_MODELS.map(m => (
+                {ollamaModels.map(m => (
                   <button key={m.id}
                     onClick={() => setAutoSettings(prev => ({ ...prev, ai_model: m.id }))}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${autoSettings.ai_model === m.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
@@ -829,7 +862,7 @@ export default function AutoServicePage() {
                         {STATUS_LABELS[article.status].label}
                       </span>
                       <span className="text-xs text-gray-400">{article.word_count.toLocaleString()}자</span>
-                      <span className="text-xs text-gray-400">• {AI_MODELS.find(m => m.id === article.ai_model)?.emoji} {article.ai_model}</span>
+                      <span className="text-xs text-gray-400">• {ollamaModels.find(m => m.id === article.ai_model)?.emoji} {article.ai_model}</span>
                     </div>
                     <h3 className="font-semibold text-gray-900 line-clamp-1">{article.title}</h3>
                     <p className="text-sm text-gray-500 line-clamp-1 mt-0.5">{article.meta_description}</p>
@@ -968,7 +1001,7 @@ export default function AutoServicePage() {
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">AI 모델</label>
                   <div className="flex flex-wrap gap-2">
-                    {AI_MODELS.map(m => (
+                    {ollamaModels.map(m => (
                       <button key={m.id} onClick={() => setEditModel(m.id)}
                         className={`px-2 py-1 rounded text-xs font-medium ${editModel === m.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
                         {m.emoji} {m.name}

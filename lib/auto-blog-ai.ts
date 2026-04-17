@@ -150,12 +150,21 @@ export async function generateText(
   // 1. Ollama Cloud (무료AI 페이지 localStorage 키 우선)
   const ollamaKey = clientOllamaKey || await getSetting('OLLAMA_API_KEY');
   if (ollamaKey) {
+    // 선호 모델 시도
     try {
       return await callOllama(ollamaKey, preferModel, prompt);
     } catch (e) {
-      errors.push(`Ollama(${preferModel}): ${e}`);
+      const errStr = String(e);
+      // "string not match" = Ollama Cloud에 해당 모델 없음 → fallback 시도
+      errors.push(`Ollama(${preferModel}): ${errStr.includes('string not match') ? '모델 없음' : errStr}`);
     }
-    for (const fallback of ['qwen3.5', 'qwen3', 'llama3.3', 'mistral', 'ministral-3', 'gemma3', 'phi4', 'deepseek-r1']) {
+    // fallback: 최신 popular 모델 순서로 시도 (ollama.com/search 기준)
+    const OLLAMA_FALLBACKS = [
+      'qwen3.5', 'qwen3', 'qwen3-coder', 'llama3.3', 'llama3.2',
+      'mistral', 'mistral-small3.1', 'gemma3', 'deepseek-r1',
+      'phi4', 'phi4-mini', 'ministral-3',
+    ];
+    for (const fallback of OLLAMA_FALLBACKS) {
       if (fallback === preferModel) continue;
       try { return await callOllama(ollamaKey, fallback, prompt); } catch { continue; }
     }
@@ -200,7 +209,8 @@ export async function generateText(
   }
 
   throw new Error(
-    `사용 가능한 AI 없음 (${errors.join(' | ')})\n` +
-    '설정 페이지 → API 키 관리에서 Gemini, OpenAI, Claude 키 중 하나를 저장하세요.'
+    `사용 가능한 AI 없음\n` +
+    (errors.length ? `오류: ${errors.join(' | ')}\n` : '') +
+    'Ollama Cloud 키가 없거나 모든 모델 실패 → 설정 페이지에서 Gemini, OpenAI, Claude API 키 중 하나를 저장하세요.'
   );
 }
