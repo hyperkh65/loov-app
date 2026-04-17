@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createAdminClient } from '@/lib/supabase-server';
 
 export const maxDuration = 600;
 
@@ -87,19 +87,28 @@ async function uploadContentImages(
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+  // CRON_SECRET bypass: GitHub Actions 예약 발행용
+  const cronSecret = process.env.CRON_SECRET;
+  const isCron = !!(cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`);
+
+  const supabase = isCron ? await createAdminClient() : await createClient();
+
+  let userId: string | undefined;
+  if (!isCron) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+    userId = user.id;
+  }
 
   const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [] } = await req.json();
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
-  const { data: article, error: fetchErr } = await supabase
+  let articleQuery = supabase
     .from('bossai_auto_articles')
     .select('*')
-    .eq('id', article_id)
-    .eq('user_id', user.id)
-    .single();
+    .eq('id', article_id);
+  if (userId) articleQuery = articleQuery.eq('user_id', userId);
+  const { data: article, error: fetchErr } = await articleQuery.single();
 
   if (fetchErr || !article) return NextResponse.json({ error: '글을 찾을 수 없습니다' }, { status: 404 });
 
@@ -139,8 +148,8 @@ export async function POST(req: NextRequest) {
         // 선택된 사이트 ID로 조회, 없으면 사용자 전체 WP 사이트 조회
         let sitesQuery = supabase
           .from('wordpress_sites')
-          .select('id, site_name, site_url, wp_username, app_password')
-          .eq('user_id', user.id);
+          .select('id, site_name, site_url, wp_username, app_password');
+        if (userId) sitesQuery = sitesQuery.eq('user_id', userId);
 
         if (wp_site_ids.length > 0) {
           sitesQuery = sitesQuery.in('id', wp_site_ids);
@@ -297,7 +306,7 @@ export async function POST(req: NextRequest) {
     if (v.success && v.url) publishedUrls[k] = v.url;
   }
 
-  await supabase
+  const updateQuery = supabase
     .from('bossai_auto_articles')
     .update({
       status: anySuccess ? 'published' : 'failed',
@@ -307,8 +316,8 @@ export async function POST(req: NextRequest) {
       published_at: anySuccess ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', article_id)
-    .eq('user_id', user.id);
+    .eq('id', article_id);
+  await (userId ? updateQuery.eq('user_id', userId) : updateQuery);
 
   return NextResponse.json({ results, published_urls: publishedUrls });
 }

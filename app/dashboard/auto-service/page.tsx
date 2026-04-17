@@ -36,7 +36,7 @@ const SNS_PLATFORMS = [
 ];
 
 type Tab = 'auto' | 'drafts' | 'history';
-type Status = 'draft' | 'approved' | 'published' | 'failed';
+type Status = 'draft' | 'approved' | 'published' | 'failed' | 'scheduled';
 
 interface Article {
   id: string;
@@ -51,6 +51,8 @@ interface Article {
   sns_platforms: string[];
   published_urls: Record<string, string>;
   published_at: string | null;
+  scheduled_at: string | null;
+  scheduled_platforms: { blog_platforms: string[]; sns_platforms: string[]; wp_site_ids: string[] } | null;
   word_count: number;
   created_at: string;
   sources: { type: string; title: string; link: string; description?: string }[];
@@ -71,6 +73,7 @@ const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
   approved: { label: '승인됨', color: 'bg-blue-100 text-blue-800' },
   published: { label: '발행완료', color: 'bg-green-100 text-green-800' },
   failed: { label: '실패', color: 'bg-red-100 text-red-800' },
+  scheduled: { label: '예약됨', color: 'bg-purple-100 text-purple-800' },
 };
 
 export default function AutoServicePage() {
@@ -149,6 +152,14 @@ export default function AutoServicePage() {
   // WordPress 사이트 목록
   const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
+
+  // 예약 발행 모달
+  const [scheduleArticle, setScheduleArticle] = useState<Article | null>(null);
+  const [scheduleDateTime, setScheduleDateTime] = useState('');
+  const [schedBlog, setSchedBlog] = useState<string[]>([]);
+  const [schedSns, setSchedSns] = useState<string[]>([]);
+  const [schedWpSiteIds, setSchedWpSiteIds] = useState<string[]>([]);
+  const [scheduling, setScheduling] = useState(false);
 
   // localStorage에서 무료AI 페이지의 키 읽기 (서버로 전달용)
   const getAiKeys = () => ({
@@ -583,6 +594,59 @@ export default function AutoServicePage() {
     setPublishResult(null);
   };
 
+  const openSchedule = (article: Article) => {
+    setScheduleArticle(article);
+    // 기존 예약이 있으면 불러오기
+    if (article.scheduled_at) {
+      const d = new Date(article.scheduled_at);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setScheduleDateTime(local);
+    } else {
+      // 기본값: 지금 + 1시간
+      const def = new Date(Date.now() + 3600_000);
+      const local = new Date(def.getTime() - def.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setScheduleDateTime(local);
+    }
+    setSchedBlog(article.scheduled_platforms?.blog_platforms || []);
+    setSchedSns(article.scheduled_platforms?.sns_platforms || []);
+    setSchedWpSiteIds(article.scheduled_platforms?.wp_site_ids || []);
+  };
+
+  const doSchedule = async () => {
+    if (!scheduleArticle || !scheduleDateTime) return;
+    setScheduling(true);
+    try {
+      const res = await fetch('/api/auto-service/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_id: scheduleArticle.id,
+          scheduled_at: new Date(scheduleDateTime).toISOString(),
+          blog_platforms: schedBlog,
+          sns_platforms: schedSns,
+          wp_site_ids: schedWpSiteIds,
+        }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || '저장 실패'); }
+      setScheduleArticle(null);
+      await loadArticles();
+    } catch (err) {
+      alert(`예약 실패: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  const cancelSchedule = async (articleId: string) => {
+    if (!confirm('예약을 취소하시겠습니까?')) return;
+    await fetch('/api/auto-service/schedule', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ article_id: articleId }),
+    });
+    await loadArticles();
+  };
+
   const doPublish = async () => {
     if (!publishArticle) return;
     setPublishing(true);
@@ -877,16 +941,40 @@ export default function AutoServicePage() {
                     <div className="text-xs text-gray-400 mt-1">
                       🔑 {article.keyword} · {new Date(article.created_at).toLocaleString('ko-KR')}
                     </div>
+                    {article.status === 'scheduled' && article.scheduled_at && (
+                      <div className="text-xs text-purple-600 mt-1 font-medium">
+                        ⏰ {new Date(article.scheduled_at).toLocaleString('ko-KR')} 예약됨
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2 flex-shrink-0">
                     <button onClick={() => openPreview(article)}
                       className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
                       미리보기/편집
                     </button>
-                    <button onClick={() => openPublish(article)}
-                      className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
-                      ✅ 승인 & 발행
-                    </button>
+                    {article.status === 'scheduled' ? (
+                      <>
+                        <button onClick={() => openSchedule(article)}
+                          className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">
+                          ⏰ 예약 수정
+                        </button>
+                        <button onClick={() => cancelSchedule(article.id)}
+                          className="px-3 py-1.5 text-xs bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300">
+                          취소
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => openPublish(article)}
+                          className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
+                          ✅ 승인 & 발행
+                        </button>
+                        <button onClick={() => openSchedule(article)}
+                          className="px-3 py-1.5 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-medium">
+                          ⏰ 예약 발행
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1518,6 +1606,91 @@ export default function AutoServicePage() {
                 <button onClick={() => setPublishArticle(null)} className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg text-sm mt-2">닫기</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== 예약 발행 모달 ===== */}
+      {scheduleArticle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={e => { if (e.target === e.currentTarget && !scheduling) setScheduleArticle(null); }}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="p-4 border-b border-gray-200">
+              <h2 className="font-semibold text-gray-900">⏰ 예약 발행 설정</h2>
+              <p className="text-sm text-gray-500 mt-0.5 line-clamp-1">{scheduleArticle.title}</p>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* 예약 시간 */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1.5 block">발행 예약 시간</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleDateTime}
+                  onChange={e => setScheduleDateTime(e.target.value)}
+                  min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              {/* 블로그 플랫폼 */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">블로그 플랫폼</label>
+                <div className="space-y-2">
+                  {BLOG_PLATFORMS.filter(p => p.id !== 'wordpress').map(p => (
+                    <label key={p.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                      <input type="checkbox" checked={schedBlog.includes(p.id)} onChange={() => togglePlatform(schedBlog, setSchedBlog, p.id)} className="w-4 h-4" />
+                      <span>{p.icon} {p.name}</span>
+                    </label>
+                  ))}
+                  {wpSites.length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🔵 WordPress 사이트 선택</div>
+                      {wpSites.map(site => (
+                        <label key={site.id} className="flex items-center gap-3 p-3 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-50 mb-1.5">
+                          <input type="checkbox"
+                            checked={schedWpSiteIds.includes(site.id)}
+                            onChange={() => {
+                              const newIds = schedWpSiteIds.includes(site.id)
+                                ? schedWpSiteIds.filter(id => id !== site.id)
+                                : [...schedWpSiteIds, site.id];
+                              setSchedWpSiteIds(newIds);
+                              if (newIds.length > 0 && !schedBlog.includes('wordpress')) {
+                                setSchedBlog(prev => [...prev, 'wordpress']);
+                              } else if (newIds.length === 0) {
+                                setSchedBlog(prev => prev.filter(b => b !== 'wordpress'));
+                              }
+                            }}
+                            className="w-4 h-4" />
+                          <div>
+                            <div className="text-sm font-medium text-gray-800">{site.site_name}</div>
+                            <div className="text-xs text-gray-400">{site.site_url}</div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* SNS */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">SNS 연동 (선택)</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SNS_PLATFORMS.map(p => (
+                    <label key={p.id} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                      <input type="checkbox" checked={schedSns.includes(p.id)} onChange={() => togglePlatform(schedSns, setSchedSns, p.id)} className="w-4 h-4" />
+                      <span className="text-sm">{p.icon} {p.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setScheduleArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
+                <button
+                  onClick={doSchedule}
+                  disabled={scheduling || !scheduleDateTime || (schedBlog.length === 0 && schedSns.length === 0)}
+                  className="flex-1 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+                  {scheduling ? '저장 중...' : '⏰ 예약 저장'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
