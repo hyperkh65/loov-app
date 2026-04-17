@@ -229,10 +229,15 @@ export async function POST(req: NextRequest) {
   // SNS 발행
   if (sns_platforms.length > 0) {
     try {
-      // 블로그 발행 결과 URL 수집
-      const blogUrls = Object.entries(results)
+      // 블로그 URL 수집: 현재 요청 결과 + 이미 DB에 저장된 기존 발행 URL 합산
+      const existingBlogUrls = Object.entries(article.published_urls || {})
+        .filter(([k]) => !k.startsWith('sns_'))
+        .map(([, v]) => v as string)
+        .filter(Boolean);
+      const newBlogUrls = Object.entries(results)
         .filter(([k, v]) => !k.startsWith('sns_') && v.success && v.url)
         .map(([, v]) => v.url!);
+      const blogUrls = [...new Set([...existingBlogUrls, ...newBlogUrls])];
       const blogLinkText = blogUrls.length > 0 ? '\n\n🔗 ' + blogUrls.join('\n🔗 ') : '';
 
       const threadsIncluded = sns_platforms.includes('threads');
