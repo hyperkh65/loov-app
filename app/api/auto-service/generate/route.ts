@@ -5,7 +5,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // 수집된 기사에서 og:image 스크래핑
 async function scrapeArticleImages(
