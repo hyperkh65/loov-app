@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 
-export const maxDuration = 120;
+export const maxDuration = 600;
 
 // WordPress: 이미지 URL → WP 미디어 업로드 → 미디어 ID/URL 반환
 async function uploadImageToWordpress(
@@ -25,7 +25,7 @@ async function uploadImageToWordpress(
         'Content-Type': contentType,
       },
       body: buffer,
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(120_000),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
               method: 'POST',
               headers: { Authorization: auth, 'Content-Type': 'application/json' },
               body: JSON.stringify(postBody),
-              signal: AbortSignal.timeout(60_000),
+              signal: AbortSignal.timeout(120_000),
             });
 
             if (res.ok) {
