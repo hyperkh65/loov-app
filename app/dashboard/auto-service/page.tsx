@@ -245,7 +245,11 @@ export default function AutoServicePage() {
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: { generated?: number; keywords?: string[]; errors?: { keyword: string; reason: string }[] };
+      try { data = JSON.parse(rawText); } catch {
+        throw new Error(`서버 응답 오류 (${res.status}) — AI 생성 시간이 너무 걸렸거나 서버 에러. 초안 탭에서 생성된 글을 확인해보세요.`);
+      }
       setRunResult({ generated: data.generated || 0, keywords: data.keywords || [], errors: data.errors || [] });
       if (data.generated > 0) {
         setTab('drafts');
@@ -275,7 +279,11 @@ export default function AutoServicePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keyword, ai_model: autoSettings.ai_model, ...getAiKeys() }),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: { error?: string; thumbnail_error?: string };
+      try { data = JSON.parse(rawText); } catch {
+        throw new Error(`서버 응답 오류 (${res.status}) — AI 생성이 너무 오래 걸렸거나 서버 에러입니다. 잠시 후 다시 시도해주세요.`);
+      }
       if (!res.ok) throw new Error(data.error || '생성 실패');
       setManualKeyword('');
       setTab('drafts');
