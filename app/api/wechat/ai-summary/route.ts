@@ -8,15 +8,34 @@ import { getSetting } from '@/lib/get-setting';
 interface MsgInput { time: string; sender: string; content: string; }
 
 async function callAI(prompt: string): Promise<string> {
-  // 1. OpenRouter
+  // 1. Ollama Cloud (우선)
+  const ollamaKey = await getSetting('OLLAMA_API_KEY');
+  if (ollamaKey) {
+    for (const model of ['qwen3.5', 'qwen3', 'llama3.3', 'mistral', 'gemma3', 'deepseek-r1']) {
+      try {
+        const res = await fetch('https://ollama.com/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ollamaKey}` },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], stream: false }),
+          signal: AbortSignal.timeout(60000),
+        });
+        if (res.ok) {
+          const d = await res.json() as { message?: { content?: string } };
+          const text = d.message?.content;
+          if (text) return text;
+        }
+      } catch { continue; }
+    }
+  }
+
+  // 2. OpenRouter (fallback)
   const orKey = await getSetting('OPENROUTER_API_KEY');
   if (orKey) {
     for (const model of [
-      'anthropic/claude-haiku-4-5',
-      'google/gemini-2.0-flash-001',
-      'openai/gpt-4o-mini',
       'qwen/qwen3-235b-a22b:free',
       'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-2.0-flash-001',
+      'openai/gpt-4o-mini',
     ]) {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -34,7 +53,7 @@ async function callAI(prompt: string): Promise<string> {
     }
   }
 
-  // 2. Ollama (로컬)
+  // 3. Ollama 로컬 (fallback)
   const ollamaUrl = await getSetting('OLLAMA_BASE_URL');
   if (ollamaUrl) {
     try {
@@ -51,7 +70,7 @@ async function callAI(prompt: string): Promise<string> {
     } catch { /* fallthrough */ }
   }
 
-  return '(AI 요약 불가 — LOOV 설정에서 OpenRouter API 키를 확인하세요)';
+  return '(AI 요약 불가 — LOOV 설정에서 Ollama Cloud 또는 OpenRouter API 키를 확인하세요)';
 }
 
 export async function POST(req: NextRequest) {
