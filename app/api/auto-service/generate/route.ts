@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
@@ -366,9 +366,20 @@ function parseAiOutput(raw: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+  // BOT_SECRET 우회 (clawdbot 연동)
+  const botSecret = process.env.BOT_SECRET || process.env.CRON_SECRET;
+  const isBot = !!(botSecret && req.headers.get('authorization') === `Bearer ${botSecret}`);
+
+  let userId: string;
+  if (isBot) {
+    userId = process.env.OWNER_USER_ID!;
+  } else {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+    userId = user.id;
+  }
+  const supabase = isBot ? await createAdminClient() : await createClient();
 
   const { keyword, ai_model = 'qwen3', clientOllamaKey, clientOpenrouterKey } = await req.json();
   if (!keyword?.trim()) return NextResponse.json({ error: '키워드를 입력하세요' }, { status: 400 });
@@ -427,7 +438,7 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from('bossai_auto_articles')
     .insert({
-      user_id: user.id,
+      user_id: userId,
       keyword,
       focus_keyword: keyword,
       title,
