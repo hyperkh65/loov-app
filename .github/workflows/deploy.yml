@@ -86,6 +86,7 @@ jobs:
           NAS_SYNO_ADMIN_PASS="${{ secrets.NAS_SYNO_ADMIN_PASS }}"
           NEXT_PUBLIC_KAKAO_CHANNEL_URL=https://pf.kakao.com/_ixeGIX
           DEPLOY_SECRET=${{ secrets.DEPLOY_SECRET }}
+          CRON_SECRET=${{ secrets.CRON_SECRET }}
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REDIRECT_URI=https://loov.co.kr/api/google/callback
