@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     const body: Record<string, unknown> = {
       filter: {
         property: 'Status',
-        select: { equals: '대기중' },
+        select: { equals: 'QUEUED' },
       },
       page_size: 100,
     };
