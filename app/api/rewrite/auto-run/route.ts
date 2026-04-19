@@ -9,9 +9,15 @@ export const maxDuration = 300;
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
 
-function authOk(req: NextRequest): boolean {
+async function authOk(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
-  return !!(secret && req.headers.get('authorization') === `Bearer ${secret}`);
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  try {
+    const { createClient } = await import('@/lib/supabase-server');
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!user;
+  } catch { return false; }
 }
 
 function err(msg: string, status = 400) {
@@ -19,7 +25,7 @@ function err(msg: string, status = 400) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!authOk(req)) return err('인증 실패', 401);
+  if (!await authOk(req)) return err('인증 실패', 401);
 
   const body = await req.json().catch(() => ({}));
   const { max = 2, ai_model = 'qwen3', skip_sync = false } = body as {

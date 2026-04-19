@@ -1,19 +1,25 @@
 /**
  * POST /api/rewrite/sync
  * Notion 데이터베이스에서 리라이팅 대상 기사를 가져와 Supabase에 저장
- * Auth: Bearer CRON_SECRET
+ * Auth: Bearer CRON_SECRET  OR  Supabase session (대시보드 직접 호출)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient, createClient } from '@/lib/supabase-server';
 
 export const maxDuration = 60;
 
 const NOTION_DB_ID = '3461f4ff9a0e80c39f5cdbae34cbcd85';
 
-function authOk(req: NextRequest): boolean {
+async function authOk(req: NextRequest): Promise<boolean> {
+  // 1. CRON_SECRET 인증
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
-  if (!secret) return false;
-  return req.headers.get('authorization') === `Bearer ${secret}`;
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  // 2. 유저 세션 인증
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!user;
+  } catch { return false; }
 }
 
 function err(msg: string, status = 400) {
@@ -41,7 +47,7 @@ function getTitle(prop: { title?: { plain_text: string }[] } | undefined): strin
 }
 
 export async function POST(req: NextRequest) {
-  if (!authOk(req)) return err('인증 실패', 401);
+  if (!await authOk(req)) return err('인증 실패', 401);
 
   const notionKey = process.env.NOTION_API_KEY;
   if (!notionKey) return err('NOTION_API_KEY 없음');

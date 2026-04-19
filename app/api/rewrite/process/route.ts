@@ -6,15 +6,20 @@
  *   - article_id 없으면 oldest pending 자동 선택
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 
 export const maxDuration = 300;
 
-function authOk(req: NextRequest): boolean {
+async function authOk(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
-  return !!(secret && req.headers.get('authorization') === `Bearer ${secret}`);
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!user;
+  } catch { return false; }
 }
 
 function err(msg: string, status = 400) {
@@ -138,7 +143,7 @@ function parseAIOutput(raw: string): { title: string; meta: string; content: str
 }
 
 export async function POST(req: NextRequest) {
-  if (!authOk(req)) return err('인증 실패', 401);
+  if (!await authOk(req)) return err('인증 실패', 401);
 
   const body = await req.json().catch(() => ({}));
   const { article_id, ai_model = 'qwen3' } = body as { article_id?: string; ai_model?: string };
