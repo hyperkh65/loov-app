@@ -113,6 +113,13 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'mode 사이트',
+    items: [
+      { href: 'https://mode.loov.co.kr', icon: '🟣', label: 'mode.loov.co.kr', external: true },
+      { href: '/dashboard/mode-settings', icon: '⚙️', label: 'mode 설정' },
+    ],
+  },
+  {
     label: '위챗',
     items: [
       { href: '/dashboard/wechat',  icon: '💬', label: '위챗 백업 히스토리' },
@@ -280,18 +287,13 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
                   : pathname.startsWith(item.href);
                 const badge = getBadge(item.href);
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={handleNavClick}
-                    title={collapsed && !isMobile ? item.label : undefined}
-                    className={`relative flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm font-medium transition-all group ${
-                      isActive
-                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                    }`}
-                  >
+                const navClassName = `relative flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm font-medium transition-all group ${
+                  isActive
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                }`;
+                const navContent = (
+                  <>
                     <span className={`text-base flex-shrink-0 ${collapsed && !isMobile ? 'mx-auto' : ''}`}>{item.icon}</span>
                     {(!collapsed || isMobile) && <span className="truncate">{item.label}</span>}
                     {badge !== null && badge > 0 && (
@@ -301,6 +303,29 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
                         {badge}
                       </span>
                     )}
+                  </>
+                );
+
+                return 'external' in item && item.external ? (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={collapsed && !isMobile ? item.label : undefined}
+                    className={navClassName}
+                  >
+                    {navContent}
+                  </a>
+                ) : (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={handleNavClick}
+                    title={collapsed && !isMobile ? item.label : undefined}
+                    className={navClassName}
+                  >
+                    {navContent}
                   </Link>
                 );
               })}
