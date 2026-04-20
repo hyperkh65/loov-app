@@ -65,7 +65,9 @@ export default function ModeLayout({ children }: { children: React.ReactNode }) 
         </nav>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+      <main className={pathname.startsWith('/site/mode/youtube') ? '' : 'max-w-7xl mx-auto px-4 py-6'}>
+        {children}
+      </main>
     </div>
   );
 }
