@@ -12,3 +12,5 @@ services:
       - NAS_SSH_HOST=host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - /volume1/homes/urjent/youtube_downloads:/videos:ro
