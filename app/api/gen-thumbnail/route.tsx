@@ -1,5 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 export const maxDuration = 30;
 
@@ -44,11 +46,24 @@ export async function GET(req: NextRequest) {
 
   const theme = THEMES[color] || THEMES.blue;
 
-  const fontUrl = 'https://fonts.gstatic.com/s/notosanskr/v36/PbykFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLTq8H4hfeE.woff2';
+  // 1순위: 로컬 파일시스템 (Docker 환경에서 가장 안정적)
   let fontData: ArrayBuffer | undefined;
   try {
-    fontData = await fetch(fontUrl, { signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.arrayBuffer() : undefined);
-  } catch { /* fallback */ }
+    const fontPath = join(process.cwd(), 'public', 'fonts', 'NotoSansKR-Bold.woff2');
+    fontData = readFileSync(fontPath).buffer;
+  } catch {
+    // 2순위: CDN 폴백
+    const FONT_URLS = [
+      'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.2/files/noto-sans-kr-korean-700-normal.woff2',
+      'https://fonts.gstatic.com/s/notosanskr/v36/PbykFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLTq8H4hfeE.woff2',
+    ];
+    for (const url of FONT_URLS) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (res.ok) { fontData = await res.arrayBuffer(); break; }
+      } catch { /* try next */ }
+    }
+  }
 
   const titleLen = title.length;
   const fontSize = titleLen <= 10 ? 104 : titleLen <= 16 ? 88 : titleLen <= 24 ? 74 : titleLen <= 32 ? 64 : 54;
