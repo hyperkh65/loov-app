@@ -84,14 +84,18 @@ export default function AutoServicePage() {
     enabled: false, ai_model: 'qwen3', max_per_run: 3,
     custom_keywords: [], last_run_at: null, last_run_status: null, last_run_count: 0,
   });
-  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string }[]>([
-    { id: 'qwen3', name: 'Qwen 3', emoji: '🔮' },
-    { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮' },
-    { id: 'llama3.3', name: 'Llama 3.3', emoji: '🦙' },
-    { id: 'mistral', name: 'Mistral', emoji: '🌪️' },
-    { id: 'gemma3', name: 'Gemma 3', emoji: '💎' },
-    { id: 'deepseek-r1', name: 'DeepSeek R1', emoji: '🧠' },
+  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string }[]>([
+    { id: 'qwen3', name: 'Qwen 3', emoji: '🔮', group: 'ollama' },
+    { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama' },
+    { id: 'llama3.3', name: 'Llama 3.3', emoji: '🦙', group: 'ollama' },
+    { id: 'mistral', name: 'Mistral', emoji: '🌪️', group: 'ollama' },
+    { id: 'gemma3', name: 'Gemma 3', emoji: '💎', group: 'ollama' },
+    { id: 'deepseek-r1', name: 'DeepSeek R1', emoji: '🧠', group: 'ollama' },
+    { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku', emoji: '🟣', group: 'claude' },
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet', emoji: '🟣', group: 'claude' },
+    { id: 'claude-opus-4-6', name: 'Claude Opus', emoji: '🟣', group: 'claude' },
   ]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState('');
   const [customKwInput, setCustomKwInput] = useState('');
@@ -167,6 +171,36 @@ export default function AutoServicePage() {
     clientOpenrouterKey: localStorage.getItem('freeai_openrouter_key') || undefined,
   });
 
+  const loadModels = useCallback(async () => {
+    setModelsLoading(true);
+    try {
+      const [ollamaRes, claudeRes] = await Promise.allSettled([
+        fetch('/api/ollama/models').then(r => r.ok ? r.json() : null),
+        fetch('/api/claude/models').then(r => r.ok ? r.json() : null),
+      ]);
+      const ollamaPopular: string[] = ollamaRes.status === 'fulfilled' && ollamaRes.value
+        ? (ollamaRes.value.popular || ollamaRes.value.models || [])
+        : [];
+      const claudeList: string[] = claudeRes.status === 'fulfilled' && claudeRes.value
+        ? (claudeRes.value.models || [])
+        : ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-6'];
+      const combined = [
+        ...ollamaPopular.map((id: string) => ({ id, name: modelLabel(id), emoji: modelEmoji(id), group: 'ollama' })),
+        ...claudeList.map((id: string) => ({
+          id,
+          name: id.includes('haiku') ? 'Claude Haiku' : id.includes('sonnet') ? 'Claude Sonnet' : id.includes('opus') ? 'Claude Opus' : id,
+          emoji: '🟣',
+          group: 'claude',
+        })),
+      ];
+      if (combined.length > 0) setOllamaModels(combined);
+    } catch {
+      // fallback 유지
+    } finally {
+      setModelsLoading(false);
+    }
+  }, []);
+
   // 설정 로드
   useEffect(() => {
     fetch('/api/auto-service/settings')
@@ -176,21 +210,8 @@ export default function AutoServicePage() {
     fetch('/api/wordpress/sites')
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setWpSites(d); });
-    // Ollama 모델 목록 동적 로드
-    fetch('/api/ollama/models')
-      .then(r => r.json())
-      .then(d => {
-        const popular: string[] = d.popular || d.models || [];
-        if (popular.length > 0) {
-          setOllamaModels(popular.map((id: string) => ({
-            id,
-            name: modelLabel(id),
-            emoji: modelEmoji(id),
-          })));
-        }
-      })
-      .catch(() => { /* fallback 유지 */ });
-  }, []);
+    loadModels();
+  }, [loadModels]);
 
   const loadArticles = useCallback(async (status?: string) => {
     setLoadingArticles(true);
@@ -758,12 +779,35 @@ export default function AutoServicePage() {
 
             {/* AI 모델 */}
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">AI 모델</label>
-              <div className="flex flex-wrap gap-2">
-                {ollamaModels.map(m => (
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-gray-700">AI 모델</label>
+                <button
+                  onClick={loadModels}
+                  disabled={modelsLoading}
+                  title="모델 목록 새로고침"
+                  className="px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600 text-xs disabled:opacity-50"
+                >
+                  {modelsLoading ? '⟳' : '🔄 새로고침'}
+                </button>
+              </div>
+              {/* Ollama 모델 */}
+              <p className="text-xs text-gray-400 mb-1">Ollama</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {ollamaModels.filter(m => m.group === 'ollama').map(m => (
                   <button key={m.id}
                     onClick={() => setAutoSettings(prev => ({ ...prev, ai_model: m.id }))}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${autoSettings.ai_model === m.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                    {m.emoji} {m.name}
+                  </button>
+                ))}
+              </div>
+              {/* Claude 모델 */}
+              <p className="text-xs text-gray-400 mb-1">Claude</p>
+              <div className="flex flex-wrap gap-2">
+                {ollamaModels.filter(m => m.group === 'claude').map(m => (
+                  <button key={m.id}
+                    onClick={() => setAutoSettings(prev => ({ ...prev, ai_model: m.id }))}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${autoSettings.ai_model === m.id ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-700 hover:bg-violet-100'}`}>
                     {m.emoji} {m.name}
                   </button>
                 ))}

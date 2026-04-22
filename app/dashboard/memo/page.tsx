@@ -35,6 +35,20 @@ function getDaysInMonth(year: number, month: number) {
 function getFirstDayOfMonth(year: number, month: number) {
   return new Date(year, month, 1).getDay();
 }
+function escHtml(s: string) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+const CAT_BADGE: Record<string, { bg: string; color: string }> = {
+  '업무':    { bg: '#dbeafe', color: '#1d4ed8' },
+  '아이디어': { bg: '#ede9fe', color: '#7c3aed' },
+  '학습':    { bg: '#dcfce7', color: '#15803d' },
+  '개인':    { bg: '#fce7f3', color: '#be185d' },
+  '프로젝트': { bg: '#ffedd5', color: '#c2410c' },
+  '회의':    { bg: '#fef9c3', color: '#a16207' },
+  '일정':    { bg: '#ccfbf1', color: '#0f766e' },
+  '기타':    { bg: '#f3f4f6', color: '#374151' },
+};
+function categoryBadgeStyle(cat: string) { return CAT_BADGE[cat] || CAT_BADGE['기타']; }
 
 export default function MemoPage() {
   const [tab, setTab] = useState<ViewTab>('write');
@@ -60,6 +74,7 @@ export default function MemoPage() {
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [calMemos, setCalMemos] = useState<Memo[]>([]);
+  const [calLoading, setCalLoading] = useState(false);
 
   // 목록
   const [filterCat, setFilterCat] = useState('전체');
@@ -94,10 +109,14 @@ export default function MemoPage() {
 
   // 달력용 메모 로드
   const loadCalMemos = useCallback(async () => {
+    setCalLoading(true);
     const month = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
-    const r = await fetch(`/api/memo?month=${month}`);
-    const d = await r.json();
-    setCalMemos(d.memos || []);
+    try {
+      const r = await fetch(`/api/memo?month=${month}`);
+      const d = await r.json();
+      setCalMemos(d.memos || []);
+    } catch { setCalMemos([]); }
+    setCalLoading(false);
   }, [calYear, calMonth]);
 
   useEffect(() => {
@@ -152,6 +171,49 @@ export default function MemoPage() {
       setMemoDate(new Date().toISOString().split('T')[0]);
     } catch (e) { showMsg(String(e), true); }
     setSaving(false);
+  };
+
+  // 인쇄 / PDF 내보내기
+  const printMemos = (targetMemos: Memo[], title = '세컨드 브레인 메모') => {
+    const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<title>${title}</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 11pt; color: #1a1a1a; background: white; }
+  h1 { font-size: 18pt; font-weight: bold; margin-bottom: 6px; border-bottom: 2px solid #4f46e5; padding-bottom: 8px; color: #4f46e5; }
+  .meta { font-size: 9pt; color: #888; margin-bottom: 20px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; page-break-inside: avoid; }
+  .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .badge { font-size: 8.5pt; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .date { font-size: 9pt; color: #888; }
+  .card-title { font-size: 13pt; font-weight: bold; margin-bottom: 6px; }
+  .summary { font-size: 9.5pt; color: #4f46e5; background: #eef2ff; border-radius: 4px; padding: 5px 8px; margin-bottom: 8px; }
+  .content { font-size: 10.5pt; line-height: 1.7; color: #333; white-space: pre-wrap; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  .tag { font-size: 8.5pt; color: #4f46e5; background: #eef2ff; padding: 2px 7px; border-radius: 4px; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<h1>${title}</h1>
+<p class="meta">총 ${targetMemos.length}개 · 출력일: ${new Date().toLocaleDateString('ko-KR')}</p>
+${targetMemos.map(m => `
+<div class="card">
+  <div class="card-header">
+    <span class="badge" style="background:${categoryBadgeStyle(m.category).bg};color:${categoryBadgeStyle(m.category).color}">${m.category}</span>
+    <span class="date">📅 ${m.memo_date}</span>
+    ${m.backup_notion ? '<span class="date">📔 Notion</span>' : ''}
+  </div>
+  ${m.title ? `<p class="card-title">${escHtml(m.title)}</p>` : ''}
+  ${m.summary ? `<p class="summary">${escHtml(m.summary)}</p>` : ''}
+  <p class="content">${escHtml(m.content)}</p>
+  ${m.tags?.length ? `<div class="tags">${m.tags.map(t => `<span class="tag">#${escHtml(t)}</span>`).join('')}</div>` : ''}
+</div>`).join('')}
+</body></html>`;
+    const w = window.open('', '_blank', 'width=800,height=900');
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => { w.focus(); w.print(); };
   };
 
   // 삭제
@@ -374,17 +436,21 @@ export default function MemoPage() {
             {/* 월 이동 */}
             <div className="flex items-center justify-between bg-white rounded-xl border border-gray-100 px-4 py-3">
               <button onClick={() => { if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); } else setCalMonth(m => m - 1); }}
-                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600">◀</button>
-              <span className="font-bold text-gray-900">{calYear}년 {calMonth + 1}월</span>
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 text-lg">◀</button>
+              <div className="flex items-center gap-3">
+                <span className="font-bold text-gray-900">{calYear}년 {calMonth + 1}월</span>
+                {calLoading && <span className="text-xs text-indigo-500 animate-pulse">로딩 중...</span>}
+                <span className="text-xs text-gray-400">{calMemos.length}개 메모</span>
+              </div>
               <button onClick={() => { if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); } else setCalMonth(m => m + 1); }}
-                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600">▶</button>
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 text-lg">▶</button>
             </div>
 
             {/* 달력 그리드 */}
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="grid grid-cols-7 text-center text-xs font-semibold text-gray-400 border-b border-gray-100">
-                {['일', '월', '화', '수', '목', '금', '토'].map(d => (
-                  <div key={d} className="py-2">{d}</div>
+              <div className="grid grid-cols-7 text-center text-xs font-semibold border-b border-gray-100">
+                {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                  <div key={d} className={`py-2 ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'}`}>{d}</div>
                 ))}
               </div>
               <div className="grid grid-cols-7">
@@ -395,11 +461,12 @@ export default function MemoPage() {
                   const dayMemos = memoDateMap[dateStr] || [];
                   const isToday = dateStr === today.toISOString().split('T')[0];
                   const isSelected = dateStr === selectedDate;
+                  const dow = (firstDay + i) % 7;
                   return (
                     <div key={day}
                       onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                      className={`h-16 border-b border-r border-gray-50 p-1 cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
-                      <div className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1 ${isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'}`}>{day}</div>
+                      className={`h-16 border-b border-r border-gray-50 p-1 cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50 border-indigo-100' : 'hover:bg-gray-50'}`}>
+                      <div className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-0.5 ${isToday ? 'bg-indigo-600 text-white' : dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day}</div>
                       <div className="space-y-0.5">
                         {dayMemos.slice(0, 2).map(m => (
                           <div key={m.id} className={`text-[9px] truncate px-1 rounded ${CATEGORY_COLOR[m.category] || 'bg-gray-100 text-gray-500'}`}>
@@ -414,15 +481,38 @@ export default function MemoPage() {
               </div>
             </div>
 
+            {/* 이 달 메모 없음 안내 */}
+            {!calLoading && calMemos.length === 0 && (
+              <div className="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-100">
+                <p className="text-sm mb-2">이 달에 저장된 메모가 없습니다.</p>
+                <button onClick={() => setTab('write')}
+                  className="text-xs text-indigo-500 hover:text-indigo-700 underline">✏️ 새 메모 작성하기</button>
+              </div>
+            )}
+
             {/* 선택된 날짜 메모 */}
             {selectedDate && (
-              <div>
-                <h3 className="text-sm font-bold text-gray-700 mb-2">{selectedDate} 메모 ({selectedDateMemos.length}개)</h3>
+              <div className="bg-white rounded-xl border border-gray-100 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-gray-700">
+                    📅 {selectedDate.replace(/-/g, '.')} ({selectedDateMemos.length}개)
+                  </h3>
+                  <button
+                    onClick={() => { setMemoDate(selectedDate); setTab('write'); }}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded-lg">
+                    + 이 날 메모 작성
+                  </button>
+                </div>
                 {selectedDateMemos.length === 0
-                  ? <p className="text-sm text-gray-400">이 날의 메모가 없습니다.</p>
-                  : selectedDateMemos.map(m => <MemoCard key={m.id} memo={m} onEdit={startEdit} onDelete={deleteMemo} onBackup={backup} backingUp={backingUp} />)
+                  ? <p className="text-sm text-gray-400 text-center py-4">이 날의 메모가 없습니다.<br/><span className="text-xs">위 버튼으로 메모를 작성해보세요!</span></p>
+                  : selectedDateMemos.map(m => <MemoCard key={m.id} memo={m} onEdit={startEdit} onDelete={deleteMemo} onBackup={backup} backingUp={backingUp} onPrint={(memo) => printMemos([memo], memo.title || memo.content.slice(0, 30))} />)
                 }
               </div>
+            )}
+
+            {/* 날짜 선택 전 안내 */}
+            {!selectedDate && calMemos.length > 0 && (
+              <p className="text-center text-xs text-gray-400">날짜를 클릭하면 해당 날의 메모를 볼 수 있어요</p>
             )}
           </div>
         )}
@@ -453,14 +543,22 @@ export default function MemoPage() {
                   ))}
                 </div>
               )}
-              <button onClick={loadMemos} className="text-xs text-indigo-600 hover:text-indigo-500">🔄 새로고침</button>
+              <div className="flex items-center gap-3">
+                <button onClick={loadMemos} className="text-xs text-indigo-600 hover:text-indigo-500">🔄 새로고침</button>
+                {memos.length > 0 && (
+                  <button onClick={() => printMemos(memos, `세컨드 브레인 · ${filterCat !== '전체' ? filterCat : '전체'} (${memos.length}개)`)}
+                    className="text-xs text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
+                    🖨️ 전체 인쇄 / PDF
+                  </button>
+                )}
+              </div>
             </div>
 
             {loading
               ? <div className="text-center py-10 text-gray-400 text-sm">불러오는 중...</div>
               : memos.length === 0
                 ? <div className="text-center py-10 text-gray-400 text-sm">메모가 없습니다. 첫 메모를 작성해보세요!</div>
-                : memos.map(m => <MemoCard key={m.id} memo={m} onEdit={startEdit} onDelete={deleteMemo} onBackup={backup} backingUp={backingUp} />)
+                : memos.map(m => <MemoCard key={m.id} memo={m} onEdit={startEdit} onDelete={deleteMemo} onBackup={backup} backingUp={backingUp} onPrint={(memo) => printMemos([memo], memo.title || memo.content.slice(0, 30))} />)
             }
           </div>
         )}
@@ -570,12 +668,13 @@ export default function MemoPage() {
   );
 }
 
-function MemoCard({ memo, onEdit, onDelete, onBackup, backingUp }: {
+function MemoCard({ memo, onEdit, onDelete, onBackup, backingUp, onPrint }: {
   memo: Memo;
   onEdit: (m: Memo) => void;
   onDelete: (id: string) => void;
   onBackup: (id: string, memo: Memo) => void;
   backingUp: string | null;
+  onPrint?: (m: Memo) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -594,6 +693,10 @@ function MemoCard({ memo, onEdit, onDelete, onBackup, backingUp }: {
             className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg disabled:opacity-50">
             {backingUp === memo.id ? '...' : '☁️ 백업'}
           </button>
+          {onPrint && (
+            <button onClick={() => onPrint(memo)} title="인쇄 / PDF 내보내기"
+              className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg">🖨️</button>
+          )}
           <button onClick={() => onEdit(memo)} className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg">✏️</button>
           <button onClick={() => onDelete(memo.id)} className="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-400 rounded-lg">🗑</button>
         </div>

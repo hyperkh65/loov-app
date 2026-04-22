@@ -22,7 +22,11 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: false });
 
   if (date) query = query.eq('memo_date', date);
-  if (month) query = query.gte('memo_date', `${month}-01`).lte('memo_date', `${month}-31`);
+  if (month) {
+    const [y, m] = month.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate(); // 해당 월의 마지막 날
+    query = query.gte('memo_date', `${month}-01`).lte('memo_date', `${month}-${String(lastDay).padStart(2, '0')}`);
+  }
   if (category) query = query.eq('category', category);
   if (tag) query = query.contains('tags', [tag]);
   if (q) query = query.or(`title.ilike.%${q}%,content.ilike.%${q}%`);

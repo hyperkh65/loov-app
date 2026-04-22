@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
-  { href: '/site/mode', icon: '🏠', label: '홈' },
-  { href: '/site/mode/youtube', icon: '📥', label: 'YouTube 다운로드' },
-  { href: '/site/mode/english', icon: '🇺🇸', label: '영어 공부' },
-  { href: '/site/mode/market', icon: '📊', label: '시장 조사' },
+  { href: '/', icon: '🏠', label: '홈' },
+  { href: '/youtube', icon: '📥', label: 'YouTube 다운로드' },
+  { href: '/english', icon: '🇺🇸', label: '영어 공부' },
+  { href: '/market', icon: '📊', label: '시장 조사' },
 ];
 
 export default function ModeLayout({ children }: { children: React.ReactNode }) {
@@ -65,7 +65,7 @@ export default function ModeLayout({ children }: { children: React.ReactNode }) 
         </nav>
       </header>
 
-      <main className={pathname.startsWith('/site/mode/youtube') ? '' : 'max-w-7xl mx-auto px-4 py-6'}>
+      <main className={pathname.startsWith('/youtube') ? '' : 'max-w-7xl mx-auto px-4 py-6'}>
         {children}
       </main>
     </div>

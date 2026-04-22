@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Google OAuth 설정이 없습니다. GOOGLE_CLIENT_ID를 환경변수에 추가해주세요.' }, { status: 500 });
   }
 
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${req.nextUrl.origin}/api/google/callback`;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_BASE_URL || 'https://loov.co.kr'}/api/google/callback`;
 
   const params = new URLSearchParams({
     client_id: clientId,

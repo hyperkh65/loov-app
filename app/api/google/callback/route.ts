@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get('state'); // user_id
   const error = searchParams.get('error');
 
-  const baseUrl = req.nextUrl.origin;
+  const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
 
   if (error || !code || !state) {
     return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_error=${error || 'cancelled'}`);

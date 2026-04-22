@@ -116,8 +116,8 @@ async function getLatestClaudeHaiku(apiKey: string): Promise<string> {
   }
 }
 
-async function callClaude(apiKey: string, prompt: string): Promise<string> {
-  const model = await getLatestClaudeHaiku(apiKey);
+async function callClaude(apiKey: string, prompt: string, model?: string): Promise<string> {
+  const resolvedModel = model || await getLatestClaudeHaiku(apiKey);
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -126,7 +126,7 @@ async function callClaude(apiKey: string, prompt: string): Promise<string> {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model,
+      model: resolvedModel,
       max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -146,6 +146,18 @@ export async function generateText(
   clientOpenrouterKey?: string,
 ): Promise<string> {
   const errors: string[] = [];
+
+  // 0. Claude 모델 직접 지정된 경우 우선 처리
+  if (preferModel.startsWith('claude-')) {
+    const claudeKey = await getSetting('CLAUDE_API_KEY');
+    if (claudeKey) {
+      try {
+        return await callClaude(claudeKey, prompt, preferModel);
+      } catch (e) {
+        errors.push(`Claude(${preferModel}): ${e}`);
+      }
+    }
+  }
 
   // 1. Ollama Cloud (무료AI 페이지 localStorage 키 우선)
   const ollamaKey = clientOllamaKey || await getSetting('OLLAMA_API_KEY');

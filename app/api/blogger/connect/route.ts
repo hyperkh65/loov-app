@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const origin = req.nextUrl.origin;
+  const origin = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
   const redirectUri =
     process.env.GOOGLE_BLOGGER_REDIRECT_URI || `${origin}/api/blogger/callback`;
 

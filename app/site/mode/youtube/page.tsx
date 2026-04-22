@@ -224,6 +224,10 @@ export default function YoutubePage() {
   const [downloading, setDownloading] = useState(false);
   const [downloadMsg, setDownloadMsg] = useState('');
   const [showDownload, setShowDownload] = useState(false);
+  const [dlPid, setDlPid] = useState('');
+  const [dlLogFile, setDlLogFile] = useState('');
+  const [dlLog, setDlLog] = useState<string[]>([]);
+  const [dlRunning, setDlRunning] = useState(false);
 
   // 인증
   const [isAuth, setIsAuth] = useState(false);
@@ -249,10 +253,29 @@ export default function YoutubePage() {
   }, []);
 
   useEffect(() => {
-    // 인증 상태 확인
     fetch('/api/mode/youtube/auth').then((r) => { if (r.ok) setIsAuth(true); });
     loadVideos();
   }, [loadVideos]);
+
+  // 다운로드 진행 폴링
+  useEffect(() => {
+    if (!dlRunning) return;
+    const timer = setInterval(async () => {
+      const params = new URLSearchParams();
+      if (dlPid) params.set('pid', dlPid);
+      if (dlLogFile) params.set('file', dlLogFile);
+      const res = await fetch(`/api/mode/youtube/log?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDlLog(data.lines || []);
+        setDlRunning(data.running);
+        if (!data.running) {
+          loadVideos(); // 완료되면 목록 갱신
+        }
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [dlRunning, dlPid, dlLogFile, loadVideos]);
 
   async function handleDownload() {
     if (!channelInput.trim()) return;
@@ -264,7 +287,14 @@ export default function YoutubePage() {
       body: JSON.stringify({ channel: channelInput }),
     });
     const data = await res.json();
-    setDownloadMsg(res.ok ? data.message : data.error);
+    if (res.ok) {
+      setDownloadMsg(`다운로드 시작! NAS에서 진행 중...`);
+      setDlPid(data.pid || '');
+      setDlLogFile(data.logFile || '');
+      setDlRunning(true);
+    } else {
+      setDownloadMsg(data.error || '오류 발생');
+    }
     setDownloading(false);
   }
 
@@ -339,9 +369,30 @@ export default function YoutubePage() {
               </button>
             </div>
             {downloadMsg && (
-              <pre className="mt-2 text-xs text-green-400 bg-gray-950 rounded-lg p-2 whitespace-pre-wrap">
-                {downloadMsg}
-              </pre>
+              <p className="mt-2 text-xs text-green-400">{downloadMsg}</p>
+            )}
+
+            {/* 실시간 진행 로그 */}
+            {(dlRunning || dlLog.length > 0) && (
+              <div className="mt-3 bg-gray-950 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  {dlRunning && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
+                  <span className="text-xs text-gray-400 font-medium">
+                    {dlRunning ? '다운로드 진행 중...' : '완료'}
+                  </span>
+                </div>
+                <div className="space-y-0.5 max-h-40 overflow-y-auto">
+                  {dlLog.slice(-15).map((line, i) => (
+                    <p key={i} className={`text-xs font-mono ${
+                      line.startsWith('DONE') ? 'text-green-400' :
+                      line.startsWith('ERR') ? 'text-red-400' :
+                      line.startsWith('SKIP') ? 'text-gray-500' :
+                      line.startsWith('DL') ? 'text-blue-400' :
+                      'text-gray-400'
+                    }`}>{line}</p>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
