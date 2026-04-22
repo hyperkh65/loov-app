@@ -66,20 +66,41 @@ export async function POST(req: NextRequest) {
 
       // 스레드/댓글 형식 추가 게시
       if (thread_items?.length && platformPostId) {
-        let prevId = platformPostId; // 트위터 체인용
+        // Threads는 게시물 인덱싱 대기 후 댓글 (즉시 reply_to_id 사용 시 실패)
+        if (platform === 'threads') await new Promise(r => setTimeout(r, 4000));
+
+        let prevId = platformPostId;
+        let commentSuccess = true;
+        let commentError = '';
         for (const item of thread_items as ThreadItem[]) {
           if (!item.content?.trim()) continue;
-          try {
-            // 트위터는 이전 트윗에 체인, 나머지는 메인 게시물에 댓글
-            const targetId = platform === 'twitter' ? prevId : platformPostId;
-            const { id: commentId } = await postCommentOnOwnPost(
-              platform, conn.access_token, conn.platform_user_id || '',
-              targetId, item.content, item.media_urls,
-            );
-            if (platform === 'twitter') prevId = commentId;
-          } catch (e) {
-            console.warn(`[${platform}] 스레드 항목 게시 실패:`, e);
+          let retries = 2;
+          while (retries-- > 0) {
+            try {
+              const targetId = platform === 'twitter' ? prevId : platformPostId;
+              const { id: commentId } = await postCommentOnOwnPost(
+                platform, conn.access_token, conn.platform_user_id || '',
+                targetId, item.content, item.media_urls,
+              );
+              if (platform === 'twitter') prevId = commentId;
+              break; // 성공
+            } catch (e) {
+              if (retries > 0) {
+                await new Promise(r => setTimeout(r, 3000));
+              } else {
+                commentSuccess = false;
+                commentError = e instanceof Error ? e.message : String(e);
+                console.warn(`[${platform}] 스레드 항목 게시 실패:`, e);
+              }
+            }
           }
+        }
+        // 댓글 실패 정보를 결과에 반영
+        if (!commentSuccess) {
+          results[results.length - 1] = {
+            ...results[results.length - 1],
+            error: `발행 성공, 링크 댓글 실패: ${commentError}`,
+          };
         }
       }
     } catch (err: unknown) {
