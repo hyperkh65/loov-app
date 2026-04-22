@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Tab = 'golden' | 'batch' | 'trend' | 'price' | 'blog' | 'exposure' | 'ranking';
+type Tab = 'golden' | 'batch' | 'trend' | 'price' | 'blog' | 'exposure' | 'ranking' | 'seo';
 
 interface KeywordResult {
   keyword: string;
@@ -61,6 +61,22 @@ interface RankingBlogItem { title: string; url: string; author: string; date: st
 interface RankingShopItem { title: string; url: string; price: number; image: string; mall: string; brand: string; category: string; }
 interface RankingData { news: RankingNewsItem[]; blog: RankingBlogItem[]; shopping: RankingShopItem[]; fetchedAt?: string; }
 
+interface SeoOpportunityResult {
+  keyword: string;
+  monthlyPc: number;
+  monthlyMobile: number;
+  monthlyTotal: number;
+  naverBlog: number;
+  naverWeb: number;
+  daumBlog: number;
+  daumCafe: number;
+  googleCount: number;
+  score: number;
+  grade: 'diamond' | 'gold' | 'silver' | 'bronze' | 'normal';
+  difficulty: 'very_easy' | 'easy' | 'medium' | 'hard' | 'very_hard';
+  canRank1: boolean;
+}
+
 // ── Grade config ───────────────────────────────────────────────────────────────
 const GRADE_CONFIG = {
   diamond: { label: '💎 다이아', bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-300', desc: '최상위 황금키워드' },
@@ -97,7 +113,7 @@ function Sparkline({ data }: { data: TrendDataPoint[] }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 export default function KeywordPage() {
-  const [tab, setTab] = useState<Tab>('golden');
+  const [tab, setTab] = useState<Tab>('seo');
 
   // Golden keyword
   const [seedKeyword, setSeedKeyword] = useState('');
@@ -138,6 +154,14 @@ export default function KeywordPage() {
   const [expLoading, setExpLoading] = useState(false);
   const [expResult, setExpResult] = useState<ExposureResult | null>(null);
   const [expError, setExpError] = useState('');
+
+  // SEO Opportunity
+  const [seoKeyword, setSeoKeyword] = useState('');
+  const [seoLoading, setSeoLoading] = useState(false);
+  const [seoResults, setSeoResults] = useState<SeoOpportunityResult[]>([]);
+  const [seoError, setSeoError] = useState('');
+  const [generatingKw, setGeneratingKw] = useState<string | null>(null);
+  const [generatedArticle, setGeneratedArticle] = useState<{ keyword: string; article_id: string; title: string } | null>(null);
 
   // Ranking
   const [rankPeriod, setRankPeriod] = useState<'recommended' | '24h' | '1h'>('recommended');
@@ -285,9 +309,51 @@ export default function KeywordPage() {
     }
   }, [expKeyword, expBlog]);
 
+  const runSeoOpportunity = useCallback(async () => {
+    if (!seoKeyword.trim()) return;
+    setSeoLoading(true); setSeoError(''); setSeoResults([]); setGeneratedArticle(null);
+    try {
+      const res = await fetch('/api/keyword/seo-opportunity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword: seoKeyword.trim() }),
+      });
+      const data = await res.json() as { results?: SeoOpportunityResult[]; error?: string; hasAdApi?: boolean };
+      if (data.error) { setSeoError(data.error); return; }
+      if (!data.hasAdApi) setSeoError('⚠️ 검색광고 API 미설정 — 검색량 없이 포화도만 표시됩니다. 설정 > 네이버 API에서 등록하세요.');
+      setSeoResults(data.results || []);
+    } catch (e) {
+      setSeoError(String(e));
+    } finally {
+      setSeoLoading(false);
+    }
+  }, [seoKeyword]);
+
+  const quickGenerate = useCallback(async (keyword: string) => {
+    setGeneratingKw(keyword);
+    setGeneratedArticle(null);
+    try {
+      const res = await fetch('/api/keyword/quick-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword }),
+      });
+      const data = await res.json() as { article_id?: string; title?: string; error?: string };
+      if (data.error) { alert(`생성 실패: ${data.error}`); return; }
+      if (data.article_id) {
+        setGeneratedArticle({ keyword, article_id: data.article_id, title: data.title || keyword });
+      }
+    } catch (e) {
+      alert(`오류: ${e}`);
+    } finally {
+      setGeneratingKw(null);
+    }
+  }, []);
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const TABS: { id: Tab; icon: string; label: string; desc: string }[] = [
+    { id: 'seo',      icon: '🚀', label: 'SEO 기회',     desc: '1등 먹을 수 있는 키워드' },
     { id: 'ranking',  icon: '📊', label: '실시간 랭킹',  desc: '뉴스·블로그·쇼핑 랭킹' },
     { id: 'golden',   icon: '💎', label: '황금키워드',   desc: '기회 높은 키워드 발굴' },
     { id: 'batch',    icon: '📋', label: '키워드 분석',  desc: '여러 키워드 일괄 분석' },
@@ -838,6 +904,128 @@ export default function KeywordPage() {
                 {blogResult.restrictions.length === 0 && blogResult.warnings.length === 0 && (
                   <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl">✅ 특이사항 없음. 블로그가 정상 운영 중입니다.</div>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── SEO 기회 키워드 ── */}
+        {tab === 'seo' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl p-6 border border-gray-200">
+              <h2 className="font-black text-lg mb-1">🚀 SEO 기회 키워드 분석</h2>
+              <p className="text-sm text-gray-500 mb-4">씨드 키워드로 롱테일 키워드를 찾고, 구글·네이버·다음 포화도를 분석해 <strong>1등 먹을 수 있는 키워드</strong>를 찾아드립니다.</p>
+              <div className="flex gap-3">
+                <input
+                  value={seoKeyword}
+                  onChange={e => setSeoKeyword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runSeoOpportunity()}
+                  placeholder="예: 다이어트, 강아지 사료, 제주도 여행"
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-purple-400"
+                />
+                <button
+                  onClick={runSeoOpportunity}
+                  disabled={seoLoading || !seoKeyword.trim()}
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl disabled:opacity-50 whitespace-nowrap"
+                >
+                  {seoLoading ? '분석 중...' : '🔍 기회 분석'}
+                </button>
+              </div>
+              {seoError && <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-xl mt-3">{seoError}</p>}
+            </div>
+
+            {/* 생성 완료 알림 */}
+            {generatedArticle && (
+              <div className="bg-green-50 border border-green-300 rounded-2xl p-5 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-green-700">✅ 글 생성 완료!</div>
+                  <div className="text-sm text-green-600 mt-1">{generatedArticle.title}</div>
+                </div>
+                <a
+                  href={`/dashboard/auto-service?article_id=${generatedArticle.article_id}`}
+                  className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-500"
+                >
+                  글 확인 →
+                </a>
+              </div>
+            )}
+
+            {seoLoading && (
+              <div className="text-center py-12">
+                <div className="text-3xl mb-3 animate-pulse">🔍</div>
+                <div className="text-sm text-gray-500">구글·네이버·다음 포화도 분석 중... (최대 30초)</div>
+              </div>
+            )}
+
+            {seoResults.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                {/* 헤더 요약 */}
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-6">
+                  <div className="text-sm">
+                    <span className="font-bold text-purple-600">{seoResults.filter(r => r.canRank1).length}개</span>
+                    <span className="text-gray-500"> 1등 가능 키워드</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-bold">{seoResults.length}개</span>
+                    <span className="text-gray-500"> 전체 키워드</span>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-gray-50">
+                  {seoResults.map((r, i) => {
+                    const diffConfig = {
+                      very_easy: { label: '매우 쉬움', color: 'text-green-600 bg-green-50', border: 'border-green-200' },
+                      easy:      { label: '쉬움',     color: 'text-blue-600 bg-blue-50',   border: 'border-blue-200' },
+                      medium:    { label: '보통',     color: 'text-yellow-600 bg-yellow-50', border: 'border-yellow-200' },
+                      hard:      { label: '어려움',   color: 'text-orange-600 bg-orange-50', border: 'border-orange-200' },
+                      very_hard: { label: '매우 어려움', color: 'text-red-600 bg-red-50',   border: 'border-red-200' },
+                    }[r.difficulty];
+
+                    return (
+                      <div key={i} className={`px-6 py-4 hover:bg-gray-50 transition-colors ${r.canRank1 ? 'bg-purple-50/30' : ''}`}>
+                        <div className="flex items-start gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                              {r.canRank1 && (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                                  🏆 1등 가능
+                                </span>
+                              )}
+                              <GradeBadge grade={r.grade} />
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${diffConfig.color} ${diffConfig.border}`}>
+                                {diffConfig.label}
+                              </span>
+                              <span className="font-bold text-gray-800">{r.keyword}</span>
+                            </div>
+
+                            {/* 포화도 지표 */}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
+                              {r.monthlyTotal > 0 && (
+                                <span>월검색 <strong className="text-gray-700">{r.monthlyTotal.toLocaleString()}</strong></span>
+                              )}
+                              <span>네이버 블로그 <strong className="text-gray-700">{r.naverBlog.toLocaleString()}</strong>건</span>
+                              <span>다음 블로그 <strong className="text-gray-700">{r.daumBlog.toLocaleString()}</strong>건</span>
+                              {r.googleCount > 0 && (
+                                <span>구글 <strong className="text-gray-700">약 {r.googleCount.toLocaleString()}</strong>건</span>
+                              )}
+                              {r.score > 0 && (
+                                <span>기회점수 <strong className="text-purple-600">{r.score}</strong></span>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => quickGenerate(r.keyword)}
+                            disabled={generatingKw !== null}
+                            className="flex-shrink-0 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {generatingKw === r.keyword ? '생성 중...' : '✍️ 글 생성'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

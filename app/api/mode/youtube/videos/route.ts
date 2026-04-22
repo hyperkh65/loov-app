@@ -24,13 +24,15 @@ function scanChannel(channelDir: string, channelName: string): VideoItem[] {
     return videos;
   }
 
-  const mp4Files = entries.filter((f) => extname(f).toLowerCase() === '.mp4');
+  const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mkv', '.avi', '.mov']);
+  const mp4Files = entries.filter((f) => VIDEO_EXTS.has(extname(f).toLowerCase()));
 
   for (const mp4 of mp4Files) {
     const mp4Path = join(channelDir, mp4);
-    const infoPath = join(channelDir, mp4.replace(/\.mp4$/i, '.info.json'));
-    const thumbPath = join(channelDir, mp4.replace(/\.mp4$/i, '.jpg'));
-    const thumbWebp = join(channelDir, mp4.replace(/\.mp4$/i, '.webp'));
+    const base = mp4.replace(/\.(mp4|webm|mkv|avi|mov)$/i, '');
+    const infoPath = join(channelDir, base + '.info.json');
+    const thumbPath = join(channelDir, base + '.jpg');
+    const thumbWebp = join(channelDir, base + '.webp');
 
     let info: Record<string, unknown> = {};
     if (existsSync(infoPath)) {
