@@ -61,6 +61,12 @@ async function resolveTermId(
   return null;
 }
 
+// 본문 HTML에서 첫 번째 이미지 URL 추출
+function extractFirstImageUrl(content: string): string | null {
+  const m = content.match(/<img[^>]+src="([^"]+)"/i);
+  return m ? m[1] : null;
+}
+
 // 콘텐츠 내 이미지를 WP 미디어로 병렬 업로드 후 URL 교체 (최대 5개)
 async function uploadContentImages(
   content: string,
@@ -261,7 +267,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             content: snsContent,
             platforms: otherPlatforms,
-            media_urls: article.representative_image_url ? [article.representative_image_url] : [],
+            media_urls: (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })(),
           }),
         });
         const data = await res.json();
@@ -284,7 +290,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             content: threadsContent,
             platforms: ['threads'],
-            media_urls: article.representative_image_url ? [article.representative_image_url] : [],
+            media_urls: (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })(),
             thread_items: threadItems,
           }),
         });
