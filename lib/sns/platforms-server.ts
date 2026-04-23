@@ -202,7 +202,7 @@ function toMetaSafeUrl(url: string): string {
   if (!url) return url;
   const appBase = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
   if (url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com')) {
-    return `${appBase}/api/image-proxy?url=${encodeURIComponent(url)}`;
+    return `${appBase}/api/image-proxy?url=${url}`;
   }
   return url;
 }
