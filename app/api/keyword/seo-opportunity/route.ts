@@ -227,10 +227,10 @@ export async function POST(req: NextRequest) {
   );
 
   // Step 3: 정렬 — 1등 가능 우선 → 기회점수 → 검색량
-  const diffOrder = { very_easy: 0, easy: 1, medium: 2, hard: 3, very_hard: 4 };
+  const diffOrder: Record<string, number> = { very_easy: 0, easy: 1, medium: 2, hard: 3, very_hard: 4 };
   analysisResults.sort((a, b) => {
     if (a.canRank1 !== b.canRank1) return a.canRank1 ? -1 : 1;
-    const dd = diffOrder[a.difficulty] - diffOrder[b.difficulty];
+    const dd = (diffOrder[a.difficulty] ?? 2) - (diffOrder[b.difficulty] ?? 2);
     if (dd !== 0) return dd;
     return b.score - a.score || b.monthlyTotal - a.monthlyTotal;
   });
