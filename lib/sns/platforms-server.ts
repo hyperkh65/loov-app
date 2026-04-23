@@ -546,7 +546,9 @@ export async function postToPlatformWithMedia(
     case 'twitter':   return postToTwitterWithMedia(accessToken, content, mediaUrls);
     case 'threads':   return postToThreadsWithMedia(accessToken, platformUserId, content, mediaUrls);
     case 'facebook':  return postToFacebookWithMedia(accessToken, content, mediaUrls);
-    case 'instagram': return postToInstagramWithMedia(accessToken, content, mediaUrls);
+    case 'instagram':
+      if (!mediaUrls?.length) throw new Error('Instagram 건너뜀: 이미지가 없습니다 (Instagram은 이미지 필수)');
+      return postToInstagramWithMedia(accessToken, content, mediaUrls);
     case 'linkedin':  return postToLinkedInWithMedia(accessToken, platformUserId, content, mediaUrls);
   }
 }
