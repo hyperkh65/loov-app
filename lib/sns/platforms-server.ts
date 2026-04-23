@@ -197,12 +197,25 @@ export async function postToTwitterWithMedia(
   return { id: (await res.json()).data.id };
 }
 
+// R2 CDN URL → Meta(Instagram/Threads) 접근 가능한 프록시 URL 변환
+function toMetaSafeUrl(url: string): string {
+  if (!url) return url;
+  const appBase = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+  if (url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com')) {
+    return `${appBase}/api/image-proxy?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 export async function postToThreadsWithMedia(
   accessToken: string,
   userId: string,
   content: string,
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
+  // R2 URL → 프록시 URL 변환 (Meta 서버가 R2 CDN에 접근 못하는 문제 해결)
+  if (mediaUrls) mediaUrls = mediaUrls.map(toMetaSafeUrl);
+
   let containerBody: Record<string, unknown>;
 
   let needsWait = false;
@@ -363,6 +376,9 @@ export async function postToInstagramWithMedia(
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
   if (!mediaUrls?.length) throw new Error('Instagram은 이미지 또는 영상이 필요합니다.');
+
+  // R2 URL → 프록시 URL 변환 (Meta 서버가 R2 CDN에 접근 못하는 문제 해결)
+  mediaUrls = mediaUrls.map(toMetaSafeUrl);
 
   // Standalone Instagram API (graph.instagram.com/v21.0)
   // 연결 토큰은 api.instagram.com/oauth/authorize를 통해 발급된 standalone 토큰
