@@ -197,28 +197,41 @@ export async function postToTwitterWithMedia(
   return { id: (await res.json()).data.id };
 }
 
-// R2 CDN URL → Meta(Instagram/Threads) 접근 가능한 경로 기반 프록시 URL 변환
-// /api/img/[...path] 형식: ?url= 쿼리파라미터 방식은 Meta가 거부함
-function toMetaSafeUrl(url: string): string {
+// R2 URL → litterbox.catbox.moe에 임시 업로드 (72h) 후 URL 반환
+// Meta 서버가 loov.co.kr(한국 ISP IP)에 접근 불가 → 신뢰된 글로벌 CDN 경유
+async function toMetaSafeUrl(url: string): Promise<string> {
   if (!url) return url;
-  const appBase = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
-  const r2Bases = [
-    'https://pub-e310bf4303744c7295d9b556111ff394.r2.dev/',
-    process.env.R2_PUBLIC_URL ? process.env.R2_PUBLIC_URL.replace(/\/?$/, '/') : null,
-  ].filter(Boolean) as string[];
-  for (const base of r2Bases) {
-    if (url.startsWith(base)) {
-      const path = url.slice(base.length);
-      return `${appBase}/api/img/${path}`;
-    }
+  const isR2 = url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com');
+  if (!isR2) return url;
+
+  try {
+    // R2에서 이미지 다운로드
+    const imgRes = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!imgRes.ok) return url;
+
+    const buffer = await imgRes.arrayBuffer();
+    const blob = new Blob([buffer], { type: imgRes.headers.get('content-type') || 'image/jpeg' });
+    const filename = url.split('/').pop() || 'image.jpg';
+
+    // litterbox.catbox.moe에 업로드 (72h 임시 호스팅)
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('time', '72h');
+    form.append('fileToUpload', blob, filename);
+
+    const uploadRes = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!uploadRes.ok) return url;
+    const cdnUrl = (await uploadRes.text()).trim();
+    if (cdnUrl.startsWith('https://')) return cdnUrl;
+    return url;
+  } catch {
+    return url; // 실패 시 원본 URL 반환
   }
-  if (url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com')) {
-    try {
-      const u = new URL(url);
-      return `${appBase}/api/img${u.pathname}`;
-    } catch { return url; }
-  }
-  return url;
 }
 
 export async function postToThreadsWithMedia(
@@ -227,8 +240,8 @@ export async function postToThreadsWithMedia(
   content: string,
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
-  // R2 URL → 프록시 URL 변환 (Meta 서버가 R2 CDN에 접근 못하는 문제 해결)
-  if (mediaUrls) mediaUrls = mediaUrls.map(toMetaSafeUrl);
+  // R2 URL → litterbox CDN 업로드 (Meta 서버가 loov.co.kr에 접근 불가 문제 해결)
+  if (mediaUrls) mediaUrls = await Promise.all(mediaUrls.map(toMetaSafeUrl));
 
   let containerBody: Record<string, unknown>;
 
@@ -391,8 +404,8 @@ export async function postToInstagramWithMedia(
 ): Promise<{ id: string }> {
   if (!mediaUrls?.length) throw new Error('Instagram은 이미지 또는 영상이 필요합니다.');
 
-  // R2 URL → 프록시 URL 변환 (Meta 서버가 R2 CDN에 접근 못하는 문제 해결)
-  mediaUrls = mediaUrls.map(toMetaSafeUrl);
+  // R2 URL → litterbox CDN 업로드 (Meta 서버가 loov.co.kr에 접근 불가 문제 해결)
+  mediaUrls = await Promise.all(mediaUrls.map(toMetaSafeUrl));
 
   // Standalone Instagram API (graph.instagram.com/v21.0)
   // 연결 토큰은 api.instagram.com/oauth/authorize를 통해 발급된 standalone 토큰
