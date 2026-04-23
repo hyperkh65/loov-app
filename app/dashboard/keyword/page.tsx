@@ -361,21 +361,20 @@ export default function KeywordPage() {
     setGeneratingKw(keyword);
     setGeneratedArticle(null);
     try {
-      const res = await fetch('/api/keyword/quick-generate', {
+      const res = await fetch('/api/auto-service/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword }),
+        body: JSON.stringify({ keyword, ai_model: 'qwen3' }),
       });
-      const data = await res.json() as { article_id?: string; title?: string; error?: string };
+      const data = await res.json() as { item?: { id: string; title: string }; error?: string };
       if (data.error) { alert(`생성 실패: ${data.error}`); return; }
-      if (data.article_id) {
-        setGeneratedArticle({ keyword, article_id: data.article_id, title: data.title || keyword });
-        // Auto-start tracking after article generation
+      if (data.item) {
+        setGeneratedArticle({ keyword, article_id: data.item.id, title: data.item.title || keyword });
         try {
           await fetch('/api/keyword/tracking', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keyword, article_id: data.article_id, article_title: data.title || keyword }),
+            body: JSON.stringify({ keyword, article_id: data.item.id, article_title: data.item.title || keyword }),
           });
         } catch { /* ignore tracking errors */ }
       }
@@ -520,18 +519,21 @@ export default function KeywordPage() {
             generatingKw={generatingKw}
             onRefresh={loadIntelligence}
             onGenerate={async (kw, source) => {
+              void source;
               setGeneratingKw(kw);
               try {
-                const res = await fetch('/api/keyword/quick-generate', {
+                const res = await fetch('/api/auto-service/generate', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ keyword: kw }),
+                  body: JSON.stringify({ keyword: kw, ai_model: 'qwen3' }),
                 });
-                const data = await res.json() as { article_id?: string; title?: string; error?: string };
+                const data = await res.json() as { item?: { id: string; title: string }; error?: string };
                 if (data.error) { alert(`생성 실패: ${data.error}`); return; }
-                if (data.article_id) {
-                  await startTracking(kw, data.article_id, data.title || kw);
-                  alert(`✅ 글 생성 완료! 순위 추적이 시작됩니다.\n제목: ${data.title || kw}`);
+                if (data.item) {
+                  await startTracking(kw, data.item.id, data.item.title || kw);
+                  if (confirm(`✅ 글 생성 완료!\n제목: ${data.item.title || kw}\n\n블로그 자동화 페이지로 이동할까요?`)) {
+                    window.location.href = '/dashboard/auto-service';
+                  }
                 }
               } catch (e) { alert(`오류: ${e}`); }
               finally { setGeneratingKw(null); }
