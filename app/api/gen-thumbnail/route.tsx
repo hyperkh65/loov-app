@@ -49,13 +49,12 @@ export async function GET(req: NextRequest) {
   // 1순위: 로컬 파일시스템 (Docker 환경에서 가장 안정적)
   let fontData: ArrayBuffer | undefined;
   try {
-    const fontPath = join(process.cwd(), 'public', 'fonts', 'NotoSansKR-Bold.woff2');
+    const fontPath = join(process.cwd(), 'public', 'fonts', 'NotoSansKR-Bold.otf');
     fontData = readFileSync(fontPath).buffer;
   } catch {
     // 2순위: CDN 폴백
     const FONT_URLS = [
-      'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.2/files/noto-sans-kr-korean-700-normal.woff2',
-      'https://fonts.gstatic.com/s/notosanskr/v36/PbykFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLTq8H4hfeE.woff2',
+      'https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR/NotoSansKR-Bold.otf',
     ];
     for (const url of FONT_URLS) {
       try {
