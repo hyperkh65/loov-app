@@ -3,7 +3,22 @@
 import { useState, useCallback, useRef } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Tab = 'golden' | 'batch' | 'trend' | 'price' | 'blog' | 'exposure' | 'ranking' | 'seo';
+type Tab = 'golden' | 'batch' | 'trend' | 'price' | 'blog' | 'exposure' | 'ranking' | 'seo' | 'intelligence';
+
+interface TrackingRecord {
+  id: number;
+  keyword: string;
+  article_id: string | null;
+  article_title: string | null;
+  article_url: string | null;
+  current_rank: number | null;
+  current_page: number | null;
+  best_rank: number | null;
+  check_count: number;
+  last_checked_at: string | null;
+  created_at: string;
+  history: Array<{ rank: number | null; page: number | null; checked_at: string }>;
+}
 
 interface KeywordResult {
   keyword: string;
@@ -79,6 +94,7 @@ interface SeoOpportunityResult {
   canRank1: boolean;
   canRank1Reason: string;
   competitionScore: number;
+  source?: string;
 }
 
 // ── Grade config ───────────────────────────────────────────────────────────────
@@ -166,6 +182,14 @@ export default function KeywordPage() {
   const [seoError, setSeoError] = useState('');
   const [generatingKw, setGeneratingKw] = useState<string | null>(null);
   const [generatedArticle, setGeneratedArticle] = useState<{ keyword: string; article_id: string; title: string } | null>(null);
+
+  // Intelligence (auto-discover)
+  const [intelLoading, setIntelLoading] = useState(false);
+  const [intelResults, setIntelResults] = useState<SeoOpportunityResult[]>([]);
+  const [intelError, setIntelError] = useState('');
+  const [intelLastUpdated, setIntelLastUpdated] = useState<Date | null>(null);
+  const [trackingList, setTrackingList] = useState<TrackingRecord[]>([]);
+  const [checkingId, setCheckingId] = useState<number | null>(null);
 
   // Ranking
   const [rankPeriod, setRankPeriod] = useState<'recommended' | '24h' | '1h'>('recommended');
@@ -346,6 +370,14 @@ export default function KeywordPage() {
       if (data.error) { alert(`생성 실패: ${data.error}`); return; }
       if (data.article_id) {
         setGeneratedArticle({ keyword, article_id: data.article_id, title: data.title || keyword });
+        // Auto-start tracking after article generation
+        try {
+          await fetch('/api/keyword/tracking', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, article_id: data.article_id, article_title: data.title || keyword }),
+          });
+        } catch { /* ignore tracking errors */ }
       }
     } catch (e) {
       alert(`오류: ${e}`);
@@ -354,9 +386,86 @@ export default function KeywordPage() {
     }
   }, []);
 
+  // Intelligence handlers
+  const loadIntelligence = useCallback(async () => {
+    setIntelLoading(true); setIntelError('');
+    try {
+      const res = await fetch('/api/keyword/auto-discover', { method: 'POST' });
+      const data = await res.json() as { results?: SeoOpportunityResult[]; error?: string };
+      if (data.error) { setIntelError(data.error); return; }
+      setIntelResults(data.results || []);
+      setIntelLastUpdated(new Date());
+    } catch (e) {
+      setIntelError(String(e));
+    } finally {
+      setIntelLoading(false);
+    }
+  }, []);
+
+  const loadTracking = useCallback(async () => {
+    try {
+      const res = await fetch('/api/keyword/tracking');
+      const data = await res.json() as { results?: TrackingRecord[]; error?: string };
+      if (!data.error) setTrackingList(data.results || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const startTracking = useCallback(async (keyword: string, article_id?: string, article_title?: string, article_url?: string) => {
+    try {
+      const res = await fetch('/api/keyword/tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword, article_id, article_title, article_url }),
+      });
+      const data = await res.json() as { tracking?: TrackingRecord; error?: string };
+      if (data.tracking) {
+        setTrackingList(prev => [{ ...data.tracking!, history: [] }, ...prev]);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const checkRank = useCallback(async (tracking_id: number) => {
+    setCheckingId(tracking_id);
+    try {
+      const res = await fetch('/api/keyword/rank-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tracking_id }),
+      });
+      const data = await res.json() as { rank?: number | null; page?: number | null; found?: boolean; error?: string };
+      if (!data.error) {
+        setTrackingList(prev => prev.map(t => {
+          if (t.id !== tracking_id) return t;
+          const newEntry = { rank: data.rank ?? null, page: data.page ?? null, checked_at: new Date().toISOString() };
+          const newBest = data.rank != null ? (t.best_rank === null || data.rank < t.best_rank ? data.rank : t.best_rank) : t.best_rank;
+          return {
+            ...t,
+            current_rank: data.rank ?? null,
+            current_page: data.page ?? null,
+            best_rank: newBest,
+            last_checked_at: new Date().toISOString(),
+            check_count: t.check_count + 1,
+            history: [...t.history.slice(-6), newEntry],
+          };
+        }));
+      }
+    } catch { /* ignore */ }
+    finally {
+      setCheckingId(null);
+    }
+  }, []);
+
+  const removeTracking = useCallback(async (id: number) => {
+    try {
+      await fetch(`/api/keyword/tracking?id=${id}`, { method: 'DELETE' });
+      setTrackingList(prev => prev.filter(t => t.id !== id));
+    } catch { /* ignore */ }
+  }, []);
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const TABS: { id: Tab; icon: string; label: string; desc: string }[] = [
+    { id: 'intelligence', icon: '🧠', label: 'AI 자동발굴', desc: '트렌드·계절·이슈 키워드 자동 탐지' },
     { id: 'seo',      icon: '🚀', label: 'SEO 기회',     desc: '1등 먹을 수 있는 키워드' },
     { id: 'ranking',  icon: '📊', label: '실시간 랭킹',  desc: '뉴스·블로그·쇼핑 랭킹' },
     { id: 'golden',   icon: '💎', label: '황금키워드',   desc: '기회 높은 키워드 발굴' },
@@ -383,7 +492,13 @@ export default function KeywordPage() {
         {/* Tab bar */}
         <div className="flex flex-wrap gap-2 mb-6">
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+            <button key={t.id} onClick={() => {
+              setTab(t.id);
+              if (t.id === 'intelligence') {
+                if (intelResults.length === 0) loadIntelligence();
+                loadTracking();
+              }
+            }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold transition-all ${
                 tab === t.id ? 'bg-gray-900 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
               }`}>
@@ -392,6 +507,39 @@ export default function KeywordPage() {
             </button>
           ))}
         </div>
+
+        {/* ── Intelligence ── */}
+        {tab === 'intelligence' && (
+          <IntelligenceTab
+            loading={intelLoading}
+            results={intelResults}
+            error={intelError}
+            lastUpdated={intelLastUpdated}
+            trackingList={trackingList}
+            checkingId={checkingId}
+            generatingKw={generatingKw}
+            onRefresh={loadIntelligence}
+            onGenerate={async (kw, source) => {
+              setGeneratingKw(kw);
+              try {
+                const res = await fetch('/api/keyword/quick-generate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ keyword: kw }),
+                });
+                const data = await res.json() as { article_id?: string; title?: string; error?: string };
+                if (data.error) { alert(`생성 실패: ${data.error}`); return; }
+                if (data.article_id) {
+                  await startTracking(kw, data.article_id, data.title || kw);
+                  alert(`✅ 글 생성 완료! 순위 추적이 시작됩니다.\n제목: ${data.title || kw}`);
+                }
+              } catch (e) { alert(`오류: ${e}`); }
+              finally { setGeneratingKw(null); }
+            }}
+            onCheckRank={checkRank}
+            onRemoveTracking={removeTracking}
+          />
+        )}
 
         {/* ── 실시간 랭킹 ── */}
         {tab === 'ranking' && (
@@ -992,6 +1140,283 @@ export default function KeywordPage() {
                 )}
               </div>
             )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Intelligence Tab ─────────────────────────────────────────────────────────
+
+type IntelSource = 'seasonal' | 'news' | 'trend';
+
+interface IntelligenceTabProps {
+  loading: boolean;
+  results: SeoOpportunityResult[];
+  error: string;
+  lastUpdated: Date | null;
+  trackingList: TrackingRecord[];
+  checkingId: number | null;
+  generatingKw: string | null;
+  onRefresh: () => void;
+  onGenerate: (kw: string, source: IntelSource) => void;
+  onCheckRank: (id: number) => void;
+  onRemoveTracking: (id: number) => void;
+}
+
+function SourceBadge({ source }: { source: string }) {
+  if (source === 'seasonal') return <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">계절성</span>;
+  if (source === 'news')     return <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">뉴스</span>;
+  return <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">트렌드</span>;
+}
+
+function RankDot({ rank }: { rank: number | null }) {
+  const color = rank === null ? 'bg-gray-300' : rank <= 10 ? 'bg-green-500' : rank <= 30 ? 'bg-yellow-400' : rank <= 50 ? 'bg-orange-400' : 'bg-red-400';
+  const title = rank === null ? '미노출' : `${rank}위`;
+  return <div className={`w-3 h-3 rounded-full ${color} flex-shrink-0`} title={title} />;
+}
+
+function IntelligenceTab({
+  loading, results, error, lastUpdated, trackingList, checkingId, generatingKw,
+  onRefresh, onGenerate, onCheckRank, onRemoveTracking,
+}: IntelligenceTabProps) {
+  const [filter, setFilter] = useState<'all' | 'rank1' | 'tracking'>('all');
+
+  const rank1Count = results.filter(r => r.canRank1).length;
+  const maxNaverBlog = Math.max(...results.map(r => r.naverBlog), 1);
+  const maxDaum = Math.max(...results.map(r => r.daumBlog + r.daumCafe), 1);
+  const maxGoogle = Math.max(...results.map(r => r.googleCount), 1);
+
+  const filteredResults = results.filter(r => {
+    if (filter === 'rank1') return r.canRank1;
+    if (filter === 'tracking') return trackingList.some(t => t.keyword === r.keyword);
+    return true;
+  });
+
+  return (
+    <div className="space-y-5">
+      {/* Hero header */}
+      <div className="rounded-2xl overflow-hidden border border-teal-200 bg-gradient-to-br from-teal-700 via-emerald-700 to-green-700 p-6 text-white">
+        <div className="mb-1 text-xs font-semibold tracking-widest opacity-70 uppercase">Keyword Intelligence</div>
+        <h2 className="text-2xl font-black mb-1">🧠 AI 자동발굴 키워드 인텔리전스</h2>
+        <p className="text-sm opacity-80 mb-5">씨드 키워드 없이 트렌드·계절·이슈 키워드를 자동으로 탐지합니다</p>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className="flex items-center gap-2 px-6 py-3 bg-white text-teal-700 font-black rounded-xl disabled:opacity-50 hover:bg-teal-50 transition-colors text-sm"
+          >
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {loading ? '분석 중...' : '🔄 지금 새로 분석'}
+          </button>
+          {lastUpdated && (
+            <span className="text-xs text-white/70">
+              마지막 업데이트: {lastUpdated.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+        {error && <p className="text-sm text-yellow-200 bg-white/10 rounded-xl px-4 py-2 mt-3">{error}</p>}
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center">
+          <div className="text-4xl mb-4 animate-bounce">🧠</div>
+          <div className="font-bold text-gray-700 mb-2">키워드 자동 탐지 중...</div>
+          <div className="text-sm text-gray-500 space-y-1">
+            <div>① 이달 계절성 키워드 수집</div>
+            <div>② 네이버 뉴스 핫 키워드 추출</div>
+            <div>③ 포화도·검색량·경쟁강도 병렬 분석</div>
+          </div>
+          <div className="mt-4 text-xs text-gray-400">최대 60초 소요</div>
+        </div>
+      )}
+
+      {/* Results */}
+      {!loading && results.length > 0 && (
+        <div className="space-y-4">
+          {/* 요약 */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-teal-600 text-white rounded-2xl p-4 text-center">
+              <div className="text-3xl font-black">{rank1Count}</div>
+              <div className="text-xs mt-1 opacity-80">🏆 1등 가능</div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+              <div className="text-3xl font-black text-gray-800">{results.filter(r => r.difficulty === 'very_easy' || r.difficulty === 'easy').length}</div>
+              <div className="text-xs mt-1 text-gray-500">쉬운 키워드</div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+              <div className="text-3xl font-black text-gray-800">{results.length}</div>
+              <div className="text-xs mt-1 text-gray-500">전체 발굴</div>
+            </div>
+          </div>
+
+          {/* 필터 탭 */}
+          <div className="flex gap-2">
+            {([['all','전체'], ['rank1','🏆 1등 가능'], ['tracking','추적중']] as const).map(([v, l]) => (
+              <button key={v} onClick={() => setFilter(v)}
+                className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${filter === v ? 'bg-teal-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                {l} {v === 'rank1' ? `(${rank1Count})` : v === 'tracking' ? `(${trackingList.length})` : `(${results.length})`}
+              </button>
+            ))}
+          </div>
+
+          {/* 키워드 카드 */}
+          <div className="space-y-3">
+            {filteredResults.map((r, i) => {
+              const dc = DIFF_CONFIG[r.difficulty];
+              const src = r.source || 'trend';
+              const oppColor = r.competitionScore < 30 ? 'text-green-600' : r.competitionScore < 60 ? 'text-yellow-600' : 'text-red-600';
+              return (
+                <div key={i} className={`bg-white rounded-2xl border-2 overflow-hidden transition-all hover:shadow-md ${r.canRank1 ? 'border-teal-300' : 'border-gray-100'}`}>
+                  <div className={`px-5 py-3 flex items-center justify-between ${r.canRank1 ? 'bg-gradient-to-r from-teal-50 to-emerald-50' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {r.canRank1 && (
+                        <span className="bg-teal-600 text-white text-xs font-black px-3 py-1 rounded-full">🏆 1등 가능</span>
+                      )}
+                      <SourceBadge source={src} />
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full border ${dc.text} ${dc.bg} ${dc.border}`}>{dc.label}</span>
+                      <GradeBadge grade={r.grade} />
+                    </div>
+                    <button
+                      onClick={() => onGenerate(r.keyword, (src as IntelSource) || 'trend')}
+                      disabled={generatingKw !== null}
+                      className={`px-4 py-2 text-xs font-black rounded-xl whitespace-nowrap disabled:opacity-50 transition-colors ${r.canRank1 ? 'bg-teal-600 hover:bg-teal-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                    >
+                      {generatingKw === r.keyword ? '⏳ 생성 중...' : '✍️ 글 생성'}
+                    </button>
+                  </div>
+
+                  <div className="px-5 pt-3 pb-2">
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      <span className="text-lg font-black text-gray-900">{r.keyword}</span>
+                      {r.monthlyTotal > 0 && (
+                        <span className="text-sm font-bold text-blue-600">월 {r.monthlyTotal.toLocaleString()}회</span>
+                      )}
+                      {r.monthlyTotal > 0 && (
+                        <span className="text-xs text-gray-400">PC {r.monthlyPc.toLocaleString()} + 모바일 {r.monthlyMobile.toLocaleString()}</span>
+                      )}
+                    </div>
+                    {r.canRank1 && r.canRank1Reason && (
+                      <div className="text-xs text-teal-600 font-semibold mt-1">💡 {r.canRank1Reason}</div>
+                    )}
+                    {!r.canRank1 && r.canRank1Reason && (
+                      <div className="text-xs text-gray-400 mt-1">⚠️ {r.canRank1Reason}</div>
+                    )}
+                  </div>
+
+                  <div className="px-5 pb-4 space-y-1.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-500">경쟁 포화도</span>
+                      <span className={`text-xs font-black ${oppColor}`}>
+                        {r.competitionScore < 30 ? '낮음 ✅' : r.competitionScore < 60 ? '보통 ⚠️' : '높음 ❌'} ({r.competitionScore}/100)
+                      </span>
+                    </div>
+                    <CompBar label="N 블로그" value={r.naverBlog} max={maxNaverBlog} color="bg-green-500" />
+                    <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={maxDaum} color="bg-orange-400" />
+                    <CompBar label="구글" value={r.googleCount} max={maxGoogle} color="bg-blue-500" />
+                    {r.naverPowerBlogRatio > 0 && (
+                      <div className="text-xs text-gray-400 pt-1">
+                        상위 노출: 파워블로거 <strong className={r.naverPowerBlogRatio >= 70 ? 'text-red-500' : 'text-gray-600'}>{r.naverPowerBlogRatio}%</strong>
+                        {r.naverPowerBlogRatio >= 70 ? ' — 상위권 장악' : r.naverPowerBlogRatio <= 30 ? ' — 진입 여지 있음 ✅' : ''}
+                      </div>
+                    )}
+                    {r.score > 0 && (
+                      <div className="text-xs text-gray-400">기회점수 <strong className="text-teal-600">{r.score}</strong></div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 빈 상태 */}
+      {!loading && results.length === 0 && !error && (
+        <div className="text-center py-20">
+          <div className="text-5xl mb-4">🧠</div>
+          <div className="font-bold text-gray-600 mb-2">AI 키워드 자동 탐지</div>
+          <p className="text-sm text-gray-400 mb-5">씨드 키워드 없이도 계절성·트렌드·이슈 키워드를 자동으로 찾아드립니다.</p>
+          <button onClick={onRefresh}
+            className="px-6 py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-sm">
+            지금 시작하기
+          </button>
+        </div>
+      )}
+
+      {/* 순위 추적 섹션 */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+          <span className="text-lg">📍</span>
+          <span className="font-black text-gray-800">내 글 순위 추적</span>
+          <span className="text-xs text-gray-400 ml-1">({trackingList.length}개 추적 중)</span>
+        </div>
+
+        {trackingList.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">
+            <div className="text-3xl mb-2">📍</div>
+            <div className="text-sm">아직 추적 중인 글이 없습니다.</div>
+            <div className="text-xs mt-1">키워드로 글을 생성하면 자동으로 추적됩니다.</div>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {trackingList.map(t => (
+              <div key={t.id} className="px-5 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="font-black text-gray-800">{t.keyword}</span>
+                      {t.current_rank !== null ? (
+                        <span className="text-xs font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
+                          현재 {t.current_page}페이지 {t.current_rank}위
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">미노출</span>
+                      )}
+                      {t.best_rank !== null && (
+                        <span className="text-xs text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-full">최고 {t.best_rank}위</span>
+                      )}
+                    </div>
+                    {t.article_title && (
+                      <div className="text-xs text-gray-500 truncate mb-1">{t.article_title}</div>
+                    )}
+                    <div className="text-xs text-gray-400">
+                      확인 {t.check_count}회
+                      {t.last_checked_at && ` · 마지막: ${new Date(t.last_checked_at).toLocaleDateString('ko-KR')}`}
+                    </div>
+                    {/* Mini rank history */}
+                    {t.history.length > 0 && (
+                      <div className="flex items-center gap-1 mt-2">
+                        <span className="text-xs text-gray-400 mr-1">추적:</span>
+                        {t.history.map((h, hi) => (
+                          <RankDot key={hi} rank={h.rank} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => onCheckRank(t.id)}
+                      disabled={checkingId === t.id}
+                      className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {checkingId === t.id ? '⏳' : '🔍 지금 확인'}
+                    </button>
+                    <button
+                      onClick={() => onRemoveTracking(t.id)}
+                      className="px-2 py-1.5 text-gray-400 hover:text-red-500 text-xs rounded-xl hover:bg-red-50 transition-colors"
+                      title="추적 중단"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
