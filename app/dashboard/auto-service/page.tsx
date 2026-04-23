@@ -455,6 +455,36 @@ export default function AutoServicePage() {
     }
   };
 
+  // gen-thumbnail API로 새 디자인 썸네일 즉시 생성 + 저장
+  const regenerateApiThumbnail = async () => {
+    if (!previewArticle) return;
+    setThumbGenerating(true);
+    try {
+      const res = await fetch('/api/auto-service/thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_id: previewArticle.id,
+          title: previewArticle.title,
+          keyword: previewArticle.focus_keyword || previewArticle.keyword || '',
+          color_scheme: thumbColor,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        setThumbRepUrl(data.url);
+        setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
+        await loadArticles();
+      } else {
+        alert('재생성 실패: ' + (data.error || '알 수 없는 오류'));
+      }
+    } catch (e) {
+      alert('재생성 오류: ' + String(e));
+    } finally {
+      setThumbGenerating(false);
+    }
+  };
+
   const uploadCanvasThumbnail = async () => {
     if (!thumbPreviewUrl || !previewArticle) return;
     setThumbGenerating(true);
@@ -1320,10 +1350,16 @@ export default function AutoServicePage() {
 
                   <canvas ref={thumbCanvasRef} className="hidden" />
 
+                  {/* 새 디자인 자동 생성 버튼 */}
+                  <button onClick={regenerateApiThumbnail} disabled={thumbGenerating}
+                    className="w-full py-2.5 bg-gradient-to-r from-violet-600 to-blue-600 text-white rounded-lg text-sm font-bold hover:opacity-90 disabled:opacity-50 mb-2">
+                    {thumbGenerating ? '생성 중...' : '🎨 새 디자인으로 재생성 (추천)'}
+                  </button>
+
                   <div className="flex gap-2">
                     <button onClick={generateCanvasThumbnail} disabled={thumbGenerating || !thumbSelectedBg || !thumbTitle}
                       className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-                      {thumbGenerating ? '생성 중...' : '✨ 썸네일 생성'}
+                      {thumbGenerating ? '생성 중...' : '✨ 배경사진 썸네일 생성'}
                     </button>
                     <label className="py-2 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer text-center">
                       📁 직접 업로드
