@@ -3,8 +3,8 @@ import { createClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import type { Platform } from '@/lib/sns/platforms';
 
-// 영상 처리 대기 시간 때문에 최대 120초 허용
-export const maxDuration = 120;
+// Threads 댓글 대기(15s) + 재시도(최대 30s) + 영상처리(30s) → 여유있게 설정
+export const maxDuration = 300;
 
 interface ThreadItem {
   content: string;
@@ -67,16 +67,17 @@ export async function POST(req: NextRequest) {
 
       // 스레드/댓글 형식 추가 게시
       if (thread_items?.length && platformPostId) {
-        // Threads는 게시물 인덱싱 대기 후 댓글 (즉시 reply_to_id 사용 시 실패)
-        if (platform === 'threads') await new Promise(r => setTimeout(r, 4000));
+        // Threads: 게시물이 완전히 인덱싱될 때까지 대기 (Meta 권장 15초 이상)
+        if (platform === 'threads') await new Promise(r => setTimeout(r, 15000));
 
         let prevId = platformPostId;
         let commentSuccess = true;
         let commentError = '';
         for (const item of thread_items as ThreadItem[]) {
           if (!item.content?.trim()) continue;
-          let retries = 2;
-          while (retries-- > 0) {
+          // 3회 재시도, 지수 백오프: 10s → 20s → 30s
+          let posted = false;
+          for (let attempt = 0; attempt < 3; attempt++) {
             try {
               const targetId = platform === 'twitter' ? prevId : platformPostId;
               const { id: commentId } = await postCommentOnOwnPost(
@@ -84,17 +85,19 @@ export async function POST(req: NextRequest) {
                 targetId, item.content, item.media_urls,
               );
               if (platform === 'twitter') prevId = commentId;
-              break; // 성공
+              posted = true;
+              break;
             } catch (e) {
-              if (retries > 0) {
-                await new Promise(r => setTimeout(r, 3000));
+              if (attempt < 2) {
+                await new Promise(r => setTimeout(r, (attempt + 1) * 10000)); // 10s, 20s
               } else {
                 commentSuccess = false;
                 commentError = e instanceof Error ? e.message : String(e);
-                console.warn(`[${platform}] 스레드 항목 게시 실패:`, e);
+                console.warn(`[${platform}] 댓글 게시 실패 (3회 시도):`, e);
               }
             }
           }
+          void posted;
         }
         // 댓글 실패 정보를 결과에 반영
         if (!commentSuccess) {
