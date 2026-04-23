@@ -68,6 +68,8 @@ interface SeoOpportunityResult {
   monthlyTotal: number;
   naverBlog: number;
   naverWeb: number;
+  naverNews: number;
+  naverPowerBlogRatio: number;
   daumBlog: number;
   daumCafe: number;
   googleCount: number;
@@ -75,6 +77,8 @@ interface SeoOpportunityResult {
   grade: 'diamond' | 'gold' | 'silver' | 'bronze' | 'normal';
   difficulty: 'very_easy' | 'easy' | 'medium' | 'hard' | 'very_hard';
   canRank1: boolean;
+  canRank1Reason: string;
+  competitionScore: number;
 }
 
 // ── Grade config ───────────────────────────────────────────────────────────────
@@ -911,124 +915,13 @@ export default function KeywordPage() {
 
         {/* ── SEO 기회 키워드 ── */}
         {tab === 'seo' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl p-6 border border-gray-200">
-              <h2 className="font-black text-lg mb-1">🚀 SEO 기회 키워드 분석</h2>
-              <p className="text-sm text-gray-500 mb-4">씨드 키워드로 롱테일 키워드를 찾고, 구글·네이버·다음 포화도를 분석해 <strong>1등 먹을 수 있는 키워드</strong>를 찾아드립니다.</p>
-              <div className="flex gap-3">
-                <input
-                  value={seoKeyword}
-                  onChange={e => setSeoKeyword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSeoOpportunity()}
-                  placeholder="예: 다이어트, 강아지 사료, 제주도 여행"
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-purple-400"
-                />
-                <button
-                  onClick={runSeoOpportunity}
-                  disabled={seoLoading || !seoKeyword.trim()}
-                  className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl disabled:opacity-50 whitespace-nowrap"
-                >
-                  {seoLoading ? '분석 중...' : '🔍 기회 분석'}
-                </button>
-              </div>
-              {seoError && <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-xl mt-3">{seoError}</p>}
-            </div>
-
-            {/* 생성 완료 알림 */}
-            {generatedArticle && (
-              <div className="bg-green-50 border border-green-300 rounded-2xl p-5 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-green-700">✅ 글 생성 완료!</div>
-                  <div className="text-sm text-green-600 mt-1">{generatedArticle.title}</div>
-                </div>
-                <a
-                  href={`/dashboard/auto-service?article_id=${generatedArticle.article_id}`}
-                  className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-500"
-                >
-                  글 확인 →
-                </a>
-              </div>
-            )}
-
-            {seoLoading && (
-              <div className="text-center py-12">
-                <div className="text-3xl mb-3 animate-pulse">🔍</div>
-                <div className="text-sm text-gray-500">구글·네이버·다음 포화도 분석 중... (최대 30초)</div>
-              </div>
-            )}
-
-            {seoResults.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                {/* 헤더 요약 */}
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-6">
-                  <div className="text-sm">
-                    <span className="font-bold text-purple-600">{seoResults.filter(r => r.canRank1).length}개</span>
-                    <span className="text-gray-500"> 1등 가능 키워드</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="font-bold">{seoResults.length}개</span>
-                    <span className="text-gray-500"> 전체 키워드</span>
-                  </div>
-                </div>
-
-                <div className="divide-y divide-gray-50">
-                  {seoResults.map((r, i) => {
-                    const diffConfig = {
-                      very_easy: { label: '매우 쉬움', color: 'text-green-600 bg-green-50', border: 'border-green-200' },
-                      easy:      { label: '쉬움',     color: 'text-blue-600 bg-blue-50',   border: 'border-blue-200' },
-                      medium:    { label: '보통',     color: 'text-yellow-600 bg-yellow-50', border: 'border-yellow-200' },
-                      hard:      { label: '어려움',   color: 'text-orange-600 bg-orange-50', border: 'border-orange-200' },
-                      very_hard: { label: '매우 어려움', color: 'text-red-600 bg-red-50',   border: 'border-red-200' },
-                    }[r.difficulty];
-
-                    return (
-                      <div key={i} className={`px-6 py-4 hover:bg-gray-50 transition-colors ${r.canRank1 ? 'bg-purple-50/30' : ''}`}>
-                        <div className="flex items-start gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap mb-2">
-                              {r.canRank1 && (
-                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
-                                  🏆 1등 가능
-                                </span>
-                              )}
-                              <GradeBadge grade={r.grade} />
-                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${diffConfig.color} ${diffConfig.border}`}>
-                                {diffConfig.label}
-                              </span>
-                              <span className="font-bold text-gray-800">{r.keyword}</span>
-                            </div>
-
-                            {/* 포화도 지표 */}
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
-                              {r.monthlyTotal > 0 && (
-                                <span>월검색 <strong className="text-gray-700">{r.monthlyTotal.toLocaleString()}</strong></span>
-                              )}
-                              <span>네이버 블로그 <strong className="text-gray-700">{r.naverBlog.toLocaleString()}</strong>건</span>
-                              <span>다음 블로그 <strong className="text-gray-700">{r.daumBlog.toLocaleString()}</strong>건</span>
-                              {r.googleCount > 0 && (
-                                <span>구글 <strong className="text-gray-700">약 {r.googleCount.toLocaleString()}</strong>건</span>
-                              )}
-                              {r.score > 0 && (
-                                <span>기회점수 <strong className="text-purple-600">{r.score}</strong></span>
-                              )}
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => quickGenerate(r.keyword)}
-                            disabled={generatingKw !== null}
-                            className="flex-shrink-0 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl disabled:opacity-50 whitespace-nowrap"
-                          >
-                            {generatingKw === r.keyword ? '생성 중...' : '✍️ 글 생성'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+          <SeoOpportunityTab
+            seoKeyword={seoKeyword} setSeoKeyword={setSeoKeyword}
+            seoLoading={seoLoading} seoError={seoError}
+            seoResults={seoResults} generatingKw={generatingKw}
+            generatedArticle={generatedArticle}
+            onRun={runSeoOpportunity} onGenerate={quickGenerate}
+          />
         )}
 
         {/* ── Exposure Check ── */}
@@ -1102,6 +995,213 @@ export default function KeywordPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── SEO Opportunity Tab ───────────────────────────────────────────────────────
+
+const DIFF_CONFIG = {
+  very_easy: { label: '🟢 매우 쉬움', bar: 'bg-green-500',  text: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-200', pct: 10 },
+  easy:      { label: '🔵 쉬움',     bar: 'bg-blue-500',   text: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-200',  pct: 30 },
+  medium:    { label: '🟡 보통',     bar: 'bg-yellow-400', text: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200',pct: 55 },
+  hard:      { label: '🟠 어려움',   bar: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200',pct: 78 },
+  very_hard: { label: '🔴 매우 어려움', bar: 'bg-red-500',  text: 'text-red-700',   bg: 'bg-red-50',    border: 'border-red-200',   pct: 95 },
+};
+
+function CompBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.min(100, Math.round(value / max * 100)) : 0;
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="w-14 text-gray-500 shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-16 text-right font-mono text-gray-600 shrink-0">{value >= 10000 ? `${(value/10000).toFixed(1)}만` : value >= 1000 ? `${(value/1000).toFixed(1)}천` : value.toLocaleString()}</span>
+    </div>
+  );
+}
+
+function SeoOpportunityTab({
+  seoKeyword, setSeoKeyword, seoLoading, seoError, seoResults,
+  generatingKw, generatedArticle, onRun, onGenerate,
+}: {
+  seoKeyword: string; setSeoKeyword: (v: string) => void;
+  seoLoading: boolean; seoError: string;
+  seoResults: SeoOpportunityResult[];
+  generatingKw: string | null;
+  generatedArticle: { keyword: string; article_id: string; title: string } | null;
+  onRun: () => void;
+  onGenerate: (kw: string) => void;
+}) {
+  const [filter, setFilter] = useState<'all' | 'rank1' | 'easy'>('all');
+
+  const filtered = seoResults.filter(r => {
+    if (filter === 'rank1') return r.canRank1;
+    if (filter === 'easy') return r.difficulty === 'very_easy' || r.difficulty === 'easy';
+    return true;
+  });
+
+  const rank1Count = seoResults.filter(r => r.canRank1).length;
+  const maxNaverBlog = Math.max(...seoResults.map(r => r.naverBlog), 1);
+  const maxDaum = Math.max(...seoResults.map(r => r.daumBlog + r.daumCafe), 1);
+  const maxGoogle = Math.max(...seoResults.map(r => r.googleCount), 1);
+
+  return (
+    <div className="space-y-5">
+      {/* 히어로 검색 영역 */}
+      <div className="rounded-2xl overflow-hidden border border-purple-200 bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 p-6 text-white">
+        <div className="mb-1 text-xs font-semibold tracking-widest opacity-70 uppercase">Keyword Opportunity Finder</div>
+        <h2 className="text-2xl font-black mb-1">🏆 구글·네이버 1등 키워드 분석</h2>
+        <p className="text-sm opacity-80 mb-5">씨드 키워드 → 롱테일 25개 자동 발굴 → 포화도·검색량·경쟁강도 분석 → 1등 가능 키워드만 추려드립니다</p>
+        <div className="flex gap-2">
+          <input
+            value={seoKeyword}
+            onChange={e => setSeoKeyword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onRun()}
+            placeholder="예: 다이어트, 강아지 사료, 제주도 여행"
+            className="flex-1 px-4 py-3 rounded-xl text-gray-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 placeholder:text-gray-400"
+          />
+          <button
+            onClick={onRun}
+            disabled={seoLoading || !seoKeyword.trim()}
+            className="px-7 py-3 bg-white text-purple-700 font-black rounded-xl disabled:opacity-50 hover:bg-purple-50 transition-colors whitespace-nowrap text-sm"
+          >
+            {seoLoading ? '분석 중...' : '🔍 분석 시작'}
+          </button>
+        </div>
+        {seoError && <p className="text-sm text-yellow-200 bg-white/10 rounded-xl px-4 py-2 mt-3">{seoError}</p>}
+      </div>
+
+      {/* 로딩 */}
+      {seoLoading && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center">
+          <div className="text-4xl mb-4 animate-bounce">🔍</div>
+          <div className="font-bold text-gray-700 mb-2">키워드 기회 분석 중...</div>
+          <div className="text-sm text-gray-500 space-y-1">
+            <div>① 네이버 검색광고 API → 관련 롱테일 키워드 25개 수집</div>
+            <div>② 네이버 블로그·웹문서 포화도 분석</div>
+            <div>③ 다음 블로그·카페 포화도 분석</div>
+            <div>④ 구글 검색결과 수 추정</div>
+          </div>
+          <div className="mt-4 text-xs text-gray-400">최대 40초 소요</div>
+        </div>
+      )}
+
+      {/* 글 생성 완료 배너 */}
+      {generatedArticle && (
+        <div className="bg-green-50 border-2 border-green-300 rounded-2xl p-5 flex items-center justify-between">
+          <div>
+            <div className="font-black text-green-700 text-base">✅ SEO 글 생성 완료!</div>
+            <div className="text-sm text-green-600 mt-0.5">{generatedArticle.title}</div>
+          </div>
+          <a href={`/dashboard/auto-service?article_id=${generatedArticle.article_id}`}
+            className="px-5 py-2.5 bg-green-600 text-white text-sm font-black rounded-xl hover:bg-green-500 whitespace-nowrap">
+            글 확인 →
+          </a>
+        </div>
+      )}
+
+      {/* 결과 */}
+      {seoResults.length > 0 && (
+        <div className="space-y-4">
+          {/* 요약 통계 */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-purple-600 text-white rounded-2xl p-4 text-center">
+              <div className="text-3xl font-black">{rank1Count}</div>
+              <div className="text-xs mt-1 opacity-80">🏆 1등 가능</div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+              <div className="text-3xl font-black text-gray-800">{seoResults.filter(r => r.difficulty === 'very_easy' || r.difficulty === 'easy').length}</div>
+              <div className="text-xs mt-1 text-gray-500">쉬운 키워드</div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+              <div className="text-3xl font-black text-gray-800">{seoResults.length}</div>
+              <div className="text-xs mt-1 text-gray-500">전체 분석</div>
+            </div>
+          </div>
+
+          {/* 필터 */}
+          <div className="flex gap-2">
+            {([['all','전체'], ['rank1','🏆 1등 가능'], ['easy','쉬운 키워드']] as const).map(([v, l]) => (
+              <button key={v} onClick={() => setFilter(v)}
+                className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${filter === v ? 'bg-purple-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                {l} {v === 'rank1' ? `(${rank1Count})` : v === 'easy' ? `(${seoResults.filter(r => r.difficulty === 'very_easy' || r.difficulty === 'easy').length})` : `(${seoResults.length})`}
+              </button>
+            ))}
+          </div>
+
+          {/* 키워드 카드 리스트 */}
+          <div className="space-y-3">
+            {filtered.map((r, i) => {
+              const dc = DIFF_CONFIG[r.difficulty];
+              const oppColor = r.competitionScore < 30 ? 'text-green-600' : r.competitionScore < 60 ? 'text-yellow-600' : 'text-red-600';
+              return (
+                <div key={i} className={`bg-white rounded-2xl border-2 overflow-hidden transition-all hover:shadow-md ${r.canRank1 ? 'border-purple-300' : 'border-gray-100'}`}>
+                  {/* 상단 헤더 */}
+                  <div className={`px-5 py-3 flex items-center justify-between ${r.canRank1 ? 'bg-gradient-to-r from-purple-50 to-indigo-50' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {r.canRank1 && (
+                        <span className="bg-purple-600 text-white text-xs font-black px-3 py-1 rounded-full">🏆 1등 가능</span>
+                      )}
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full border ${dc.text} ${dc.bg} ${dc.border}`}>{dc.label}</span>
+                      <GradeBadge grade={r.grade} />
+                    </div>
+                    <button
+                      onClick={() => onGenerate(r.keyword)}
+                      disabled={generatingKw !== null}
+                      className={`px-4 py-2 text-xs font-black rounded-xl whitespace-nowrap disabled:opacity-50 transition-colors ${r.canRank1 ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                    >
+                      {generatingKw === r.keyword ? '⏳ 생성 중...' : '✍️ 글 생성'}
+                    </button>
+                  </div>
+
+                  {/* 키워드명 + 검색량 */}
+                  <div className="px-5 pt-3 pb-2">
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      <span className="text-lg font-black text-gray-900">{r.keyword}</span>
+                      {r.monthlyTotal > 0 && (
+                        <span className="text-sm font-bold text-blue-600">월 {r.monthlyTotal.toLocaleString()}회</span>
+                      )}
+                      {r.monthlyTotal > 0 && (
+                        <span className="text-xs text-gray-400">PC {r.monthlyPc.toLocaleString()} + 모바일 {r.monthlyMobile.toLocaleString()}</span>
+                      )}
+                    </div>
+                    {r.canRank1 && r.canRank1Reason && (
+                      <div className="text-xs text-purple-600 font-semibold mt-1">💡 {r.canRank1Reason}</div>
+                    )}
+                    {!r.canRank1 && r.canRank1Reason && (
+                      <div className="text-xs text-gray-400 mt-1">⚠️ {r.canRank1Reason}</div>
+                    )}
+                  </div>
+
+                  {/* 경쟁도 바 */}
+                  <div className="px-5 pb-4 space-y-1.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-500">경쟁 포화도</span>
+                      <span className={`text-xs font-black ${oppColor}`}>
+                        {r.competitionScore < 30 ? '낮음 ✅' : r.competitionScore < 60 ? '보통 ⚠️' : '높음 ❌'} ({r.competitionScore}/100)
+                      </span>
+                    </div>
+                    <CompBar label="N 블로그" value={r.naverBlog} max={maxNaverBlog} color="bg-green-500" />
+                    <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={maxDaum} color="bg-orange-400" />
+                    <CompBar label="구글" value={r.googleCount} max={maxGoogle} color="bg-blue-500" />
+                    {r.naverPowerBlogRatio > 0 && (
+                      <div className="text-xs text-gray-400 pt-1">
+                        상위 노출: 파워블로거 <strong className={r.naverPowerBlogRatio >= 70 ? 'text-red-500' : 'text-gray-600'}>{r.naverPowerBlogRatio}%</strong>
+                        {r.naverPowerBlogRatio >= 70 ? ' — 상위권 장악' : r.naverPowerBlogRatio <= 30 ? ' — 진입 여지 있음 ✅' : ''}
+                      </div>
+                    )}
+                    {r.score > 0 && (
+                      <div className="text-xs text-gray-400">기회점수 <strong className="text-purple-600">{r.score}</strong> · 뉴스 {r.naverNews.toLocaleString()}건</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
