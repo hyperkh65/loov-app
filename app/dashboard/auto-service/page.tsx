@@ -466,7 +466,7 @@ export default function AutoServicePage() {
         body: JSON.stringify({
           article_id: previewArticle.id,
           title: previewArticle.title,
-          keyword: previewArticle.focus_keyword || previewArticle.keyword || '',
+          keyword: previewArticle.keyword || '',
           color_scheme: thumbColor,
         }),
       });
