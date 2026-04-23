@@ -197,12 +197,26 @@ export async function postToTwitterWithMedia(
   return { id: (await res.json()).data.id };
 }
 
-// R2 CDN URL → Meta(Instagram/Threads) 접근 가능한 프록시 URL 변환
+// R2 CDN URL → Meta(Instagram/Threads) 접근 가능한 경로 기반 프록시 URL 변환
+// /api/img/[...path] 형식: ?url= 쿼리파라미터 방식은 Meta가 거부함
 function toMetaSafeUrl(url: string): string {
   if (!url) return url;
   const appBase = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+  const r2Bases = [
+    'https://pub-e310bf4303744c7295d9b556111ff394.r2.dev/',
+    process.env.R2_PUBLIC_URL ? process.env.R2_PUBLIC_URL.replace(/\/?$/, '/') : null,
+  ].filter(Boolean) as string[];
+  for (const base of r2Bases) {
+    if (url.startsWith(base)) {
+      const path = url.slice(base.length);
+      return `${appBase}/api/img/${path}`;
+    }
+  }
   if (url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com')) {
-    return `${appBase}/api/image-proxy?url=${url}`;
+    try {
+      const u = new URL(url);
+      return `${appBase}/api/img${u.pathname}`;
+    } catch { return url; }
   }
   return url;
 }
