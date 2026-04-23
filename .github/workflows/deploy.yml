@@ -3,6 +3,7 @@ name: Deploy to NAS
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 env:
   WEBHOOK_URL: https://loov.co.kr/api/deploy/webhook
