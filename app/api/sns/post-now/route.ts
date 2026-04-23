@@ -54,11 +54,6 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Instagram은 이미지 필수 → 이미지 없으면 skip (에러 없이)
-    if (platform === 'instagram' && !media_urls?.length) {
-      results.push({ platform, success: false, error: 'Instagram 건너뜀: 이미지가 없어 발행할 수 없습니다' });
-      continue;
-    }
 
     try {
       const { id: platformPostId } = await postToPlatformWithMedia(
