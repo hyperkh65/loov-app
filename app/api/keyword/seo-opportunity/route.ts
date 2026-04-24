@@ -48,44 +48,81 @@ async function getNaverSaturation(keyword: string, clientId: string, clientSecre
   }
 }
 
-async function getDaumSaturation(keyword: string, kakaoKey: string) {
-  const headers = { Authorization: `KakaoAK ${kakaoKey}` };
+async function getDaumSaturation(keyword: string, kakaoKey: string | null) {
+  // Kakao API 우선, 없으면 다음 웹 스크래핑
+  if (kakaoKey) {
+    try {
+      const headers = { Authorization: `KakaoAK ${kakaoKey}` };
+      const [blogRes, cafeRes] = await Promise.all([
+        fetch(`https://dapi.kakao.com/v2/search/blog?query=${encodeURIComponent(keyword)}&size=1`, { headers, signal: AbortSignal.timeout(5000) }),
+        fetch(`https://dapi.kakao.com/v2/search/cafe?query=${encodeURIComponent(keyword)}&size=1`, { headers, signal: AbortSignal.timeout(5000) }),
+      ]);
+      const blogData = await blogRes.json() as { meta?: { total_count?: number } };
+      const cafeData = await cafeRes.json() as { meta?: { total_count?: number } };
+      return { blog: blogData.meta?.total_count || 0, cafe: cafeData.meta?.total_count || 0 };
+    } catch { /* fallthrough to scraping */ }
+  }
+  // 스크래핑 폴백
   try {
-    const [blogRes, cafeRes] = await Promise.all([
-      fetch(`https://dapi.kakao.com/v2/search/blog?query=${encodeURIComponent(keyword)}&size=1`, { headers, signal: AbortSignal.timeout(5000) }),
-      fetch(`https://dapi.kakao.com/v2/search/cafe?query=${encodeURIComponent(keyword)}&size=1`, { headers, signal: AbortSignal.timeout(5000) }),
-    ]);
-    const blogData = await blogRes.json() as { meta?: { total_count?: number } };
-    const cafeData = await cafeRes.json() as { meta?: { total_count?: number } };
-    return {
-      blog: blogData.meta?.total_count || 0,
-      cafe: cafeData.meta?.total_count || 0,
-    };
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const res = await fetch(
+      `https://search.daum.net/search?w=blog&q=${encodeURIComponent(keyword)}`,
+      { headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9' }, signal: AbortSignal.timeout(7000) }
+    );
+    if (!res.ok) return { blog: 0, cafe: 0 };
+    const html = await res.text();
+    const patterns = [
+      /([0-9,]+)\s*건/,
+      /총\s*([0-9,]+)/,
+      /"totalCount"\s*:\s*(\d+)/,
+      /data-count="(\d+)"/,
+    ];
+    let count = 0;
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m?.[1]) { count = parseInt(m[1].replace(/,/g, ''), 10); break; }
+    }
+    return { blog: count, cafe: 0 };
   } catch {
     return { blog: 0, cafe: 0 };
   }
 }
 
 async function getGoogleCount(keyword: string): Promise<number> {
-  try {
-    const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&num=1&hl=ko&gl=kr`;
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept-Language': 'ko-KR,ko;q=0.9',
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return 0;
-    const html = await res.text();
-    const m = html.match(/약\s*([\d,]+)\s*개/) ||
-              html.match(/About ([\d,]+) results/i) ||
-              html.match(/"([\d]{5,})"/);
-    if (m?.[1]) return parseInt(m[1].replace(/,/g, ''), 10);
-    return 0;
-  } catch {
-    return 0;
+  const uas = [
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  ];
+  for (const ua of uas) {
+    try {
+      const res = await fetch(
+        `https://www.google.com/search?q=${encodeURIComponent(keyword)}&num=1&hl=ko&gl=kr`,
+        {
+          headers: {
+            'User-Agent': ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+          },
+          signal: AbortSignal.timeout(8000),
+        }
+      );
+      if (!res.ok) continue;
+      const html = await res.text();
+      const patterns = [
+        /약\s*([\d,]+)\s*개/,
+        /About ([\d,]+) results/i,
+        /검색결과\s*약\s*([\d,]+)/,
+        /"([\d]{6,})"/,
+        /id="result-stats"[^>]*>약\s*([\d,]+)/,
+      ];
+      for (const p of patterns) {
+        const m = html.match(p);
+        if (m?.[1]) return parseInt(m[1].replace(/,/g, ''), 10);
+      }
+    } catch { continue; }
   }
+  return 0;
 }
 
 function calcGrade(score: number, monthly: number): 'diamond' | 'gold' | 'silver' | 'bronze' | 'normal' {
@@ -195,7 +232,7 @@ export async function POST(req: NextRequest) {
     toAnalyze.map(async (k) => {
       const [naverSat, daumSat, googleCount] = await Promise.all([
         hasNaverApi ? getNaverSaturation(k.keyword, naverClientId!, naverClientSecret!) : Promise.resolve({ blog: 0, web: 0, news: 0, powerBlogRatio: 0 }),
-        hasDaumApi ? getDaumSaturation(k.keyword, kakaoKey!) : Promise.resolve({ blog: 0, cafe: 0 }),
+        getDaumSaturation(k.keyword, kakaoKey ?? null),
         getGoogleCount(k.keyword),
       ]);
 
