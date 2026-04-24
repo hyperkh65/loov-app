@@ -18,31 +18,54 @@ function getNaverAdHeaders(apiKey: string, secret: string, customerId: string) {
   };
 }
 
-async function getNaverSaturation(keyword: string, clientId: string, clientSecret: string) {
-  const headers = { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret };
+async function getNaverSaturation(keyword: string, clientId: string | null, clientSecret: string | null) {
+  // API 키 있으면 API 사용, 없으면 스크래핑
+  if (clientId && clientSecret) {
+    const headers = { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret };
+    try {
+      const [blogRes, webRes, newsRes] = await Promise.all([
+        fetch(`https://openapi.naver.com/v1/search/blog?query=${encodeURIComponent(keyword)}&display=10&sort=date`, { headers, signal: AbortSignal.timeout(5000) }),
+        fetch(`https://openapi.naver.com/v1/search/webkr?query=${encodeURIComponent(keyword)}&display=1`, { headers, signal: AbortSignal.timeout(5000) }),
+        fetch(`https://openapi.naver.com/v1/search/news?query=${encodeURIComponent(keyword)}&display=1`, { headers, signal: AbortSignal.timeout(5000) }),
+      ]);
+      const blogData = await blogRes.json() as { total?: number; items?: Array<{ bloggerlink?: string }> };
+      const webData = await webRes.json() as { total?: number };
+      const newsData = await newsRes.json() as { total?: number };
+      const topItems = blogData.items || [];
+      const powerBlogCount = topItems.filter(item =>
+        /(blog\.naver\.com|tistory\.com|brunch\.co\.kr)/.test(item.bloggerlink || '')
+      ).length;
+      return {
+        blog: blogData.total || 0,
+        web: webData.total || 0,
+        news: newsData.total || 0,
+        powerBlogRatio: topItems.length > 0 ? Math.round(powerBlogCount / topItems.length * 100) : 0,
+      };
+    } catch { /* fallthrough to scraping */ }
+  }
+  // 스크래핑 폴백 (API 키 없을 때)
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   try {
-    const [blogRes, webRes, newsRes] = await Promise.all([
-      fetch(`https://openapi.naver.com/v1/search/blog?query=${encodeURIComponent(keyword)}&display=10&sort=date`, { headers, signal: AbortSignal.timeout(5000) }),
-      fetch(`https://openapi.naver.com/v1/search/webkr?query=${encodeURIComponent(keyword)}&display=1`, { headers, signal: AbortSignal.timeout(5000) }),
-      fetch(`https://openapi.naver.com/v1/search/news?query=${encodeURIComponent(keyword)}&display=1`, { headers, signal: AbortSignal.timeout(5000) }),
+    const [blogRes, newsRes] = await Promise.all([
+      fetch(`https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(keyword)}`,
+        { headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9' }, signal: AbortSignal.timeout(7000) }),
+      fetch(`https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(keyword)}`,
+        { headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9' }, signal: AbortSignal.timeout(7000) }),
     ]);
-    const blogData = await blogRes.json() as { total?: number; items?: Array<{ bloggername?: string; bloggerlink?: string; postdate?: string }> };
-    const webData = await webRes.json() as { total?: number };
-    const newsData = await newsRes.json() as { total?: number };
-
-    // 상위 블로그 링크 분석 (파워블로거 비율)
-    const topItems = blogData.items || [];
-    const powerBlogDomains = ['blog.naver.com', 'tistory.com', 'brunch.co.kr'];
-    const powerBlogCount = topItems.filter(item =>
-      powerBlogDomains.some(d => (item.bloggerlink || '').includes(d))
-    ).length;
-
-    return {
-      blog: blogData.total || 0,
-      web: webData.total || 0,
-      news: newsData.total || 0,
-      powerBlogRatio: topItems.length > 0 ? Math.round(powerBlogCount / topItems.length * 100) : 0,
-    };
+    let blog = 0, news = 0;
+    if (blogRes.ok) {
+      const html = await blogRes.text();
+      for (const p of [/총\s*([\d,]+)\s*건/, /"blogTotal"\s*:\s*(\d+)/, /"total"\s*:\s*(\d+)/]) {
+        const m = html.match(p);
+        if (m?.[1]) { blog = parseInt(m[1].replace(/,/g, ''), 10); break; }
+      }
+    }
+    if (newsRes.ok) {
+      const html = await newsRes.text();
+      const m = html.match(/총\s*([\d,]+)\s*건/) || html.match(/"newsTotal"\s*:\s*(\d+)/);
+      if (m?.[1]) news = parseInt(m[1].replace(/,/g, ''), 10);
+    }
+    return { blog, web: 0, news, powerBlogRatio: 0 };
   } catch {
     return { blog: 0, web: 0, news: 0, powerBlogRatio: 0 };
   }
@@ -231,7 +254,7 @@ export async function POST(req: NextRequest) {
   const analysisResults = await Promise.all(
     toAnalyze.map(async (k) => {
       const [naverSat, daumSat, googleCount] = await Promise.all([
-        hasNaverApi ? getNaverSaturation(k.keyword, naverClientId!, naverClientSecret!) : Promise.resolve({ blog: 0, web: 0, news: 0, powerBlogRatio: 0 }),
+        getNaverSaturation(k.keyword, naverClientId ?? null, naverClientSecret ?? null),
         getDaumSaturation(k.keyword, kakaoKey ?? null),
         getGoogleCount(k.keyword),
       ]);
