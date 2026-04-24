@@ -96,8 +96,9 @@ function calcGrade(score: number, monthly: number): 'diamond' | 'gold' | 'silver
   return 'normal';
 }
 
-function calcDifficulty(naverBlog: number, daumTotal: number, googleCount: number) {
-  const weighted = naverBlog + daumTotal * 0.4 + googleCount * 0.0008;
+function calcDifficulty(naverBlog: number, daumTotal: number, googleCount: number, naverNews: number) {
+  // 뉴스 기사는 언론사 도메인 → 블로그 경쟁 난이도에 반영
+  const weighted = naverBlog + daumTotal * 0.4 + googleCount * 0.0008 + naverNews * 0.8;
   if (weighted < 3000)   return 'very_easy';
   if (weighted < 15000)  return 'easy';
   if (weighted < 60000)  return 'medium';
@@ -110,16 +111,28 @@ function calcCanRank1(
   monthlyTotal: number,
   naverBlog: number,
   powerBlogRatio: number,
+  naverNews: number,
 ): { canRank1: boolean; reason: string } {
+  // 뉴스 도메인 장악: 언론사 기사 수가 많으면 블로그 1등 불가
+  if (naverNews > 10000) return { canRank1: false, reason: '언론사 뉴스 도배 — 블로그 노출 불가' };
+  if (naverNews > 3000 && naverNews > naverBlog * 2) return { canRank1: false, reason: '뉴스 기사 압도적 — 블로그 밀림' };
+  if (naverNews > 1000 && naverBlog < 500) return { canRank1: false, reason: '뉴스 키워드 — 언론사 경쟁' };
+
+  // 검색량 0 + 포화도도 0 = 아무도 안 찾는 키워드
+  if (monthlyTotal === 0 && naverBlog < 100 && naverNews < 100) {
+    return { canRank1: false, reason: '검색량·포화도 모두 없음 — 수요 불확실' };
+  }
+
   if (difficulty === 'very_easy') {
     if (monthlyTotal >= 500) return { canRank1: true, reason: '경쟁 매우 낮음 + 충분한 검색량' };
-    if (monthlyTotal > 0)    return { canRank1: true, reason: '경쟁 매우 낮음 (틈새시장)' };
-    return { canRank1: true, reason: '경쟁 매우 낮음 — 독점 가능' };
+    if (monthlyTotal >= 100) return { canRank1: true, reason: '경쟁 매우 낮음 (틈새시장)' };
+    // 검색량 없으면 1등 의미 없음
+    return { canRank1: false, reason: '검색량 없음 — 1등해도 유입 없음' };
   }
   if (difficulty === 'easy') {
     if (monthlyTotal >= 1000 && powerBlogRatio < 50) return { canRank1: true, reason: '쉬운 경쟁 + 검색량 풍부 + 파워블로그 少' };
     if (monthlyTotal >= 200)  return { canRank1: true, reason: '적당한 검색량 + 낮은 경쟁' };
-    if (naverBlog < 5000)     return { canRank1: true, reason: '블로그 포화도 낮음' };
+    if (naverBlog < 5000 && monthlyTotal >= 50) return { canRank1: true, reason: '블로그 포화도 낮음' };
   }
   if (difficulty === 'medium' && monthlyTotal >= 2000 && powerBlogRatio < 30) {
     return { canRank1: true, reason: '검색량 높음 + 파워블로그 적음 (도전 가능)' };
@@ -127,6 +140,7 @@ function calcCanRank1(
   const reasons: string[] = [];
   if (difficulty === 'hard' || difficulty === 'very_hard') reasons.push('포화도 높음');
   if (powerBlogRatio >= 70) reasons.push('파워블로거 상위권 장악');
+  if (monthlyTotal < 50) reasons.push('검색량 너무 낮음');
   return { canRank1: false, reason: reasons.join(' / ') || '경쟁 심함' };
 }
 
@@ -192,9 +206,9 @@ export async function POST(req: NextRequest) {
         ? Math.round(monthlyTotal / Math.max(totalSaturation / 1000, 1) * 10) / 10
         : 0;
 
-      const difficulty = calcDifficulty(naverSat.blog, daumTotal, googleCount);
+      const difficulty = calcDifficulty(naverSat.blog, daumTotal, googleCount, naverSat.news);
       const grade = calcGrade(score, monthlyTotal);
-      const { canRank1, reason } = calcCanRank1(difficulty, monthlyTotal, naverSat.blog, naverSat.powerBlogRatio);
+      const { canRank1, reason } = calcCanRank1(difficulty, monthlyTotal, naverSat.blog, naverSat.powerBlogRatio, naverSat.news);
 
       // 경쟁강도 0-100
       const competitionScore = Math.min(100, Math.round(
