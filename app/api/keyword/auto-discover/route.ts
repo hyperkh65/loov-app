@@ -58,69 +58,73 @@ create table if not exists bossai_keyword_rank_history (
 );
 */
 
-const SEASONAL: Record<number, string[]> = {
-  1:  ['신년 다짐 방법', '새해 다이어트 시작', '겨울 여행지 추천', '설날 선물 추천', '한파 건강관리 방법', '겨울 피부 관리'],
-  2:  ['설날 음식 만들기', '발렌타인데이 초콜릿 만들기', '봄 준비 운동법', '겨울 마무리 피부관리', '2월 여행지 추천'],
-  3:  ['봄 여행지 추천', '벚꽃 개화 시기', '새학기 준비물 목록', '봄 코디 추천', '미세먼지 마스크 추천', '봄 다이어트'],
-  4:  ['봄 나들이 장소 추천', '벚꽃 명소 추천', '봄 다이어트 방법', '황사 마스크 추천', '봄 인테리어 아이디어', '꽃가루 알레르기'],
-  5:  ['어버이날 선물 추천', '어린이날 선물 추천', '5월 여행지 추천', '스승의날 선물 아이디어', '봄 캠핑 준비물', '가정의달 이벤트'],
-  6:  ['여름 준비 운동', '에어컨 청소 방법', '여름 코디 추천', '6월 여행지 추천', '장마 대비 방법', '모기 퇴치 방법'],
-  7:  ['여름 휴가지 추천', '물놀이 용품 추천', '자외선 차단제 추천', '여름 다이어트 식단', '피서지 추천', '더위 극복 방법'],
-  8:  ['여름 마무리 피부관리', '가을 준비 방법', '광복절 여행 추천', '여름 끝 다이어트', '8월 나들이 장소'],
-  9:  ['추석 선물 추천', '가을 여행지 추천', '단풍 명소 추천', '추석 음식 만들기', '가을 코디 추천', '신학기 용품'],
-  10: ['단풍 여행지 추천', '가을 나들이 장소', '독감 예방 방법', '가을 인테리어', '핼러윈 파티 준비', '수능 응원 선물'],
-  11: ['수능 선물 추천', '김장 재료 가격', '겨울 코트 추천', '연말 뷰티 세일', '겨울 준비 방법', '김장 레시피'],
-  12: ['크리스마스 선물 추천', '연말 여행지 추천', '겨울 여행지 추천', '새해 준비 방법', '연말 다이어트', '크리스마스 케이크'],
+// ── 월별 블로그 친화적 시드 키워드 ────────────────────────────────────────────
+// 뉴스성 X, 정보 탐색형 O (방법/추천/이유/효능 등 블로그 검색 패턴)
+const MONTHLY_SEEDS: Record<number, string[]> = {
+  1:  ['다이어트 방법', '새해 목표', '겨울 피부 관리', '독감 예방', '체중 감량', '신년 운동'],
+  2:  ['봄맞이 다이어트', '밸런타인 선물', '봄 화장품', '건강 검진', '운동 루틴', '피부 보습'],
+  3:  ['봄 여행지', '봄 코디', '미세먼지 마스크', '알레르기 치료', '봄 다이어트 식단', '벚꽃 여행'],
+  4:  ['봄 나들이', '황사 대비', '봄 인테리어', '꽃가루 알레르기', '봄 캠핑', '체중 관리'],
+  5:  ['어버이날 선물', '어린이날 선물', '가정의달 여행', '봄 등산 코스', '캠핑 요리', '건강 보조제'],
+  6:  ['여름 다이어트', '에어컨 청소', '모기 퇴치', '여름 스킨케어', '장마철 건강', '냉방병 예방'],
+  7:  ['여름 휴가지', '자외선 차단제 추천', '물놀이 안전', '여름 식단', '더위 해소 음식', '피서지'],
+  8:  ['휴가 준비', '여름 운동', '가을 여행 준비', '더위 탈출', '수분 보충', '야외 활동'],
+  9:  ['추석 선물 추천', '가을 여행지', '단풍 명소', '가을 코디', '추석 음식', '면역력 강화'],
+  10: ['단풍 여행', '독감 예방접종', '가을 다이어트', '겨울 준비', '건강 검진 항목', '핼러윈'],
+  11: ['겨울 코트 추천', '김장 레시피', '수능 선물', '연말 선물', '겨울 피부', '보일러 관리'],
+  12: ['크리스마스 선물', '연말 여행', '연말 다이어트', '새해 계획', '겨울 여행지', '크리스마스 케이크'],
 };
 
-const STOP_WORDS = new Set(['이번', '지난', '현재', '최근', '오늘', '어제', '내일', '올해', '지금', '해당', '관련', '이라', '있어', '되어', '하는', '하고', '에서', '으로', '때문', '위해', '이후', '이전', '매우', '더욱', '또한', '그리고', '하지만', '그러나', '따라서', '실제', '다양한', '여러', '함께', '바로', '이미', '아직', '계속', '점점', '통해', '대한', '대해', '부터', '까지', '없이', '없는', '있는', '없다', '있다']);
+// 블로그 1등 먹기 좋은 롱테일 확장 패턴
+const LONGTAIL_PATTERNS = [
+  '{seed} 방법',
+  '{seed} 추천',
+  '{seed} 효과',
+  '{seed} 이유',
+  '{seed} 주의사항',
+  '{seed} 후기',
+  '{seed} 가격',
+  '{seed} 비교',
+  '{seed} 종류',
+  '{seed} 선택 기준',
+];
 
-async function extractNewsKeywords(naverClientId: string, naverClientSecret: string): Promise<string[]> {
-  const queries = ['이슈', '화제', '트렌드', '생활정보'];
-  const headers = { 'X-Naver-Client-Id': naverClientId, 'X-Naver-Client-Secret': naverClientSecret };
+function expandToLongtail(seed: string): string[] {
+  // 이미 패턴이 붙어있으면 그대로, 없으면 확장
+  const hasPattern = /방법|추천|효과|이유|후기|가격|비교|종류|주의/.test(seed);
+  if (hasPattern) return [seed];
+  return LONGTAIL_PATTERNS.slice(0, 4).map(p => p.replace('{seed}', seed));
+}
 
-  const freqMap = new Map<string, number>();
+// 네이버 자동완성 API (진짜 사람들이 검색하는 쿼리)
+async function getNaverAutocomplete(seed: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(seed)}&con=1&frm=nv&ans=2&r_format=json&r_enc=UTF-8`,
+      { signal: AbortSignal.timeout(3000) }
+    );
+    if (!res.ok) return [];
+    const text = await res.text();
+    // 응답 형식: [[["keyword1","keyword2",...]], ...]
+    const match = text.match(/\[\[(\[.*?\])/s);
+    if (!match) return [];
+    const arr = JSON.parse(match[1]) as string[][];
+    return arr.flat().filter(k => typeof k === 'string' && k.length > 2 && k.length < 20);
+  } catch {
+    return [];
+  }
+}
 
-  await Promise.all(queries.map(async (q) => {
-    try {
-      const res = await fetch(
-        `https://openapi.naver.com/v1/search/news?query=${encodeURIComponent(q)}&display=30&sort=date`,
-        { headers, signal: AbortSignal.timeout(5000) }
-      );
-      if (!res.ok) return;
-      const data = await res.json() as { items?: Array<{ title: string }> };
-      const items = data.items || [];
+// 뉴스 키워드 여부 사전 필터 (뉴스 도메인 키워드 제거)
+const NEWS_STOP_PATTERNS = [
+  /^(대통령|국회|정부|청와대|검찰|경찰|법원|재판|판결|기소|구속|체포|사건|사고|사망|부상|화재|지진|태풍)/,
+  /조작|스캔들|의혹|의혹|비리|부패|논란|갈등|충돌|폭행|범죄|살인|강도/,
+  /선거|투표|후보|당선|낙선|공천|정당|여당|야당/,
+  /주가|코스피|코스닥|환율|금리|채권|주식 급등|주식 폭락/,
+];
 
-      for (const item of items) {
-        // Strip HTML tags
-        const title = item.title.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim();
-        // Extract Korean words (2-6 chars)
-        const words = (title.match(/[가-힣]{2,6}/g) || []).filter(w => !STOP_WORDS.has(w));
-
-        // 2-word combos
-        for (let i = 0; i < words.length - 1; i++) {
-          const phrase = `${words[i]} ${words[i + 1]}`;
-          if (words[i].length >= 2 && words[i + 1].length >= 2) {
-            freqMap.set(phrase, (freqMap.get(phrase) || 0) + 1);
-          }
-        }
-        // 3-word combos
-        for (let i = 0; i < words.length - 2; i++) {
-          const phrase = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
-          if (words[i].length >= 2 && words[i + 1].length >= 2 && words[i + 2].length >= 2) {
-            freqMap.set(phrase, (freqMap.get(phrase) || 0) + 1);
-          }
-        }
-      }
-    } catch { /* ignore */ }
-  }));
-
-  // Filter count >= 2 and sort by frequency
-  return Array.from(freqMap.entries())
-    .filter(([, count]) => count >= 2)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15)
-    .map(([phrase]) => phrase);
+function isNewsDominated(keyword: string): boolean {
+  return NEWS_STOP_PATTERNS.some(p => p.test(keyword));
 }
 
 function getNaverAdHeaders(apiKey: string, secret: string, customerId: string) {
@@ -137,10 +141,7 @@ function getNaverAdHeaders(apiKey: string, secret: string, customerId: string) {
 }
 
 async function getMonthlyVolume(
-  keyword: string,
-  apiKey: string,
-  secret: string,
-  customerId: string
+  keyword: string, apiKey: string, secret: string, customerId: string
 ): Promise<{ pc: number; mobile: number }> {
   try {
     const headers = getNaverAdHeaders(apiKey, secret, customerId);
@@ -198,10 +199,7 @@ async function getDaumSaturation(keyword: string, kakaoKey: string) {
     ]);
     const blogData = await blogRes.json() as { meta?: { total_count?: number } };
     const cafeData = await cafeRes.json() as { meta?: { total_count?: number } };
-    return {
-      blog: blogData.meta?.total_count || 0,
-      cafe: cafeData.meta?.total_count || 0,
-    };
+    return { blog: blogData.meta?.total_count || 0, cafe: cafeData.meta?.total_count || 0 };
   } catch {
     return { blog: 0, cafe: 0 };
   }
@@ -211,22 +209,15 @@ async function getGoogleCount(keyword: string): Promise<number> {
   try {
     const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&num=1&hl=ko&gl=kr`;
     const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept-Language': 'ko-KR,ko;q=0.9',
-      },
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept-Language': 'ko-KR,ko;q=0.9' },
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return 0;
     const html = await res.text();
-    const m = html.match(/약\s*([\d,]+)\s*개/) ||
-              html.match(/About ([\d,]+) results/i) ||
-              html.match(/"([\d]{5,})"/);
+    const m = html.match(/약\s*([\d,]+)\s*개/) || html.match(/About ([\d,]+) results/i);
     if (m?.[1]) return parseInt(m[1].replace(/,/g, ''), 10);
     return 0;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
 function calcDifficulty(naverBlog: number, daumTotal: number, googleCount: number, naverNews: number) {
@@ -262,12 +253,15 @@ function calcCanRank1(
   if (difficulty === 'very_easy') {
     if (monthlyTotal >= 500) return { canRank1: true, reason: '경쟁 매우 낮음 + 충분한 검색량' };
     if (monthlyTotal >= 100) return { canRank1: true, reason: '경쟁 매우 낮음 (틈새시장)' };
+    // Ad API 없을 때는 블로그 포화도로 판단
+    if (monthlyTotal === 0 && naverBlog > 0 && naverBlog < 5000) return { canRank1: true, reason: '블로그 경쟁 낮음 (검색량 미확인)' };
     return { canRank1: false, reason: '검색량 없음 — 1등해도 유입 없음' };
   }
   if (difficulty === 'easy') {
     if (monthlyTotal >= 1000 && powerBlogRatio < 50) return { canRank1: true, reason: '쉬운 경쟁 + 검색량 풍부 + 파워블로그 少' };
     if (monthlyTotal >= 200)  return { canRank1: true, reason: '적당한 검색량 + 낮은 경쟁' };
     if (naverBlog < 5000 && monthlyTotal >= 50) return { canRank1: true, reason: '블로그 포화도 낮음' };
+    if (monthlyTotal === 0 && naverBlog < 10000) return { canRank1: true, reason: '경쟁 낮음 (검색량 미확인)' };
   }
   if (difficulty === 'medium' && monthlyTotal >= 2000 && powerBlogRatio < 30) {
     return { canRank1: true, reason: '검색량 높음 + 파워블로그 적음 (도전 가능)' };
@@ -275,7 +269,7 @@ function calcCanRank1(
   const reasons: string[] = [];
   if (difficulty === 'hard' || difficulty === 'very_hard') reasons.push('포화도 높음');
   if (powerBlogRatio >= 70) reasons.push('파워블로거 상위권 장악');
-  if (monthlyTotal < 50) reasons.push('검색량 너무 낮음');
+  if (monthlyTotal > 0 && monthlyTotal < 50) reasons.push('검색량 너무 낮음');
   return { canRank1: false, reason: reasons.join(' / ') || '경쟁 심함' };
 }
 
@@ -298,30 +292,48 @@ export async function POST(_req: NextRequest) {
   const hasDaumApi = !!kakaoKey;
 
   const currentMonth = new Date().getMonth() + 1;
-  const seasonalKeywords = (SEASONAL[currentMonth] || []).slice(0, 8).map(kw => ({ keyword: kw, source: 'seasonal' as const }));
+  const monthSeeds = (MONTHLY_SEEDS[currentMonth] || []);
 
-  // Extract news keywords
-  let newsKeywords: Array<{ keyword: string; source: 'news' }> = [];
-  if (hasNaverApi) {
-    try {
-      const extracted = await extractNewsKeywords(naverClientId!, naverClientSecret!);
-      newsKeywords = extracted.slice(0, 12).map(kw => ({ keyword: kw, source: 'news' as const }));
-    } catch { /* ignore */ }
-  }
-
-  // Combine candidates (deduplicate)
+  // ── Step 1: 시드 키워드 수집 ──────────────────────────────────────────────
+  // 계절성 시드 → 롱테일 확장 + 네이버 자동완성으로 실제 검색어 발굴
   const seen = new Set<string>();
-  const candidates: Array<{ keyword: string; source: 'seasonal' | 'news' | 'trend' }> = [];
-  for (const item of [...seasonalKeywords, ...newsKeywords]) {
-    if (!seen.has(item.keyword)) {
-      seen.add(item.keyword);
-      candidates.push(item);
+  const candidates: Array<{ keyword: string; source: 'seasonal' | 'autocomplete' | 'longtail' }> = [];
+
+  const addCandidate = (keyword: string, source: 'seasonal' | 'autocomplete' | 'longtail') => {
+    const kw = keyword.trim();
+    if (!kw || seen.has(kw) || isNewsDominated(kw) || kw.length > 25) return;
+    seen.add(kw);
+    candidates.push({ keyword: kw, source });
+  };
+
+  // 계절성 키워드 직접 추가
+  for (const seed of monthSeeds) addCandidate(seed, 'seasonal');
+
+  // 시드 키워드 일부를 자동완성으로 확장 (병렬, 최대 4개 시드)
+  const autocompleteResults = await Promise.all(
+    monthSeeds.slice(0, 4).map(seed => getNaverAutocomplete(seed))
+  );
+  for (const suggestions of autocompleteResults) {
+    for (const kw of suggestions.slice(0, 6)) {
+      if (!isNewsDominated(kw)) addCandidate(kw, 'autocomplete');
     }
   }
 
-  // Parallel saturation analysis
+  // 짧은 시드(2어절 이하)는 롱테일 패턴으로 확장
+  for (const seed of monthSeeds.slice(0, 6)) {
+    const words = seed.split(' ');
+    if (words.length <= 2) {
+      for (const expanded of expandToLongtail(seed)) {
+        if (expanded !== seed) addCandidate(expanded, 'longtail');
+      }
+    }
+  }
+
+  // ── Step 2: 포화도 분석 (최대 20개) ──────────────────────────────────────
+  const toAnalyze = candidates.slice(0, 20);
+
   const results = await Promise.all(
-    candidates.slice(0, 20).map(async ({ keyword, source }) => {
+    toAnalyze.map(async ({ keyword, source }) => {
       const [naverSat, daumSat, googleCount, volume] = await Promise.all([
         hasNaverApi ? getNaverSaturation(keyword, naverClientId!, naverClientSecret!) : Promise.resolve({ blog: 0, web: 0, news: 0, powerBlogRatio: 0 }),
         hasDaumApi ? getDaumSaturation(keyword, kakaoKey!) : Promise.resolve({ blog: 0, cafe: 0 }),
@@ -334,7 +346,7 @@ export async function POST(_req: NextRequest) {
       const totalSaturation = naverSat.blog + daumTotal;
       const score = monthlyTotal > 0
         ? Math.round(monthlyTotal / Math.max(totalSaturation / 1000, 1) * 10) / 10
-        : 0;
+        : (naverSat.blog > 0 ? Math.round(10000 / Math.max(naverSat.blog / 100, 1) * 10) / 10 : 0);
 
       const difficulty = calcDifficulty(naverSat.blog, daumTotal, googleCount, naverSat.news);
       const grade = calcGrade(score, monthlyTotal);
@@ -347,29 +359,17 @@ export async function POST(_req: NextRequest) {
       ));
 
       return {
-        keyword,
-        source,
-        monthlyPc: volume.pc,
-        monthlyMobile: volume.mobile,
-        monthlyTotal,
-        naverBlog: naverSat.blog,
-        naverWeb: naverSat.web,
-        naverNews: naverSat.news,
+        keyword, source,
+        monthlyPc: volume.pc, monthlyMobile: volume.mobile, monthlyTotal,
+        naverBlog: naverSat.blog, naverWeb: naverSat.web, naverNews: naverSat.news,
         naverPowerBlogRatio: naverSat.powerBlogRatio,
-        daumBlog: daumSat.blog,
-        daumCafe: daumSat.cafe,
-        googleCount,
-        score,
-        grade,
-        difficulty,
-        canRank1,
-        canRank1Reason: reason,
-        competitionScore,
+        daumBlog: daumSat.blog, daumCafe: daumSat.cafe,
+        googleCount, score, grade, difficulty, canRank1, canRank1Reason: reason, competitionScore,
       };
     })
   );
 
-  // Sort: canRank1 first, then by score
+  // ── Step 3: 정렬 — 1등 가능 우선 → 난이도 → 점수 ────────────────────────
   const diffOrder: Record<string, number> = { very_easy: 0, easy: 1, medium: 2, hard: 3, very_hard: 4 };
   results.sort((a, b) => {
     if (a.canRank1 !== b.canRank1) return a.canRank1 ? -1 : 1;
@@ -378,39 +378,22 @@ export async function POST(_req: NextRequest) {
     return b.score - a.score || b.monthlyTotal - a.monthlyTotal;
   });
 
-  // Save to DB (upsert by user_id + keyword)
+  // ── Step 4: DB 저장 ───────────────────────────────────────────────────────
   const adminDb = await createAdminClient();
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
 
   for (const r of results) {
     await adminDb.from('bossai_keyword_opportunities').upsert({
-      user_id: user.id,
-      keyword: r.keyword,
-      source: r.source,
-      monthly_total: r.monthlyTotal,
-      monthly_pc: r.monthlyPc,
-      monthly_mobile: r.monthlyMobile,
-      naver_blog: r.naverBlog,
-      daum_total: r.daumBlog + r.daumCafe,
-      google_count: r.googleCount,
-      competition_score: r.competitionScore,
-      power_blog_ratio: r.naverPowerBlogRatio,
-      difficulty: r.difficulty,
-      can_rank1: r.canRank1,
-      can_rank1_reason: r.canRank1Reason,
-      score: r.score,
-      grade: r.grade,
-      created_at: now,
-      expires_at: expiresAt,
+      user_id: user.id, keyword: r.keyword, source: r.source,
+      monthly_total: r.monthlyTotal, monthly_pc: r.monthlyPc, monthly_mobile: r.monthlyMobile,
+      naver_blog: r.naverBlog, daum_total: r.daumBlog + r.daumCafe,
+      google_count: r.googleCount, competition_score: r.competitionScore,
+      power_blog_ratio: r.naverPowerBlogRatio, difficulty: r.difficulty,
+      can_rank1: r.canRank1, can_rank1_reason: r.canRank1Reason,
+      score: r.score, grade: r.grade, created_at: now, expires_at: expiresAt,
     }, { onConflict: 'user_id,keyword' });
   }
 
-  return NextResponse.json({
-    results,
-    hasAdApi,
-    hasNaverApi,
-    hasDaumApi,
-    discoveredAt: now,
-  });
+  return NextResponse.json({ results, hasAdApi, hasNaverApi, hasDaumApi, discoveredAt: now });
 }
