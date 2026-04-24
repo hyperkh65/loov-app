@@ -43,18 +43,26 @@ const SEASONAL_SEEDS: Record<number, string[]> = {
 };
 
 // 롱테일 확장 패턴 (블로그 1등 먹기 좋은 정보성 쿼리)
-const EXPANSION_PATTERNS = [
+const EXPANSION_PATTERNS_COMMON = [
   '{s} 추천',
   '{s} 방법',
-  '{s} 효과',
-  '{s} 부작용',
   '{s} 가격',
   '{s} 후기',
   '{s} 종류',
-  '{s} 원인',
-  '{s} 증상',
   '{s} 비교',
 ];
+// 건강·의료 시드에만 붙이는 패턴
+const EXPANSION_PATTERNS_HEALTH = [
+  '{s} 효과',
+  '{s} 부작용',
+  '{s} 원인',
+  '{s} 증상',
+];
+
+// 건강·의료 관련 시드인지 판별
+function isHealthSeed(seed: string): boolean {
+  return /다이어트|영양제|탈모|피부|통증|수면|혈당|콜레스테롤|갱년기|이유식|알레르기|독감|냉방병|면역|비타민|건강|의료|약|질환|염증|피로/.test(seed);
+}
 
 // 뉴스/정치 키워드 사전 필터
 const NEWS_BLOCK = /대통령|국회|검찰|경찰|재판|구속|선거|투표|주가|환율|사건|사고|사망|폭행|범죄|조작|의혹|비리|갈등|폭락|급등/;
@@ -261,9 +269,13 @@ export async function POST(_req: NextRequest) {
   acResults.forEach(list => list.forEach(kw => add(kw, 'autocomplete')));
 
   // 짧은 시드(2단어 이하)에 패턴 접미어 붙여 롱테일 생성
+  // 건강 시드: 공통+건강 패턴 모두 / 비건강 시드: 공통 패턴만 (부작용·증상·원인 제외)
   allSeeds.slice(0, 10).forEach(seed => {
     if (seed.split(' ').length <= 2 && !/(방법|추천|후기|가격|효과|종류|원인)/.test(seed)) {
-      EXPANSION_PATTERNS.slice(0, 5).forEach(p => add(p.replace('{s}', seed), 'longtail'));
+      const patterns = isHealthSeed(seed)
+        ? [...EXPANSION_PATTERNS_COMMON, ...EXPANSION_PATTERNS_HEALTH]
+        : EXPANSION_PATTERNS_COMMON;
+      patterns.slice(0, 5).forEach(p => add(p.replace('{s}', seed), 'longtail'));
     }
   });
 
