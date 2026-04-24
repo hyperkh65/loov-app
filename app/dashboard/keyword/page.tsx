@@ -369,7 +369,6 @@ export default function KeywordPage() {
       const data = await res.json() as { item?: { id: string; title: string }; error?: string };
       if (data.error) { alert(`생성 실패: ${data.error}`); return; }
       if (data.item) {
-        setGeneratedArticle({ keyword, article_id: data.item.id, title: data.item.title || keyword });
         try {
           await fetch('/api/keyword/tracking', {
             method: 'POST',
@@ -377,6 +376,7 @@ export default function KeywordPage() {
             body: JSON.stringify({ keyword, article_id: data.item.id, article_title: data.item.title || keyword }),
           });
         } catch { /* ignore tracking errors */ }
+        window.location.href = '/dashboard/auto-service';
       }
     } catch (e) {
       alert(`오류: ${e}`);
@@ -531,9 +531,7 @@ export default function KeywordPage() {
                 if (data.error) { alert(`생성 실패: ${data.error}`); return; }
                 if (data.item) {
                   await startTracking(kw, data.item.id, data.item.title || kw);
-                  if (confirm(`✅ 글 생성 완료!\n제목: ${data.item.title || kw}\n\n블로그 자동화 페이지로 이동할까요?`)) {
-                    window.location.href = '/dashboard/auto-service';
-                  }
+                  window.location.href = '/dashboard/auto-service';
                 }
               } catch (e) { alert(`오류: ${e}`); }
               finally { setGeneratingKw(null); }
