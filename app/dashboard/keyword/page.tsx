@@ -198,6 +198,8 @@ export default function KeywordPage() {
   const [intelResults, setIntelResults] = useState<SeoOpportunityResult[]>([]);
   const [intelError, setIntelError] = useState('');
   const [intelLastUpdated, setIntelLastUpdated] = useState<Date | null>(null);
+  const [intelHasNaverApi, setIntelHasNaverApi] = useState(false);
+  const [intelHasAdApi, setIntelHasAdApi] = useState(false);
   const [trackingList, setTrackingList] = useState<TrackingRecord[]>([]);
   const [checkingId, setCheckingId] = useState<number | null>(null);
 
@@ -400,9 +402,11 @@ export default function KeywordPage() {
     setIntelLoading(true); setIntelError('');
     try {
       const res = await fetch('/api/keyword/auto-discover', { method: 'POST' });
-      const data = await res.json() as { results?: SeoOpportunityResult[]; error?: string };
+      const data = await res.json() as { results?: SeoOpportunityResult[]; error?: string; hasNaverApi?: boolean; hasAdApi?: boolean };
       if (data.error) { setIntelError(data.error); return; }
       setIntelResults(data.results || []);
+      setIntelHasNaverApi(!!data.hasNaverApi);
+      setIntelHasAdApi(!!data.hasAdApi);
       setIntelLastUpdated(new Date());
     } catch (e) {
       setIntelError(String(e));
@@ -527,6 +531,8 @@ export default function KeywordPage() {
             trackingList={trackingList}
             checkingId={checkingId}
             generatingKw={generatingKw}
+            hasNaverApi={intelHasNaverApi}
+            hasAdApi={intelHasAdApi}
             onRefresh={loadIntelligence}
             onGenerate={async (kw, source) => {
               void source;
@@ -1169,6 +1175,8 @@ interface IntelligenceTabProps {
   trackingList: TrackingRecord[];
   checkingId: number | null;
   generatingKw: string | null;
+  hasNaverApi: boolean;
+  hasAdApi: boolean;
   onRefresh: () => void;
   onGenerate: (kw: string, source: IntelSource) => void;
   onCheckRank: (id: number) => void;
@@ -1189,6 +1197,7 @@ function RankDot({ rank }: { rank: number | null }) {
 
 function IntelligenceTab({
   loading, results, error, lastUpdated, trackingList, checkingId, generatingKw,
+  hasNaverApi, hasAdApi,
   onRefresh, onGenerate, onCheckRank, onRemoveTracking,
 }: IntelligenceTabProps) {
   const [filter, setFilter] = useState<'all' | 'rank1' | 'tracking'>('all');
@@ -1230,6 +1239,21 @@ function IntelligenceTab({
         </div>
         {error && <p className="text-sm text-yellow-200 bg-white/10 rounded-xl px-4 py-2 mt-3">{error}</p>}
       </div>
+
+      {/* API 미설정 경고 */}
+      {!loading && results.length > 0 && (!hasNaverApi || !hasAdApi) && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4">
+          <div className="font-black text-amber-800 text-sm mb-2">⚠️ API 미설정 — 포화도 분석 불가</div>
+          <div className="text-xs text-amber-700 space-y-1">
+            {!hasNaverApi && <div>• <b>네이버 검색 API</b> 미설정 → N블로그·다음 포화도 수집 불가 (키워드 경쟁 분석 불가)</div>}
+            {!hasAdApi && <div>• <b>네이버 광고 API</b> 미설정 → 월 검색량 데이터 없음 (황금 비율 계산 불가)</div>}
+          </div>
+          <a href="/dashboard/settings?tab=naver"
+            className="inline-block mt-3 px-4 py-2 bg-amber-500 text-white text-xs font-black rounded-xl hover:bg-amber-400">
+            ⚙️ 네이버 API 설정하러 가기 →
+          </a>
+        </div>
+      )}
 
       {/* Loading */}
       {loading && (

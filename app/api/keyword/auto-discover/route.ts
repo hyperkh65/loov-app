@@ -155,13 +155,17 @@ async function googleCount(kw: string): Promise<number> {
 
 // ── 핵심: 황금 키워드 점수 계산 ──────────────────────────────────────────────
 // 검색량 대비 포화도 비율 + 즉시 1등 가능성 종합 점수
-function calcGoldenScore(monthly: number, naverBlog: number, daumTotal: number, naverNews: number, powerRatio: number): number {
-  if (naverNews > 5000) return 0; // 뉴스 도배는 0점
+function calcGoldenScore(monthly: number, naverBlog: number, daumTotal: number, naverNews: number, powerRatio: number, hasNaverData: boolean): number {
+  // API 없이 데이터가 전혀 없으면 0점 (가짜 점수 방지)
+  if (!hasNaverData && monthly === 0) return 0;
+  if (naverNews > 5000) return 0;
   const saturation = naverBlog + daumTotal * 0.5 + naverNews * 0.3;
-  if (saturation === 0) return monthly > 0 ? 100 : 20; // 포화도 0이면 독점 가능
+  // 포화도와 검색량 모두 없으면 0 (분석 불가)
+  if (saturation === 0 && monthly === 0) return 0;
+  if (saturation === 0) return 100; // 포화도 0 + 검색량 있으면 독점
   const ratio = monthly > 0
     ? Math.round(monthly / Math.max(saturation / 1000, 0.1) * 10) / 10
-    : Math.round(50000 / Math.max(saturation, 1) * 10); // Ad API 없을 때 역산
+    : Math.round(50000 / Math.max(saturation, 1) * 10);
   const powerPenalty = powerRatio > 70 ? 0.5 : powerRatio > 40 ? 0.8 : 1.0;
   return Math.round(Math.min(ratio * powerPenalty, 9999));
 }
@@ -277,7 +281,7 @@ export async function POST(_req: NextRequest) {
 
       const monthly = vol.pc + vol.mobile;
       const daumTotal = ds.blog + ds.cafe;
-      const goldenScore = calcGoldenScore(monthly, ns.blog, daumTotal, ns.news, ns.powerRatio);
+      const goldenScore = calcGoldenScore(monthly, ns.blog, daumTotal, ns.news, ns.powerRatio, hasNaver);
       const difficulty = calcDifficulty(ns.blog, daumTotal, gc, ns.news);
       const grade = calcGrade(goldenScore, monthly);
       const { canRank1, reason } = calcCanRank1(difficulty, monthly, ns.blog, ns.powerRatio, ns.news, goldenScore);
