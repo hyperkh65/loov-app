@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab = 'golden' | 'batch' | 'trend' | 'price' | 'blog' | 'exposure' | 'ranking' | 'seo' | 'intelligence';
@@ -134,6 +134,16 @@ function Sparkline({ data }: { data: TrendDataPoint[] }) {
 // ── Main ───────────────────────────────────────────────────────────────────────
 export default function KeywordPage() {
   const [tab, setTab] = useState<Tab>('seo');
+  const [aiModel, setAiModel] = useState('qwen3');
+
+  useEffect(() => {
+    fetch('/api/auto-service/settings')
+      .then(r => r.json())
+      .then((d: { settings?: { ai_model?: string } }) => {
+        if (d.settings?.ai_model) setAiModel(d.settings.ai_model);
+      })
+      .catch(() => {});
+  }, []);
 
   // Golden keyword
   const [seedKeyword, setSeedKeyword] = useState('');
@@ -364,7 +374,7 @@ export default function KeywordPage() {
       const res = await fetch('/api/auto-service/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, ai_model: 'qwen3' }),
+        body: JSON.stringify({ keyword, ai_model: aiModel }),
       });
       const data = await res.json() as { item?: { id: string; title: string }; error?: string };
       if (data.error) { alert(`생성 실패: ${data.error}`); return; }
@@ -383,7 +393,7 @@ export default function KeywordPage() {
     } finally {
       setGeneratingKw(null);
     }
-  }, []);
+  }, [aiModel]);
 
   // Intelligence handlers
   const loadIntelligence = useCallback(async () => {
@@ -525,7 +535,7 @@ export default function KeywordPage() {
                 const res = await fetch('/api/auto-service/generate', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ keyword: kw, ai_model: 'qwen3' }),
+                  body: JSON.stringify({ keyword: kw, ai_model: aiModel }),
                 });
                 const data = await res.json() as { item?: { id: string; title: string }; error?: string };
                 if (data.error) { alert(`생성 실패: ${data.error}`); return; }
