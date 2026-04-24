@@ -200,6 +200,7 @@ export default function KeywordPage() {
   const [intelLastUpdated, setIntelLastUpdated] = useState<Date | null>(null);
   const [intelHasNaverApi, setIntelHasNaverApi] = useState(false);
   const [intelHasAdApi, setIntelHasAdApi] = useState(false);
+  const [intelHasDaumApi, setIntelHasDaumApi] = useState(false);
   const [trackingList, setTrackingList] = useState<TrackingRecord[]>([]);
   const [checkingId, setCheckingId] = useState<number | null>(null);
 
@@ -402,11 +403,12 @@ export default function KeywordPage() {
     setIntelLoading(true); setIntelError('');
     try {
       const res = await fetch('/api/keyword/auto-discover', { method: 'POST' });
-      const data = await res.json() as { results?: SeoOpportunityResult[]; error?: string; hasNaverApi?: boolean; hasAdApi?: boolean };
+      const data = await res.json() as { results?: SeoOpportunityResult[]; error?: string; hasNaverApi?: boolean; hasAdApi?: boolean; hasDaumApi?: boolean };
       if (data.error) { setIntelError(data.error); return; }
       setIntelResults(data.results || []);
       setIntelHasNaverApi(!!data.hasNaverApi);
       setIntelHasAdApi(!!data.hasAdApi);
+      setIntelHasDaumApi(!!data.hasDaumApi);
       setIntelLastUpdated(new Date());
     } catch (e) {
       setIntelError(String(e));
@@ -533,6 +535,7 @@ export default function KeywordPage() {
             generatingKw={generatingKw}
             hasNaverApi={intelHasNaverApi}
             hasAdApi={intelHasAdApi}
+            hasDaumApi={intelHasDaumApi}
             onRefresh={loadIntelligence}
             onGenerate={async (kw, source) => {
               void source;
@@ -1177,6 +1180,7 @@ interface IntelligenceTabProps {
   generatingKw: string | null;
   hasNaverApi: boolean;
   hasAdApi: boolean;
+  hasDaumApi: boolean;
   onRefresh: () => void;
   onGenerate: (kw: string, source: IntelSource) => void;
   onCheckRank: (id: number) => void;
@@ -1197,7 +1201,7 @@ function RankDot({ rank }: { rank: number | null }) {
 
 function IntelligenceTab({
   loading, results, error, lastUpdated, trackingList, checkingId, generatingKw,
-  hasNaverApi, hasAdApi,
+  hasNaverApi, hasAdApi, hasDaumApi,
   onRefresh, onGenerate, onCheckRank, onRemoveTracking,
 }: IntelligenceTabProps) {
   const [filter, setFilter] = useState<'all' | 'rank1' | 'tracking'>('all');
@@ -1371,8 +1375,15 @@ function IntelligenceTab({
                         </span>
                       </div>
                       <CompBar label="N 블로그" value={r.naverBlog} max={maxNaverBlog} color="bg-green-500" />
-                      <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={maxDaum} color="bg-orange-400" />
-                      <CompBar label="구글" value={r.googleCount} max={maxGoogle} color="bg-blue-500" />
+                      {(r.daumBlog + r.daumCafe > 0 || hasDaumApi) && (
+                        <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={Math.max(maxDaum, 1)} color="bg-orange-400" />
+                      )}
+                      {r.googleCount > 0 && (
+                        <CompBar label="구글" value={r.googleCount} max={maxGoogle} color="bg-blue-500" />
+                      )}
+                      {!hasDaumApi && r.daumBlog + r.daumCafe === 0 && r.googleCount === 0 && (
+                        <div className="text-xs text-gray-300 italic">다음·구글 데이터 없음 (카카오 API 미설정)</div>
+                      )}
                       {r.naverPowerBlogRatio > 0 && (
                         <div className="text-xs text-gray-400 pt-1">
                           파워블로거 <strong className={r.naverPowerBlogRatio >= 70 ? 'text-red-500' : 'text-gray-600'}>{r.naverPowerBlogRatio}%</strong>
