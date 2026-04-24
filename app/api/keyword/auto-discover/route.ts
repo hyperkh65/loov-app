@@ -106,7 +106,7 @@ async function getNaverAutocomplete(seed: string): Promise<string[]> {
     if (!res.ok) return [];
     const text = await res.text();
     // 응답 형식: [[["keyword1","keyword2",...]], ...]
-    const match = text.match(/\[\[(\[.*?\])/s);
+    const match = text.match(/\[\[(\[[^\]]*\](?:,[^\]]*\])*)/);
     if (!match) return [];
     const arr = JSON.parse(match[1]) as string[][];
     return arr.flat().filter(k => typeof k === 'string' && k.length > 2 && k.length < 20);
