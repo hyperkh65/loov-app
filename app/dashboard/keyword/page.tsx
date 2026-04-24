@@ -1375,15 +1375,8 @@ function IntelligenceTab({
                         </span>
                       </div>
                       <CompBar label="N 블로그" value={r.naverBlog} max={maxNaverBlog} color="bg-green-500" />
-                      {(r.daumBlog + r.daumCafe > 0 || hasDaumApi) && (
-                        <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={Math.max(maxDaum, 1)} color="bg-orange-400" />
-                      )}
-                      {r.googleCount > 0 && (
-                        <CompBar label="구글" value={r.googleCount} max={maxGoogle} color="bg-blue-500" />
-                      )}
-                      {!hasDaumApi && r.daumBlog + r.daumCafe === 0 && r.googleCount === 0 && (
-                        <div className="text-xs text-gray-300 italic">다음·구글 데이터 없음 (카카오 API 미설정)</div>
-                      )}
+                      <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={Math.max(maxDaum, 1)} color="bg-orange-400" />
+                      <CompBar label="구글" value={r.googleCount} max={Math.max(maxGoogle, 1)} color="bg-blue-500" />
                       {r.naverPowerBlogRatio > 0 && (
                         <div className="text-xs text-gray-400 pt-1">
                           파워블로거 <strong className={r.naverPowerBlogRatio >= 70 ? 'text-red-500' : 'text-gray-600'}>{r.naverPowerBlogRatio}%</strong>

@@ -135,30 +135,68 @@ async function naverSat(kw: string, cid: string, secret: string) {
   } catch { return { blog: 0, web: 0, news: 0, powerRatio: 0 }; }
 }
 
-async function daumSat(kw: string, key: string) {
-  const h = { Authorization: `KakaoAK ${key}` };
+async function daumSat(kw: string, key: string | null) {
+  if (key) {
+    try {
+      const h = { Authorization: `KakaoAK ${key}` };
+      const [b, c] = await Promise.all([
+        fetch(`https://dapi.kakao.com/v2/search/blog?query=${encodeURIComponent(kw)}&size=1`, { headers: h, signal: AbortSignal.timeout(5000) }),
+        fetch(`https://dapi.kakao.com/v2/search/cafe?query=${encodeURIComponent(kw)}&size=1`, { headers: h, signal: AbortSignal.timeout(5000) }),
+      ]);
+      const bd = await b.json() as { meta?: { total_count?: number } };
+      const cd = await c.json() as { meta?: { total_count?: number } };
+      return { blog: bd.meta?.total_count || 0, cafe: cd.meta?.total_count || 0 };
+    } catch { /* fallthrough */ }
+  }
   try {
-    const [b, c] = await Promise.all([
-      fetch(`https://dapi.kakao.com/v2/search/blog?query=${encodeURIComponent(kw)}&size=1`, { headers: h, signal: AbortSignal.timeout(5000) }),
-      fetch(`https://dapi.kakao.com/v2/search/cafe?query=${encodeURIComponent(kw)}&size=1`, { headers: h, signal: AbortSignal.timeout(5000) }),
-    ]);
-    const bd = await b.json() as { meta?: { total_count?: number } };
-    const cd = await c.json() as { meta?: { total_count?: number } };
-    return { blog: bd.meta?.total_count || 0, cafe: cd.meta?.total_count || 0 };
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const res = await fetch(
+      `https://search.daum.net/search?w=blog&q=${encodeURIComponent(kw)}`,
+      { headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9' }, signal: AbortSignal.timeout(7000) }
+    );
+    if (!res.ok) return { blog: 0, cafe: 0 };
+    const html = await res.text();
+    const patterns = [/([0-9,]+)\s*건/, /총\s*([0-9,]+)/, /"totalCount"\s*:\s*(\d+)/, /data-count="(\d+)"/];
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m?.[1]) return { blog: parseInt(m[1].replace(/,/g, ''), 10), cafe: 0 };
+    }
+    return { blog: 0, cafe: 0 };
   } catch { return { blog: 0, cafe: 0 }; }
 }
 
 async function googleCount(kw: string): Promise<number> {
-  try {
-    const res = await fetch(`https://www.google.com/search?q=${encodeURIComponent(kw)}&num=1&hl=ko&gl=kr`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept-Language': 'ko-KR,ko;q=0.9' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return 0;
-    const html = await res.text();
-    const m = html.match(/약\s*([\d,]+)\s*개/) || html.match(/About ([\d,]+) results/i);
-    return m?.[1] ? parseInt(m[1].replace(/,/g, ''), 10) : 0;
-  } catch { return 0; }
+  const uas = [
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  ];
+  for (const ua of uas) {
+    try {
+      const res = await fetch(`https://www.google.com/search?q=${encodeURIComponent(kw)}&num=1&hl=ko&gl=kr`, {
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const patterns = [
+        /약\s*([\d,]+)\s*개/,
+        /About ([\d,]+) results/i,
+        /검색결과\s*약\s*([\d,]+)/,
+        /"([\d]{6,})"/,
+        /id="result-stats"[^>]*>약\s*([\d,]+)/,
+      ];
+      for (const p of patterns) {
+        const m = html.match(p);
+        if (m?.[1]) return parseInt(m[1].replace(/,/g, ''), 10);
+      }
+    } catch { continue; }
+  }
+  return 0;
 }
 
 // ── 핵심: 황금 키워드 점수 계산 ──────────────────────────────────────────────
@@ -286,7 +324,7 @@ export async function POST(_req: NextRequest) {
     toAnalyze.map(async ({ keyword, source }) => {
       const [ns, ds, gc, vol] = await Promise.all([
         hasNaver ? naverSat(keyword, naverCid!, naverSec!) : Promise.resolve({ blog: 0, web: 0, news: 0, powerRatio: 0 }),
-        hasDaum ? daumSat(keyword, kakaoKey!) : Promise.resolve({ blog: 0, cafe: 0 }),
+        daumSat(keyword, kakaoKey ?? null),
         googleCount(keyword),
         hasAd ? getVolume(keyword, adKey!, adSec!, adCust!) : Promise.resolve({ pc: 0, mobile: 0 }),
       ]);
