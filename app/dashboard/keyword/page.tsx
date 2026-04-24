@@ -1269,8 +1269,35 @@ function IntelligenceTab({
         </div>
       )}
 
-      {/* Results */}
-      {!loading && results.length > 0 && (
+      {/* Results — API 없으면 후보 목록만, 있으면 풀 분석 */}
+      {!loading && results.length > 0 && !hasNaverApi && (
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
+            <div className="font-black text-gray-800">📋 후보 키워드 목록 ({results.length}개)</div>
+            <div className="text-xs text-gray-400 mt-0.5">네이버 API 설정 후 포화도·경쟁 분석이 가능합니다</div>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {results.map((r, i) => (
+              <div key={i} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 w-5">{i + 1}</span>
+                  <span className="font-bold text-gray-800">{r.keyword}</span>
+                  <SourceBadge source={r.source || 'trend'} />
+                </div>
+                <button
+                  onClick={() => onGenerate(r.keyword, (r.source as IntelSource) || 'trend')}
+                  disabled={generatingKw !== null}
+                  className="px-4 py-1.5 text-xs font-black rounded-xl bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 whitespace-nowrap"
+                >
+                  {generatingKw === r.keyword ? '⏳ 생성 중...' : '✍️ 글 생성'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!loading && results.length > 0 && hasNaverApi && (
         <div className="space-y-4">
           {/* 요약 */}
           <div className="grid grid-cols-3 gap-3">
@@ -1304,16 +1331,15 @@ function IntelligenceTab({
               const dc = DIFF_CONFIG[r.difficulty];
               const src = r.source || 'trend';
               const oppColor = r.competitionScore < 30 ? 'text-green-600' : r.competitionScore < 60 ? 'text-yellow-600' : 'text-red-600';
+              const noData = r.naverBlog === 0 && (r.daumBlog + r.daumCafe) === 0 && r.googleCount === 0;
               return (
                 <div key={i} className={`bg-white rounded-2xl border-2 overflow-hidden transition-all hover:shadow-md ${r.canRank1 ? 'border-teal-300' : 'border-gray-100'}`}>
                   <div className={`px-5 py-3 flex items-center justify-between ${r.canRank1 ? 'bg-gradient-to-r from-teal-50 to-emerald-50' : 'bg-gray-50'}`}>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {r.canRank1 && (
-                        <span className="bg-teal-600 text-white text-xs font-black px-3 py-1 rounded-full">🏆 1등 가능</span>
-                      )}
+                      {r.canRank1 && <span className="bg-teal-600 text-white text-xs font-black px-3 py-1 rounded-full">🏆 1등 가능</span>}
                       <SourceBadge source={src} />
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full border ${dc.text} ${dc.bg} ${dc.border}`}>{dc.label}</span>
-                      <GradeBadge grade={r.grade} />
+                      {!noData && <span className={`text-xs font-bold px-2 py-1 rounded-full border ${dc.text} ${dc.bg} ${dc.border}`}>{dc.label}</span>}
+                      {!noData && <GradeBadge grade={r.grade} />}
                     </div>
                     <button
                       onClick={() => onGenerate(r.keyword, (src as IntelSource) || 'trend')}
@@ -1327,41 +1353,35 @@ function IntelligenceTab({
                   <div className="px-5 pt-3 pb-2">
                     <div className="flex items-baseline gap-3 flex-wrap">
                       <span className="text-lg font-black text-gray-900">{r.keyword}</span>
-                      {r.monthlyTotal > 0 && (
-                        <span className="text-sm font-bold text-blue-600">월 {r.monthlyTotal.toLocaleString()}회</span>
-                      )}
-                      {r.monthlyTotal > 0 && (
-                        <span className="text-xs text-gray-400">PC {r.monthlyPc.toLocaleString()} + 모바일 {r.monthlyMobile.toLocaleString()}</span>
-                      )}
+                      {r.monthlyTotal > 0 && <span className="text-sm font-bold text-blue-600">월 {r.monthlyTotal.toLocaleString()}회</span>}
+                      {r.monthlyTotal > 0 && <span className="text-xs text-gray-400">PC {r.monthlyPc.toLocaleString()} + 모바일 {r.monthlyMobile.toLocaleString()}</span>}
                     </div>
-                    {r.canRank1 && r.canRank1Reason && (
-                      <div className="text-xs text-teal-600 font-semibold mt-1">💡 {r.canRank1Reason}</div>
-                    )}
-                    {!r.canRank1 && r.canRank1Reason && (
-                      <div className="text-xs text-gray-400 mt-1">⚠️ {r.canRank1Reason}</div>
-                    )}
+                    {r.canRank1 && r.canRank1Reason && <div className="text-xs text-teal-600 font-semibold mt-1">💡 {r.canRank1Reason}</div>}
+                    {!r.canRank1 && !noData && r.canRank1Reason && <div className="text-xs text-gray-400 mt-1">⚠️ {r.canRank1Reason}</div>}
                   </div>
 
-                  <div className="px-5 pb-4 space-y-1.5">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-gray-500">경쟁 포화도</span>
-                      <span className={`text-xs font-black ${oppColor}`}>
-                        {r.competitionScore < 30 ? '낮음 ✅' : r.competitionScore < 60 ? '보통 ⚠️' : '높음 ❌'} ({r.competitionScore}/100)
-                      </span>
-                    </div>
-                    <CompBar label="N 블로그" value={r.naverBlog} max={maxNaverBlog} color="bg-green-500" />
-                    <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={maxDaum} color="bg-orange-400" />
-                    <CompBar label="구글" value={r.googleCount} max={maxGoogle} color="bg-blue-500" />
-                    {r.naverPowerBlogRatio > 0 && (
-                      <div className="text-xs text-gray-400 pt-1">
-                        상위 노출: 파워블로거 <strong className={r.naverPowerBlogRatio >= 70 ? 'text-red-500' : 'text-gray-600'}>{r.naverPowerBlogRatio}%</strong>
-                        {r.naverPowerBlogRatio >= 70 ? ' — 상위권 장악' : r.naverPowerBlogRatio <= 30 ? ' — 진입 여지 있음 ✅' : ''}
+                  {noData ? (
+                    <div className="px-5 pb-3 text-xs text-gray-400">포화도 데이터 수집 중 오류 — 재분석 시 반영됩니다</div>
+                  ) : (
+                    <div className="px-5 pb-4 space-y-1.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-gray-500">경쟁 포화도</span>
+                        <span className={`text-xs font-black ${oppColor}`}>
+                          {r.competitionScore < 30 ? '낮음 ✅' : r.competitionScore < 60 ? '보통 ⚠️' : '높음 ❌'} ({r.competitionScore}/100)
+                        </span>
                       </div>
-                    )}
-                    {r.score > 0 && (
-                      <div className="text-xs text-gray-400">기회점수 <strong className="text-teal-600">{r.score}</strong></div>
-                    )}
-                  </div>
+                      <CompBar label="N 블로그" value={r.naverBlog} max={maxNaverBlog} color="bg-green-500" />
+                      <CompBar label="다음" value={r.daumBlog + r.daumCafe} max={maxDaum} color="bg-orange-400" />
+                      <CompBar label="구글" value={r.googleCount} max={maxGoogle} color="bg-blue-500" />
+                      {r.naverPowerBlogRatio > 0 && (
+                        <div className="text-xs text-gray-400 pt-1">
+                          파워블로거 <strong className={r.naverPowerBlogRatio >= 70 ? 'text-red-500' : 'text-gray-600'}>{r.naverPowerBlogRatio}%</strong>
+                          {r.naverPowerBlogRatio >= 70 ? ' — 상위권 장악' : r.naverPowerBlogRatio <= 30 ? ' — 진입 여지 있음 ✅' : ''}
+                        </div>
+                      )}
+                      {r.score > 0 && <div className="text-xs text-gray-400">황금점수 <strong className="text-teal-600">{r.score}</strong></div>}
+                    </div>
+                  )}
                 </div>
               );
             })}
