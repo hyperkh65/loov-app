@@ -47,8 +47,8 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
     case 'openrouter':
       return getSetting('OPENROUTER_API_KEY');
     case 'ollama': {
-      const cloudKey = await getSetting('OLLAMA_API_KEY');
-      return cloudKey || 'ollama'; // cloud key or local dummy
+      const keys = await getOllamaCloudKeys();
+      return keys[0] || 'ollama'; // first cloud key or local dummy
     }
     case 'gpt4o':
     case 'gpt4':
@@ -57,6 +57,21 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
     default:
       return 'ollama';
   }
+}
+
+// Returns all Ollama Cloud API keys (multi-key pool + legacy single key)
+async function getOllamaCloudKeys(): Promise<string[]> {
+  const keys: string[] = [];
+  try {
+    const raw = await getSetting('OLLAMA_API_KEYS');
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) keys.push(...arr.filter(Boolean));
+    }
+  } catch { /* ignore */ }
+  const legacy = await getSetting('OLLAMA_API_KEY');
+  if (legacy && !keys.includes(legacy)) keys.push(legacy);
+  return keys;
 }
 
 // ── Claude 모델 캐시 (1시간, /v1/models 동적 조회) ───────────────────────────
@@ -172,34 +187,45 @@ async function callGemini(
   return result.response.text().trim();
 }
 
-// Ollama Cloud 네이티브 API (https://ollama.com/api/chat)
+// Ollama Cloud 네이티브 API — 429 rate-limit 시 다음 키로 자동 순환
 async function callOllamaCloud(
   messages: AIMessage[],
   model: string,
-  apiKey: string,
+  keys: string[],
 ): Promise<string> {
   const ollamaMessages = messages.map((m) => ({
     role: m.role === 'assistant' ? 'assistant' : m.role,
     content: m.content,
   }));
 
-  const res = await fetch('https://ollama.com/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({ model, messages: ollamaMessages, stream: false }),
-  });
+  let rateLimitErr: Error | null = null;
+  for (const apiKey of keys) {
+    const res = await fetch('https://ollama.com/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, messages: ollamaMessages, stream: false }),
+    });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Ollama Cloud 오류 ${res.status}: ${err}`);
+    if (res.status === 429) {
+      rateLimitErr = new Error(`Ollama Cloud 요청 한도 초과 (429) — 다음 키 시도 중`);
+      console.warn(`[ai-call] Ollama Cloud 429 for key ${apiKey.slice(0, 8)}..., rotating`);
+      continue;
+    }
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Ollama Cloud 오류 ${res.status}: ${err}`);
+    }
+
+    const data = await res.json() as { message?: { content?: string }; error?: string };
+    if (data.error) throw new Error(data.error);
+    return data.message?.content?.trim() || '';
   }
 
-  const data = await res.json() as { message?: { content?: string }; error?: string };
-  if (data.error) throw new Error(data.error);
-  return data.message?.content?.trim() || '';
+  throw rateLimitErr || new Error('Ollama Cloud: 사용 가능한 API 키가 없습니다.');
 }
 
 async function callOpenAICompatible(
@@ -267,8 +293,10 @@ async function callSingleProvider(
   } else if (provider === 'gemini') {
     return callGemini(messages, model, apiKey);
   } else if (provider === 'ollama' && apiKey && apiKey !== 'ollama') {
-    // Ollama Cloud: use native /api/chat format
-    return callOllamaCloud(messages, model, apiKey);
+    // Ollama Cloud: use native /api/chat format with key rotation
+    const cloudKeys = await getOllamaCloudKeys();
+    const keys = cloudKeys.length > 0 ? cloudKeys : [apiKey];
+    return callOllamaCloud(messages, model, keys);
   } else {
     // gpt4o, gpt4, gpt35, openrouter, ollama all use OpenAI-compatible API
     return callOpenAICompatible(messages, model, apiKey, provider, maxTokens, temperature);
