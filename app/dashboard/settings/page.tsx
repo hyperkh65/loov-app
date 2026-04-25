@@ -64,8 +64,9 @@ export default function SettingsPage() {
   const [notionChecking, setNotionChecking] = useState(false);
 
   // Ollama state
-  const [ollamaApiKey, setOllamaApiKey] = useState('');
-  const [ollamaApiKeySaved, setOllamaApiKeySaved] = useState(false);
+  const [ollamaCloudKeysMasked, setOllamaCloudKeysMasked] = useState<string[]>([]);
+  const [newOllamaKey, setNewOllamaKey] = useState('');
+  const [ollamaKeyAdding, setOllamaKeyAdding] = useState(false);
   const [ollamaUrl, setOllamaUrl] = useState('');
   const [ollamaUrlSaved, setOllamaUrlSaved] = useState(false);
   const [ollamaTesting, setOllamaTesting] = useState(false);
@@ -216,8 +217,8 @@ export default function SettingsPage() {
     if (activeTab === 'ai') {
       fetch('/api/app-settings')
         .then((r) => r.ok ? r.json() : {})
-        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string> }) => {
-          setOllamaApiKeySaved(!!d.hasKey?.['OLLAMA_API_KEY']);
+        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string>; ollamaKeysMasked?: string[] }) => {
+          setOllamaCloudKeysMasked(d.ollamaKeysMasked || []);
           setOllamaUrlSaved(!!d.hasKey?.['OLLAMA_BASE_URL']);
           setOpenrouterKeySaved(!!d.hasKey?.['OPENROUTER_API_KEY']);
           // Load server global AI setting
@@ -985,34 +986,56 @@ export default function SettingsPage() {
               </div>
               <p className="text-xs text-gray-500 mb-3">Cloud 사용 시 API 키만 입력. 로컬 사용 시 URL 입력 (키 불필요).</p>
 
-              {/* Cloud API Key */}
+              {/* Cloud API Keys — 멀티키 풀 */}
               <div className="mb-3">
                 <label className="text-xs font-semibold text-gray-700 mb-1 block">
-                  Ollama Cloud API Key
-                  {ollamaApiKeySaved && <span className="ml-2 text-emerald-600 font-normal">✅ 저장됨</span>}
+                  Ollama Cloud API Keys
+                  <span className="ml-2 text-gray-400 font-normal">({ollamaCloudKeysMasked.length}개 저장 — 429 리밋 시 자동 순환)</span>
                 </label>
+                {ollamaCloudKeysMasked.length > 0 && (
+                  <ul className="mb-2 space-y-1">
+                    {ollamaCloudKeysMasked.map((masked, i) => (
+                      <li key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5">
+                        <span className="flex-1 text-xs font-mono text-gray-600">{i + 1}. {masked}</span>
+                        <button
+                          onClick={async () => {
+                            await fetch('/api/app-settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ OLLAMA_API_KEYS_DELETE_INDEX: String(i) }),
+                            });
+                            setOllamaCloudKeysMasked((prev) => prev.filter((_, idx) => idx !== i));
+                          }}
+                          className="text-xs text-red-400 hover:text-red-600 px-1"
+                        >삭제</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <div className="flex gap-2">
                   <input
                     type="password"
-                    value={ollamaApiKey}
-                    onChange={(e) => setOllamaApiKey(e.target.value)}
-                    placeholder={ollamaApiKeySaved ? '저장됨 — 변경 시 입력' : 'ollama_...'}
+                    value={newOllamaKey}
+                    onChange={(e) => setNewOllamaKey(e.target.value)}
+                    placeholder="ollama_... (새 키 추가)"
                     className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
                   />
                   <button
                     onClick={async () => {
-                      if (!ollamaApiKey.trim()) return;
+                      if (!newOllamaKey.trim()) return;
+                      setOllamaKeyAdding(true);
                       await fetch('/api/app-settings', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ OLLAMA_API_KEY: ollamaApiKey }),
+                        body: JSON.stringify({ OLLAMA_API_KEYS_ADD: newOllamaKey.trim() }),
                       });
-                      setOllamaApiKeySaved(true);
-                      setOllamaApiKey('');
+                      setOllamaCloudKeysMasked((prev) => [...prev, newOllamaKey.trim().slice(0, 8) + '••••••••']);
+                      setNewOllamaKey('');
+                      setOllamaKeyAdding(false);
                     }}
-                    disabled={!ollamaApiKey.trim()}
+                    disabled={!newOllamaKey.trim() || ollamaKeyAdding}
                     className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
-                  >저장</button>
+                  >{ollamaKeyAdding ? '...' : '추가'}</button>
                 </div>
               </div>
 

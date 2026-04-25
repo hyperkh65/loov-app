@@ -38,6 +38,7 @@ const ALLOWED_KEYS = [
   'EDGE_TTS_SECRET',
   // Ollama
   'OLLAMA_API_KEY',
+  'OLLAMA_API_KEYS',
   'OLLAMA_BASE_URL',
   // AI 폴백 체인 (JSON string)
   'AI_FALLBACK_CHAIN',
@@ -80,7 +81,7 @@ export async function GET() {
   const settings = (data?.settings as Record<string, string>) || {};
 
   // 마스킹: 키 앞 4자리만 노출 (비민감 키는 전체 값 반환)
-  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID', 'EDGE_TTS_SERVER_URL', 'NAS_WEB_BASE_URL', 'NOTION_CAMERA_DB_ID']);
+  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID', 'EDGE_TTS_SERVER_URL', 'NAS_WEB_BASE_URL', 'NOTION_CAMERA_DB_ID', 'OLLAMA_API_KEYS']);
   const masked: Record<string, string> = {};
   for (const key of ALLOWED_KEYS) {
     const val = settings[key] || '';
@@ -91,9 +92,22 @@ export async function GET() {
     }
   }
 
+  // Multi-key Ollama Cloud: return masked array
+  let ollamaKeysMasked: string[] = [];
+  try {
+    const raw = settings['OLLAMA_API_KEYS'];
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) {
+        ollamaKeysMasked = arr.map((k) => k ? k.slice(0, 8) + '••••••••' : '');
+      }
+    }
+  } catch { /* ignore */ }
+
   return NextResponse.json({
     settings: masked,
     hasKey: Object.fromEntries(ALLOWED_KEYS.map(k => [k, !!(settings[k] || process.env[k])])),
+    ollamaKeysMasked,
     updatedAt: data?.updated_at || null,
   });
 }
@@ -115,6 +129,34 @@ export async function POST(req: NextRequest) {
 
   const current = (existing?.settings as Record<string, string>) || {};
   const updated: Record<string, string> = { ...current };
+
+  // Special: append a new Ollama Cloud key to the array
+  if ('OLLAMA_API_KEYS_ADD' in body) {
+    const newKey = body['OLLAMA_API_KEYS_ADD']?.trim();
+    if (newKey) {
+      let arr: string[] = [];
+      try { arr = JSON.parse(current['OLLAMA_API_KEYS'] || '[]') as string[]; } catch { /* ignore */ }
+      if (!arr.includes(newKey)) arr.push(newKey);
+      updated['OLLAMA_API_KEYS'] = JSON.stringify(arr);
+    }
+    const { error } = await admin.from('app_settings').update({ settings: updated, updated_at: new Date().toISOString() }).eq('id', 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateSettingsCache();
+    return NextResponse.json({ ok: true });
+  }
+
+  // Special: delete a key by index from the array
+  if ('OLLAMA_API_KEYS_DELETE_INDEX' in body) {
+    const idx = Number(body['OLLAMA_API_KEYS_DELETE_INDEX']);
+    let arr: string[] = [];
+    try { arr = JSON.parse(current['OLLAMA_API_KEYS'] || '[]') as string[]; } catch { /* ignore */ }
+    if (!isNaN(idx) && idx >= 0 && idx < arr.length) arr.splice(idx, 1);
+    updated['OLLAMA_API_KEYS'] = JSON.stringify(arr);
+    const { error } = await admin.from('app_settings').update({ settings: updated, updated_at: new Date().toISOString() }).eq('id', 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateSettingsCache();
+    return NextResponse.json({ ok: true });
+  }
 
   for (const key of ALLOWED_KEYS) {
     if (key in body) {
