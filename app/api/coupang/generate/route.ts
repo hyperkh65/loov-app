@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { getSetting } from '@/lib/get-setting';
+import { callAI } from '@/lib/ai-call';
 import type { Platform } from '@/lib/sns/platforms';
 
 const CHAR_LIMIT: Record<string, number> = {
@@ -15,12 +15,13 @@ const PLATFORM_STYLE: Record<string, string> = {
   linkedin: '가치 중심 추천. 전문적이지만 딱딱하지 않게.',
 };
 
-async function generateHookContent(
+async function generateContent(
   productName: string,
   price: number,
+  discountRate: number | undefined,
   reviewText: string,
   platform: string,
-  openaiKey: string,
+  provider?: string,
 ): Promise<string> {
   const limit = CHAR_LIMIT[platform] || 500;
   const style = PLATFORM_STYLE[platform] || '자연스러운 SNS 구어체';
@@ -42,33 +43,24 @@ async function generateHookContent(
 - ${limit}자 이내. 글만 출력.`;
 
   const userPrompt = `상품: ${productName}
-가격: ${price.toLocaleString()}원
-실제 구매자 경험 (여기서 핵심만 뽑아내):
-"${(reviewText || '완전 만족').slice(0, 400)}"
+가격: ${price.toLocaleString()}원${discountRate ? ` (${discountRate}% 할인)` : ''}
+${reviewText ? `실제 구매자 경험:\n"${reviewText.slice(0, 400)}"` : ''}
 
 ${platform}용 글 써줘.`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 600,
-        temperature: 0.9,
-      }),
+    const result = await callAI({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      provider: provider || undefined,
+      maxTokens: 600,
+      temperature: 0.9,
+      useFallback: true,
     });
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content?.trim();
-    if (text) return text;
-  } catch { /* fallback */ }
+    if (result.text) return result.text;
+  } catch { /* fallback below */ }
 
   return reviewText
     ? `${reviewText.slice(0, 60).trim()}...\n\n${productName}\n${price.toLocaleString()}원\n\n👇댓글`
@@ -80,18 +72,15 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { productName, price, firstReview, platforms } = await req.json();
+  const { productName, price, discountRate, firstReview, platforms, provider } = await req.json();
 
   if (!productName || !platforms?.length)
     return NextResponse.json({ error: '상품명과 플랫폼은 필수입니다' }, { status: 400 });
 
-  const openaiKey = await getSetting('OPENAI_API_KEY');
-  if (!openaiKey) return NextResponse.json({ error: 'OpenAI API 키가 없습니다. 설정 페이지에서 입력하세요.' }, { status: 400 });
-
   const contents: Record<string, string> = {};
   for (const platform of platforms as Platform[]) {
-    contents[platform] = await generateHookContent(
-      productName, price || 0, firstReview || '', platform, openaiKey,
+    contents[platform] = await generateContent(
+      productName, price || 0, discountRate, firstReview || '', platform, provider,
     );
   }
 
