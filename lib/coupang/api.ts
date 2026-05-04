@@ -31,38 +31,32 @@ export interface CoupangReview {
 // ── HMAC 서명 ─────────────────────────────────────────
 
 function buildDatetime(): string {
-  const now = new Date();
-  return (
-    now.getUTCFullYear().toString().slice(2) +
-    String(now.getUTCMonth() + 1).padStart(2, '0') +
-    String(now.getUTCDate()).padStart(2, '0') +
-    'T' +
-    String(now.getUTCHours()).padStart(2, '0') +
-    String(now.getUTCMinutes()).padStart(2, '0') +
-    String(now.getUTCSeconds()).padStart(2, '0') +
-    'Z'
-  );
+  return new Date().toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d+Z/, 'Z')
+    .slice(0, 16) + 'Z';
 }
 
-export function getCoupangAuth(method: string, urlPath: string, accessKey: string, secretKey: string): string {
+export function getCoupangAuth(method: string, path: string, query: string, accessKey: string, secretKey: string): string {
   const datetime = buildDatetime();
-  const message = `${datetime}\n${method}\n${urlPath}\n`;
+  const message = `${datetime}\n${method}\n${path}\n${query}`;
   const signature = crypto.createHmac('sha256', secretKey).update(message).digest('hex');
   return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
 }
 
-async function coupangGet<T>(apiPath: string, accessKey: string, secretKey: string): Promise<T> {
-  const auth = getCoupangAuth('GET', apiPath, accessKey, secretKey);
-  const res = await fetch(`${BASE_URL}${apiPath}`, {
+async function coupangGet<T>(path: string, query: string, accessKey: string, secretKey: string): Promise<T> {
+  const auth = getCoupangAuth('GET', path, query, accessKey, secretKey);
+  const url = query ? `${BASE_URL}${path}?${query}` : `${BASE_URL}${path}`;
+  const res = await fetch(url, {
     headers: { Authorization: auth, 'Content-Type': 'application/json;charset=UTF-8' },
   });
   if (!res.ok) throw new Error(`Coupang API 오류 (${res.status}): ${await res.text()}`);
   return res.json();
 }
 
-async function coupangPost<T>(apiPath: string, accessKey: string, secretKey: string, body: object): Promise<T> {
-  const auth = getCoupangAuth('POST', apiPath, accessKey, secretKey);
-  const res = await fetch(`${BASE_URL}${apiPath}`, {
+async function coupangPost<T>(path: string, accessKey: string, secretKey: string, body: object): Promise<T> {
+  const auth = getCoupangAuth('POST', path, '', accessKey, secretKey);
+  const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: { Authorization: auth, 'Content-Type': 'application/json;charset=UTF-8' },
     body: JSON.stringify(body),
@@ -74,14 +68,16 @@ async function coupangPost<T>(apiPath: string, accessKey: string, secretKey: str
 // ── 상품 조회 ──────────────────────────────────────────
 
 export async function getGoldboxProducts(accessKey: string, secretKey: string): Promise<CoupangProduct[]> {
-  const path = `${API_PREFIX}/products/goldbox?targetPage=0&subId=`;
-  const data = await coupangGet<{ rCode: string; data?: { productData?: CoupangProduct[] } }>(path, accessKey, secretKey);
+  const path = `${API_PREFIX}/products/goldbox`;
+  const query = 'targetPage=0&subId=';
+  const data = await coupangGet<{ rCode: string; data?: { productData?: CoupangProduct[] } }>(path, query, accessKey, secretKey);
   return data.data?.productData || [];
 }
 
 export async function searchProducts(keyword: string, accessKey: string, secretKey: string): Promise<CoupangProduct[]> {
-  const path = `${API_PREFIX}/products/search?keyword=${encodeURIComponent(keyword)}&limit=20&subId=`;
-  const data = await coupangGet<{ rCode: string; data?: { productData?: CoupangProduct[] } }>(path, accessKey, secretKey);
+  const path = `${API_PREFIX}/products/search`;
+  const query = `keyword=${encodeURIComponent(keyword)}&limit=20&subId=`;
+  const data = await coupangGet<{ rCode: string; data?: { productData?: CoupangProduct[] } }>(path, query, accessKey, secretKey);
   return data.data?.productData || [];
 }
 
