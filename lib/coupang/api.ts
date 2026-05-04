@@ -1,10 +1,10 @@
 /**
  * 쿠팡파트너스 Open API 헬퍼 (서버 전용)
- * https://api.coupang.com
+ * https://api-gateway.coupang.com
  */
 import crypto from 'crypto';
 
-const BASE_URL = 'https://api.coupang.com';
+const BASE_URL = 'https://api-gateway.coupang.com';
 const API_PREFIX = '/v2/providers/affiliate_open_api/apis/openapi/v1';
 
 export interface CoupangProduct {
