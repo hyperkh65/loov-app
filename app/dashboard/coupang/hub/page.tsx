@@ -139,19 +139,23 @@ export default function CoupangHubPage() {
         productName: selected.productName,
         price: selected.productPrice,
         discountRate: selected.discountRate,
-        firstReview: '',
+        categoryName: selected.categoryName,
         platforms: selectedPlatforms,
         provider,
       }),
     });
-    const data = await res.json() as { contents?: Record<string, string>; error?: string };
+    const data = await res.json() as { contents?: Record<string, string>; errors?: Record<string, string>; error?: string };
 
     if (res.ok && data.contents) {
       setContents(data.contents);
       const first = selectedPlatforms.find(p => data.contents![p]);
       if (first) setContentTab(first);
+      if (data.errors) {
+        const failedPlatforms = Object.keys(data.errors).join(', ');
+        setGenerateError(`일부 플랫폼 생성 실패: ${failedPlatforms}`);
+      }
     } else {
-      setGenerateError(data.error || '생성 실패');
+      setGenerateError(data.error || 'AI 생성 실패 — 설정에서 AI 모델 API 키를 확인하세요');
     }
     setGenerating(false);
   };
