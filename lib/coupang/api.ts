@@ -78,13 +78,15 @@ async function coupangPost<T>(path: string, accessKey: string, secretKey: string
 export async function getGoldboxProducts(accessKey: string, secretKey: string): Promise<CoupangProduct[]> {
   const path = `${API_PREFIX}/products/goldbox`;
   const query = 'targetPage=0&subId=';
-  const data = await coupangGet<{ rCode: string; data?: { productData?: CoupangProduct[] } }>(path, query, accessKey, secretKey);
-  return data.data?.productData || [];
+  // goldbox: data is directly an array
+  const data = await coupangGet<{ rCode: string; data?: CoupangProduct[] }>(path, query, accessKey, secretKey);
+  return data.data || [];
 }
 
 export async function searchProducts(keyword: string, accessKey: string, secretKey: string): Promise<CoupangProduct[]> {
   const path = `${API_PREFIX}/products/search`;
   const query = `keyword=${encodeURIComponent(keyword)}&limit=20&subId=`;
+  // search: data.productData is the array
   const data = await coupangGet<{ rCode: string; data?: { productData?: CoupangProduct[] } }>(path, query, accessKey, secretKey);
   return data.data?.productData || [];
 }
