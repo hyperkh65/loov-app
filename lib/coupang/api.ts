@@ -31,10 +31,17 @@ export interface CoupangReview {
 // ── HMAC 서명 ─────────────────────────────────────────
 
 function buildDatetime(): string {
-  return new Date().toISOString()
-    .replace(/[-:]/g, '')
-    .replace(/\.\d+Z/, 'Z')
-    .slice(0, 16) + 'Z';
+  const now = new Date();
+  return (
+    now.getUTCFullYear().toString().slice(2) +
+    String(now.getUTCMonth() + 1).padStart(2, '0') +
+    String(now.getUTCDate()).padStart(2, '0') +
+    'T' +
+    String(now.getUTCHours()).padStart(2, '0') +
+    String(now.getUTCMinutes()).padStart(2, '0') +
+    String(now.getUTCSeconds()).padStart(2, '0') +
+    'Z'
+  );
 }
 
 export function getCoupangAuth(method: string, path: string, query: string, accessKey: string, secretKey: string): string {
