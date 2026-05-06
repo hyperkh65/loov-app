@@ -292,11 +292,19 @@ async function callSingleProvider(
     return callClaude(messages, model, apiKey, maxTokens, temperature);
   } else if (provider === 'gemini') {
     return callGemini(messages, model, apiKey);
-  } else if (provider === 'ollama' && apiKey && apiKey !== 'ollama') {
-    // Ollama Cloud: use native /api/chat format with key rotation
-    const cloudKeys = await getOllamaCloudKeys();
-    const keys = cloudKeys.length > 0 ? cloudKeys : [apiKey];
-    return callOllamaCloud(messages, model, keys);
+  } else if (provider === 'ollama') {
+    const ollamaBaseUrl = await getSetting('OLLAMA_BASE_URL');
+    if (ollamaBaseUrl) {
+      // 로컬 Ollama 우선 (OLLAMA_BASE_URL 설정 시)
+      return callOpenAICompatible(messages, model, 'ollama', provider, maxTokens, temperature);
+    } else if (apiKey && apiKey !== 'ollama') {
+      // 로컬 없을 때만 Ollama Cloud 사용
+      const cloudKeys = await getOllamaCloudKeys();
+      const keys = cloudKeys.length > 0 ? cloudKeys : [apiKey];
+      return callOllamaCloud(messages, model, keys);
+    } else {
+      throw new Error('Ollama: OLLAMA_BASE_URL 또는 클라우드 API 키가 필요합니다.');
+    }
   } else {
     // gpt4o, gpt4, gpt35, openrouter, ollama all use OpenAI-compatible API
     return callOpenAICompatible(messages, model, apiKey, provider, maxTokens, temperature);
