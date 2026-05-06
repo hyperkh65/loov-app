@@ -46,7 +46,8 @@ function buildDatetime(): string {
 
 export function getCoupangAuth(method: string, path: string, query: string, accessKey: string, secretKey: string): string {
   const datetime = buildDatetime();
-  const message = `${datetime}\n${method}\n${path}\n${query}`;
+  // 쿠팡 HMAC: newline 없이 직접 연결 (datetime + method + path + query)
+  const message = `${datetime}${method}${path}${query}`;
   const signature = crypto.createHmac('sha256', secretKey).update(message).digest('hex');
   return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
 }
