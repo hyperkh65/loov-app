@@ -63,6 +63,8 @@ export default function CoupangHubPage() {
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null);
 
   const [copied, setCopied] = useState(false);
+  const [scrapeStatus, setScrapeStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
+  const [scrapedReview, setScrapedReview] = useState('');
 
   useEffect(() => {
     fetch('/api/coupang/settings').then(r => r.json()).then((d: { configured?: boolean }) => {
@@ -107,20 +109,42 @@ export default function CoupangHubPage() {
     setGenerateError('');
     setPostMsg('');
     setPostResults([]);
+    setScrapeStatus('idle');
+    setScrapedReview('');
 
+    // 제휴 링크 + 상품 스크랩 병렬 실행
     setAffiliateLoading(true);
-    try {
-      const res = await fetch('/api/coupang/affiliate', {
+    setScrapeStatus('loading');
+
+    const [affiliateRes] = await Promise.allSettled([
+      fetch('/api/coupang/affiliate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productUrl: product.productUrl }),
-      });
-      const data = await res.json() as { affiliateUrl?: string };
+      }),
+    ]);
+
+    if (affiliateRes.status === 'fulfilled' && affiliateRes.value.ok) {
+      const data = await affiliateRes.value.json() as { affiliateUrl?: string };
       setAffiliateUrl(data.affiliateUrl || product.productUrl);
-    } catch {
+    } else {
       setAffiliateUrl(product.productUrl);
     }
     setAffiliateLoading(false);
+
+    // 스크랩은 백그라운드로 (리뷰 수집 — 느릴 수 있음)
+    fetch('/api/coupang/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productUrl: product.productUrl }),
+    })
+      .then((r) => r.json())
+      .then((d: { reviews?: Array<{ content: string }>; error?: string }) => {
+        const review = d.reviews?.[0]?.content?.trim() || '';
+        setScrapedReview(review);
+        setScrapeStatus(review ? 'done' : 'failed');
+      })
+      .catch(() => setScrapeStatus('failed'));
   };
 
   const togglePlatform = (id: string) =>
@@ -142,6 +166,7 @@ export default function CoupangHubPage() {
         categoryName: selected.categoryName,
         platforms: selectedPlatforms,
         provider,
+        firstReview: scrapedReview || undefined,
       }),
     });
     const data = await res.json() as { contents?: Record<string, string>; errors?: Record<string, string>; error?: string };
@@ -466,6 +491,24 @@ export default function CoupangHubPage() {
               </div>
               <p className="text-[10px] text-gray-400 mt-1">● = SNS 계정 연결됨</p>
             </div>
+
+            {/* 스크랩 상태 표시 */}
+            {scrapeStatus === 'loading' && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <span className="inline-block w-2.5 h-2.5 border-2 border-gray-300 border-t-orange-400 rounded-full animate-spin" />
+                상품 리뷰 수집 중... (AI 품질 향상)
+              </div>
+            )}
+            {scrapeStatus === 'done' && scrapedReview && (
+              <div className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">
+                ✓ 리뷰 수집 완료 — AI가 실제 후기를 참고해 글을 씁니다
+              </div>
+            )}
+            {scrapeStatus === 'failed' && (
+              <div className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                리뷰 수집 실패 — 상품명·가격으로만 생성합니다
+              </div>
+            )}
 
             <button
               onClick={handleGenerate}
