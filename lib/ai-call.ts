@@ -310,12 +310,16 @@ async function callSingleProvider(
   } else if (provider === 'gemini') {
     return callGemini(messages, model, apiKey);
   } else if (provider === 'ollama') {
-    // Ollama Cloud 키 우선 — 키가 있으면 항상 클라우드 사용
+    // 1. Ollama Cloud 키 우선 시도
     const cloudKeys = await getOllamaCloudKeys();
     if (cloudKeys.length > 0) {
-      return callOllamaCloud(messages, model, cloudKeys);
+      try {
+        return await callOllamaCloud(messages, model, cloudKeys);
+      } catch (cloudErr) {
+        console.warn('[ai-call] Ollama Cloud 실패, 로컬 Ollama로 fallback:', cloudErr);
+      }
     }
-    // 클라우드 키 없을 때만 로컬 Ollama 사용
+    // 2. 로컬 Ollama URL (Cloud 실패 or 키 없을 때)
     const ollamaBaseUrl = await getSetting('OLLAMA_BASE_URL');
     if (ollamaBaseUrl) {
       return callOpenAICompatible(messages, model, 'ollama', provider, maxTokens, temperature);
