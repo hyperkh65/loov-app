@@ -17,6 +17,7 @@ interface CoupangProduct {
 
 interface PostResult {
   platform: string;
+  account?: string;
   success: boolean;
   error?: string;
 }
@@ -59,7 +60,8 @@ export default function CoupangHubPage() {
   const [postMsg, setPostMsg] = useState('');
   const [postResults, setPostResults] = useState<PostResult[]>([]);
 
-  const [snsConnections, setSnsConnections] = useState<{ platform: string; is_active: boolean }[]>([]);
+  const [snsConnections, setSnsConnections] = useState<{ platform: string; platform_user_id: string; platform_username: string; platform_display_name: string; is_active: boolean }[]>([]);
+  const [selectedThreadsAccounts, setSelectedThreadsAccounts] = useState<string[]>([]);
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null);
 
   const [copied, setCopied] = useState(false);
@@ -71,7 +73,12 @@ export default function CoupangHubPage() {
       setApiConfigured(!!d.configured);
     }).catch(() => setApiConfigured(false));
     fetch('/api/sns/connections').then(r => r.ok ? r.json() : []).then(
-      (d: { platform: string; is_active: boolean }[]) => setSnsConnections(Array.isArray(d) ? d : [])
+      (d: { platform: string; platform_user_id: string; is_active: boolean }[]) => {
+        if (Array.isArray(d)) {
+          setSnsConnections(d as typeof snsConnections);
+          setSelectedThreadsAccounts(d.filter(c => c.platform === 'threads' && c.is_active).map(c => c.platform_user_id));
+        }
+      }
     );
   }, []);
 
@@ -226,6 +233,7 @@ export default function CoupangHubPage() {
         firstReview: '',
         platforms: connectedPlatforms,
         generatedContent: contents,
+        threadsAccountIds: selectedThreadsAccounts,
       }),
     });
 
@@ -504,6 +512,33 @@ export default function CoupangHubPage() {
               </div>
               <p className="text-[10px] text-gray-400 mt-1">● = SNS 계정 연결됨</p>
             </div>
+
+            {/* Threads 멀티계정 선택 */}
+            {selectedPlatforms.includes('threads') && (() => {
+              const threadsConns = snsConnections.filter(c => c.platform === 'threads' && c.is_active);
+              if (threadsConns.length <= 1) return null;
+              return (
+                <div className="p-3 bg-purple-50 border border-purple-100 rounded-xl">
+                  <p className="text-xs font-semibold text-purple-700 mb-2">🧵 발행할 스레드 계정 선택</p>
+                  <div className="space-y-1.5">
+                    {threadsConns.map((conn) => (
+                      <label key={conn.platform_user_id} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedThreadsAccounts.includes(conn.platform_user_id)}
+                          onChange={(e) => setSelectedThreadsAccounts(prev =>
+                            e.target.checked ? [...prev, conn.platform_user_id] : prev.filter(id => id !== conn.platform_user_id)
+                          )}
+                          className="rounded border-purple-300 text-purple-600"
+                        />
+                        <span className="text-sm font-medium text-purple-900">{conn.platform_display_name || conn.platform_username}</span>
+                        <span className="text-xs text-purple-400">{conn.platform_username}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 스크랩 상태 표시 */}
             {scrapeStatus === 'loading' && (
