@@ -156,33 +156,46 @@ export default function CoupangHubPage() {
     setGenerateError('');
     setContents({});
 
-    const res = await fetch('/api/coupang/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        productName: selected.productName,
-        price: selected.productPrice,
-        discountRate: selected.discountRate,
-        categoryName: selected.categoryName,
-        platforms: selectedPlatforms,
-        provider,
-        firstReview: scrapedReview || undefined,
-      }),
-    });
-    const data = await res.json() as { contents?: Record<string, string>; errors?: Record<string, string>; error?: string };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000); // 2분 타임아웃
 
-    if (res.ok && data.contents) {
-      setContents(data.contents);
-      const first = selectedPlatforms.find(p => data.contents![p]);
-      if (first) setContentTab(first);
-      if (data.errors) {
-        const failedPlatforms = Object.keys(data.errors).join(', ');
-        setGenerateError(`일부 플랫폼 생성 실패: ${failedPlatforms}`);
+    try {
+      const res = await fetch('/api/coupang/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          productName: selected.productName,
+          price: selected.productPrice,
+          discountRate: selected.discountRate,
+          categoryName: selected.categoryName,
+          platforms: selectedPlatforms,
+          provider,
+          firstReview: scrapedReview || undefined,
+        }),
+      });
+      const data = await res.json() as { contents?: Record<string, string>; errors?: Record<string, string>; error?: string };
+
+      if (res.ok && data.contents) {
+        setContents(data.contents);
+        const first = selectedPlatforms.find(p => data.contents![p]);
+        if (first) setContentTab(first);
+        if (data.errors) {
+          setGenerateError(`일부 플랫폼 생성 실패: ${Object.keys(data.errors).join(', ')}`);
+        }
+      } else {
+        setGenerateError(data.error || 'AI 생성 실패 — 설정에서 AI 모델 API 키를 확인하세요');
       }
-    } else {
-      setGenerateError(data.error || 'AI 생성 실패 — 설정에서 AI 모델 API 키를 확인하세요');
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') {
+        setGenerateError('시간 초과 — AI 서버가 응답하지 않습니다. Claude나 OpenRouter를 선택해 보세요.');
+      } else {
+        setGenerateError('네트워크 오류: ' + String(e));
+      }
+    } finally {
+      clearTimeout(timer);
+      setGenerating(false);
     }
-    setGenerating(false);
   };
 
   const handlePost = async () => {

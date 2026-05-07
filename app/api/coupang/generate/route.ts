@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase-server';
 import { callAI } from '@/lib/ai-call';
 import type { Platform } from '@/lib/sns/platforms';
 
+export const maxDuration = 90;
+
 const CHAR_LIMIT: Record<string, number> = {
   twitter: 240, threads: 500, facebook: 1200, instagram: 2000, linkedin: 2000,
 };

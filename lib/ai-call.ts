@@ -258,6 +258,8 @@ async function callOpenAICompatible(
     headers['X-Title'] = 'LOOV';
   }
 
+  // 로컬 Ollama는 30초, 외부 API는 60초 타임아웃
+  const timeoutMs = provider === 'ollama' ? 30_000 : 60_000;
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers,
@@ -268,6 +270,7 @@ async function callOpenAICompatible(
       temperature,
       stream: false,
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   const data = await res.json() as {
