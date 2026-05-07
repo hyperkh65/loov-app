@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
     .eq('user_id', user.id)
     .eq('platform', 'instagram')
     .eq('is_active', true)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (!conn) return NextResponse.json({ error: 'Instagram 미연결' }, { status: 400 });
 
