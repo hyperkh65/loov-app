@@ -40,7 +40,10 @@ async function generateContent(
   const systemPrompt = `너는 대한민국 최고의 SNS 쇼핑 콘텐츠 크리에이터야.
 쿠팡 제휴 마케팅 글을 쓰는데, 진짜 써본 사람처럼 자연스럽고 설득력 있게 써야 해.
 
+**반드시 순수한 한국어로만 작성할 것. 중국어, 일본어, 영어 등 다른 언어 절대 혼용 금지.**
+
 [절대 금지]
+- 한국어가 아닌 글자 (한자, 일본어 가나, 영어 단어 등) 섞기
 - "추천드립니다", "구매했습니다", "사용해봤습니다" 같은 광고 티나는 말
 - "좋은 제품", "만족스러운", "혜택" 같은 공허한 형용사
 - 링크나 URL을 본문에 넣기 (댓글에 달 거니까)
@@ -52,7 +55,7 @@ async function generateContent(
 - 가격/할인율을 자연스럽게 녹여서 가성비 강조
 - 사고 싶어지는 이유 하나를 명확하게
 - ${style}
-- 반드시 ${limit}자 이내로, 글만 출력 (설명 없이)`;
+- 반드시 ${limit}자 이내로, 한국어 글만 출력 (설명 없이)`;
 
   const discount = discountRate && discountRate > 0 ? ` (${discountRate}% 할인 중)` : '';
   const category = categoryName ? `카테고리: ${categoryName}` : '';
@@ -78,6 +81,25 @@ ${review}
   });
 
   if (!result.text) throw new Error('AI가 빈 응답을 반환했습니다');
+
+  // 중국어/일본어 문자가 섞였으면 재생성 1회 시도
+  const hasForeignChars = /[぀-ヿ一-鿿豈-﫿]/.test(result.text);
+  if (hasForeignChars) {
+    const retry = await callAI({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt + '\n\n(중요: 반드시 한국어만 사용할 것. 한자/일본어 절대 금지)' },
+      ],
+      provider: provider || undefined,
+      maxTokens: 700,
+      temperature: 0.7,
+      useFallback: true,
+    });
+    if (retry.text && !/[぀-ヿ一-鿿豈-﫿]/.test(retry.text)) {
+      return retry.text;
+    }
+  }
+
   return result.text;
 }
 
