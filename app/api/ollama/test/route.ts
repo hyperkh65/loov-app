@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getSetting } from '@/lib/get-setting';
 
+const TEST_MODELS = [
+  'llama3.2', 'llama3.1', 'llama3', 'llama2',
+  'mistral', 'gemma3', 'gemma2', 'gemma',
+  'phi3', 'phi3.5', 'phi4',
+  'qwen2.5', 'qwen2', 'qwen',
+  'deepseek-r1', 'deepseek-v2',
+  'tinyllama', 'orca-mini',
+];
+
 export async function GET() {
-  // Read all Ollama Cloud keys
   const keys: string[] = [];
   try {
     const raw = await getSetting('OLLAMA_API_KEYS');
@@ -18,11 +26,11 @@ export async function GET() {
     return NextResponse.json({ error: 'Ollama Cloud 키가 없습니다' }, { status: 400 });
   }
 
+  const apiKey = keys[0];
+  const keyHint = apiKey.slice(0, 8) + '...';
   const results: Record<string, unknown>[] = [];
 
-  for (let i = 0; i < keys.length; i++) {
-    const apiKey = keys[i];
-    const keyHint = apiKey.slice(0, 8) + '...';
+  for (const model of TEST_MODELS) {
     try {
       const res = await fetch('https://ollama.com/api/chat', {
         method: 'POST',
@@ -31,33 +39,35 @@ export async function GET() {
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'qwen3.5',
-          messages: [{ role: 'user', content: '안녕' }],
+          model,
+          messages: [{ role: 'user', content: 'hi' }],
           stream: false,
         }),
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(10_000),
       });
 
-      const rawText = await res.text();
+      const text = await res.text();
       let parsed: unknown = null;
-      try { parsed = JSON.parse(rawText); } catch { /* ignore */ }
+      try { parsed = JSON.parse(text); } catch { /* ignore */ }
+
+      const isSubscriptionErr = text.includes('subscription');
+      const isModelNotFound = text.includes('not found') || text.includes('pull');
 
       results.push({
-        keyIndex: i + 1,
-        keyHint,
+        model,
         status: res.status,
         ok: res.ok,
-        responseText: rawText.slice(0, 500),
-        parsed,
+        result: res.ok ? 'FREE ✅' : isSubscriptionErr ? '유료 ❌' : isModelNotFound ? '모델없음 ⚠️' : `오류 ${res.status}`,
+        response: res.ok ? (parsed as Record<string, unknown>)?.message : text.slice(0, 100),
       });
+
+      if (res.ok) break; // 첫 번째 작동 모델 찾으면 중단
     } catch (e) {
-      results.push({
-        keyIndex: i + 1,
-        keyHint,
-        error: String(e),
-      });
+      results.push({ model, error: String(e), result: '타임아웃/연결오류' });
     }
   }
 
-  return NextResponse.json({ keysFound: keys.length, results });
+  const freeModels = results.filter((r) => r['result'] === 'FREE ✅').map((r) => r['model']);
+
+  return NextResponse.json({ keyHint, freeModels, results });
 }
