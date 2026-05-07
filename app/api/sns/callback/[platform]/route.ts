@@ -175,7 +175,7 @@ export async function GET(
       token_expires_at: expiresAt, platform_user_id: platformUserId, platform_username: platformUsername,
       platform_display_name: platformDisplayName, platform_avatar: platformAvatar,
       is_active: true, updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,platform' });
+    }, { onConflict: 'user_id,platform,platform_user_id' });
 
     if (upsertErr) throw new Error(`DB저장실패: ${upsertErr.message}`);
     return NextResponse.redirect(`${returnUrl}?connected=${platform}`);

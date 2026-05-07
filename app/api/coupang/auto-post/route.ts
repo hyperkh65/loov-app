@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
     productName, productUrl, price, affiliateUrl,
     imageUrls, firstReview, platforms, aiApiKey,
     generatedContent: preGenerated,
+    threadsAccountIds,
   } = await req.json();
 
   if (!productName || !platforms?.length)
@@ -81,18 +82,66 @@ export async function POST(req: NextRequest) {
   const allImages: string[] = (imageUrls || []).filter(Boolean).slice(0, 5);
   const threadsCommentText = `👉 구매링크\n${affiliateUrl || ''}\n\n${COUPANG_DISCLOSURE}`;
 
-  const results: { platform: string; success: boolean; content?: string; error?: string }[] = [];
+  const results: { platform: string; account?: string; success: boolean; content?: string; error?: string }[] = [];
   const postIds: Record<string, string> = {};
   const generatedContent: Record<string, string> = {};
 
   for (const platform of platforms as Platform[]) {
+    // Threads 멀티계정: 선택된 계정 목록이 있으면 각각 발행
+    if (platform === 'threads' && Array.isArray(threadsAccountIds) && threadsAccountIds.length > 0) {
+      const { data: conns } = await supabase
+        .from('sns_connections')
+        .select('access_token, platform_user_id, platform_username, is_active')
+        .eq('user_id', user.id)
+        .eq('platform', 'threads')
+        .eq('is_active', true)
+        .in('platform_user_id', threadsAccountIds);
+
+      if (!conns?.length) {
+        results.push({ platform, success: false, error: '선택된 Threads 계정을 찾을 수 없습니다' });
+        continue;
+      }
+
+      let baseContent = (preGenerated as Record<string, string> | undefined)?.['threads']
+        || await generateHookContent(productName, price || 0, firstReview || '', 'threads', aiApiKey);
+      generatedContent['threads'] = baseContent;
+
+      for (const conn of conns) {
+        try {
+          const { id: platformPostId } = await postToPlatformWithMedia(
+            'threads', conn.access_token, conn.platform_user_id || '', baseContent, allImages,
+          );
+          postIds[`threads_${conn.platform_user_id}`] = platformPostId;
+
+          if (affiliateUrl) {
+            try {
+              await postCommentOnOwnPost(
+                'threads', conn.access_token, conn.platform_user_id || '',
+                platformPostId, threadsCommentText, allImages.slice(0, 1),
+              );
+            } catch (e) {
+              console.warn(`[threads] 댓글 달기 실패 (${conn.platform_username}):`, e);
+            }
+          }
+
+          results.push({ platform, account: conn.platform_username || conn.platform_user_id, success: true, content: baseContent });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          results.push({ platform, account: conn.platform_username || conn.platform_user_id, success: false, error: message });
+        }
+      }
+      continue;
+    }
+
+    // 그 외 플랫폼: 첫 번째 활성 계정 사용
     const { data: conn } = await supabase
       .from('sns_connections')
       .select('access_token, platform_user_id, is_active')
       .eq('user_id', user.id)
       .eq('platform', platform)
       .eq('is_active', true)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (!conn) {
       results.push({ platform, success: false, error: '연결되지 않은 플랫폼' });
@@ -115,20 +164,19 @@ export async function POST(req: NextRequest) {
       );
       postIds[platform] = platformPostId;
 
-      // Threads: 수익링크 + 사진을 댓글로 달기
+      // Threads 단일계정 (threadsAccountIds 미지정 시)
       if (platform === 'threads' && affiliateUrl) {
         try {
           await postCommentOnOwnPost(
             platform, conn.access_token, conn.platform_user_id || '',
-            platformPostId, threadsCommentText,
-            allImages.slice(0, 1), // 첫 번째 사진을 댓글에 함께 첨부
+            platformPostId, threadsCommentText, allImages.slice(0, 1),
           );
         } catch (e) {
           console.warn(`[threads] 댓글 달기 실패:`, e);
         }
       }
 
-      // Twitter / Instagram / LinkedIn: 기존대로 텍스트 댓글
+      // Twitter / Instagram / LinkedIn
       if (['twitter', 'instagram', 'linkedin'].includes(platform) && affiliateUrl) {
         try {
           await postCommentOnOwnPost(

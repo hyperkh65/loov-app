@@ -24,7 +24,8 @@ export async function GET(req: NextRequest) {
     .eq('user_id', user.id)
     .eq('platform', platform)
     .eq('is_active', true)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (!conn) return NextResponse.json({ error: '연결되지 않은 플랫폼' }, { status: 400 });
 

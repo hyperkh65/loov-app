@@ -22,6 +22,7 @@ interface Review {
 
 interface PostResult {
   platform: string;
+  account?: string;
   success: boolean;
   content?: string;
   error?: string;
@@ -67,8 +68,9 @@ export default function CoupangPage() {
   const [affiliateUrl, setAffiliateUrl] = useState('');
 
   // ── 플랫폼 선택 ────────────────────────────────────────
-  const [snsConnections, setSnsConnections] = useState<{ platform: string; is_active: boolean }[]>([]);
+  const [snsConnections, setSnsConnections] = useState<{ platform: string; platform_user_id: string; platform_username: string; platform_display_name: string; is_active: boolean }[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>([]);
+  const [selectedThreadsAccounts, setSelectedThreadsAccounts] = useState<string[]>([]);
 
   // ── AI 미리보기 ────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
@@ -89,7 +91,13 @@ export default function CoupangPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/sns/connections').then((r) => r.ok ? r.json() : []).then(setSnsConnections);
+    fetch('/api/sns/connections').then((r) => r.ok ? r.json() : []).then((conns) => {
+      setSnsConnections(conns);
+      const activeThreadsIds = conns
+        .filter((c: { platform: string; is_active: boolean; platform_user_id: string }) => c.platform === 'threads' && c.is_active)
+        .map((c: { platform_user_id: string }) => c.platform_user_id);
+      setSelectedThreadsAccounts(activeThreadsIds);
+    });
     loadHistory();
   }, [loadHistory]);
 
@@ -257,7 +265,8 @@ export default function CoupangPage() {
           imageUrls: activeImages,
           firstReview,
           platforms: selectedPlatforms,
-          generatedContent: previewTexts,  // 편집된 내용 전달
+          generatedContent: previewTexts,
+          threadsAccountIds: selectedThreadsAccounts,
         }),
       });
       if (!res.ok) {
@@ -492,16 +501,16 @@ export default function CoupangPage() {
 
             <div className="flex flex-wrap gap-2 mb-4">
               {(Object.keys(PLATFORM_INFO) as Platform[]).map((p) => {
-                const conn = snsConnections.find((c) => c.platform === p);
+                const hasActive = snsConnections.some((c) => c.platform === p && c.is_active);
                 const isSelected = selectedPlatforms.includes(p);
                 const info = PLATFORM_INFO[p];
                 return (
                   <button key={p}
-                    onClick={() => conn?.is_active && togglePlatform(p)}
-                    disabled={!conn?.is_active}
-                    title={!conn?.is_active ? 'SNS 관리에서 먼저 연결하세요' : undefined}
+                    onClick={() => hasActive && togglePlatform(p)}
+                    disabled={!hasActive}
+                    title={!hasActive ? 'SNS 관리에서 먼저 연결하세요' : undefined}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
-                      !conn?.is_active ? 'opacity-30 cursor-not-allowed border-gray-100 text-gray-400'
+                      !hasActive ? 'opacity-30 cursor-not-allowed border-gray-100 text-gray-400'
                       : isSelected ? 'border-orange-400 bg-orange-50 text-orange-700'
                       : 'border-gray-200 text-gray-600 hover:border-orange-300'
                     }`}>
@@ -510,6 +519,39 @@ export default function CoupangPage() {
                 );
               })}
             </div>
+
+            {/* Threads 멀티계정 선택 */}
+            {selectedPlatforms.includes('threads') && (() => {
+              const threadsConns = snsConnections.filter((c) => c.platform === 'threads' && c.is_active);
+              if (threadsConns.length <= 1) return null;
+              return (
+                <div className="mb-4 p-3 bg-purple-50 border border-purple-100 rounded-xl">
+                  <p className="text-xs font-semibold text-purple-700 mb-2">🧵 발행할 스레드 계정 선택</p>
+                  <div className="space-y-1.5">
+                    {threadsConns.map((conn) => (
+                      <label key={conn.platform_user_id} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedThreadsAccounts.includes(conn.platform_user_id)}
+                          onChange={(e) => {
+                            setSelectedThreadsAccounts((prev) =>
+                              e.target.checked
+                                ? [...prev, conn.platform_user_id]
+                                : prev.filter((id) => id !== conn.platform_user_id)
+                            );
+                          }}
+                          className="rounded border-purple-300 text-purple-600"
+                        />
+                        <span className="text-sm font-medium text-purple-900">
+                          {conn.platform_display_name || conn.platform_username}
+                        </span>
+                        <span className="text-xs text-purple-500">{conn.platform_username}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {snsConnections.filter((c) => c.is_active).length === 0 && (
               <p className="text-xs text-amber-600 mb-3">
@@ -595,10 +637,11 @@ export default function CoupangPage() {
               💬 구매링크와 쿠팡 파트너스 고지문구가 각 플랫폼 게시물의 댓글로 자동 추가됩니다.
             </div>
             <div className="space-y-3">
-              {postResults.map((r) => (
-                <div key={r.platform} className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl">
+              {postResults.map((r, i) => (
+                <div key={`${r.platform}_${i}`} className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl">
                   <span>{PLATFORM_INFO[r.platform]?.icon}</span>
                   <span className="text-sm font-semibold text-gray-700">{PLATFORM_INFO[r.platform]?.label}</span>
+                  {r.account && <span className="text-xs text-gray-400">{r.account}</span>}
                   {r.success
                     ? <span className="ml-auto text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">✓ 발행 완료</span>
                     : <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">{r.error || '실패'}</span>

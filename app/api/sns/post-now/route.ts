@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
       .eq('user_id', user.id)
       .eq('platform', platform)
       .eq('is_active', true)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (!conn) {
       results.push({ platform, success: false, error: '연결되지 않은 플랫폼' });
