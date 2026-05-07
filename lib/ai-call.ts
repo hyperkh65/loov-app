@@ -191,6 +191,31 @@ async function callGemini(
   return result.response.text().trim();
 }
 
+// Ollama Cloud에서 실제 사용 가능한 모델 목록 조회 (키별 캐시 1시간)
+let _ollamaModelCache: { key: string; models: string[]; ts: number } | null = null;
+
+async function getOllamaCloudModels(apiKey: string): Promise<string[]> {
+  const GENERIC_FALLBACKS = ['llama3.2', 'llama3.1', 'mistral', 'gemma3', 'phi4', 'qwen2.5'];
+  const now = Date.now();
+  if (_ollamaModelCache && _ollamaModelCache.key === apiKey && now - _ollamaModelCache.ts < 3_600_000) {
+    return _ollamaModelCache.models;
+  }
+  try {
+    const res = await fetch('https://ollama.com/api/tags', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return GENERIC_FALLBACKS;
+    const data = await res.json() as { models?: Array<{ name: string }> };
+    const models = (data.models ?? []).map((m: { name: string }) => m.name.split(':')[0]).filter(Boolean);
+    if (models.length === 0) return GENERIC_FALLBACKS;
+    _ollamaModelCache = { key: apiKey, models, ts: now };
+    return models;
+  } catch {
+    return GENERIC_FALLBACKS;
+  }
+}
+
 // Ollama Cloud 네이티브 API — 에러 시 다음 키로 자동 순환 (모델 fallback 포함)
 async function callOllamaCloud(
   messages: AIMessage[],
@@ -202,8 +227,11 @@ async function callOllamaCloud(
     content: m.content,
   }));
 
-  const OLLAMA_FALLBACK_MODELS = ['qwen3.5', 'qwen3', 'llama3.3', 'llama3.2', 'mistral', 'gemma3'];
-  const modelsToTry = [model, ...OLLAMA_FALLBACK_MODELS.filter((m) => m !== model)];
+  // 첫 번째 키로 실제 사용 가능한 모델 목록을 조회해서 우선 시도
+  const availableModels = await getOllamaCloudModels(keys[0]);
+  const modelsToTry = model && !availableModels.includes(model)
+    ? [model, ...availableModels]
+    : availableModels.length > 0 ? availableModels : [model];
 
   let lastErr: Error = new Error('Ollama Cloud: 사용 가능한 API 키가 없습니다.');
 
