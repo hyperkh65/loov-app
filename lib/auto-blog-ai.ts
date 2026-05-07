@@ -159,27 +159,32 @@ export async function generateText(
     }
   }
 
-  // 1. Ollama Cloud (무료AI 페이지 localStorage 키 우선)
-  const ollamaKey = clientOllamaKey || await getSetting('OLLAMA_API_KEY');
-  if (ollamaKey) {
-    // 선호 모델 시도
-    try {
-      return await callOllama(ollamaKey, preferModel, prompt);
-    } catch (e) {
-      const errStr = String(e);
-      // "string not match" = Ollama Cloud에 해당 모델 없음 → fallback 시도
-      errors.push(`Ollama(${preferModel}): ${errStr.includes('string not match') ? '모델 없음' : errStr}`);
+  // 1. Ollama Cloud (무료AI 페이지 localStorage 키 우선 → DB 배열키 → DB 단수키 순서)
+  const ollamaKeys: string[] = [];
+  if (clientOllamaKey) ollamaKeys.push(clientOllamaKey);
+  try {
+    const raw = await getSetting('OLLAMA_API_KEYS');
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) ollamaKeys.push(...arr.filter(Boolean));
     }
-    // fallback: 최신 popular 모델 순서로 시도 (ollama.com/search 기준)
+  } catch { /* ignore */ }
+  const legacyKey = await getSetting('OLLAMA_API_KEY');
+  if (legacyKey && !ollamaKeys.includes(legacyKey)) ollamaKeys.push(legacyKey);
+
+  if (ollamaKeys.length > 0) {
     const OLLAMA_FALLBACKS = [
       'qwen3.5', 'qwen3', 'qwen3-coder', 'llama3.3', 'llama3.2',
       'mistral', 'mistral-small3.1', 'gemma3', 'deepseek-r1',
       'phi4', 'phi4-mini', 'ministral-3',
     ];
-    for (const fallback of OLLAMA_FALLBACKS) {
-      if (fallback === preferModel) continue;
-      try { return await callOllama(ollamaKey, fallback, prompt); } catch { continue; }
+    const modelsToTry = [preferModel, ...OLLAMA_FALLBACKS.filter((m) => m !== preferModel)];
+    for (const ollamaKey of ollamaKeys) {
+      for (const tryModel of modelsToTry) {
+        try { return await callOllama(ollamaKey, tryModel, prompt); } catch { continue; }
+      }
     }
+    errors.push('Ollama Cloud: 모든 키/모델 실패');
   }
 
   // 2. OpenRouter (localStorage 키 → DB 설정 키 순서)

@@ -191,7 +191,7 @@ async function callGemini(
   return result.response.text().trim();
 }
 
-// Ollama Cloud 네이티브 API — 429 rate-limit 시 다음 키로 자동 순환
+// Ollama Cloud 네이티브 API — 에러 시 다음 키로 자동 순환 (모델 fallback 포함)
 async function callOllamaCloud(
   messages: AIMessage[],
   model: string,
@@ -202,34 +202,44 @@ async function callOllamaCloud(
     content: m.content,
   }));
 
-  let rateLimitErr: Error | null = null;
+  const OLLAMA_FALLBACK_MODELS = ['qwen3.5', 'qwen3', 'llama3.3', 'llama3.2', 'mistral', 'gemma3'];
+  const modelsToTry = [model, ...OLLAMA_FALLBACK_MODELS.filter((m) => m !== model)];
+
+  let lastErr: Error = new Error('Ollama Cloud: 사용 가능한 API 키가 없습니다.');
+
   for (const apiKey of keys) {
-    const res = await fetch('https://ollama.com/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ model, messages: ollamaMessages, stream: false }),
-    });
+    for (const tryModel of modelsToTry) {
+      try {
+        const res = await fetch('https://ollama.com/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ model: tryModel, messages: ollamaMessages, stream: false }),
+          signal: AbortSignal.timeout(60_000),
+        });
 
-    if (res.status === 429) {
-      rateLimitErr = new Error(`Ollama Cloud 요청 한도 초과 (429) — 다음 키 시도 중`);
-      console.warn(`[ai-call] Ollama Cloud 429 for key ${apiKey.slice(0, 8)}..., rotating`);
-      continue;
+        if (!res.ok) {
+          const err = await res.text();
+          lastErr = new Error(`Ollama Cloud ${res.status}: ${err}`);
+          if (res.status === 429) break; // rate-limited on this key → try next key
+          continue; // other error → try next model
+        }
+
+        const data = await res.json() as { message?: { content?: string }; error?: string };
+        if (data.error) { lastErr = new Error(data.error); continue; }
+        const text = data.message?.content?.trim() || '';
+        if (!text) { lastErr = new Error('Ollama Cloud 빈 응답'); continue; }
+        return text;
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error(String(e));
+        continue;
+      }
     }
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Ollama Cloud 오류 ${res.status}: ${err}`);
-    }
-
-    const data = await res.json() as { message?: { content?: string }; error?: string };
-    if (data.error) throw new Error(data.error);
-    return data.message?.content?.trim() || '';
   }
 
-  throw rateLimitErr || new Error('Ollama Cloud: 사용 가능한 API 키가 없습니다.');
+  throw lastErr;
 }
 
 async function callOpenAICompatible(
