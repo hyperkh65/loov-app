@@ -30,6 +30,7 @@ async function generateContent(
   categoryName: string | undefined,
   platform: string,
   provider?: string,
+  firstReview?: string,
 ): Promise<string> {
   const limit = CHAR_LIMIT[platform] || 500;
   const style = PLATFORM_STYLE[platform] || '자연스러운 SNS 구어체, 3~5문장';
@@ -53,10 +54,12 @@ async function generateContent(
 
   const discount = discountRate && discountRate > 0 ? ` (${discountRate}% 할인 중)` : '';
   const category = categoryName ? `카테고리: ${categoryName}` : '';
+  const review = firstReview?.trim() ? `실제 구매자 리뷰: "${firstReview.trim()}"` : '';
 
   const userPrompt = `상품명: ${productName}
 가격: ${price.toLocaleString()}원${discount}
 ${category}
+${review}
 플랫폼: ${platform}
 
 위 상품에 대한 ${platform}용 SNS 홍보 글을 써줘.`;
@@ -81,7 +84,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { productName, price, discountRate, categoryName, platforms, provider } = await req.json();
+  const { productName, price, discountRate, categoryName, platforms, provider, firstReview } = await req.json();
 
   if (!productName || !platforms?.length)
     return NextResponse.json({ error: '상품명과 플랫폼은 필수입니다' }, { status: 400 });
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest) {
   for (const platform of platforms as Platform[]) {
     try {
       contents[platform] = await generateContent(
-        productName, price || 0, discountRate, categoryName, platform, provider,
+        productName, price || 0, discountRate, categoryName, platform, provider, firstReview,
       );
     } catch (err: unknown) {
       errors[platform] = err instanceof Error ? err.message : String(err);
