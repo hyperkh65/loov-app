@@ -138,11 +138,16 @@ async function scrapeWithBrowser(productId: string): Promise<ScrapedProduct> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (chromium as any).use(StealthPlugin());
 
-  // Mac이면 실제 Chrome 사용 (봇 감지 우회 효과 높음)
+  // 실제 Chrome/Chromium 사용 (봇 감지 우회 효과 높음)
   const chromePaths = [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Mac
     '/usr/bin/google-chrome',
     '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/local/bin/chromium',
+    '/opt/homebrew/bin/chromium',
+    '/volume1/@appstore/Chrome/usr/bin/google-chrome', // Synology
+    '/volume1/@appstore/Chromium/usr/bin/chromium',    // Synology
   ];
   const fs = await import('fs');
   const executablePath = chromePaths.find((p) => {
@@ -330,20 +335,72 @@ async function scrapeWithBrowser(productId: string): Promise<ScrapedProduct> {
   }
 }
 
+/** Coupang 리뷰 AJAX API 직접 호출 */
+async function fetchReviewsApi(
+  productId: string | number,
+  itemId: string,
+  refererCookies: string,
+): Promise<CoupangReview[]> {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  const productUrl = `https://www.coupang.com/vp/products/${productId}`;
+  const reviews: CoupangReview[] = [];
+
+  // 정렬 기준별로 시도 (DATE → SCORE)
+  for (const sortBy of ['DATE', 'SCORE']) {
+    if (reviews.length > 0) break;
+    const url = `https://www.coupang.com/vp/products/${productId}/reviews?productItemId=${itemId}&limit=5&sortBy=${sortBy}&isLastPage=false&isAppliedAbTest=false&_=${Date.now()}`;
+    try {
+      const headers: Record<string, string> = {
+        'User-Agent': ua,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
+        'Referer': productUrl,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+      };
+      if (refererCookies) headers['Cookie'] = refererCookies;
+
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+
+      const data = await res.json() as Record<string, unknown>;
+      const nested = data['data'] as Record<string, unknown> | undefined;
+      const list = (data.reviews || nested?.['reviews'] || data.reviewList || data.content || []) as Record<string, unknown>[];
+      for (const r of list.slice(0, 5)) {
+        const content = String(r.content || r.reviewContent || r.body || r.text || '');
+        if (content.length > 10 && reviews.length < 3) {
+          reviews.push({
+            reviewer: String(r.nickname || r.reviewer || r.name || '구매자'),
+            rating: Number(r.rating || r.starRating || r.score || 5),
+            content,
+            images: [],
+          });
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return reviews;
+}
+
 /** fetch 기반 스크래핑 (Playwright 실패 시 폴백) */
 async function scrapeWithFetch(productId: string | number): Promise<ScrapedProduct> {
-  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  const mobileUa = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
   const productUrl = `https://www.coupang.com/vp/products/${productId}`;
 
+  // 1. 데스크탑 UA로 상품 페이지 fetch
   let html = '';
+  let cookies = '';
   try {
     const res = await fetch(productUrl, {
       headers: {
         'User-Agent': ua,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
         'Accept-Encoding': 'gzip, deflate, br',
-        'sec-ch-ua': '"Google Chrome";v="123", "Chromium";v="123", "Not-A.Brand";v="99"',
+        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"macOS"',
         'Sec-Fetch-Dest': 'document',
@@ -351,14 +408,43 @@ async function scrapeWithFetch(productId: string | number): Promise<ScrapedProdu
         'Sec-Fetch-Site': 'none',
         'Sec-Fetch-User': '?1',
         'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0',
+        'Cache-Control': 'no-cache',
       },
       redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
     });
-    if (res.ok) html = await res.text();
+    if (res.ok) {
+      html = await res.text();
+      // 쿠키 저장 (리뷰 API 요청에 재사용)
+      const setCookie = res.headers.get('set-cookie');
+      if (setCookie) cookies = setCookie.split(',').map((c) => c.split(';')[0].trim()).join('; ');
+    }
   } catch { /* ignore */ }
 
-  if (!html || html.includes('Access Denied')) {
+  // 2. 차단 시 모바일 UA로 재시도
+  const isBlocked = !html || html.toLowerCase().includes('access denied') || html.length < 1000;
+  if (isBlocked) {
+    try {
+      const res = await fetch(`https://m.coupang.com/vm/products/${productId}`, {
+        headers: {
+          'User-Agent': mobileUa,
+          'Accept': 'text/html,application/xhtml+xml,*/*',
+          'Accept-Language': 'ko-KR,ko;q=0.9',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const mHtml = await res.text();
+        if (mHtml.length > 1000 && !mHtml.toLowerCase().includes('access denied')) html = mHtml;
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!html || html.toLowerCase().includes('access denied') || html.length < 500) {
     return { productName: '', productPrice: 0, productOldPrice: 0, discountRate: 0, reviews: [], images: [] };
   }
 
@@ -405,7 +491,37 @@ async function scrapeWithFetch(productId: string | number): Promise<ScrapedProdu
   }
   const discount = price && oldPrice && oldPrice > price ? Math.round((1 - price / oldPrice) * 100) : 0;
 
-  return { productName: name, productPrice: price, productOldPrice: oldPrice, discountRate: discount, reviews: [], images: images.slice(0, 4) };
+  // productItemId 추출 → 리뷰 AJAX API 호출
+  let reviews: CoupangReview[] = [];
+  const itemIdPatterns = [
+    /"productItemId"\s*:\s*(\d+)/,
+    /"defaultItemId"\s*:\s*(\d+)/,
+    /"itemId"\s*:\s*(\d+)/,
+    /data-product-item-id="(\d+)"/,
+    /itemId=(\d+)/,
+  ];
+  let itemId: string | null = null;
+  for (const pat of itemIdPatterns) {
+    const m = html.match(pat);
+    if (m) { itemId = m[1]; break; }
+  }
+
+  if (itemId) {
+    reviews = await fetchReviewsApi(productId, itemId, cookies);
+  }
+
+  // HTML 내 인라인 리뷰 텍스트 추출 (SSR 포함 시)
+  if (reviews.length === 0) {
+    const inlineReviews = [...html.matchAll(/"reviewContent"\s*:\s*"([^"]{20,400})"/g)];
+    for (const m of inlineReviews.slice(0, 3)) {
+      const content = m[1].replace(/\\n/g, ' ').replace(/\\r/g, '').replace(/\\"/g, '"').trim();
+      if (content.length > 20 && !content.startsWith('http')) {
+        reviews.push({ reviewer: '구매자', rating: 5, content, images: [] });
+      }
+    }
+  }
+
+  return { productName: name, productPrice: price, productOldPrice: oldPrice, discountRate: discount, reviews, images: images.slice(0, 4) };
 }
 
 /** 상품 데이터 스크래핑 (Playwright 우선, fetch 폴백) */
