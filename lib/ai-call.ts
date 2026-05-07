@@ -33,6 +33,10 @@ interface FallbackEntry {
 
 const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
   { provider: 'openrouter', model: 'qwen/qwen3-235b-a22b:free' },
+  { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  { provider: 'gemini',     model: 'gemini-2.0-flash' },
+  { provider: 'claude',     model: 'claude-haiku-4-5-20251001' },
+  { provider: 'gpt4o',      model: 'gpt-4o-mini' },
 ];
 
 // ── Resolve API key for a provider ──────────────────────────────────────────
@@ -351,22 +355,27 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
     resolvedModel = await getLatestClaudeModel('sonnet', resolvedKey);
   }
 
-  // Try primary provider
-  try {
-    const text = await callSingleProvider(
-      primaryProvider,
-      resolvedModel,
-      messages,
-      resolvedKey,
-      maxTokens,
-      temperature,
-    );
-    return { text, provider: primaryProvider, model: resolvedModel, usedFallback: false };
-  } catch (primaryErr) {
-    console.error(`[ai-call] Primary provider "${primaryProvider}" failed:`, primaryErr);
+  // Try primary provider (skip if no key configured for non-ollama providers)
+  const primarySkip = primaryProvider !== 'ollama' && !resolvedKey;
+  if (primarySkip) {
+    console.warn(`[ai-call] Primary provider "${primaryProvider}" skipped — no API key configured`);
+  } else {
+    try {
+      const text = await callSingleProvider(
+        primaryProvider,
+        resolvedModel,
+        messages,
+        resolvedKey,
+        maxTokens,
+        temperature,
+      );
+      return { text, provider: primaryProvider, model: resolvedModel, usedFallback: false };
+    } catch (primaryErr) {
+      console.error(`[ai-call] Primary provider "${primaryProvider}" failed:`, primaryErr);
 
-    if (!useFallback) {
-      throw primaryErr;
+      if (!useFallback) {
+        throw primaryErr;
+      }
     }
   }
 
@@ -389,8 +398,14 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
     // Skip if same as primary (already failed)
     if (entry.provider === primaryProvider && entry.model === resolvedModel) continue;
 
+    const fbKey = await resolveApiKey(entry.provider);
+    // Skip providers with no API key (except ollama which manages its own keys)
+    if (!fbKey && entry.provider !== 'ollama') {
+      console.warn(`[ai-call] Fallback "${entry.provider}" skipped — no API key configured`);
+      continue;
+    }
+
     try {
-      const fbKey = await resolveApiKey(entry.provider);
       const text = await callSingleProvider(
         entry.provider,
         entry.model,
@@ -406,7 +421,7 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
     }
   }
 
-  throw new Error('All AI providers failed. Please check your API keys and settings.');
+  throw new Error('사용 가능한 AI 없음. 설정 페이지에서 API 키(Gemini, OpenAI, Claude, OpenRouter 등)를 하나 이상 저장하세요.');
 }
 
 // ── Convenience wrapper ──────────────────────────────────────────────────────
