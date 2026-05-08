@@ -65,16 +65,22 @@ ${platform}용 글 써줘.`;
 }
 
 export async function POST(req: NextRequest) {
+  try {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
+  const body = await req.json() as Record<string, unknown>;
   const {
     productName, productUrl, price, affiliateUrl,
     imageUrls, firstReview, platforms, aiApiKey,
     generatedContent: preGenerated,
     threadsAccountIds,
-  } = await req.json();
+  } = body as {
+    productName?: string; productUrl?: string; price?: number; affiliateUrl?: string;
+    imageUrls?: string[]; firstReview?: string; platforms?: string[]; aiApiKey?: string;
+    generatedContent?: Record<string, string>; threadsAccountIds?: string[];
+  };
 
   if (!productName || !platforms?.length)
     return NextResponse.json({ error: '상품명과 플랫폼은 필수입니다' }, { status: 400 });
@@ -212,4 +218,9 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ results });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[auto-post] 예외:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
