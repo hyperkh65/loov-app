@@ -119,31 +119,33 @@ export default function CoupangHubPage() {
     setScrapeStatus('idle');
     setScrapedReview('');
 
-    // 제휴 링크 + 상품 스크랩 병렬 실행
+    // 제휴 링크 생성 후 → 제휴 링크의 itemId로 리뷰 API 직접 호출
     setAffiliateLoading(true);
     setScrapeStatus('loading');
 
-    const [affiliateRes] = await Promise.allSettled([
-      fetch('/api/coupang/affiliate', {
+    let generatedAffiliateUrl = product.productUrl;
+    try {
+      const aRes = await fetch('/api/coupang/affiliate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productUrl: product.productUrl }),
-      }),
-    ]);
-
-    if (affiliateRes.status === 'fulfilled' && affiliateRes.value.ok) {
-      const data = await affiliateRes.value.json() as { affiliateUrl?: string };
-      setAffiliateUrl(data.affiliateUrl || product.productUrl);
-    } else {
-      setAffiliateUrl(product.productUrl);
-    }
+      });
+      if (aRes.ok) {
+        const aData = await aRes.json() as { affiliateUrl?: string };
+        generatedAffiliateUrl = aData.affiliateUrl || product.productUrl;
+      }
+    } catch { /* productUrl 사용 */ }
+    setAffiliateUrl(generatedAffiliateUrl);
     setAffiliateLoading(false);
 
-    // 스크랩은 백그라운드로 (리뷰 수집 — 느릴 수 있음)
+    // 제휴 링크의 itemId를 활용해 리뷰 API 직접 호출 (스크래핑보다 안정적)
     fetch('/api/coupang/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productUrl: product.productUrl }),
+      body: JSON.stringify({
+        productUrl: product.productUrl,
+        affiliateUrl: generatedAffiliateUrl !== product.productUrl ? generatedAffiliateUrl : undefined,
+      }),
     })
       .then((r) => r.json())
       .then((d: { reviews?: Array<{ content: string }>; error?: string }) => {

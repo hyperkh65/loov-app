@@ -112,10 +112,26 @@ export interface ScrapedProduct {
   images: string[];
 }
 
-/** URL에서 상품 ID 추출 */
+/** URL에서 상품 ID 추출 (일반 상품 URL, 제휴 링크 모두 지원) */
 export function extractProductId(url: string): string | null {
   const m = url.match(/\/vp\/products\/(\d+)/);
-  return m ? m[1] : null;
+  if (m) return m[1];
+  // 제휴 링크: pageKey=상품ID
+  const pk = url.match(/[?&]pageKey=(\d+)/);
+  return pk ? pk[1] : null;
+}
+
+/** 제휴 링크에서 상품 ID + itemId 추출 */
+export function extractFromAffiliateUrl(url: string): { productId: string | null; itemId: string | null } {
+  try {
+    const u = new URL(url);
+    return {
+      productId: u.searchParams.get('pageKey'),
+      itemId: u.searchParams.get('itemId'),
+    };
+  } catch {
+    return { productId: null, itemId: null };
+  }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -524,8 +540,28 @@ async function scrapeWithFetch(productId: string | number): Promise<ScrapedProdu
   return { productName: name, productPrice: price, productOldPrice: oldPrice, discountRate: discount, reviews, images: images.slice(0, 4) };
 }
 
-/** 상품 데이터 스크래핑 (Playwright 우선, fetch 폴백) */
-export async function scrapeProductData(productId: string | number): Promise<ScrapedProduct> {
+/** 상품 데이터 스크래핑 (Playwright 우선, fetch 폴백)
+ *  itemId가 있으면 리뷰 JSON API를 직접 호출해서 속도·안정성 개선 */
+export async function scrapeProductData(
+  productId: string | number,
+  opts?: { itemId?: string },
+): Promise<ScrapedProduct> {
+  // itemId 알면 리뷰 API 먼저 시도 (스크래핑보다 훨씬 빠름)
+  if (opts?.itemId) {
+    try {
+      const reviews = await fetchReviewsApi(String(productId), opts.itemId, '');
+      if (reviews.length > 0) {
+        // 리뷰는 확보했으니 나머지 데이터를 fetch로 가져옴
+        try {
+          const basic = await scrapeWithFetch(productId);
+          return { ...basic, reviews };
+        } catch {
+          return { productName: '', productPrice: 0, productOldPrice: 0, discountRate: 0, reviews, images: [] };
+        }
+      }
+    } catch { /* 실패 시 일반 흐름으로 */ }
+  }
+
   try {
     return await scrapeWithBrowser(String(productId));
   } catch (err) {
