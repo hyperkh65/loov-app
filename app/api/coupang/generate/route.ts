@@ -25,6 +25,16 @@ const PLATFORM_STYLE: Record<string, string> = {
 • 3~5문장, 이모지 1~2개, 부담 없이`,
 };
 
+// 한국어 범위: AC00-D7A3 (한글), 3130-318F (자모)
+// 외국어 CJK: 4E00-9FFF (한자), 3040-30FF (일본어 가나)
+function hasForeignCJK(text: string): boolean {
+  return /[一-鿿぀-ヿ豈-﫿]/.test(text);
+}
+
+function stripForeignCJK(text: string): string {
+  return text.replace(/[一-鿿぀-ヿ豈-﫿]/g, '').replace(/  +/g, ' ').trim();
+}
+
 async function generateContent(
   productName: string,
   price: number,
@@ -40,10 +50,10 @@ async function generateContent(
   const systemPrompt = `너는 대한민국 최고의 SNS 쇼핑 콘텐츠 크리에이터야.
 쿠팡 제휴 마케팅 글을 쓰는데, 진짜 써본 사람처럼 자연스럽고 설득력 있게 써야 해.
 
-**반드시 순수한 한국어로만 작성할 것. 중국어, 일본어, 영어 등 다른 언어 절대 혼용 금지.**
+**반드시 순수한 한국어로만 작성할 것. 중국어, 일본어 등 외국어 절대 금지.**
 
 [절대 금지]
-- 한국어가 아닌 글자 (한자, 일본어 가나, 영어 단어 등) 섞기
+- 한자(漢字), 일본어 히라가나/가타카나 등 외국어 문자 혼용
 - "추천드립니다", "구매했습니다", "사용해봤습니다" 같은 광고 티나는 말
 - "좋은 제품", "만족스러운", "혜택" 같은 공허한 형용사
 - 링크나 URL을 본문에 넣기 (댓글에 달 거니까)
@@ -82,22 +92,27 @@ ${review}
 
   if (!result.text) throw new Error('AI가 빈 응답을 반환했습니다');
 
-  // 중국어/일본어 문자가 섞였으면 재생성 1회 시도
-  const hasForeignChars = /[぀-ヿ一-鿿豈-﫿]/.test(result.text);
-  if (hasForeignChars) {
-    const retry = await callAI({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt + '\n\n(중요: 반드시 한국어만 사용할 것. 한자/일본어 절대 금지)' },
-      ],
-      provider: provider || undefined,
-      maxTokens: 700,
-      temperature: 0.7,
-      useFallback: true,
-    });
-    if (retry.text && !/[぀-ヿ一-鿿豈-﫿]/.test(retry.text)) {
-      return retry.text;
+  // 외국어 문자가 섞였으면 다른 provider로 재시도 (Ollama/중국어 모델 회피)
+  if (hasForeignCJK(result.text)) {
+    const RETRY_PROVIDERS = ['gemini', 'claude', 'openrouter', 'gpt4o'];
+    for (const fp of RETRY_PROVIDERS) {
+      if (fp === result.provider) continue;
+      try {
+        const retry = await callAI({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt + '\n\n(IMPORTANT: Korean ONLY. No Chinese or Japanese characters at all.)' },
+          ],
+          provider: fp,
+          maxTokens: 700,
+          temperature: 0.7,
+          useFallback: false,
+        });
+        if (retry.text && !hasForeignCJK(retry.text)) return retry.text;
+      } catch { continue; }
     }
+    // 전부 실패하면 외국어 문자 제거 후 반환
+    return stripForeignCJK(result.text);
   }
 
   return result.text;
