@@ -220,33 +220,38 @@ export default function CoupangHubPage() {
     setPostMsg('');
     setPostResults([]);
 
-    const res = await fetch('/api/coupang/auto-post', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        productName: selected.productName,
-        productUrl: selected.productUrl,
-        price: selected.productPrice,
-        discountRate: selected.discountRate,
-        affiliateUrl,
-        imageUrls: [selected.productImage].filter(Boolean),
-        firstReview: '',
-        platforms: connectedPlatforms,
-        generatedContent: contents,
-        threadsAccountIds: selectedThreadsAccounts,
-      }),
-    });
+    try {
+      const res = await fetch('/api/coupang/auto-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName: selected.productName,
+          productUrl: selected.productUrl,
+          price: selected.productPrice,
+          discountRate: selected.discountRate,
+          affiliateUrl,
+          imageUrls: [selected.productImage].filter(Boolean),
+          firstReview: '',
+          platforms: connectedPlatforms,
+          generatedContent: contents,
+          threadsAccountIds: selectedThreadsAccounts,
+        }),
+      });
 
-    const data = await res.json() as { results?: PostResult[]; error?: string };
-    if (res.ok) {
-      const results: PostResult[] = data.results || [];
-      setPostResults(results);
-      const ok = results.filter(r => r.success).length;
-      setPostMsg(`✅ ${ok}/${results.length}개 발행 완료`);
-    } else {
-      setPostMsg(`❌ ${data.error || '발행 실패'}`);
+      const data = await res.json() as { results?: PostResult[]; error?: string };
+      if (res.ok) {
+        const results: PostResult[] = data.results || [];
+        setPostResults(results);
+        const ok = results.filter(r => r.success).length;
+        setPostMsg(`✅ ${ok}/${results.length}개 발행 완료`);
+      } else {
+        setPostMsg(`❌ ${data.error || '발행 실패'}`);
+      }
+    } catch (e) {
+      setPostMsg(`❌ 네트워크 오류: ${String(e)}`);
+    } finally {
+      setPosting(false);
     }
-    setPosting(false);
   };
 
   const handleCopyAll = () => {
