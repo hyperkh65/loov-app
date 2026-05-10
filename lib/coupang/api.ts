@@ -575,31 +575,29 @@ async function getCoupangCookies(productId: string): Promise<string> {
 }
 
 /** 상품 데이터 스크래핑 (Playwright 우선, fetch 폴백)
- *  itemId가 있으면 리뷰 JSON API를 직접 호출해서 속도·안정성 개선 */
+ *  브라우저 → fetch(HTML) → 리뷰 API(itemId 있을 때) 순서 */
 export async function scrapeProductData(
   productId: string | number,
   opts?: { itemId?: string },
 ): Promise<ScrapedProduct> {
-  // itemId 알면 쿠키 수집 후 리뷰 API 직접 호출
-  if (opts?.itemId) {
-    try {
-      const cookies = await getCoupangCookies(String(productId));
-      const reviews = await fetchReviewsApi(String(productId), opts.itemId, cookies);
-      if (reviews.length > 0) {
-        try {
-          const basic = await scrapeWithFetch(productId);
-          return { ...basic, reviews };
-        } catch {
-          return { productName: '', productPrice: 0, productOldPrice: 0, discountRate: 0, reviews, images: [] };
-        }
-      }
-    } catch { /* 실패 시 일반 흐름으로 */ }
-  }
-
+  // 1순위: Playwright (XHR 인터셉트로 리뷰까지 수집)
   try {
     return await scrapeWithBrowser(String(productId));
   } catch (err) {
     console.warn('[coupang] browser scrape failed, falling back to fetch:', err);
-    return await scrapeWithFetch(productId);
   }
+
+  // 2순위: fetch HTML (상품명·가격 수집 + HTML 내 itemId 발견 시 리뷰 API 시도)
+  const result = await scrapeWithFetch(productId);
+
+  // 3순위: 이미 알고 있는 itemId로 리뷰 API 직접 시도
+  if (opts?.itemId && result.reviews.length === 0) {
+    try {
+      const cookies = await getCoupangCookies(String(productId));
+      const reviews = await fetchReviewsApi(String(productId), opts.itemId, cookies);
+      if (reviews.length > 0) return { ...result, reviews };
+    } catch { /* ignore */ }
+  }
+
+  return result;
 }
