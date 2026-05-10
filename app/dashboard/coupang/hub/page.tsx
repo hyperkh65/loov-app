@@ -39,11 +39,14 @@ const PROVIDERS = [
 const DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
 export default function CoupangHubPage() {
-  const [tab, setTab] = useState<'goldbox' | 'search'>('goldbox');
+  const [tab, setTab] = useState<'goldbox' | 'search' | 'direct'>('goldbox');
   const [keyword, setKeyword] = useState('');
   const [products, setProducts] = useState<CoupangProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [directUrl, setDirectUrl] = useState('');
+  const [directLoading, setDirectLoading] = useState(false);
+  const [directError, setDirectError] = useState('');
 
   const [selected, setSelected] = useState<CoupangProduct | null>(null);
   const [affiliateUrl, setAffiliateUrl] = useState('');
@@ -81,6 +84,80 @@ export default function CoupangHubPage() {
       }
     );
   }, []);
+
+  const handleDirectUrl = async () => {
+    const url = directUrl.trim();
+    if (!url) return;
+    setDirectLoading(true);
+    setDirectError('');
+    setSelected(null);
+    setContents({});
+    setGenerateError('');
+    setPostMsg('');
+    setPostResults([]);
+    setScrapeStatus('loading');
+    setScrapedReview('');
+
+    // 제휴링크에서 productId/itemId 추출
+    let productId: string | null = null;
+    let itemId: string | null = null;
+    try {
+      const u = new URL(url);
+      productId = u.searchParams.get('pageKey');
+      itemId = u.searchParams.get('itemId');
+      if (!productId) {
+        const m = url.match(/\/vp\/products\/(\d+)/);
+        productId = m ? m[1] : null;
+      }
+      if (!itemId) {
+        const m = url.match(/[?&]itemId=(\d+)/);
+        itemId = m ? m[1] : null;
+      }
+    } catch { /* ignore */ }
+
+    if (!productId) {
+      setDirectError('유효한 쿠팡 제휴링크를 입력하세요 (pageKey 또는 상품 URL)');
+      setDirectLoading(false);
+      setScrapeStatus('idle');
+      return;
+    }
+
+    setAffiliateUrl(url);
+
+    try {
+      const res = await fetch('/api/coupang/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, affiliateUrl: url }),
+      });
+      const data = await res.json() as {
+        productName?: string; productPrice?: number; productOldPrice?: number;
+        discountRate?: number; images?: string[]; reviews?: Array<{ content: string }>;
+        error?: string;
+      };
+      if (res.ok) {
+        setSelected({
+          productId,
+          productName: data.productName || '상품',
+          productPrice: data.productPrice || 0,
+          productOldPrice: data.productOldPrice,
+          discountRate: data.discountRate,
+          productUrl: `https://www.coupang.com/vp/products/${productId}${itemId ? `?itemId=${itemId}` : ''}`,
+          productImage: data.images?.[0] || '',
+        });
+        const review = data.reviews?.[0]?.content?.trim() || '';
+        setScrapedReview(review);
+        setScrapeStatus(review ? 'done' : 'failed');
+      } else {
+        setDirectError(data.error || '스크랩 실패');
+        setScrapeStatus('failed');
+      }
+    } catch (e) {
+      setDirectError('네트워크 오류: ' + String(e));
+      setScrapeStatus('failed');
+    }
+    setDirectLoading(false);
+  };
 
   const loadProducts = useCallback(async (type: 'goldbox' | 'search', kw?: string) => {
     setLoading(true);
@@ -324,6 +401,12 @@ export default function CoupangHubPage() {
                 tab === 'search' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'
               }`}
             >🔍 키워드</button>
+            <button
+              onClick={() => setTab('direct')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                tab === 'direct' ? 'bg-white shadow-sm text-emerald-600' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >🔗 제휴링크</button>
           </div>
 
           {tab === 'search' && (
@@ -342,10 +425,36 @@ export default function CoupangHubPage() {
               >검색</button>
             </div>
           )}
+
+          {tab === 'direct' && (
+            <div className="flex gap-2 flex-1">
+              <input
+                value={directUrl}
+                onChange={(e) => setDirectUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleDirectUrl()}
+                placeholder="쿠팡 제휴링크 붙여넣기 (link.coupang.com/...)"
+                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-emerald-400"
+              />
+              <button
+                onClick={handleDirectUrl}
+                disabled={directLoading || !directUrl.trim()}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+              >{directLoading ? '조회 중...' : '상품 조회'}</button>
+            </div>
+          )}
         </div>
+        {directError && tab === 'direct' && (
+          <p className="text-xs text-red-500 mb-3">{directError}</p>
+        )}
 
         {/* Product grid */}
-        {loading ? (
+        {tab === 'direct' ? (
+          <div className="text-center py-10 text-gray-400 text-sm space-y-1">
+            <p className="text-2xl">🔗</p>
+            <p>쿠팡 제휴링크를 위에 붙여넣고 <strong>상품 조회</strong>를 누르세요</p>
+            <p className="text-xs text-gray-300">link.coupang.com/... 형식의 링크에서 pageKey·itemId를 자동 추출합니다</p>
+          </div>
+        ) : loading ? (
           <div className="text-center py-14 text-gray-400 text-sm">
             <div className="text-3xl mb-2 animate-pulse">🛒</div>
             상품 불러오는 중...
