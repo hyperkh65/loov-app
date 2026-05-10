@@ -540,18 +540,52 @@ async function scrapeWithFetch(productId: string | number): Promise<ScrapedProdu
   return { productName: name, productPrice: price, productOldPrice: oldPrice, discountRate: discount, reviews, images: images.slice(0, 4) };
 }
 
+/** 쿠팡 홈 → 상품 페이지 순으로 쿠키 수집 (리뷰 API 인증용) */
+async function getCoupangCookies(productId: string): Promise<string> {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  let cookies = '';
+
+  const parseCookies = (header: string | null) =>
+    header ? header.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ') : '';
+
+  try {
+    const homeRes = await fetch('https://www.coupang.com/', {
+      headers: { 'User-Agent': ua, 'Accept': 'text/html,*/*', 'Accept-Language': 'ko-KR,ko;q=0.9' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(6000),
+    });
+    cookies = parseCookies(homeRes.headers.get('set-cookie'));
+  } catch { /* ignore */ }
+
+  try {
+    const prodRes = await fetch(`https://www.coupang.com/vp/products/${productId}`, {
+      headers: {
+        'User-Agent': ua, 'Accept': 'text/html,*/*', 'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Referer': 'https://www.coupang.com/',
+        ...(cookies ? { Cookie: cookies } : {}),
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+    const more = parseCookies(prodRes.headers.get('set-cookie'));
+    if (more) cookies = [cookies, more].filter(Boolean).join('; ');
+  } catch { /* ignore */ }
+
+  return cookies;
+}
+
 /** 상품 데이터 스크래핑 (Playwright 우선, fetch 폴백)
  *  itemId가 있으면 리뷰 JSON API를 직접 호출해서 속도·안정성 개선 */
 export async function scrapeProductData(
   productId: string | number,
   opts?: { itemId?: string },
 ): Promise<ScrapedProduct> {
-  // itemId 알면 리뷰 API 먼저 시도 (스크래핑보다 훨씬 빠름)
+  // itemId 알면 쿠키 수집 후 리뷰 API 직접 호출
   if (opts?.itemId) {
     try {
-      const reviews = await fetchReviewsApi(String(productId), opts.itemId, '');
+      const cookies = await getCoupangCookies(String(productId));
+      const reviews = await fetchReviewsApi(String(productId), opts.itemId, cookies);
       if (reviews.length > 0) {
-        // 리뷰는 확보했으니 나머지 데이터를 fetch로 가져옴
         try {
           const basic = await scrapeWithFetch(productId);
           return { ...basic, reviews };

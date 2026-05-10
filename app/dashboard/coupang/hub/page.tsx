@@ -560,8 +560,17 @@ export default function CoupangHubPage() {
               </div>
             )}
             {scrapeStatus === 'failed' && (
-              <div className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
-                리뷰 수집 실패 — 상품명·가격으로만 생성합니다
+              <div className="space-y-1.5">
+                <div className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                  리뷰 자동 수집 실패 — 직접 붙여넣거나 그냥 생성하세요
+                </div>
+                <textarea
+                  value={scrapedReview}
+                  onChange={(e) => setScrapedReview(e.target.value)}
+                  placeholder="쿠팡 상품 페이지 리뷰 탭에서 후기 복사·붙여넣기 (선택)"
+                  rows={3}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-amber-400 placeholder:text-gray-300"
+                />
               </div>
             )}
 
