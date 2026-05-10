@@ -101,6 +101,7 @@ export default function AutoServicePage() {
   const [customKwInput, setCustomKwInput] = useState('');
   const [runningNow, setRunningNow] = useState(false);
   const [runResult, setRunResult] = useState<{ generated: number; keywords: string[]; errors?: { keyword: string; reason: string }[] } | null>(null);
+  const [runProgress, setRunProgress] = useState<{ keyword: string; status: 'generating' | 'done' | 'error'; reason?: string }[]>([]);
 
   // 수동 생성
   const [manualKeyword, setManualKeyword] = useState('');
@@ -258,13 +259,12 @@ export default function AutoServicePage() {
     setSavingSettings(false);
   };
 
-  // 지금 바로 실행
+  // 지금 바로 실행 (SSE 스트리밍)
   const runNow = async () => {
     setRunningNow(true);
     setRunResult(null);
+    setRunProgress([]);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 600_000); // 10분 타임아웃
       const res = await fetch('/api/auto-service/auto-run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -274,26 +274,53 @@ export default function AutoServicePage() {
           max: autoSettings.max_per_run,
           ...getAiKeys(),
         }),
-        signal: controller.signal,
       });
-      clearTimeout(timeout);
-      const rawText = await res.text();
-      let data: { generated?: number; keywords?: string[]; errors?: { keyword: string; reason: string }[] };
-      try { data = JSON.parse(rawText); } catch {
-        throw new Error(`서버 응답 오류 (${res.status}) — AI 생성 시간이 너무 걸렸거나 서버 에러. 초안 탭에서 생성된 글을 확인해보세요.`);
+
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `서버 오류 (${res.status})`);
       }
-      setRunResult({ generated: data.generated || 0, keywords: data.keywords || [], errors: data.errors || [] });
-      if ((data.generated ?? 0) > 0) {
-        setTab('drafts');
-        await loadArticles();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6)) as {
+              type: string; keyword?: string; status?: string;
+              reason?: string; generated?: number;
+              keywords?: string[]; errors?: { keyword: string; reason: string }[];
+            };
+            if (event.type === 'progress' && event.keyword) {
+              setRunProgress(prev => {
+                const next = prev.filter(p => p.keyword !== event.keyword);
+                return [...next, { keyword: event.keyword!, status: event.status as 'generating' | 'done' | 'error', reason: event.reason }];
+              });
+            } else if (event.type === 'done') {
+              setRunResult({ generated: event.generated || 0, keywords: event.keywords || [], errors: event.errors || [] });
+              if ((event.generated ?? 0) > 0) {
+                setTab('drafts');
+                await loadArticles();
+              }
+              fetch('/api/auto-service/settings').then(r => r.json()).then(d => { if (d && !d.error) setAutoSettings(d); });
+            } else if (event.type === 'error') {
+              setRunResult({ generated: 0, keywords: [], errors: [{ keyword: '실행', reason: event.reason || '알 수 없는 오류' }] });
+            }
+          } catch { /* ignore parse error */ }
+        }
       }
-      fetch('/api/auto-service/settings').then(r => r.json()).then(d => { if (d && !d.error) setAutoSettings(d); });
     } catch (err) {
-      const isTimeout = err instanceof Error && err.name === 'AbortError';
       setRunResult({
-        generated: 0,
-        keywords: [],
-        errors: [{ keyword: '실행', reason: isTimeout ? '시간 초과 (5분). 글이 일부 생성됐을 수 있으니 초안 탭을 확인하세요.' : String(err) }],
+        generated: 0, keywords: [],
+        errors: [{ keyword: '실행', reason: String(err) }],
       });
     } finally {
       setRunningNow(false);
@@ -891,7 +918,25 @@ export default function AutoServicePage() {
             <h2 className="font-semibold text-gray-800 mb-3">지금 바로 실행</h2>
             <p className="text-sm text-gray-500 mb-4">스케줄을 기다리지 않고 지금 즉시 글을 생성합니다. 생성된 초안은 "초안 관리"에서 확인하고 승인 후 발행하세요.</p>
 
-            {runResult && (
+            {/* 실시간 진행 상황 */}
+            {runningNow && runProgress.length > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 rounded-xl space-y-1.5">
+                {runProgress.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    {p.status === 'generating' && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                    {p.status === 'done' && <span className="text-green-500 flex-shrink-0">✓</span>}
+                    {p.status === 'error' && <span className="text-red-500 flex-shrink-0">✗</span>}
+                    <span className={p.status === 'generating' ? 'text-blue-700 font-medium' : p.status === 'done' ? 'text-green-700' : 'text-red-600'}>
+                      {p.keyword}
+                      {p.status === 'generating' && ' — AI 글 생성 중...'}
+                      {p.status === 'error' && p.reason && ` — ${p.reason.slice(0, 60)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {runResult && !runningNow && (
               <div className="mb-4 space-y-2">
                 {runResult.generated > 0 ? (
                   <div className="p-3 rounded-xl text-sm bg-green-50 text-green-700">
@@ -923,7 +968,7 @@ export default function AutoServicePage() {
               {runningNow ? (
                 <>
                   <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                  <span>실행 중... (최대 5분 소요)</span>
+                  <span>실행 중...</span>
                 </>
               ) : '🚀 지금 바로 실행'}
             </button>

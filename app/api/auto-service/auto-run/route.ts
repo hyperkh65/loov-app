@@ -506,7 +506,7 @@ function isQualityKeyword(kw: string): boolean {
   return true;
 }
 
-// 수동 트리거 (대시보드에서 즉시 실행)
+// 수동 트리거 — SSE 스트리밍으로 실시간 진행 상황 전달
 export async function POST(req: NextRequest) {
   const supabase = await (await import('@/lib/supabase-server')).createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -515,34 +515,60 @@ export async function POST(req: NextRequest) {
   const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey } = await req.json();
   const adminSupabase = createAdminClient();
 
-  const rawKeywords = customKws?.length > 0 ? customKws : await getTrendingKeywords();
-  // 품질 필터 적용: 불완전하거나 의미없는 키워드 제외
-  const trendKeywords = rawKeywords.filter(isQualityKeyword);
-  const keywordsToUse = trendKeywords.slice(0, max * 3); // 여유있게 풀 확보
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* closed */ }
+      };
 
-  let generated = 0;
-  const usedKeywords: string[] = [];
-  const errors: { keyword: string; reason: string }[] = [];
+      try {
+        send({ type: 'start' });
 
-  for (const keyword of keywordsToUse) {
-    if (generated >= max) break;
-    const result = await generateArticleForUser(adminSupabase, user.id, keyword, ai_model, clientOllamaKey, clientOpenrouterKey);
-    if (result.ok) {
-      generated++;
-      usedKeywords.push(keyword);
-    } else if (result.reason && !result.reason.includes('중복')) {
-      // 중복 아닌 실제 에러만 저장
-      errors.push({ keyword, reason: result.reason });
-    }
-  }
+        const rawKeywords = customKws?.length > 0 ? customKws : await getTrendingKeywords();
+        const keywordsToUse = rawKeywords.filter(isQualityKeyword).slice(0, max * 3);
+        send({ type: 'keywords', keywords: keywordsToUse.slice(0, max) });
 
-  // 설정 업데이트
-  await adminSupabase.from('bossai_auto_settings').upsert({
-    user_id: user.id,
-    last_run_at: new Date().toISOString(),
-    last_run_status: generated > 0 ? 'success' : (errors.length > 0 ? 'error' : 'skipped'),
-    last_run_count: generated,
-  }, { onConflict: 'user_id' });
+        let generated = 0;
+        const usedKeywords: string[] = [];
+        const errors: { keyword: string; reason: string }[] = [];
 
-  return NextResponse.json({ ok: true, generated, keywords: usedKeywords, errors });
+        for (const keyword of keywordsToUse) {
+          if (generated >= max) break;
+          send({ type: 'progress', keyword, status: 'generating' });
+
+          const result = await generateArticleForUser(adminSupabase, user!.id, keyword, ai_model, clientOllamaKey, clientOpenrouterKey);
+          if (result.ok) {
+            generated++;
+            usedKeywords.push(keyword);
+            send({ type: 'progress', keyword, status: 'done', generated });
+          } else if (result.reason && !result.reason.includes('중복')) {
+            errors.push({ keyword, reason: result.reason });
+            send({ type: 'progress', keyword, status: 'error', reason: result.reason });
+          }
+        }
+
+        await adminSupabase.from('bossai_auto_settings').upsert({
+          user_id: user!.id,
+          last_run_at: new Date().toISOString(),
+          last_run_status: generated > 0 ? 'success' : (errors.length > 0 ? 'error' : 'skipped'),
+          last_run_count: generated,
+        }, { onConflict: 'user_id' });
+
+        send({ type: 'done', generated, keywords: usedKeywords, errors });
+      } catch (err) {
+        send({ type: 'error', reason: err instanceof Error ? err.message : String(err) });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no', // nginx 버퍼링 비활성화
+    },
+  });
 }
