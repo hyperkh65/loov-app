@@ -172,19 +172,11 @@ export async function generateText(
 ): Promise<string> {
   const errors: string[] = [];
 
-  // 0. Claude 모델 직접 지정된 경우 우선 처리
-  if (preferModel.startsWith('claude-')) {
-    const claudeKey = await getSetting('CLAUDE_API_KEY');
-    if (claudeKey) {
-      try {
-        return await callClaude(claudeKey, prompt, preferModel);
-      } catch (e) {
-        errors.push(`Claude(${preferModel}): ${e}`);
-      }
-    }
-  }
+  // preferModel이 Ollama 모델인지 판단
+  const NON_OLLAMA = ['gemini', 'claude', 'openai', 'gpt', 'openrouter'];
+  const isOllamaPreferred = !NON_OLLAMA.some(p => preferModel.toLowerCase().startsWith(p));
 
-  // 1. Ollama Cloud (무료AI 페이지 localStorage 키 우선 → DB 배열키 → DB 단수키 순서)
+  // Ollama 키 수집
   const ollamaKeys: string[] = [];
   if (clientOllamaKey) ollamaKeys.push(clientOllamaKey);
   try {
@@ -197,68 +189,90 @@ export async function generateText(
   const legacyKey = await getSetting('OLLAMA_API_KEY');
   if (legacyKey && !ollamaKeys.includes(legacyKey)) ollamaKeys.push(legacyKey);
 
-  if (ollamaKeys.length > 0) {
+  // ── Ollama Cloud ────────────────────────────────────────
+  const tryOllama = async (mainModel: string) => {
+    if (ollamaKeys.length === 0) return false;
     const OLLAMA_FALLBACKS = [
       'qwen3.5', 'qwen3', 'qwen3-coder', 'llama3.3', 'llama3.2',
       'mistral', 'mistral-small3.1', 'gemma3', 'deepseek-r1',
       'phi4', 'phi4-mini', 'ministral-3',
     ];
-    for (const ollamaKey of ollamaKeys) {
-      // 실제 사용 가능한 모델만 시도 (없으면 fallback 전체 시도)
-      const available = await getAvailableOllamaModels(ollamaKey);
-      const allCandidates = [preferModel, ...OLLAMA_FALLBACKS.filter(m => m !== preferModel)];
-      const modelsToTry = available.length > 0
-        ? allCandidates.filter(m => available.includes(m))
-        : allCandidates;
-      if (modelsToTry.length === 0) continue;
-      for (const tryModel of modelsToTry) {
-        try { return await callOllama(ollamaKey, tryModel, prompt); } catch { continue; }
+    for (const key of ollamaKeys) {
+      const available = await getAvailableOllamaModels(key);
+      const candidates = [mainModel, ...OLLAMA_FALLBACKS.filter(m => m !== mainModel)];
+      const toTry = available.length > 0 ? candidates.filter(m => available.includes(m)) : candidates;
+      if (toTry.length === 0) continue;
+      for (const model of toTry) {
+        try { return await callOllama(key, model, prompt); } catch { continue; }
       }
     }
-    errors.push('Ollama Cloud: 모든 키/모델 실패');
-  }
+    errors.push('Ollama: 모든 키/모델 실패');
+    return false;
+  };
 
-  // 2. OpenRouter (localStorage 키 → DB 설정 키 순서)
-  const orKey = clientOpenrouterKey || await getSetting('OPENROUTER_API_KEY');
-  if (orKey) {
+  // ── 나머지 provider 헬퍼 ────────────────────────────────
+  const tryGemini = async () => {
+    const key = await getSetting('GEMINI_API_KEY');
+    if (!key) return false;
+    try { return await callGemini(key, prompt); }
+    catch (e) { errors.push(`Gemini: ${e}`); return false; }
+  };
+  const tryOpenRouter = async () => {
+    const key = clientOpenrouterKey || await getSetting('OPENROUTER_API_KEY');
+    if (!key) return false;
     for (const model of OPENROUTER_MODELS) {
-      try { return await callOpenRouter(orKey, model, prompt); } catch { continue; }
+      try { return await callOpenRouter(key, model, prompt); } catch { continue; }
     }
-  }
+    return false;
+  };
+  const tryOpenAI = async () => {
+    const key = await getSetting('OPENAI_API_KEY');
+    if (!key) return false;
+    try { return await callOpenAI(key, prompt); }
+    catch (e) { errors.push(`OpenAI: ${e}`); return false; }
+  };
+  const tryClaude = async (model?: string) => {
+    const key = await getSetting('CLAUDE_API_KEY');
+    if (!key) return false;
+    try { return await callClaude(key, prompt, model); }
+    catch (e) { errors.push(`Claude: ${e}`); return false; }
+  };
 
-  // 3. Gemini (설정 페이지 DB 키)
-  const geminiKey = await getSetting('GEMINI_API_KEY');
-  if (geminiKey) {
-    try {
-      return await callGemini(geminiKey, prompt);
-    } catch (e) {
-      errors.push(`Gemini: ${e}`);
-    }
-  }
+  // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
+  let result: string | false = false;
 
-  // 4. OpenAI (설정 페이지 DB 키)
-  const openaiKey = await getSetting('OPENAI_API_KEY');
-  if (openaiKey) {
-    try {
-      return await callOpenAI(openaiKey, prompt);
-    } catch (e) {
-      errors.push(`OpenAI: ${e}`);
-    }
+  if (preferModel.startsWith('claude-')) {
+    result = await tryClaude(preferModel);
+  } else if (preferModel === 'claude') {
+    result = await tryClaude();
+  } else if (preferModel === 'gemini') {
+    result = await tryGemini();
+  } else if (preferModel === 'openrouter') {
+    result = await tryOpenRouter();
+  } else if (preferModel.startsWith('gpt') || preferModel === 'openai') {
+    result = await tryOpenAI();
+  } else if (isOllamaPreferred) {
+    result = await tryOllama(preferModel);
   }
+  if (result) return result;
 
-  // 5. Claude Haiku (설정 페이지 DB 키 - 빠르고 저렴, 한국어 우수)
-  const claudeKey = await getSetting('CLAUDE_API_KEY');
-  if (claudeKey) {
-    try {
-      return await callClaude(claudeKey, prompt);
-    } catch (e) {
-      errors.push(`Claude: ${e}`);
-    }
+  // ── 나머지 provider 순서대로 fallback ─────────────────────
+  const fallbacks: Array<() => Promise<string | false>> = [];
+
+  if (!isOllamaPreferred) fallbacks.push(() => tryOllama('qwen3'));
+  if (!preferModel.startsWith('gemini') && preferModel !== 'gemini') fallbacks.push(tryGemini);
+  if (!preferModel.startsWith('claude')) fallbacks.push(() => tryClaude());
+  if (preferModel !== 'openrouter') fallbacks.push(tryOpenRouter);
+  if (!preferModel.startsWith('gpt') && preferModel !== 'openai') fallbacks.push(tryOpenAI);
+
+  for (const fn of fallbacks) {
+    const r = await fn();
+    if (r) return r;
   }
 
   throw new Error(
     `사용 가능한 AI 없음\n` +
     (errors.length ? `오류: ${errors.join(' | ')}\n` : '') +
-    'Ollama Cloud 키가 없거나 모든 모델 실패 → 설정 페이지에서 Gemini, OpenAI, Claude API 키 중 하나를 저장하세요.'
+    '설정 페이지에서 Gemini, Claude, OpenAI, OpenRouter API 키 중 하나를 저장하세요.'
   );
 }
