@@ -55,20 +55,23 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
 }
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      signal: AbortSignal.timeout(540_000),
-    }
-  );
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  if (!text) throw new Error('Gemini 빈 응답');
-  return text;
+  const GEMINI_MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  for (const model of GEMINI_MODELS) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        signal: AbortSignal.timeout(540_000),
+      }
+    );
+    if (!res.ok) continue;
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (text) return text;
+  }
+  throw new Error('Gemini 모든 모델 실패');
 }
 
 async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
@@ -105,7 +108,8 @@ async function getAvailableOllamaModels(apiKey: string): Promise<string[]> {
       return [];
     }
     const data = await res.json() as { models?: Array<{ name: string }> };
-    const models = (data.models || []).map(m => m.name.split(':')[0]);
+    // 전체 이름 그대로 보존 (kimi-k2.6:cloud, llama3.3:cloud 등 — split 금지)
+    const models = (data.models || []).map(m => m.name).filter(Boolean);
     _ollamaModelCache.set(apiKey, { models, ts: Date.now() });
     return models;
   } catch {
@@ -199,8 +203,16 @@ export async function generateText(
     ];
     for (const key of ollamaKeys) {
       const available = await getAvailableOllamaModels(key);
-      const candidates = [mainModel, ...OLLAMA_FALLBACKS.filter(m => m !== mainModel)];
-      const toTry = available.length > 0 ? candidates.filter(m => available.includes(m)) : candidates;
+      let toTry: string[];
+      if (available.length > 0) {
+        // available에는 전체 이름(kimi-k2.6:cloud, llama3.3:cloud 등) 포함
+        // mainModel 기준으로 우선순위: 정확히 일치 또는 baseModel: prefix 일치
+        const priority = available.filter(m => m === mainModel || m.startsWith(mainModel + ':'));
+        const rest = available.filter(m => !priority.includes(m));
+        toTry = [...priority, ...rest];
+      } else {
+        toTry = [mainModel, ...OLLAMA_FALLBACKS.filter(m => m !== mainModel)];
+      }
       if (toTry.length === 0) continue;
       for (const model of toTry) {
         try { return await callOllama(key, model, prompt); } catch { continue; }
