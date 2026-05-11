@@ -400,15 +400,52 @@ async function fetchReviewsApi(
   return reviews;
 }
 
+/** 제휴링크/일반링크 리다이렉트를 수동으로 따라가며 쿠키 수집 */
+async function followAndCollectCookies(startUrl: string): Promise<{ finalUrl: string; cookies: string }> {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  let currentUrl = startUrl;
+  const cookieMap = new Map<string, string>();
+
+  for (let i = 0; i < 8; i++) {
+    try {
+      const res = await fetch(currentUrl, {
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'text/html,*/*',
+          'Accept-Language': 'ko-KR,ko;q=0.9',
+          ...(cookieMap.size > 0 ? { Cookie: [...cookieMap.values()].join('; ') } : {}),
+        },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(5000),
+      });
+      const raw = res.headers.get('set-cookie');
+      if (raw) {
+        raw.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).forEach(c => {
+          const key = c.split('=')[0];
+          if (key) cookieMap.set(key, c);
+        });
+      }
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location');
+        if (!loc) break;
+        currentUrl = loc.startsWith('http') ? loc : new URL(loc, currentUrl).toString();
+      } else {
+        break;
+      }
+    } catch { break; }
+  }
+  return { finalUrl: currentUrl, cookies: [...cookieMap.values()].join('; ') };
+}
+
 /** fetch 기반 스크래핑 (Playwright 실패 시 폴백) */
-async function scrapeWithFetch(productId: string | number): Promise<ScrapedProduct> {
+async function scrapeWithFetch(productId: string | number, initialCookies = ''): Promise<ScrapedProduct> {
   const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   const mobileUa = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
   const productUrl = `https://www.coupang.com/vp/products/${productId}`;
 
-  // 1. 데스크탑 UA로 상품 페이지 fetch
+  // 1. 데스크탑 UA로 상품 페이지 fetch (제휴링크에서 수집한 쿠키 사용)
   let html = '';
-  let cookies = '';
+  let cookies = initialCookies;
   try {
     const res = await fetch(productUrl, {
       headers: {
@@ -425,15 +462,18 @@ async function scrapeWithFetch(productId: string | number): Promise<ScrapedProdu
         'Sec-Fetch-User': '?1',
         'Upgrade-Insecure-Requests': '1',
         'Cache-Control': 'no-cache',
+        ...(cookies ? { Cookie: cookies } : {}),
       },
       redirect: 'follow',
       signal: AbortSignal.timeout(15000),
     });
     if (res.ok) {
       html = await res.text();
-      // 쿠키 저장 (리뷰 API 요청에 재사용)
       const setCookie = res.headers.get('set-cookie');
-      if (setCookie) cookies = setCookie.split(',').map((c) => c.split(';')[0].trim()).join('; ');
+      if (setCookie) {
+        const more = setCookie.split(',').map((c) => c.split(';')[0].trim()).filter(Boolean).join('; ');
+        cookies = [cookies, more].filter(Boolean).join('; ');
+      }
     }
   } catch { /* ignore */ }
 
@@ -575,10 +615,10 @@ async function getCoupangCookies(productId: string): Promise<string> {
 }
 
 /** 상품 데이터 스크래핑 (Playwright 우선, fetch 폴백)
- *  브라우저 → fetch(HTML) → 리뷰 API(itemId 있을 때) 순서 */
+ *  브라우저 → 제휴링크 쿠키+fetch(HTML) → 리뷰 API 순서 */
 export async function scrapeProductData(
   productId: string | number,
-  opts?: { itemId?: string },
+  opts?: { itemId?: string; affiliateUrl?: string },
 ): Promise<ScrapedProduct> {
   // 1순위: Playwright (XHR 인터셉트로 리뷰까지 수집)
   try {
@@ -587,14 +627,21 @@ export async function scrapeProductData(
     console.warn('[coupang] browser scrape failed, falling back to fetch:', err);
   }
 
-  // 2순위: fetch HTML (상품명·가격 수집 + HTML 내 itemId 발견 시 리뷰 API 시도)
-  const result = await scrapeWithFetch(productId);
+  // 2순위: 제휴링크 리다이렉트 체인에서 쿠키 수집 후 fetch
+  let initialCookies = '';
+  if (opts?.affiliateUrl) {
+    try {
+      const { cookies } = await followAndCollectCookies(opts.affiliateUrl);
+      initialCookies = cookies;
+    } catch { /* ignore */ }
+  }
+  const result = await scrapeWithFetch(productId, initialCookies);
 
   // 3순위: 이미 알고 있는 itemId로 리뷰 API 직접 시도
   if (opts?.itemId && result.reviews.length === 0) {
     try {
-      const cookies = await getCoupangCookies(String(productId));
-      const reviews = await fetchReviewsApi(String(productId), opts.itemId, cookies);
+      const reviewCookies = initialCookies || await getCoupangCookies(String(productId));
+      const reviews = await fetchReviewsApi(String(productId), opts.itemId, reviewCookies);
       if (reviews.length > 0) return { ...result, reviews };
     } catch { /* ignore */ }
   }
