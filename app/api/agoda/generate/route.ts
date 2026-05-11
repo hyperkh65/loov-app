@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateText } from '@/lib/auto-blog-ai';
 
 interface AgodaHotel {
   hotelId: number;
@@ -19,30 +19,6 @@ interface AgodaHotel {
   freeWifi: boolean;
 }
 
-async function callGPT(prompt: string, apiKey: string): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.85,
-      response_format: { type: 'json_object' },
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenAI 오류 (${res.status}): ${await res.text()}`);
-  const data = await res.json();
-  return data.choices[0].message.content;
-}
-
-async function callGemini(prompt: string): Promise<string> {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-  const result = await model.generateContent(prompt);
-  let text = result.response.text();
-  text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-  return text;
-}
 
 // Pixabay에서 호텔/도시 관련 이미지 검색
 async function searchPixabayImages(query: string, count: number = 3): Promise<string[]> {
@@ -193,13 +169,7 @@ ${hotelList}
 - 체크인: ${checkIn}, 체크아웃: ${checkOut} 날짜 기준 가격${jsonRule}`;
 
   try {
-    const openaiKey = await getSetting('OPENAI_API_KEY');
-    let text = '';
-    if (openaiKey) {
-      text = await callGPT(prompt, openaiKey);
-    } else {
-      text = await callGemini(prompt);
-    }
+    let text = await generateText(prompt, 'qwen3');
 
     let parsed: { title: string; content: string; metaDescription: string; labels: string[] };
     try {
