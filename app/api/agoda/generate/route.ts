@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
    - 예약링크: ${h.landingURL}`;
   }).join('\n\n');
 
-  const jsonRule = `\n반드시 아래 JSON만 출력 (마크다운/코드블록 없이):\n{"title":"SEO제목(60자이내)","content":"HTML본문","metaDescription":"메타설명150자이내","labels":["태그1","태그2","태그3"]}`;
+  const outputRule = `\n\n반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):\n[[[TITLE]]]\nSEO 제목 (60자 이내)\n[[[META]]]\n메타 설명 (150자 이내)\n[[[LABELS]]]\n태그1,태그2,태그3\n[[[CONTENT]]]\nHTML 본문 전체`;
 
   const prompt = `너는 여행 전문 블로거야. ${travelStyle} 여행자 관점에서 "${cityNameKo || cityName}" 여행 호텔 추천 글을 자연스러운 후기 형식으로 써줘.
 
@@ -166,18 +166,44 @@ ${hotelList}
   * 마무리 CTA (h2)
 - 각 호텔 링크는 <a href="예약링크" target="_blank" rel="noopener noreferrer" style="color:#f97316;font-weight:bold">아고다에서 예약하기</a> 형식
 - "광고", "협찬", "제공받았습니다" 절대 사용 금지
-- 체크인: ${checkIn}, 체크아웃: ${checkOut} 날짜 기준 가격${jsonRule}`;
+- 체크인: ${checkIn}, 체크아웃: ${checkOut} 날짜 기준 가격${outputRule}`;
 
   try {
-    let text = await generateText(prompt, 'qwen3');
-
+    const text = await generateText(prompt, 'qwen3');
+    const getSection = (tag: string) => {
+      const marker = `[[[${tag}]]]`;
+      const ALL = ['TITLE', 'META', 'LABELS', 'CONTENT'];
+      const start = text.indexOf(marker);
+      if (start < 0) return '';
+      const from = start + marker.length;
+      let end = text.length;
+      for (const t of ALL) {
+        if (t === tag) continue;
+        const pos = text.indexOf(`[[[${t}]]]`, from);
+        if (pos >= 0 && pos < end) end = pos;
+      }
+      return text.slice(from, end).trim();
+    };
     let parsed: { title: string; content: string; metaDescription: string; labels: string[] };
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (!m) return NextResponse.json({ error: 'AI 응답 파싱 실패', raw: text.slice(0, 300) }, { status: 500 });
-      parsed = JSON.parse(m[0]);
+    const titleS = getSection('TITLE');
+    const contentS = getSection('CONTENT');
+    if (titleS || contentS) {
+      const labelsRaw = getSection('LABELS');
+      parsed = {
+        title: titleS,
+        content: contentS,
+        metaDescription: getSection('META'),
+        labels: labelsRaw ? labelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
+      };
+    } else {
+      // JSON 폴백
+      try {
+        const raw = text.replace(/```[\w]*\n?/g, '').trim();
+        const m = raw.match(/\{[\s\S]*\}/);
+        parsed = JSON.parse(m?.[0] || raw);
+      } catch {
+        return NextResponse.json({ error: 'AI 응답 파싱 실패', raw: text.slice(0, 300) }, { status: 500 });
+      }
     }
 
     // AI 생성 본문에 호텔 이미지 갤러리 카드 삽입
