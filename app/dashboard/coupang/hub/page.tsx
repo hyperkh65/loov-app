@@ -70,6 +70,8 @@ export default function CoupangHubPage() {
   const [copied, setCopied] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
   const [scrapedReview, setScrapedReview] = useState('');
+  const [manualProductName, setManualProductName] = useState('');
+  const [manualProductPrice, setManualProductPrice] = useState('');
 
   useEffect(() => {
     fetch('/api/coupang/settings').then(r => r.json()).then((d: { configured?: boolean }) => {
@@ -97,6 +99,8 @@ export default function CoupangHubPage() {
     setPostResults([]);
     setScrapeStatus('loading');
     setScrapedReview('');
+    setManualProductName('');
+    setManualProductPrice('');
 
     // 제휴링크에서 productId/itemId 추출
     let productId: string | null = null;
@@ -195,6 +199,8 @@ export default function CoupangHubPage() {
     setPostResults([]);
     setScrapeStatus('idle');
     setScrapedReview('');
+    setManualProductName('');
+    setManualProductPrice('');
 
     // 제휴 링크 생성 후 → 제휴 링크의 itemId로 리뷰 API 직접 호출
     setAffiliateLoading(true);
@@ -251,8 +257,8 @@ export default function CoupangHubPage() {
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          productName: selected.productName,
-          price: selected.productPrice,
+          productName: manualProductName.trim() || selected.productName,
+          price: manualProductPrice ? Number(manualProductPrice.replace(/[^0-9]/g, '')) : selected.productPrice,
           discountRate: selected.discountRate,
           categoryName: selected.categoryName,
           platforms: selectedPlatforms,
@@ -529,16 +535,39 @@ export default function CoupangHubPage() {
 
             <div className="flex gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={selected.productImage}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="w-24 h-24 object-cover rounded-xl flex-shrink-0 bg-gray-100"
-              />
+              {selected.productImage ? (
+                <img
+                  src={selected.productImage}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="w-24 h-24 object-cover rounded-xl flex-shrink-0 bg-gray-100"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-xl flex-shrink-0 bg-gray-100 flex items-center justify-center text-2xl">🛒</div>
+              )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800 leading-snug mb-1 line-clamp-3">{selected.productName}</p>
+                {/* 스크랩 성공 시: 상품명 표시 / 실패 시: 직접 입력 */}
+                {selected.productName && selected.productName !== '상품' ? (
+                  <p className="text-sm font-medium text-gray-800 leading-snug mb-1 line-clamp-3">{selected.productName}</p>
+                ) : (
+                  <input
+                    value={manualProductName}
+                    onChange={(e) => setManualProductName(e.target.value)}
+                    placeholder="상품명 입력 (필수)"
+                    className="w-full border border-orange-300 rounded-lg px-2 py-1 text-sm mb-1 focus:outline-none focus:border-orange-500 placeholder:text-gray-300"
+                  />
+                )}
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-lg font-bold text-orange-600">{selected.productPrice.toLocaleString()}원</span>
+                  {selected.productPrice > 0 ? (
+                    <span className="text-lg font-bold text-orange-600">{selected.productPrice.toLocaleString()}원</span>
+                  ) : (
+                    <input
+                      value={manualProductPrice}
+                      onChange={(e) => setManualProductPrice(e.target.value)}
+                      placeholder="가격 (선택)"
+                      className="w-28 border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-orange-300 placeholder:text-gray-300"
+                    />
+                  )}
                   {selected.discountRate ? (
                     <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold">-{selected.discountRate}%</span>
                   ) : null}
@@ -685,7 +714,7 @@ export default function CoupangHubPage() {
 
             <button
               onClick={handleGenerate}
-              disabled={generating || !selectedPlatforms.length || affiliateLoading}
+              disabled={generating || !selectedPlatforms.length || affiliateLoading || ((!selected?.productName || selected.productName === '상품') && !manualProductName.trim())}
               className="w-full py-3 bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-400 hover:to-orange-300 disabled:from-gray-300 disabled:to-gray-300 text-white rounded-xl text-sm font-bold transition-all shadow-sm"
             >
               {generating ? (
