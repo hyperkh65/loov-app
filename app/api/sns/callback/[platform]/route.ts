@@ -12,10 +12,16 @@ export async function GET(
   const state = searchParams.get('state');
   const error = searchParams.get('error');
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://loov.co.kr';
-  const returnUrl = `${siteUrl}/dashboard/sns`;
+  const returnTo = req.cookies.get('sns_return_to')?.value || '';
+  const returnUrl = returnTo ? `${siteUrl}${returnTo}` : `${siteUrl}/dashboard/sns`;
 
-  if (error) return NextResponse.redirect(`${returnUrl}?error=${encodeURIComponent(error)}`);
-  if (!code || !state) return NextResponse.redirect(`${returnUrl}?error=invalid_response`);
+  const clearReturnCookie = (res: NextResponse) => {
+    if (returnTo) res.cookies.set('sns_return_to', '', { maxAge: 0, path: '/' });
+    return res;
+  };
+
+  if (error) return clearReturnCookie(NextResponse.redirect(`${returnUrl}?error=${encodeURIComponent(error)}`));
+  if (!code || !state) return clearReturnCookie(NextResponse.redirect(`${returnUrl}?error=invalid_response`));
 
   // Admin client 사용 - 세션 없이도 state로 user_id 조회 가능
   const supabase = createAdminClient();
@@ -178,10 +184,10 @@ export async function GET(
     }, { onConflict: 'user_id,platform,platform_user_id' });
 
     if (upsertErr) throw new Error(`DB저장실패: ${upsertErr.message}`);
-    return NextResponse.redirect(`${returnUrl}?connected=${platform}`);
+    return clearReturnCookie(NextResponse.redirect(`${returnUrl}?connected=${platform}`));
   } catch (err: unknown) {
     const message = (err instanceof Error ? err.message : String(err)).slice(0, 200);
     console.error(`[SNS Callback] ${platform}:`, message);
-    return NextResponse.redirect(`${returnUrl}?error=${encodeURIComponent(message)}`);
+    return clearReturnCookie(NextResponse.redirect(`${returnUrl}?error=${encodeURIComponent(message)}`));
   }
 }
