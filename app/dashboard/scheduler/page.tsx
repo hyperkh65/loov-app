@@ -1,16 +1,46 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { Schedule, ScheduleLog, BlogAutoConfig, CoupangAutoConfig } from '@/lib/scheduler';
+import type { Schedule, ScheduleLog, BlogAutoConfig, CoupangAutoConfig, AgodaAutoConfig, ShortsAutoConfig, InstagramAutoConfig } from '@/lib/scheduler';
 import { INTERVAL_OPTIONS, formatRelativeTime } from '@/lib/scheduler';
 
-const SNS_PLATFORMS = ['threads', 'instagram', 'twitter', 'facebook'];
-const SNS_LABELS: Record<string, string> = { threads: '🧵 스레드', instagram: '📸 인스타', twitter: '🐦 트위터', facebook: '📘 페북' };
+// ── 상수 ──────────────────────────────────────────────────────────────────
+const SNS_PLATFORMS = [
+  { id: 'threads',   label: '🧵 스레드' },
+  { id: 'instagram', label: '📸 인스타' },
+  { id: 'twitter',   label: '🐦 트위터' },
+  { id: 'facebook',  label: '📘 페북' },
+];
 
-const TYPE_LABELS: Record<string, string> = {
-  blog_auto: '📝 블로그 자동글',
-  coupang_auto: '🛒 쿠팡 자동발행',
-};
+const SCHEDULE_TYPES = [
+  { id: 'blog_auto',      icon: '📝', label: '블로그 자동글' },
+  { id: 'coupang_auto',   icon: '🛒', label: '쿠팡 자동발행' },
+  { id: 'agoda_auto',     icon: '🏨', label: '아고다 호텔' },
+  { id: 'shorts_auto',    icon: '🎬', label: '숏폼 스크립트' },
+  { id: 'instagram_auto', icon: '📸', label: '인스타그램' },
+];
+
+const AGODA_CITIES = [
+  { id: 17193, name: '발리',       nameEn: 'Bali' },
+  { id: 9395,  name: '방콕',       nameEn: 'Bangkok' },
+  { id: 16056, name: '푸켓',       nameEn: 'Phuket' },
+  { id: 7401,  name: '치앙마이',   nameEn: 'Chiang Mai' },
+  { id: 5085,  name: '도쿄',       nameEn: 'Tokyo' },
+  { id: 9590,  name: '오사카',     nameEn: 'Osaka' },
+  { id: 1784,  name: '교토',       nameEn: 'Kyoto' },
+  { id: 16527, name: '후쿠오카',   nameEn: 'Fukuoka' },
+  { id: 3435,  name: '삿포로',     nameEn: 'Sapporo' },
+  { id: 4064,  name: '싱가포르',   nameEn: 'Singapore' },
+  { id: 16808, name: '홍콩',       nameEn: 'Hong Kong' },
+  { id: 4001,  name: '세부',       nameEn: 'Cebu' },
+  { id: 13170, name: '호치민',     nameEn: 'Ho Chi Minh' },
+  { id: 16440, name: '다낭',       nameEn: 'Da Nang' },
+  { id: 2758,  name: '하노이',     nameEn: 'Hanoi' },
+  { id: 14524, name: '쿠알라룸푸르', nameEn: 'Kuala Lumpur' },
+  { id: 2994,  name: '두바이',     nameEn: 'Dubai' },
+  { id: 15470, name: '파리',       nameEn: 'Paris' },
+  { id: 318,   name: '뉴욕',       nameEn: 'New York' },
+];
 
 const STATUS_STYLE: Record<string, string> = {
   success: 'bg-emerald-100 text-emerald-700',
@@ -18,42 +48,41 @@ const STATUS_STYLE: Record<string, string> = {
   running: 'bg-yellow-100 text-yellow-700',
 };
 
-const EMPTY_BLOG_CONFIG: BlogAutoConfig = {
-  keywords: [],
-  keyword_mode: 'rotate',
-  content_type: 'info',
-  blog_platform: 'blogger',
-  blogger_blog_id: '',
-  wp_url: '',
-  wp_username: '',
-  wp_app_password: '',
-};
-
-const EMPTY_COUPANG_CONFIG: CoupangAutoConfig = {
-  product_source: 'goldbox',
-  search_keywords: [],
-  sns_platforms: ['threads'],
-  min_discount: 0,
-};
-
-interface EditForm {
-  name: string;
-  type: string;
-  interval_hours: number;
-  run_at_hour: number;
-  blog: BlogAutoConfig;
-  coupang: CoupangAutoConfig;
-}
-
-const defaultForm = (): EditForm => ({
+// ── 폼 초기값 ──────────────────────────────────────────────────────────────
+const defaultForm = () => ({
   name: '',
   type: 'blog_auto',
   interval_hours: 24,
   run_at_hour: 9,
-  blog: { ...EMPTY_BLOG_CONFIG },
-  coupang: { ...EMPTY_COUPANG_CONFIG, search_keywords: [], sns_platforms: ['threads'] },
+  blog: {
+    keywords: [] as string[], keyword_mode: 'rotate' as 'rotate' | 'random',
+    content_type: 'info' as 'product' | 'info', blog_platform: 'blogger' as 'blogger' | 'wordpress',
+    blogger_blog_id: '', wp_url: '', wp_username: '', wp_app_password: '',
+  } as BlogAutoConfig,
+  coupang: {
+    product_source: 'goldbox' as 'goldbox' | 'keyword', search_keywords: [] as string[],
+    sns_platforms: ['threads'] as string[], min_discount: 0,
+  } as CoupangAutoConfig,
+  agoda: {
+    cities: [] as AgodaAutoConfig['cities'], city_mode: 'rotate' as 'rotate' | 'random',
+    blog_platform: 'blogger' as 'blogger' | 'wordpress', blogger_blog_id: '',
+    wp_url: '', wp_username: '', wp_app_password: '', travel_style: '커플', sns_platforms: [] as string[],
+  } as AgodaAutoConfig,
+  shorts: {
+    topics: [] as string[], topic_mode: 'rotate' as 'rotate' | 'random',
+    duration: 60 as 30 | 60 | 120, tone: 'info', platform: 'youtube',
+    save_to_blog: false, blog_platform: 'blogger' as 'blogger' | 'wordpress',
+    blogger_blog_id: '', wp_url: '', wp_username: '', wp_app_password: '',
+  } as ShortsAutoConfig,
+  instagram: {
+    topics: [] as string[], topic_mode: 'rotate' as 'rotate' | 'random',
+    tone: 'casual', auto_publish: false,
+  } as InstagramAutoConfig,
 });
 
+type FormState = ReturnType<typeof defaultForm>;
+
+// ── 컴포넌트 ───────────────────────────────────────────────────────────────
 export default function SchedulerPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [logs, setLogs] = useState<Record<string, ScheduleLog[]>>({});
@@ -62,35 +91,80 @@ export default function SchedulerPage() {
   const [running, setRunning] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState<EditForm>(defaultForm());
+  const [form, setForm] = useState<FormState>(defaultForm());
   const [saving, setSaving] = useState(false);
-  const [keywordInput, setKeywordInput] = useState('');
-  const [searchKwInput, setSearchKwInput] = useState('');
   const [toast, setToast] = useState('');
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 3000);
-  };
+  // 입력 임시값
+  const [kwInput, setKwInput] = useState('');
+  const [searchKwInput, setSearchKwInput] = useState('');
+  const [shortsTopicInput, setShortsTopicInput] = useState('');
+  const [igTopicInput, setIgTopicInput] = useState('');
+
+  // keyword auto-discover
+  const [kwSeed, setKwSeed] = useState('');
+  const [kwDiscover, setKwDiscover] = useState(false);
+
+  // WP sites from NAS
+  const [wpSites, setWpSites] = useState<Array<{ name: string; domain: string; url: string }>>([]);
+  const [wpSitesLoaded, setWpSitesLoaded] = useState(false);
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500); };
 
   const loadSchedules = useCallback(async () => {
     const res = await fetch('/api/scheduler/schedules');
-    if (res.ok) {
-      const data = await res.json() as Schedule[];
-      setSchedules(data);
-    }
+    if (res.ok) setSchedules(await res.json() as Schedule[]);
     setLoading(false);
   }, []);
 
   useEffect(() => { loadSchedules(); }, [loadSchedules]);
 
-  const loadLogs = async (scheduleId: string) => {
-    if (logs[scheduleId]) { setOpenLogId(openLogId === scheduleId ? null : scheduleId); return; }
-    const res = await fetch(`/api/scheduler/logs?schedule_id=${scheduleId}&limit=15`);
+  // NAS WP 사이트 불러오기
+  const loadWpSites = async () => {
+    if (wpSitesLoaded) return;
+    const res = await fetch('/api/wp-auto/sites');
     if (res.ok) {
-      const data = await res.json() as ScheduleLog[];
-      setLogs(prev => ({ ...prev, [scheduleId]: data }));
+      const data = await res.json() as { sites?: Array<{ name: string; domain: string; url: string }> };
+      setWpSites(data.sites || []);
     }
+    setWpSitesLoaded(true);
+  };
+
+  // 키워드 자동 추출
+  const autoDiscoverKeywords = async (targetField: 'blog' | 'shorts' | 'instagram') => {
+    const seed = kwSeed.trim();
+    if (!seed) { showToast('씨드 키워드를 입력하세요'); return; }
+    setKwDiscover(true);
+    try {
+      const res = await fetch('/api/keyword/auto-discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seed, limit: 20 }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { keywords?: string[] };
+        const kws = data.keywords || [];
+        if (!kws.length) { showToast('키워드를 찾지 못했습니다'); return; }
+        if (targetField === 'blog') {
+          setForm(f => ({ ...f, blog: { ...f.blog, keywords: [...new Set([...f.blog.keywords, ...kws])] } }));
+        } else if (targetField === 'shorts') {
+          setForm(f => ({ ...f, shorts: { ...f.shorts, topics: [...new Set([...f.shorts.topics, ...kws])] } }));
+        } else {
+          setForm(f => ({ ...f, instagram: { ...f.instagram, topics: [...new Set([...f.instagram.topics, ...kws])] } }));
+        }
+        showToast(`${kws.length}개 키워드 추가됨`);
+      }
+    } catch { showToast('키워드 추출 실패'); }
+    setKwDiscover(false);
+    setKwSeed('');
+  };
+
+  const loadLogs = async (scheduleId: string) => {
+    if (openLogId === scheduleId) { setOpenLogId(null); return; }
+    const res = await fetch(`/api/scheduler/logs?schedule_id=${scheduleId}&limit=15`);
+    if (res.ok) setLogs(prev => ({ ...prev, [scheduleId]: (async () => await res.json())() as unknown as ScheduleLog[] }));
+    const d = await fetch(`/api/scheduler/logs?schedule_id=${scheduleId}&limit=15`);
+    if (d.ok) setLogs(prev => ({ ...prev, [scheduleId]: (async () => await d.json())() as unknown as ScheduleLog[] }));
     setOpenLogId(scheduleId);
   };
 
@@ -103,12 +177,8 @@ export default function SchedulerPage() {
   };
 
   const toggleActive = async (s: Schedule) => {
-    const res = await fetch(`/api/scheduler/schedules/${s.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: !s.is_active }),
-    });
-    if (res.ok) await loadSchedules();
+    await fetch(`/api/scheduler/schedules/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !s.is_active }) });
+    await loadSchedules();
   };
 
   const deleteSchedule = async (id: string) => {
@@ -121,83 +191,69 @@ export default function SchedulerPage() {
   const runNow = async (scheduleId: string) => {
     setRunning(scheduleId);
     try {
-      const res = await fetch('/api/scheduler/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schedule_id: scheduleId }),
-      });
+      const res = await fetch('/api/scheduler/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule_id: scheduleId }) });
       const data = await res.json() as { results?: Array<{ success: boolean; summary?: string; error?: string }> };
       const r = data.results?.[0];
-      if (r?.success) showToast(`✓ ${r.summary || '실행 완료'}`);
-      else showToast(`✗ ${r?.error || '실행 실패'}`);
+      showToast(r?.success ? `✓ ${r.summary || '실행 완료'}` : `✗ ${r?.error?.slice(0, 60) || '실행 실패'}`);
       await loadSchedules();
       await refreshLogs(scheduleId);
-    } finally {
-      setRunning(null);
-    }
+    } finally { setRunning(null); }
   };
 
   const openAdd = () => {
     setEditId(null);
     setForm(defaultForm());
-    setKeywordInput('');
-    setSearchKwInput('');
+    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput(''); setKwSeed('');
     setShowModal(true);
   };
 
   const openEdit = (s: Schedule) => {
     setEditId(s.id);
-    const isBlog = s.type === 'blog_auto';
-    setForm({
-      name: s.name,
-      type: s.type,
-      interval_hours: s.interval_hours,
-      run_at_hour: s.run_at_hour,
-      blog: isBlog ? (s.config as BlogAutoConfig) : { ...EMPTY_BLOG_CONFIG },
-      coupang: !isBlog ? (s.config as CoupangAutoConfig) : { ...EMPTY_COUPANG_CONFIG, search_keywords: [], sns_platforms: ['threads'] },
-    });
-    setKeywordInput('');
-    setSearchKwInput('');
+    const f = defaultForm();
+    f.name = s.name; f.type = s.type; f.interval_hours = s.interval_hours; f.run_at_hour = s.run_at_hour;
+    if (s.type === 'blog_auto') f.blog = s.config as BlogAutoConfig;
+    else if (s.type === 'coupang_auto') f.coupang = s.config as CoupangAutoConfig;
+    else if (s.type === 'agoda_auto') f.agoda = s.config as AgodaAutoConfig;
+    else if (s.type === 'shorts_auto') f.shorts = s.config as ShortsAutoConfig;
+    else if (s.type === 'instagram_auto') f.instagram = s.config as InstagramAutoConfig;
+    setForm(f);
+    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput(''); setKwSeed('');
     setShowModal(true);
   };
 
   const saveSchedule = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    const config = form.type === 'blog_auto' ? form.blog : form.coupang;
-    const body = { name: form.name, type: form.type, interval_hours: form.interval_hours, run_at_hour: form.run_at_hour, config };
+    let config: unknown;
+    if (form.type === 'blog_auto') config = form.blog;
+    else if (form.type === 'coupang_auto') config = form.coupang;
+    else if (form.type === 'agoda_auto') config = form.agoda;
+    else if (form.type === 'shorts_auto') config = form.shorts;
+    else config = form.instagram;
+
     const url = editId ? `/api/scheduler/schedules/${editId}` : '/api/scheduler/schedules';
-    const method = editId ? 'PUT' : 'POST';
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (res.ok) {
-      await loadSchedules();
-      setShowModal(false);
-      showToast(editId ? '스케줄 수정됨' : '스케줄 추가됨');
-    }
+    const res = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: form.name, type: form.type, interval_hours: form.interval_hours, run_at_hour: form.run_at_hour, config }) });
+    if (res.ok) { await loadSchedules(); setShowModal(false); showToast(editId ? '수정됨' : '추가됨'); }
     setSaving(false);
   };
 
-  const addKeyword = () => {
-    const kw = keywordInput.trim();
-    if (!kw || form.blog.keywords.includes(kw)) { setKeywordInput(''); return; }
-    setForm(f => ({ ...f, blog: { ...f.blog, keywords: [...f.blog.keywords, kw] } }));
-    setKeywordInput('');
+  // ── keyword helper ─────────────────────────────────────────────────────
+  const addKw = (field: 'blog', input: string, setter: (v: string) => void) => {
+    const kw = input.trim(); if (!kw) return;
+    setForm(f => ({ ...f, [field]: { ...f[field], keywords: [...new Set([...(f[field] as BlogAutoConfig).keywords, kw])] } }));
+    setter('');
+  };
+  const removeKw = (field: 'blog', kw: string) =>
+    setForm(f => ({ ...f, [field]: { ...f[field], keywords: (f[field] as BlogAutoConfig).keywords.filter((k: string) => k !== kw) } }));
+
+  const addTopic = (field: 'shorts' | 'instagram', input: string, setter: (v: string) => void) => {
+    const t = input.trim(); if (!t) return;
+    if (field === 'shorts') setForm(f => ({ ...f, shorts: { ...f.shorts, topics: [...new Set([...f.shorts.topics, t])] } }));
+    else setForm(f => ({ ...f, instagram: { ...f.instagram, topics: [...new Set([...f.instagram.topics, t])] } }));
+    setter('');
   };
 
-  const addSearchKw = () => {
-    const kw = searchKwInput.trim();
-    if (!kw) { setSearchKwInput(''); return; }
-    const current = form.coupang.search_keywords || [];
-    if (!current.includes(kw)) {
-      setForm(f => ({ ...f, coupang: { ...f.coupang, search_keywords: [...current, kw] } }));
-    }
-    setSearchKwInput('');
-  };
-
-  const toggleSnsPlatform = (p: string) => {
-    const current = form.coupang.sns_platforms;
-    setForm(f => ({ ...f, coupang: { ...f.coupang, sns_platforms: current.includes(p) ? current.filter(x => x !== p) : [...current, p] } }));
-  };
+  const typeLabel = (t: string) => SCHEDULE_TYPES.find(s => s.id === t);
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">로딩 중...</div>;
 
@@ -207,146 +263,101 @@ export default function SchedulerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">⏰ 발행 스케줄러</h1>
-          <p className="text-xs text-gray-400 mt-0.5">블로그·쿠팡 콘텐츠를 자동으로 생성하고 발행합니다</p>
+          <p className="text-xs text-gray-400 mt-0.5">블로그·쿠팡·아고다·숏폼·인스타를 자동으로 생성하고 발행합니다</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors"
-        >+ 스케줄 추가</button>
+        <button onClick={openAdd} className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors">+ 스케줄 추가</button>
       </div>
 
       {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 px-4 py-2.5 bg-gray-900 text-white text-sm rounded-xl shadow-lg animate-fade-in">
-          {toast}
-        </div>
-      )}
+      {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2.5 bg-gray-900 text-white text-sm rounded-xl shadow-lg">{toast}</div>}
 
       {/* NAS 크론 안내 */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
-        <p className="text-xs font-semibold text-amber-800">⚙️ NAS 자동 실행 설정 (1회 설정 필요)</p>
-        <p className="text-[11px] text-amber-700">NAS 터미널에서 아래 명령어로 1분마다 스케줄러가 자동 실행됩니다:</p>
-        <code className="block text-[11px] bg-amber-100 rounded-lg px-3 py-2 text-amber-900 font-mono break-all">
-          {'(crontab -l 2>/dev/null; echo "* * * * * curl -s -X POST https://loov.co.kr/api/scheduler/run -H \'x-internal-key: YOUR_TELEGRAM_WEBHOOK_SECRET\' 2>/dev/null") | crontab -'}
-        </code>
-        <p className="text-[10px] text-amber-600">설정 후 NAS cron이 매 분마다 실행 시간이 된 스케줄을 자동으로 처리합니다.</p>
-      </div>
+      <details className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <summary className="text-xs font-semibold text-amber-800 cursor-pointer">⚙️ NAS 자동 실행 설정 (클릭하여 보기)</summary>
+        <div className="mt-2 space-y-1.5">
+          <p className="text-[11px] text-amber-700">NAS 터미널에서 아래 명령어 1회 실행 → 매 분마다 자동 체크:</p>
+          <code className="block text-[11px] bg-amber-100 rounded-lg px-3 py-2 text-amber-900 font-mono break-all">
+            {'(crontab -l 2>/dev/null; echo "* * * * * curl -s -X POST https://loov.co.kr/api/scheduler/run -H \'x-internal-key: YOUR_TELEGRAM_WEBHOOK_SECRET\' 2>/dev/null") | crontab -'}
+          </code>
+        </div>
+      </details>
 
       {/* Schedule List */}
       {schedules.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">⏰</p>
           <p className="text-sm">아직 스케줄이 없습니다</p>
-          <p className="text-xs mt-1">+ 스케줄 추가 버튼으로 자동화를 시작하세요</p>
+          <p className="text-xs mt-1">+ 스케줄 추가로 완전 자동화를 시작하세요</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {schedules.map(s => (
-            <div key={s.id} className={`border rounded-2xl overflow-hidden ${s.is_active ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}>
-              <div className="p-4 bg-white">
-                <div className="flex items-start gap-3">
-                  {/* Toggle */}
-                  <button
-                    onClick={() => toggleActive(s)}
-                    className={`mt-0.5 w-10 h-6 rounded-full transition-colors flex-shrink-0 relative ${s.is_active ? 'bg-blue-500' : 'bg-gray-200'}`}
-                  >
-                    <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${s.is_active ? 'left-5' : 'left-1'}`} />
+          {schedules.map(s => {
+            const tl = typeLabel(s.type);
+            return (
+              <div key={s.id} className={`border rounded-2xl overflow-hidden ${s.is_active ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}>
+                <div className="p-4 bg-white">
+                  <div className="flex items-start gap-3">
+                    <button onClick={() => toggleActive(s)} className={`mt-0.5 w-10 h-6 rounded-full transition-colors flex-shrink-0 relative ${s.is_active ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${s.is_active ? 'left-5' : 'left-1'}`} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-gray-900 text-sm">{s.name}</span>
+                        <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{tl?.icon} {tl?.label}</span>
+                        {s.last_status && (
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full ${STATUS_STYLE[s.last_status] || ''}`}>
+                            {s.last_status === 'success' ? '✓ 성공' : s.last_status === 'failed' ? '✗ 실패' : '⟳ 실행중'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400 flex-wrap">
+                        <span>🕐 {INTERVAL_OPTIONS.find(o => o.value === s.interval_hours)?.label || `${s.interval_hours}h`}</span>
+                        {s.interval_hours >= 24 && <span>{s.run_at_hour}시</span>}
+                        {s.last_run_at && <span>마지막: {formatRelativeTime(s.last_run_at)}</span>}
+                        {s.next_run_at && s.is_active && <span className="text-blue-500">다음: {formatRelativeTime(s.next_run_at)}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button onClick={() => runNow(s.id)} disabled={running === s.id} className="px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50">
+                        {running === s.id ? '...' : '▶ 실행'}
+                      </button>
+                      <button onClick={() => openEdit(s)} className="px-2.5 py-1 text-[11px] bg-gray-50 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100">수정</button>
+                      <button onClick={() => deleteSchedule(s.id)} className="px-2.5 py-1 text-[11px] bg-red-50 text-red-500 border border-red-100 rounded-lg hover:bg-red-100">삭제</button>
+                    </div>
+                  </div>
+                  <button onClick={() => loadLogs(s.id)} className="mt-3 text-[11px] text-gray-400 hover:text-gray-600">
+                    {openLogId === s.id ? '▲ 로그 닫기' : '▼ 실행 로그'}
                   </button>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-gray-900 text-sm">{s.name}</span>
-                      <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{TYPE_LABELS[s.type]}</span>
-                      {s.last_status && (
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full ${STATUS_STYLE[s.last_status] || 'bg-gray-100 text-gray-500'}`}>
-                          {s.last_status === 'success' ? '✓ 성공' : s.last_status === 'failed' ? '✗ 실패' : '⟳ 실행중'}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
-                      <span>🕐 {INTERVAL_OPTIONS.find(o => o.value === s.interval_hours)?.label || `${s.interval_hours}h마다`}</span>
-                      {s.interval_hours >= 24 && <span>기준시각 {s.run_at_hour}시</span>}
-                      {s.last_run_at && <span>마지막: {formatRelativeTime(s.last_run_at)}</span>}
-                      {s.next_run_at && s.is_active && (
-                        <span className="text-blue-500">다음: {formatRelativeTime(s.next_run_at)}</span>
-                      )}
-                    </div>
-
-                    {/* Config summary */}
-                    {s.type === 'blog_auto' && (
-                      <div className="mt-1.5 text-[11px] text-gray-500">
-                        키워드 {(s.config as BlogAutoConfig).keywords?.length || 0}개
-                        · {(s.config as BlogAutoConfig).blog_platform === 'blogger' ? 'Blogger' : 'WordPress'}
-                        · {(s.config as BlogAutoConfig).keyword_mode === 'rotate' ? '순서대로' : '랜덤'}
-                      </div>
-                    )}
-                    {s.type === 'coupang_auto' && (
-                      <div className="mt-1.5 text-[11px] text-gray-500">
-                        {(s.config as CoupangAutoConfig).product_source === 'goldbox' ? '골드박스' : '키워드 검색'}
-                        · {(s.config as CoupangAutoConfig).sns_platforms?.map(p => SNS_LABELS[p]).join(' ')}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <button
-                      onClick={() => runNow(s.id)}
-                      disabled={running === s.id}
-                      className="px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50"
-                    >
-                      {running === s.id ? '실행중...' : '▶ 실행'}
-                    </button>
-                    <button onClick={() => openEdit(s)} className="px-2.5 py-1 text-[11px] bg-gray-50 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
-                      수정
-                    </button>
-                    <button onClick={() => deleteSchedule(s.id)} className="px-2.5 py-1 text-[11px] bg-red-50 text-red-500 border border-red-100 rounded-lg hover:bg-red-100 transition-colors">
-                      삭제
-                    </button>
-                  </div>
                 </div>
-
-                {/* Log toggle */}
-                <button
-                  onClick={() => loadLogs(s.id)}
-                  className="mt-3 text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  {openLogId === s.id ? '▲ 실행 로그 닫기' : '▼ 실행 로그 보기'}
-                </button>
-              </div>
-
-              {/* Log Panel */}
-              {openLogId === s.id && (
-                <div className="border-t border-gray-100 bg-gray-50 p-3 space-y-2 max-h-64 overflow-y-auto">
-                  {!logs[s.id]?.length ? (
-                    <p className="text-[11px] text-gray-400 text-center py-4">실행 기록이 없습니다</p>
-                  ) : (
-                    logs[s.id].map(log => (
-                      <div key={log.id} className="text-[11px] flex items-start gap-2">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${STATUS_STYLE[log.status] || ''}`}>
-                          {log.status === 'success' ? '✓' : log.status === 'failed' ? '✗' : '⟳'}
-                        </span>
-                        <div className="flex-1 min-w-0">
+                {openLogId === s.id && (
+                  <div className="border-t border-gray-100 bg-gray-50 p-3 space-y-2 max-h-56 overflow-y-auto">
+                    {!logs[s.id]?.length ? (
+                      <p className="text-[11px] text-gray-400 text-center py-3">실행 기록 없음</p>
+                    ) : (
+                      (logs[s.id] as ScheduleLog[]).map(log => (
+                        <div key={log.id} className="text-[11px] flex items-start gap-2">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] flex-shrink-0 ${STATUS_STYLE[log.status] || ''}`}>
+                            {log.status === 'success' ? '✓' : log.status === 'failed' ? '✗' : '⟳'}
+                          </span>
                           <span className="text-gray-500">{new Date(log.started_at).toLocaleString('ko-KR')}</span>
-                          {log.summary && <span className="ml-2 text-gray-700">{log.summary}</span>}
-                          {log.error && <span className="ml-2 text-red-500">{log.error.slice(0, 80)}</span>}
+                          {log.summary && <span className="text-gray-700 flex-1">{log.summary}</span>}
+                          {log.error && <span className="text-red-500 flex-1">{log.error.slice(0, 80)}</span>}
                         </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Modal */}
+      {/* ── Modal ───────────────────────────────────────────────────────── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-2 md:p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <h2 className="font-bold text-gray-900">{editId ? '스케줄 수정' : '새 스케줄 추가'}</h2>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-700 text-xl">✕</button>
             </div>
@@ -355,24 +366,19 @@ export default function SchedulerPage() {
               {/* 이름 */}
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1 block">스케줄 이름</label>
-                <input
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="예: 매일 아침 블로그 발행"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                />
+                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="예: 매일 아침 블로그 발행" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
               </div>
 
               {/* 타입 */}
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">자동화 유형</label>
-                <div className="flex gap-2">
-                  {Object.entries(TYPE_LABELS).map(([t, l]) => (
-                    <button
-                      key={t}
-                      onClick={() => setForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 py-2 text-sm font-medium rounded-xl border transition-colors ${form.type === t ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600 hover:border-blue-300'}`}
-                    >{l}</button>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">자동화 유형</label>
+                <div className="grid grid-cols-3 gap-1.5 md:grid-cols-5">
+                  {SCHEDULE_TYPES.map(t => (
+                    <button key={t.id} onClick={() => setForm(f => ({ ...f, type: t.id }))}
+                      className={`py-2 px-1 text-xs font-medium rounded-xl border transition-colors text-center ${form.type === t.id ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600 hover:border-blue-300'}`}>
+                      <div>{t.icon}</div>
+                      <div className="mt-0.5 leading-tight">{t.label}</div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -381,176 +387,311 @@ export default function SchedulerPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-gray-600 mb-1 block">실행 주기</label>
-                  <select
-                    value={form.interval_hours}
-                    onChange={e => setForm(f => ({ ...f, interval_hours: parseInt(e.target.value) }))}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                  >
+                  <select value={form.interval_hours} onChange={e => setForm(f => ({ ...f, interval_hours: parseInt(e.target.value) }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
                     {INTERVAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
                 {form.interval_hours >= 24 && (
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">실행 시각</label>
-                    <select
-                      value={form.run_at_hour}
-                      onChange={e => setForm(f => ({ ...f, run_at_hour: parseInt(e.target.value) }))}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={i}>{i}시</option>
-                      ))}
+                    <select value={form.run_at_hour} onChange={e => setForm(f => ({ ...f, run_at_hour: parseInt(e.target.value) }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
+                      {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i}시</option>)}
                     </select>
                   </div>
                 )}
               </div>
 
-              {/* 블로그 설정 */}
+              {/* ── 키워드 자동추출 공통 ─────────────────────────────── */}
+              {['blog_auto', 'shorts_auto', 'instagram_auto'].includes(form.type) && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+                  <p className="text-[11px] font-semibold text-blue-800">🔍 네이버 키워드 자동 추출</p>
+                  <div className="flex gap-2">
+                    <input value={kwSeed} onChange={e => setKwSeed(e.target.value)} onKeyDown={e => e.key === 'Enter' && autoDiscoverKeywords(form.type === 'blog_auto' ? 'blog' : form.type === 'shorts_auto' ? 'shorts' : 'instagram')} placeholder="씨드 키워드 (예: 다이어트, 여행)" className="flex-1 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                    <button onClick={() => autoDiscoverKeywords(form.type === 'blog_auto' ? 'blog' : form.type === 'shorts_auto' ? 'shorts' : 'instagram')} disabled={kwDiscover} className="px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg disabled:opacity-50">
+                      {kwDiscover ? '추출중...' : '자동 추출'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-blue-500">네이버 자동완성 기반으로 실제 검색되는 키워드를 추출합니다</p>
+                </div>
+              )}
+
+              {/* ── WordPress 사이트 선택 공통 ───────────────────────── */}
+              {(['blog_auto', 'agoda_auto', 'shorts_auto'].includes(form.type)) && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-gray-700">🌐 NAS WordPress 사이트 불러오기</p>
+                    <button onClick={loadWpSites} className="text-[11px] text-blue-500 hover:text-blue-700">불러오기</button>
+                  </div>
+                  {wpSites.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto">
+                      {wpSites.map(site => (
+                        <button key={site.name} onClick={() => {
+                          const field = form.type === 'blog_auto' ? 'blog' : form.type === 'agoda_auto' ? 'agoda' : 'shorts';
+                          setForm(f => ({ ...f, [field]: { ...(f as Record<string, unknown>)[field] as object, blog_platform: 'wordpress', wp_url: site.url, wp_username: 'admin' } }));
+                          showToast(`${site.domain} 선택됨`);
+                        }} className="text-left px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-[11px] text-gray-700 hover:border-blue-300 hover:bg-blue-50 transition-colors">
+                          <div className="font-medium">{site.name}</div>
+                          <div className="text-gray-400 truncate">{site.domain}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {wpSitesLoaded && wpSites.length === 0 && <p className="text-[11px] text-gray-400">NAS에 WordPress 사이트가 없습니다</p>}
+                </div>
+              )}
+
+              {/* ── 블로그 설정 ────────────────────────────────────────── */}
               {form.type === 'blog_auto' && (
                 <div className="space-y-3 pt-2 border-t border-gray-100">
                   <p className="text-xs font-bold text-gray-700">📝 블로그 설정</p>
-
-                  {/* 키워드 */}
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">키워드 목록</label>
                     <div className="flex gap-2 mb-2">
-                      <input
-                        value={keywordInput}
-                        onChange={e => setKeywordInput(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addKeyword()}
-                        placeholder="키워드 입력 후 Enter"
-                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                      />
-                      <button onClick={addKeyword} className="px-3 py-2 bg-blue-500 text-white text-sm rounded-xl">추가</button>
+                      <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addKw('blog', kwInput, setKwInput)} placeholder="키워드 입력 후 Enter" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                      <button onClick={() => addKw('blog', kwInput, setKwInput)} className="px-3 py-2 bg-blue-500 text-white text-sm rounded-xl">추가</button>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                       {form.blog.keywords.map(kw => (
                         <span key={kw} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-[11px] rounded-full">
                           {kw}
-                          <button onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, keywords: f.blog.keywords.filter(k => k !== kw) } }))} className="text-blue-400 hover:text-blue-700">✕</button>
+                          <button onClick={() => removeKw('blog', kw)} className="text-blue-400 hover:text-blue-700">✕</button>
                         </span>
                       ))}
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-semibold text-gray-600 mb-1 block">키워드 방식</label>
-                      <select
-                        value={form.blog.keyword_mode}
-                        onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, keyword_mode: e.target.value as 'rotate' | 'random' } }))}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                      >
+                      <select value={form.blog.keyword_mode} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, keyword_mode: e.target.value as 'rotate' | 'random' } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
                         <option value="rotate">순서대로</option>
                         <option value="random">랜덤</option>
                       </select>
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-600 mb-1 block">글 유형</label>
-                      <select
-                        value={form.blog.content_type}
-                        onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, content_type: e.target.value as 'product' | 'info' } }))}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                      >
+                      <select value={form.blog.content_type} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, content_type: e.target.value as 'product' | 'info' } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
                         <option value="info">정보글</option>
                         <option value="product">상품 추천글</option>
                       </select>
                     </div>
                   </div>
-
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">발행 플랫폼</label>
                     <div className="flex gap-2">
                       {['blogger', 'wordpress'].map(p => (
-                        <button
-                          key={p}
-                          onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, blog_platform: p as 'blogger' | 'wordpress' } }))}
-                          className={`flex-1 py-2 text-sm font-medium rounded-xl border transition-colors ${form.blog.blog_platform === p ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 text-gray-600'}`}
-                        >{p === 'blogger' ? '📝 Blogger' : '🌐 WordPress'}</button>
+                        <button key={p} onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, blog_platform: p as 'blogger' | 'wordpress' } }))} className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${form.blog.blog_platform === p ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 text-gray-600'}`}>
+                          {p === 'blogger' ? '📝 Blogger' : '🌐 WordPress'}
+                        </button>
                       ))}
                     </div>
                   </div>
-
                   {form.blog.blog_platform === 'wordpress' && (
                     <div className="space-y-2 bg-gray-50 rounded-xl p-3">
-                      <input value={form.blog.wp_url || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_url: e.target.value } }))} placeholder="WordPress URL (예: https://myblog.com)" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                      <input value={form.blog.wp_username || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_username: e.target.value } }))} placeholder="WordPress 사용자명" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                      <input type="password" value={form.blog.wp_app_password || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_app_password: e.target.value } }))} placeholder="앱 패스워드 (WP 관리자 → 사용자 → 앱 패스워드)" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                      <input value={form.blog.wp_url || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_url: e.target.value } }))} placeholder="WordPress URL" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      <input value={form.blog.wp_username || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_username: e.target.value } }))} placeholder="사용자명" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      <input type="password" value={form.blog.wp_app_password || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_app_password: e.target.value } }))} placeholder="앱 패스워드" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
                     </div>
                   )}
                 </div>
               )}
 
-              {/* 쿠팡 설정 */}
+              {/* ── 쿠팡 설정 ─────────────────────────────────────────── */}
               {form.type === 'coupang_auto' && (
                 <div className="space-y-3 pt-2 border-t border-gray-100">
                   <p className="text-xs font-bold text-gray-700">🛒 쿠팡 설정</p>
-
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1 block">상품 소스</label>
-                    <div className="flex gap-2">
-                      {[['goldbox', '🎁 골드박스'], ['keyword', '🔍 키워드 검색']].map(([v, l]) => (
-                        <button
-                          key={v}
-                          onClick={() => setForm(f => ({ ...f, coupang: { ...f.coupang, product_source: v as 'goldbox' | 'keyword' } }))}
-                          className={`flex-1 py-2 text-sm font-medium rounded-xl border transition-colors ${form.coupang.product_source === v ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 text-gray-600'}`}
-                        >{l}</button>
-                      ))}
-                    </div>
+                  <div className="flex gap-2">
+                    {[['goldbox', '🎁 골드박스'], ['keyword', '🔍 키워드 검색']].map(([v, l]) => (
+                      <button key={v} onClick={() => setForm(f => ({ ...f, coupang: { ...f.coupang, product_source: v as 'goldbox' | 'keyword' } }))} className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${form.coupang.product_source === v ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 text-gray-600'}`}>{l}</button>
+                    ))}
                   </div>
-
                   {form.coupang.product_source === 'keyword' && (
                     <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">검색 키워드</label>
-                      <div className="flex gap-2 mb-2">
-                        <input value={searchKwInput} onChange={e => setSearchKwInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSearchKw()} placeholder="검색 키워드 입력 후 Enter" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                        <button onClick={addSearchKw} className="px-3 py-2 bg-orange-500 text-white text-sm rounded-xl">추가</button>
+                      <div className="flex gap-2 mb-1.5">
+                        <input value={searchKwInput} onChange={e => setSearchKwInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const t = searchKwInput.trim(); if (t) { setForm(f => ({ ...f, coupang: { ...f.coupang, search_keywords: [...new Set([...(f.coupang.search_keywords || []), t])] } })); setSearchKwInput(''); } } }} placeholder="검색 키워드" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+                        <button onClick={() => { const t = searchKwInput.trim(); if (t) { setForm(f => ({ ...f, coupang: { ...f.coupang, search_keywords: [...new Set([...(f.coupang.search_keywords || []), t])] } })); setSearchKwInput(''); } }} className="px-3 bg-orange-500 text-white text-sm rounded-xl">추가</button>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {(form.coupang.search_keywords || []).map(kw => (
-                          <span key={kw} className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-700 text-[11px] rounded-full">
-                            {kw}
-                            <button onClick={() => setForm(f => ({ ...f, coupang: { ...f.coupang, search_keywords: (f.coupang.search_keywords || []).filter(k => k !== kw) } }))} className="text-orange-400 hover:text-orange-700">✕</button>
-                          </span>
+                          <span key={kw} className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-700 text-[11px] rounded-full">{kw}<button onClick={() => setForm(f => ({ ...f, coupang: { ...f.coupang, search_keywords: (f.coupang.search_keywords || []).filter(k => k !== kw) } }))} className="text-orange-400">✕</button></span>
                         ))}
                       </div>
                     </div>
                   )}
-
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">발행 SNS</label>
                     <div className="flex flex-wrap gap-2">
                       {SNS_PLATFORMS.map(p => (
-                        <button
-                          key={p}
-                          onClick={() => toggleSnsPlatform(p)}
-                          className={`px-3 py-1.5 text-sm rounded-xl border transition-colors ${form.coupang.sns_platforms.includes(p) ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600'}`}
-                        >{SNS_LABELS[p]}</button>
+                        <button key={p.id} onClick={() => setForm(f => ({ ...f, coupang: { ...f.coupang, sns_platforms: f.coupang.sns_platforms.includes(p.id) ? f.coupang.sns_platforms.filter(x => x !== p.id) : [...f.coupang.sns_platforms, p.id] } }))} className={`px-3 py-1.5 text-sm rounded-xl border transition-colors ${form.coupang.sns_platforms.includes(p.id) ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600'}`}>{p.label}</button>
                       ))}
                     </div>
                   </div>
-
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1 block">최소 할인율 (%) — 0이면 무관</label>
-                    <input
-                      type="number"
-                      min={0} max={90}
-                      value={form.coupang.min_discount || 0}
-                      onChange={e => setForm(f => ({ ...f, coupang: { ...f.coupang, min_discount: parseInt(e.target.value) || 0 } }))}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                    />
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">최소 할인율 (%)</label>
+                    <input type="number" min={0} max={90} value={form.coupang.min_discount || 0} onChange={e => setForm(f => ({ ...f, coupang: { ...f.coupang, min_discount: parseInt(e.target.value) || 0 } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
                   </div>
+                </div>
+              )}
+
+              {/* ── 아고다 설정 ───────────────────────────────────────── */}
+              {form.type === 'agoda_auto' && (
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <p className="text-xs font-bold text-gray-700">🏨 아고다 설정</p>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1.5 block">도시 선택 (복수 가능)</label>
+                    <div className="grid grid-cols-3 gap-1.5 max-h-48 overflow-y-auto">
+                      {AGODA_CITIES.map(city => {
+                        const selected = form.agoda.cities.some(c => c.id === city.id);
+                        return (
+                          <button key={city.id} onClick={() => setForm(f => ({ ...f, agoda: { ...f.agoda, cities: selected ? f.agoda.cities.filter(c => c.id !== city.id) : [...f.agoda.cities, city] } }))} className={`px-2 py-1.5 text-[11px] rounded-lg border transition-colors text-left ${selected ? 'bg-teal-500 border-teal-500 text-white' : 'border-gray-200 text-gray-600 hover:border-teal-300'}`}>
+                            {city.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">선택된 도시: {form.agoda.cities.map(c => c.name).join(', ') || '없음'}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">도시 순환 방식</label>
+                      <select value={form.agoda.city_mode} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, city_mode: e.target.value as 'rotate' | 'random' } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+                        <option value="rotate">순서대로</option>
+                        <option value="random">랜덤</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">여행 스타일</label>
+                      <select value={form.agoda.travel_style || '커플'} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, travel_style: e.target.value } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+                        {['커플', '가족', '솔로', '비즈니스', '친구'].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">발행 플랫폼</label>
+                    <div className="flex gap-2">
+                      {['blogger', 'wordpress'].map(p => (
+                        <button key={p} onClick={() => setForm(f => ({ ...f, agoda: { ...f.agoda, blog_platform: p as 'blogger' | 'wordpress' } }))} className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${form.agoda.blog_platform === p ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 text-gray-600'}`}>
+                          {p === 'blogger' ? '📝 Blogger' : '🌐 WordPress'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {form.agoda.blog_platform === 'wordpress' && (
+                    <div className="space-y-2 bg-gray-50 rounded-xl p-3">
+                      <input value={form.agoda.wp_url || ''} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, wp_url: e.target.value } }))} placeholder="WordPress URL" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      <input value={form.agoda.wp_username || ''} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, wp_username: e.target.value } }))} placeholder="사용자명" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      <input type="password" value={form.agoda.wp_app_password || ''} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, wp_app_password: e.target.value } }))} placeholder="앱 패스워드" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 숏폼 설정 ─────────────────────────────────────────── */}
+              {form.type === 'shorts_auto' && (
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <p className="text-xs font-bold text-gray-700">🎬 숏폼 설정</p>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">주제 목록</label>
+                    <div className="flex gap-2 mb-2">
+                      <input value={shortsTopicInput} onChange={e => setShortsTopicInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTopic('shorts', shortsTopicInput, setShortsTopicInput)} placeholder="주제 입력 후 Enter" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+                      <button onClick={() => addTopic('shorts', shortsTopicInput, setShortsTopicInput)} className="px-3 bg-blue-500 text-white text-sm rounded-xl">추가</button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                      {form.shorts.topics.map(t => (
+                        <span key={t} className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 text-purple-700 text-[11px] rounded-full">{t}<button onClick={() => setForm(f => ({ ...f, shorts: { ...f.shorts, topics: f.shorts.topics.filter(k => k !== t) } }))} className="text-purple-400">✕</button></span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">영상 길이</label>
+                      <select value={form.shorts.duration} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, duration: parseInt(e.target.value) as 30 | 60 | 120 } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+                        <option value={30}>30초</option>
+                        <option value={60}>60초</option>
+                        <option value={120}>120초</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">톤</label>
+                      <select value={form.shorts.tone} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, tone: e.target.value } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+                        {[['info','정보형'],['fun','코믹'],['emotion','감동'],['edu','교육'],['story','스토리'],['trend','트렌드']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">플랫폼</label>
+                      <select value={form.shorts.platform} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, platform: e.target.value } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+                        {[['youtube','YouTube'],['instagram','Instagram'],['tiktok','TikTok'],['naver','네이버']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.shorts.save_to_blog} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, save_to_blog: e.target.checked } }))} className="rounded" />
+                    <span className="text-sm text-gray-700">스크립트를 블로그에도 자동 발행</span>
+                  </label>
+                  {form.shorts.save_to_blog && (
+                    <div className="space-y-2 bg-gray-50 rounded-xl p-3">
+                      <div className="flex gap-2">
+                        {['blogger', 'wordpress'].map(p => (
+                          <button key={p} onClick={() => setForm(f => ({ ...f, shorts: { ...f.shorts, blog_platform: p as 'blogger' | 'wordpress' } }))} className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${form.shorts.blog_platform === p ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 text-gray-600'}`}>{p === 'blogger' ? 'Blogger' : 'WordPress'}</button>
+                        ))}
+                      </div>
+                      {form.shorts.blog_platform === 'wordpress' && (
+                        <>
+                          <input value={form.shorts.wp_url || ''} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, wp_url: e.target.value } }))} placeholder="WordPress URL" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                          <input value={form.shorts.wp_username || ''} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, wp_username: e.target.value } }))} placeholder="사용자명" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                          <input type="password" value={form.shorts.wp_app_password || ''} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, wp_app_password: e.target.value } }))} placeholder="앱 패스워드" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 인스타그램 설정 ───────────────────────────────────── */}
+              {form.type === 'instagram_auto' && (
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <p className="text-xs font-bold text-gray-700">📸 인스타그램 설정</p>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">주제 목록</label>
+                    <div className="flex gap-2 mb-2">
+                      <input value={igTopicInput} onChange={e => setIgTopicInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTopic('instagram', igTopicInput, setIgTopicInput)} placeholder="주제 입력 후 Enter" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+                      <button onClick={() => addTopic('instagram', igTopicInput, setIgTopicInput)} className="px-3 bg-pink-500 text-white text-sm rounded-xl">추가</button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                      {form.instagram.topics.map(t => (
+                        <span key={t} className="inline-flex items-center gap-1 px-2.5 py-1 bg-pink-50 text-pink-700 text-[11px] rounded-full">{t}<button onClick={() => setForm(f => ({ ...f, instagram: { ...f.instagram, topics: f.instagram.topics.filter(k => k !== t) } }))} className="text-pink-400">✕</button></span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">주제 방식</label>
+                      <select value={form.instagram.topic_mode} onChange={e => setForm(f => ({ ...f, instagram: { ...f.instagram, topic_mode: e.target.value as 'rotate' | 'random' } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+                        <option value="rotate">순서대로</option>
+                        <option value="random">랜덤</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">말투</label>
+                      <select value={form.instagram.tone} onChange={e => setForm(f => ({ ...f, instagram: { ...f.instagram, tone: e.target.value } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+                        <option value="casual">친근한</option>
+                        <option value="professional">전문적인</option>
+                        <option value="trendy">트렌디한</option>
+                      </select>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.instagram.auto_publish} onChange={e => setForm(f => ({ ...f, instagram: { ...f.instagram, auto_publish: e.target.checked } }))} className="rounded" />
+                    <span className="text-sm text-gray-700">인스타그램 자동 발행 (Pixabay 이미지 키 필요)</span>
+                  </label>
                 </div>
               )}
             </div>
 
             <div className="p-5 border-t border-gray-100 flex gap-3">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium">취소</button>
-              <button
-                onClick={saveSchedule}
-                disabled={saving || !form.name.trim()}
-                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold disabled:opacity-50"
-              >{saving ? '저장 중...' : editId ? '수정 저장' : '스케줄 추가'}</button>
+              <button onClick={saveSchedule} disabled={saving || !form.name.trim()} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold disabled:opacity-50">
+                {saving ? '저장 중...' : editId ? '수정 저장' : '스케줄 추가'}
+              </button>
             </div>
           </div>
         </div>

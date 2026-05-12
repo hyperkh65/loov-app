@@ -15,6 +15,9 @@ import { isInternalRequest } from '@/lib/internal-auth';
 import { computeNextRunAt } from '@/lib/scheduler';
 import { runBlogAuto } from '@/lib/scheduler/blog-runner';
 import { runCoupangAuto } from '@/lib/scheduler/coupang-runner';
+import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
+import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
+import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
 import type { Schedule } from '@/lib/scheduler';
 
 export const maxDuration = 300;
@@ -68,6 +71,24 @@ async function executeSchedule(schedule: Schedule) {
         const r = await runCoupangAuto(schedule, recentProductIds);
         result = r as unknown as Record<string, unknown>;
         summary = `${r.productName} → ${r.results.join(', ')}`;
+        break;
+      }
+      case 'agoda_auto': {
+        const r = await runAgodaAuto(schedule);
+        result = r;
+        summary = `${r.city} 호텔 블로그 발행 완료: ${r.title}`;
+        break;
+      }
+      case 'shorts_auto': {
+        const r = await runShortsAuto(schedule);
+        result = r;
+        summary = `"${r.topic}" 숏폼 스크립트 생성${r.saved ? ' + 블로그 발행' : ''}`;
+        break;
+      }
+      case 'instagram_auto': {
+        const r = await runInstagramAuto(schedule);
+        result = r as unknown as Record<string, unknown>;
+        summary = `"${r.topic}" 인스타 ${r.published ? '발행 완료' : '캡션 생성(미발행)'}`;
         break;
       }
     }

@@ -32,7 +32,7 @@
  * );
  */
 
-export type ScheduleType = 'blog_auto' | 'coupang_auto';
+export type ScheduleType = 'blog_auto' | 'coupang_auto' | 'agoda_auto' | 'shorts_auto' | 'instagram_auto';
 
 export interface BlogAutoConfig {
   keywords: string[];
@@ -60,7 +60,7 @@ export interface Schedule {
   is_active: boolean;
   interval_hours: number;
   run_at_hour: number;
-  config: BlogAutoConfig | CoupangAutoConfig;
+  config: BlogAutoConfig | CoupangAutoConfig | AgodaAutoConfig | ShortsAutoConfig | InstagramAutoConfig;
   last_run_at: string | null;
   next_run_at: string | null;
   last_status: string | null;
@@ -78,6 +78,39 @@ export interface ScheduleLog {
   summary: string | null;
   result: Record<string, unknown> | null;
   error: string | null;
+}
+
+export interface AgodaAutoConfig {
+  cities: Array<{ id: number; name: string; nameEn: string }>;
+  city_mode: 'rotate' | 'random';
+  blog_platform: 'blogger' | 'wordpress';
+  blogger_blog_id?: string;
+  wp_url?: string;
+  wp_username?: string;
+  wp_app_password?: string;
+  travel_style?: string;
+  sns_platforms?: string[];
+}
+
+export interface ShortsAutoConfig {
+  topics: string[];
+  topic_mode: 'rotate' | 'random';
+  duration: 30 | 60 | 120;
+  tone: string;
+  platform: string;
+  save_to_blog: boolean;
+  blog_platform?: 'blogger' | 'wordpress';
+  blogger_blog_id?: string;
+  wp_url?: string;
+  wp_username?: string;
+  wp_app_password?: string;
+}
+
+export interface InstagramAutoConfig {
+  topics: string[];
+  topic_mode: 'rotate' | 'random';
+  tone: string;
+  auto_publish: boolean;
 }
 
 export const INTERVAL_OPTIONS = [
