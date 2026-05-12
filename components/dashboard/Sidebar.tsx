@@ -97,6 +97,7 @@ const NAV_GROUPS = [
   {
     label: '자동화서비스',
     items: [
+      { href: '/dashboard/scheduler',    icon: '⏰', label: '발행 스케줄러' },
       { href: '/dashboard/auto-service', icon: '🤖', label: '블로그 자동화' },
       { href: '/dashboard/rewrite',      icon: '✍️', label: '리라이팅' },
       { href: '/dashboard/insta-service', icon: '📸', label: '인스타그램 자동화' },
