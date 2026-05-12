@@ -5,6 +5,32 @@
  */
 import { getSetting } from './get-setting';
 
+// 한국어 강제 지시문 — 모든 프롬프트 뒤에 추가
+const KOREAN_ONLY_SUFFIX = `
+
+[언어 규칙 - 절대 준수]
+반드시 한국어로만 작성하세요.
+중국어(漢字·简体·繁體), 일본어(ひらがな·カタカナ·漢字), 러시아어(Кириллица), 아랍어 등
+어떤 외국어 문자도 절대 포함하지 마세요.
+영문 브랜드명·고유명사(예: iPhone, Netflix)는 그대로 사용 가능.
+위 규칙을 어기면 응답 전체가 무효 처리됩니다.`.trim();
+
+// CJK 한자·일본어 가나·키릴 등 외국어 제거 (한글·라틴·숫자·일반기호 보존)
+function stripForeignChars(text: string): string {
+  return text
+    .replace(/[⺀-⻿]/g, '')   // CJK Radicals Supplement
+    .replace(/[⼀-⿟]/g, '')   // Kangxi Radicals
+    .replace(/[぀-ヿ]/g, '')   // Hiragana + Katakana
+    .replace(/[㄀-ㄯ]/g, '')   // Bopomofo
+    .replace(/[㐀-䶿]/g, '')   // CJK Extension A
+    .replace(/[一-鿿]/g, '')   // CJK Unified Ideographs (한자)
+    .replace(/[豈-﫿]/g, '')   // CJK Compatibility Ideographs
+    .replace(/[Ѐ-ӿ]/g, '')   // Cyrillic (러시아어 등)
+    .replace(/[؀-ۿ]/g, '')   // Arabic
+    .replace(/ {2,}/g, ' ')            // 연속 공백 정리
+    .trim();
+}
+
 const OPENROUTER_MODELS = [
   'qwen/qwen3-235b-a22b:free',
   'meta-llama/llama-3.3-70b-instruct:free',
@@ -174,6 +200,11 @@ export async function generateText(
   clientOllamaKey?: string,
   clientOpenrouterKey?: string,
 ): Promise<string> {
+  // 한국어 강제 지시문 추가 (중복 방지)
+  if (!prompt.includes('[언어 규칙 - 절대 준수]')) {
+    prompt = prompt + '\n\n' + KOREAN_ONLY_SUFFIX;
+  }
+
   const errors: string[] = [];
 
   // preferModel이 Ollama 모델인지 판단
@@ -250,21 +281,24 @@ export async function generateText(
     catch (e) { errors.push(`Claude: ${e}`); return false; }
   };
 
+  // ── 결과에서 외국어 문자 자동 제거 ─────────────────────────
+  const clean = (r: string | false) => r ? stripForeignChars(r) : false;
+
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
   let result: string | false = false;
 
   if (preferModel.startsWith('claude-')) {
-    result = await tryClaude(preferModel);
+    result = clean(await tryClaude(preferModel));
   } else if (preferModel === 'claude') {
-    result = await tryClaude();
+    result = clean(await tryClaude());
   } else if (preferModel === 'gemini') {
-    result = await tryGemini();
+    result = clean(await tryGemini());
   } else if (preferModel === 'openrouter') {
-    result = await tryOpenRouter();
+    result = clean(await tryOpenRouter());
   } else if (preferModel.startsWith('gpt') || preferModel === 'openai') {
-    result = await tryOpenAI();
+    result = clean(await tryOpenAI());
   } else if (isOllamaPreferred) {
-    result = await tryOllama(preferModel);
+    result = clean(await tryOllama(preferModel));
   }
   if (result) return result;
 
@@ -278,7 +312,7 @@ export async function generateText(
   if (!preferModel.startsWith('gpt') && preferModel !== 'openai') fallbacks.push(tryOpenAI);
 
   for (const fn of fallbacks) {
-    const r = await fn();
+    const r = clean(await fn());
     if (r) return r;
   }
 
