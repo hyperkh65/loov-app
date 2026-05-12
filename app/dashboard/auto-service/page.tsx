@@ -121,6 +121,7 @@ export default function AutoServicePage() {
     unicodeWatermarks: number; htmlEntities: number; cleanedText: string;
   } | null>(null);
   const [wmLoading, setWmLoading] = useState(false);
+  const [refining, setRefining] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [editTitle, setEditTitle] = useState('');
@@ -1304,7 +1305,7 @@ export default function AutoServicePage() {
                         : `⚠️ ${wmAnalysis.watermarkCount > 0 ? `워터마크 ${wmAnalysis.watermarkCount}개 발견. ` : ''}GPT 패턴 점수 ${wmAnalysis.gptScore}% — 정제 권장`}
                     </div>
 
-                    {/* 정제 버튼 */}
+                    {/* 워터마크 제거 버튼 */}
                     {wmAnalysis.watermarkCount > 0 && (
                       <button
                         onClick={() => {
@@ -1315,6 +1316,47 @@ export default function AutoServicePage() {
                         className="w-full py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold"
                       >
                         🧹 워터마크 제거 적용
+                      </button>
+                    )}
+
+                    {/* GPT 패턴 정제 버튼 */}
+                    {wmAnalysis.gptScore >= 30 && (
+                      <button
+                        disabled={refining}
+                        onClick={async () => {
+                          if (!previewArticle) return;
+                          setRefining(true);
+                          try {
+                            const res = await fetch('/api/auto-service/refine', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ content: previewArticle.content, title: previewArticle.title }),
+                            });
+                            const data = await res.json() as { refined?: string; error?: string };
+                            if (!res.ok || !data.refined) {
+                              alert(data.error || '정제 실패');
+                              return;
+                            }
+                            // 정제된 텍스트를 단락별로 HTML p 태그로 감싸서 적용
+                            const refinedHtml = data.refined
+                              .split(/\n\n+/)
+                              .map(p => p.trim())
+                              .filter(Boolean)
+                              .map(p => `<p data-ke-size="size16">${p.replace(/\n/g, '<br/>')}</p>`)
+                              .join('\n');
+                            setPreviewArticle({ ...previewArticle, content: refinedHtml });
+                            setWmAnalysis({ ...wmAnalysis, gptScore: Math.max(0, wmAnalysis.gptScore - 25) });
+                          } catch (e) {
+                            alert('정제 오류: ' + String(e));
+                          } finally {
+                            setRefining(false);
+                          }
+                        }}
+                        className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 disabled:bg-gray-300 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                      >
+                        {refining
+                          ? <><span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> AI 문체 정제 중...</>
+                          : `✨ GPT 패턴 정제 (현재 ${wmAnalysis.gptScore}%)`}
                       </button>
                     )}
                   </>
