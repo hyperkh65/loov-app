@@ -658,6 +658,38 @@ export default function CoupangHubPage() {
               <p className="text-[10px] text-gray-400 mt-1">● = SNS 계정 연결됨</p>
             </div>
 
+            {/* SNS 계정 연결 관리 */}
+            <div className="border border-gray-100 rounded-xl p-3 bg-gray-50 space-y-2">
+              <p className="text-[11px] font-semibold text-gray-500">SNS 계정 연결</p>
+              {PLATFORMS.map((p) => {
+                const conns = snsConnections.filter(c => c.platform === p.id && c.is_active);
+                return (
+                  <div key={p.id} className="flex items-center gap-2 min-h-[28px]">
+                    <span className="text-xs w-14 text-gray-500 shrink-0">{p.icon} {p.label}</span>
+                    {conns.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 flex-1">
+                        {conns.map((conn) => (
+                          <span key={conn.platform_user_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px]">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                            {conn.platform_display_name || conn.platform_username}
+                          </span>
+                        ))}
+                        <a
+                          href={`/api/sns/connect/${p.id}`}
+                          className="inline-flex items-center px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-400 text-[11px] hover:border-blue-300 hover:text-blue-500 transition-colors"
+                        >+ 추가</a>
+                      </div>
+                    ) : (
+                      <a
+                        href={`/api/sns/connect/${p.id}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white border border-dashed border-gray-300 text-gray-400 text-[11px] hover:border-blue-400 hover:text-blue-500 transition-colors"
+                      >연결하기</a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
             {/* Threads 멀티계정 선택 */}
             {selectedPlatforms.includes('threads') && (() => {
               const threadsConns = snsConnections.filter(c => c.platform === 'threads' && c.is_active);
