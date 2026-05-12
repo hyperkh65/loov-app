@@ -75,6 +75,8 @@ function buildPrompt(keyword: string, newsItems: {title:string;description:strin
 
   return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
 
+[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 위반 시 응답 무효.
+
 ${ANTI_WATERMARK_PROMPT}
 
 수집된 최신 뉴스와 블로그 자료를 철저히 분석하여, 그 내용에 기반한 정확하고 흥미로운 블로그 글을 작성합니다.
