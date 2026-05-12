@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface CoupangProduct {
   productId: number | string;
@@ -66,6 +66,8 @@ export default function CoupangHubPage() {
   const [snsConnections, setSnsConnections] = useState<{ platform: string; platform_user_id: string; platform_username: string; platform_display_name: string; is_active: boolean }[]>([]);
   const [selectedThreadsAccounts, setSelectedThreadsAccounts] = useState<string[]>([]);
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null);
+  const [connectedToast, setConnectedToast] = useState('');
+  const connectionsLoadedRef = useRef(false);
 
   const [copied, setCopied] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
@@ -73,10 +75,7 @@ export default function CoupangHubPage() {
   const [manualProductName, setManualProductName] = useState('');
   const [manualProductPrice, setManualProductPrice] = useState('');
 
-  useEffect(() => {
-    fetch('/api/coupang/settings').then(r => r.json()).then((d: { configured?: boolean }) => {
-      setApiConfigured(!!d.configured);
-    }).catch(() => setApiConfigured(false));
+  const loadSnsConnections = useCallback(() => {
     fetch('/api/sns/connections').then(r => r.ok ? r.json() : []).then(
       (d: { platform: string; platform_user_id: string; is_active: boolean }[]) => {
         if (Array.isArray(d)) {
@@ -85,7 +84,32 @@ export default function CoupangHubPage() {
         }
       }
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    fetch('/api/coupang/settings').then(r => r.json()).then((d: { configured?: boolean }) => {
+      setApiConfigured(!!d.configured);
+    }).catch(() => setApiConfigured(false));
+    loadSnsConnections();
+  }, [loadSnsConnections]);
+
+  // OAuth 연결 완료 후 허브로 복귀했을 때 처리
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connectedPlatform = params.get('connected');
+    if (connectedPlatform && !connectionsLoadedRef.current) {
+      connectionsLoadedRef.current = true;
+      const names: Record<string, string> = { threads: '스레드', instagram: '인스타', twitter: '트위터', facebook: '페북' };
+      setConnectedToast(`${names[connectedPlatform] || connectedPlatform} 계정 연결 완료!`);
+      loadSnsConnections();
+      setTimeout(() => setConnectedToast(''), 4000);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('connected');
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [loadSnsConnections]);
+
 
   const handleDirectUrl = async () => {
     const url = directUrl.trim();
@@ -660,9 +684,18 @@ export default function CoupangHubPage() {
 
             {/* SNS 계정 연결 관리 */}
             <div className="border border-gray-100 rounded-xl p-3 bg-gray-50 space-y-2">
-              <p className="text-[11px] font-semibold text-gray-500">SNS 계정 연결</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold text-gray-500">SNS 계정 연결</p>
+                <button onClick={loadSnsConnections} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors">🔄 새로고침</button>
+              </div>
+              {connectedToast && (
+                <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                  ✓ {connectedToast}
+                </div>
+              )}
               {PLATFORMS.map((p) => {
                 const conns = snsConnections.filter(c => c.platform === p.id && c.is_active);
+                const connectUrl = `/api/sns/connect/${p.id}?return_to=/dashboard/coupang/hub`;
                 return (
                   <div key={p.id} className="flex items-center gap-2 min-h-[28px]">
                     <span className="text-xs w-14 text-gray-500 shrink-0">{p.icon} {p.label}</span>
@@ -675,13 +708,13 @@ export default function CoupangHubPage() {
                           </span>
                         ))}
                         <a
-                          href={`/api/sns/connect/${p.id}`}
+                          href={connectUrl}
                           className="inline-flex items-center px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-400 text-[11px] hover:border-blue-300 hover:text-blue-500 transition-colors"
                         >+ 추가</a>
                       </div>
                     ) : (
                       <a
-                        href={`/api/sns/connect/${p.id}`}
+                        href={connectUrl}
                         className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white border border-dashed border-gray-300 text-gray-400 text-[11px] hover:border-blue-400 hover:text-blue-500 transition-colors"
                       >연결하기</a>
                     )}

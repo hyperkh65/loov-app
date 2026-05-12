@@ -8,6 +8,7 @@ export async function GET(
 ) {
   const { platform } = await params;
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://loov.co.kr';
+  const returnTo = _req.nextUrl.searchParams.get('return_to') || '';
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -102,5 +103,9 @@ export async function GET(
       return NextResponse.json({ error: '지원하지 않는 플랫폼' }, { status: 400 });
   }
 
-  return NextResponse.redirect(authUrl.toString());
+  const res = NextResponse.redirect(authUrl.toString());
+  if (returnTo) {
+    res.cookies.set('sns_return_to', returnTo, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  }
+  return res;
 }
