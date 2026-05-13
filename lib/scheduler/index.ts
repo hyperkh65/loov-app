@@ -40,7 +40,8 @@ export interface BlogAutoConfig {
   content_type: 'product' | 'info';
   blog_platform: 'blogger' | 'wordpress';
   blogger_blog_id?: string;
-  wp_url?: string;
+  wp_site_id?: string;       // registered wordpress_sites.id (preferred)
+  wp_url?: string;           // legacy fallback
   wp_username?: string;
   wp_app_password?: string;
 }
@@ -85,6 +86,7 @@ export interface AgodaAutoConfig {
   city_mode: 'rotate' | 'random';
   blog_platform: 'blogger' | 'wordpress';
   blogger_blog_id?: string;
+  wp_site_id?: string;
   wp_url?: string;
   wp_username?: string;
   wp_app_password?: string;
@@ -101,6 +103,7 @@ export interface ShortsAutoConfig {
   save_to_blog: boolean;
   blog_platform?: 'blogger' | 'wordpress';
   blogger_blog_id?: string;
+  wp_site_id?: string;
   wp_url?: string;
   wp_username?: string;
   wp_app_password?: string;

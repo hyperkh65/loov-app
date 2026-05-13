@@ -57,7 +57,7 @@ const defaultForm = () => ({
   blog: {
     keywords: [] as string[], keyword_mode: 'rotate' as 'rotate' | 'random',
     content_type: 'info' as 'product' | 'info', blog_platform: 'blogger' as 'blogger' | 'wordpress',
-    blogger_blog_id: '', wp_url: '', wp_username: '', wp_app_password: '',
+    blogger_blog_id: '', wp_site_id: '',
   } as BlogAutoConfig,
   coupang: {
     product_source: 'goldbox' as 'goldbox' | 'keyword', search_keywords: [] as string[],
@@ -66,13 +66,13 @@ const defaultForm = () => ({
   agoda: {
     cities: [] as AgodaAutoConfig['cities'], city_mode: 'rotate' as 'rotate' | 'random',
     blog_platform: 'blogger' as 'blogger' | 'wordpress', blogger_blog_id: '',
-    wp_url: '', wp_username: '', wp_app_password: '', travel_style: '커플', sns_platforms: [] as string[],
+    wp_site_id: '', travel_style: '커플', sns_platforms: [] as string[],
   } as AgodaAutoConfig,
   shorts: {
     topics: [] as string[], topic_mode: 'rotate' as 'rotate' | 'random',
     duration: 60 as 30 | 60 | 120, tone: 'info', platform: 'youtube',
     save_to_blog: false, blog_platform: 'blogger' as 'blogger' | 'wordpress',
-    blogger_blog_id: '', wp_url: '', wp_username: '', wp_app_password: '',
+    blogger_blog_id: '', wp_site_id: '',
   } as ShortsAutoConfig,
   instagram: {
     topics: [] as string[], topic_mode: 'rotate' as 'rotate' | 'random',
@@ -101,13 +101,14 @@ export default function SchedulerPage() {
   const [shortsTopicInput, setShortsTopicInput] = useState('');
   const [igTopicInput, setIgTopicInput] = useState('');
 
-  // keyword auto-discover
-  const [kwSeed, setKwSeed] = useState('');
-  const [kwDiscover, setKwDiscover] = useState(false);
+  // 캐시된 키워드 (blog_auto 자동 로드)
+  const [cachedKeywords, setCachedKeywords] = useState<Array<{ keyword: string; score: number; grade: string; monthly_total: number; can_rank1: boolean }>>([]);
+  const [kwCacheLoading, setKwCacheLoading] = useState(false);
+  const [kwDiscovering, setKwDiscovering] = useState(false);
 
-  // WP sites from NAS
-  const [wpSites, setWpSites] = useState<Array<{ name: string; domain: string; url: string }>>([]);
-  const [wpSitesLoaded, setWpSitesLoaded] = useState(false);
+  // 등록된 WP 사이트 (DB)
+  const [wpRegSites, setWpRegSites] = useState<Array<{ id: string; site_name: string; site_url: string }>>([]);
+  const [wpRegSitesLoaded, setWpRegSitesLoaded] = useState(false);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500); };
 
@@ -119,44 +120,56 @@ export default function SchedulerPage() {
 
   useEffect(() => { loadSchedules(); }, [loadSchedules]);
 
-  // NAS WP 사이트 불러오기
-  const loadWpSites = async () => {
-    if (wpSitesLoaded) return;
-    const res = await fetch('/api/wp-auto/sites');
-    if (res.ok) {
-      const data = await res.json() as { sites?: Array<{ name: string; domain: string; url: string }> };
-      setWpSites(data.sites || []);
-    }
-    setWpSitesLoaded(true);
-  };
+  // 모달 오픈 시 자동 로드
+  useEffect(() => {
+    if (!showModal) return;
+    if (form.type === 'blog_auto') loadCachedKeywords();
+    if (['blog_auto', 'agoda_auto', 'shorts_auto'].includes(form.type)) loadWpRegSites();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showModal, form.type]);
 
-  // 키워드 자동 추출
-  const autoDiscoverKeywords = async (targetField: 'blog' | 'shorts' | 'instagram') => {
-    const seed = kwSeed.trim();
-    if (!seed) { showToast('씨드 키워드를 입력하세요'); return; }
-    setKwDiscover(true);
+  // 등록된 WP 사이트 불러오기 (DB)
+  const loadWpRegSites = useCallback(async () => {
+    if (wpRegSitesLoaded) return;
+    const res = await fetch('/api/wordpress/sites');
+    if (res.ok) {
+      const data = await res.json() as { sites?: Array<{ id: string; site_name: string; site_url: string }> };
+      setWpRegSites(data.sites || []);
+    }
+    setWpRegSitesLoaded(true);
+  }, [wpRegSitesLoaded]);
+
+  // 캐시된 키워드 로드 (blog_auto용)
+  const loadCachedKeywords = useCallback(async () => {
+    setKwCacheLoading(true);
+    try {
+      const res = await fetch('/api/scheduler/keywords?limit=50');
+      if (res.ok) {
+        const data = await res.json() as { keywords: Array<{ keyword: string; score: number; grade: string; monthly_total: number; can_rank1: boolean }>; cached: boolean };
+        setCachedKeywords(data.keywords || []);
+      }
+    } catch { /* 무시 */ }
+    setKwCacheLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 키워드 분석 실행 (씨드 없이 → 계절/트렌드 자동)
+  const runKeywordDiscover = async () => {
+    setKwDiscovering(true);
     try {
       const res = await fetch('/api/keyword/auto-discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seed, limit: 20 }),
+        body: JSON.stringify({ limit: 30 }),
       });
       if (res.ok) {
-        const data = await res.json() as { keywords?: string[] };
-        const kws = data.keywords || [];
-        if (!kws.length) { showToast('키워드를 찾지 못했습니다'); return; }
-        if (targetField === 'blog') {
-          setForm(f => ({ ...f, blog: { ...f.blog, keywords: [...new Set([...f.blog.keywords, ...kws])] } }));
-        } else if (targetField === 'shorts') {
-          setForm(f => ({ ...f, shorts: { ...f.shorts, topics: [...new Set([...f.shorts.topics, ...kws])] } }));
-        } else {
-          setForm(f => ({ ...f, instagram: { ...f.instagram, topics: [...new Set([...f.instagram.topics, ...kws])] } }));
-        }
-        showToast(`${kws.length}개 키워드 추가됨`);
+        showToast('키워드 분석 완료! 결과를 불러옵니다...');
+        await loadCachedKeywords();
+      } else {
+        showToast('키워드 분석 실패');
       }
-    } catch { showToast('키워드 추출 실패'); }
-    setKwDiscover(false);
-    setKwSeed('');
+    } catch { showToast('키워드 분석 실패'); }
+    setKwDiscovering(false);
   };
 
   const loadLogs = async (scheduleId: string) => {
@@ -203,7 +216,8 @@ export default function SchedulerPage() {
   const openAdd = () => {
     setEditId(null);
     setForm(defaultForm());
-    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput(''); setKwSeed('');
+    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput('');
+    setCachedKeywords([]); setWpRegSitesLoaded(false);
     setShowModal(true);
   };
 
@@ -217,7 +231,8 @@ export default function SchedulerPage() {
     else if (s.type === 'shorts_auto') f.shorts = s.config as ShortsAutoConfig;
     else if (s.type === 'instagram_auto') f.instagram = s.config as InstagramAutoConfig;
     setForm(f);
-    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput(''); setKwSeed('');
+    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput('');
+    setCachedKeywords([]); setWpRegSitesLoaded(false);
     setShowModal(true);
   };
 
@@ -401,42 +416,31 @@ export default function SchedulerPage() {
                 )}
               </div>
 
-              {/* ── 키워드 자동추출 공통 ─────────────────────────────── */}
-              {['blog_auto', 'shorts_auto', 'instagram_auto'].includes(form.type) && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
-                  <p className="text-[11px] font-semibold text-blue-800">🔍 네이버 키워드 자동 추출</p>
-                  <div className="flex gap-2">
-                    <input value={kwSeed} onChange={e => setKwSeed(e.target.value)} onKeyDown={e => e.key === 'Enter' && autoDiscoverKeywords(form.type === 'blog_auto' ? 'blog' : form.type === 'shorts_auto' ? 'shorts' : 'instagram')} placeholder="씨드 키워드 (예: 다이어트, 여행)" className="flex-1 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 bg-white" />
-                    <button onClick={() => autoDiscoverKeywords(form.type === 'blog_auto' ? 'blog' : form.type === 'shorts_auto' ? 'shorts' : 'instagram')} disabled={kwDiscover} className="px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg disabled:opacity-50">
-                      {kwDiscover ? '추출중...' : '자동 추출'}
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-blue-500">네이버 자동완성 기반으로 실제 검색되는 키워드를 추출합니다</p>
-                </div>
-              )}
-
-              {/* ── WordPress 사이트 선택 공통 ───────────────────────── */}
+              {/* ── WordPress 사이트 선택 (등록된 사이트) ───────────── */}
               {(['blog_auto', 'agoda_auto', 'shorts_auto'].includes(form.type)) && (
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-semibold text-gray-700">🌐 NAS WordPress 사이트 불러오기</p>
-                    <button onClick={loadWpSites} className="text-[11px] text-blue-500 hover:text-blue-700">불러오기</button>
-                  </div>
-                  {wpSites.length > 0 && (
-                    <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto">
-                      {wpSites.map(site => (
-                        <button key={site.name} onClick={() => {
-                          const field = form.type === 'blog_auto' ? 'blog' : form.type === 'agoda_auto' ? 'agoda' : 'shorts';
-                          setForm(f => ({ ...f, [field]: { ...(f as Record<string, unknown>)[field] as object, blog_platform: 'wordpress', wp_url: site.url, wp_username: 'admin' } }));
-                          showToast(`${site.domain} 선택됨`);
-                        }} className="text-left px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-[11px] text-gray-700 hover:border-blue-300 hover:bg-blue-50 transition-colors">
-                          <div className="font-medium">{site.name}</div>
-                          <div className="text-gray-400 truncate">{site.domain}</div>
-                        </button>
-                      ))}
+                  <p className="text-[11px] font-semibold text-gray-700">🌐 등록된 WordPress 사이트</p>
+                  {!wpRegSitesLoaded ? (
+                    <p className="text-[11px] text-gray-400">불러오는 중...</p>
+                  ) : wpRegSites.length === 0 ? (
+                    <p className="text-[11px] text-gray-400">등록된 WordPress 사이트가 없습니다 (<a href="/dashboard/wp-auto" className="text-blue-500 underline">WordPress 자동세팅</a>에서 추가)</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                      {wpRegSites.map(site => {
+                        const field = form.type === 'blog_auto' ? 'blog' : form.type === 'agoda_auto' ? 'agoda' : 'shorts';
+                        const cfg = (form as Record<string, unknown>)[field] as { blog_platform?: string; wp_site_id?: string };
+                        const isSelected = cfg?.blog_platform === 'wordpress' && cfg?.wp_site_id === site.id;
+                        return (
+                          <button key={site.id} onClick={() => {
+                            setForm(f => ({ ...f, [field]: { ...(f as Record<string, unknown>)[field] as object, blog_platform: 'wordpress', wp_site_id: site.id } }));
+                          }} className={`w-full text-left px-3 py-2 rounded-lg border text-[11px] transition-colors ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300 hover:bg-blue-50'}`}>
+                            <div className="font-medium">{site.site_name}</div>
+                            <div className={`truncate ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>{site.site_url}</div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
-                  {wpSitesLoaded && wpSites.length === 0 && <p className="text-[11px] text-gray-400">NAS에 WordPress 사이트가 없습니다</p>}
                 </div>
               )}
 
@@ -444,20 +448,59 @@ export default function SchedulerPage() {
               {form.type === 'blog_auto' && (
                 <div className="space-y-3 pt-2 border-t border-gray-100">
                   <p className="text-xs font-bold text-gray-700">📝 블로그 설정</p>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1 block">키워드 목록</label>
-                    <div className="flex gap-2 mb-2">
-                      <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addKw('blog', kwInput, setKwInput)} placeholder="키워드 입력 후 Enter" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                      <button onClick={() => addKw('blog', kwInput, setKwInput)} className="px-3 py-2 bg-blue-500 text-white text-sm rounded-xl">추가</button>
+
+                  {/* 키워드 자동 분석 */}
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-semibold text-blue-800">🔍 키워드 분석 결과</p>
+                      <button onClick={runKeywordDiscover} disabled={kwDiscovering} className="px-2.5 py-1 text-[11px] bg-blue-500 text-white rounded-lg disabled:opacity-50">
+                        {kwDiscovering ? '분석 중...' : '🔄 분석 실행'}
+                      </button>
                     </div>
-                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                      {form.blog.keywords.map(kw => (
-                        <span key={kw} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-[11px] rounded-full">
-                          {kw}
-                          <button onClick={() => removeKw('blog', kw)} className="text-blue-400 hover:text-blue-700">✕</button>
-                        </span>
-                      ))}
+                    {kwCacheLoading ? (
+                      <p className="text-[11px] text-blue-500">키워드 불러오는 중...</p>
+                    ) : cachedKeywords.length === 0 ? (
+                      <p className="text-[11px] text-blue-600">분석된 키워드가 없습니다. 오른쪽 "분석 실행" 버튼을 누르세요.</p>
+                    ) : (
+                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {cachedKeywords.map(kw => {
+                          const checked = form.blog.keywords.includes(kw.keyword);
+                          const gradeColor = kw.grade === 'S' ? 'bg-purple-100 text-purple-700' : kw.grade === 'A' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
+                          return (
+                            <label key={kw.keyword} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-blue-100 cursor-pointer">
+                              <input type="checkbox" checked={checked} onChange={() => {
+                                setForm(f => ({
+                                  ...f,
+                                  blog: {
+                                    ...f.blog,
+                                    keywords: checked
+                                      ? f.blog.keywords.filter(k => k !== kw.keyword)
+                                      : [...f.blog.keywords, kw.keyword],
+                                  },
+                                }));
+                              }} className="rounded" />
+                              <span className="flex-1 text-[12px] text-gray-800 font-medium">{kw.keyword}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${gradeColor}`}>{kw.grade}급</span>
+                              {kw.monthly_total > 0 && <span className="text-[10px] text-gray-400">{(kw.monthly_total / 1000).toFixed(0)}K</span>}
+                              {kw.can_rank1 && <span className="text-[10px] text-emerald-600 font-semibold">1위가능</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 pt-1 border-t border-blue-200">
+                      <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addKw('blog', kwInput, setKwInput)} placeholder="키워드 직접 입력 후 Enter" className="flex-1 border border-blue-200 rounded-lg px-2.5 py-1 text-[11px] focus:outline-none focus:border-blue-400 bg-white" />
+                      <button onClick={() => addKw('blog', kwInput, setKwInput)} className="px-2.5 py-1 bg-blue-500 text-white text-[11px] rounded-lg">추가</button>
                     </div>
+                    {form.blog.keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {form.blog.keywords.map(kw => (
+                          <span key={kw} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 text-white text-[11px] rounded-full">
+                            {kw}<button onClick={() => removeKw('blog', kw)} className="opacity-70 hover:opacity-100">✕</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -486,10 +529,11 @@ export default function SchedulerPage() {
                     </div>
                   </div>
                   {form.blog.blog_platform === 'wordpress' && (
-                    <div className="space-y-2 bg-gray-50 rounded-xl p-3">
-                      <input value={form.blog.wp_url || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_url: e.target.value } }))} placeholder="WordPress URL" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-                      <input value={form.blog.wp_username || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_username: e.target.value } }))} placeholder="사용자명" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-                      <input type="password" value={form.blog.wp_app_password || ''} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, wp_app_password: e.target.value } }))} placeholder="앱 패스워드" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      {form.blog.wp_site_id
+                        ? <p className="text-[11px] text-emerald-700">✓ {wpRegSites.find(s => s.id === form.blog.wp_site_id)?.site_name || '사이트 선택됨'} — 위에서 사이트를 선택하면 자동 연결됩니다</p>
+                        : <p className="text-[11px] text-orange-600">위에서 등록된 WordPress 사이트를 선택하세요</p>
+                      }
                     </div>
                   )}
                 </div>
@@ -576,10 +620,11 @@ export default function SchedulerPage() {
                     </div>
                   </div>
                   {form.agoda.blog_platform === 'wordpress' && (
-                    <div className="space-y-2 bg-gray-50 rounded-xl p-3">
-                      <input value={form.agoda.wp_url || ''} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, wp_url: e.target.value } }))} placeholder="WordPress URL" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-                      <input value={form.agoda.wp_username || ''} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, wp_username: e.target.value } }))} placeholder="사용자명" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-                      <input type="password" value={form.agoda.wp_app_password || ''} onChange={e => setForm(f => ({ ...f, agoda: { ...f.agoda, wp_app_password: e.target.value } }))} placeholder="앱 패스워드" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      {form.agoda.wp_site_id
+                        ? <p className="text-[11px] text-emerald-700">✓ {wpRegSites.find(s => s.id === form.agoda.wp_site_id)?.site_name || '사이트 선택됨'} — 위에서 사이트를 선택하면 자동 연결됩니다</p>
+                        : <p className="text-[11px] text-orange-600">위에서 등록된 WordPress 사이트를 선택하세요</p>
+                      }
                     </div>
                   )}
                 </div>
@@ -635,11 +680,12 @@ export default function SchedulerPage() {
                         ))}
                       </div>
                       {form.shorts.blog_platform === 'wordpress' && (
-                        <>
-                          <input value={form.shorts.wp_url || ''} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, wp_url: e.target.value } }))} placeholder="WordPress URL" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-                          <input value={form.shorts.wp_username || ''} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, wp_username: e.target.value } }))} placeholder="사용자명" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-                          <input type="password" value={form.shorts.wp_app_password || ''} onChange={e => setForm(f => ({ ...f, shorts: { ...f.shorts, wp_app_password: e.target.value } }))} placeholder="앱 패스워드" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-                        </>
+                        <div className="pt-1">
+                          {form.shorts.wp_site_id
+                            ? <p className="text-[11px] text-emerald-700">✓ {wpRegSites.find(s => s.id === form.shorts.wp_site_id)?.site_name || '사이트 선택됨'}</p>
+                            : <p className="text-[11px] text-orange-600">위에서 등록된 WordPress 사이트를 선택하세요</p>
+                          }
+                        </div>
                       )}
                     </div>
                   )}

@@ -9,6 +9,13 @@ const TONE_LABELS: Record<string, string> = {
   info: '정보형 바이럴', fun: '코믹·밈', emotion: '감동·공감', edu: '교육형', story: '스토리텔링', trend: '트렌드·이슈',
 };
 
+async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
+  const supabase = createAdminClient();
+  const { data } = await supabase.from('wordpress_sites').select('site_url, wp_username, app_password').eq('id', siteId).single();
+  if (!data) throw new Error('등록된 WordPress 사이트를 찾을 수 없습니다');
+  return { url: data.site_url, username: data.wp_username, appPassword: data.app_password };
+}
+
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
   const supabase = createAdminClient();
   const { data: row } = await supabase.from('bossai_blogger_tokens').select('*').eq('user_id', userId).single();
@@ -90,13 +97,22 @@ ${(scenes as Array<{ id?: number; duration?: number; narration?: string; visual?
             body: JSON.stringify({ title, content: scriptHtml, labels: ['숏폼', '스크립트', topic], kind: 'blogger#post' }),
           });
         }
-      } else if (config.blog_platform === 'wordpress' && config.wp_url && config.wp_username && config.wp_app_password) {
-        const creds = Buffer.from(`${config.wp_username}:${config.wp_app_password}`).toString('base64');
-        await fetch(`${config.wp_url.replace(/\/$/, '')}/wp-json/wp/v2/posts`, {
-          method: 'POST',
-          headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, content: scriptHtml, status: 'publish' }),
-        });
+      } else if (config.blog_platform === 'wordpress') {
+        let wpUrl = '', wpUser = '', wpPass = '';
+        if (config.wp_site_id) {
+          const c = await getWpCredentials(config.wp_site_id);
+          wpUrl = c.url; wpUser = c.username; wpPass = c.appPassword;
+        } else if (config.wp_url && config.wp_username && config.wp_app_password) {
+          wpUrl = config.wp_url; wpUser = config.wp_username; wpPass = config.wp_app_password;
+        }
+        if (wpUrl) {
+          const creds = Buffer.from(`${wpUser}:${wpPass}`).toString('base64');
+          await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`, {
+            method: 'POST',
+            headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, content: scriptHtml, status: 'publish' }),
+          });
+        }
       }
     } catch { /* 블로그 발행 실패 무시 */ }
   }
