@@ -208,7 +208,12 @@ export default function SchedulerPage() {
 
     const url = editId ? `/api/scheduler/schedules/${editId}` : '/api/scheduler/schedules';
     const res = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: form.name, type: form.type, interval_hours: form.interval_hours, run_at_hour: form.run_at_hour, config }) });
-    if (res.ok) { await loadSchedules(); setShowModal(false); showToast(editId ? '수정됨' : '추가됨'); }
+    if (res.ok) {
+      await loadSchedules(); setShowModal(false); showToast(editId ? '수정됨' : '추가됨');
+    } else {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error?: string };
+      showToast(`저장 실패: ${err.error || res.status}`);
+    }
     setSaving(false);
   };
 
