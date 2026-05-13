@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
+import { pickKeywordForUser } from './keyword-picker';
 import type { Schedule, BlogAutoConfig } from './index';
 
 function parseAIOutput(text: string): { title: string; content: string; metaDescription: string; labels: string[] } {
@@ -110,12 +111,8 @@ async function getWpCredentials(siteId: string): Promise<{ url: string; username
 export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string; url: string; title: string }> {
   const config = schedule.config as BlogAutoConfig;
 
-  if (!config.keywords?.length) throw new Error('키워드가 설정되지 않았습니다');
-
-  const idx = schedule.keyword_index % config.keywords.length;
-  const keyword = config.keyword_mode === 'random'
-    ? config.keywords[Math.floor(Math.random() * config.keywords.length)]
-    : config.keywords[idx];
+  // 키워드 자동 발굴 (캐시 우선 → 네이버 자동완성 폴백)
+  const keyword = await pickKeywordForUser(schedule.user_id);
 
   const outputRule = `\n\n반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):\n[[[TITLE]]]\nSEO 제목 (60자 이내)\n[[[META]]]\n메타 설명 (150자 이내)\n[[[LABELS]]]\n태그1,태그2,태그3\n[[[CONTENT]]]\nHTML 본문 전체`;
 
@@ -145,15 +142,6 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
       throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
     }
     publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content);
-  }
-
-  // 키워드 인덱스 업데이트 (rotate 모드)
-  if (config.keyword_mode === 'rotate') {
-    const supabase = createAdminClient();
-    await supabase
-      .from('bossai_schedules')
-      .update({ keyword_index: (idx + 1) % config.keywords.length })
-      .eq('id', schedule.id);
   }
 
   return { keyword, url: publishedUrl, title };

@@ -55,8 +55,8 @@ const defaultForm = () => ({
   interval_hours: 24,
   run_at_hour: 9,
   blog: {
-    keywords: [] as string[], keyword_mode: 'rotate' as 'rotate' | 'random',
-    content_type: 'info' as 'product' | 'info', blog_platform: 'blogger' as 'blogger' | 'wordpress',
+    content_type: 'info' as 'product' | 'info',
+    blog_platform: 'blogger' as 'blogger' | 'wordpress',
     blogger_blog_id: '', wp_site_id: '',
   } as BlogAutoConfig,
   coupang: {
@@ -96,15 +96,9 @@ export default function SchedulerPage() {
   const [toast, setToast] = useState('');
 
   // 입력 임시값
-  const [kwInput, setKwInput] = useState('');
   const [searchKwInput, setSearchKwInput] = useState('');
   const [shortsTopicInput, setShortsTopicInput] = useState('');
   const [igTopicInput, setIgTopicInput] = useState('');
-
-  // 캐시된 키워드 (blog_auto 자동 로드)
-  const [cachedKeywords, setCachedKeywords] = useState<Array<{ keyword: string; score: number; grade: string; monthly_total: number; can_rank1: boolean }>>([]);
-  const [kwCacheLoading, setKwCacheLoading] = useState(false);
-  const [kwDiscovering, setKwDiscovering] = useState(false);
 
   // 등록된 WP 사이트 (DB)
   const [wpRegSites, setWpRegSites] = useState<Array<{ id: string; site_name: string; site_url: string }>>([]);
@@ -120,57 +114,23 @@ export default function SchedulerPage() {
 
   useEffect(() => { loadSchedules(); }, [loadSchedules]);
 
-  // 모달 오픈 시 자동 로드
+  // 모달 오픈 시 WP 사이트 자동 로드
   useEffect(() => {
     if (!showModal) return;
-    if (form.type === 'blog_auto') loadCachedKeywords();
     if (['blog_auto', 'agoda_auto', 'shorts_auto'].includes(form.type)) loadWpRegSites();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showModal, form.type]);
 
-  // 등록된 WP 사이트 불러오기 (DB)
+  // 등록된 WP 사이트 불러오기 (DB — 배열 직접 반환)
   const loadWpRegSites = useCallback(async () => {
     if (wpRegSitesLoaded) return;
     const res = await fetch('/api/wordpress/sites');
     if (res.ok) {
-      const data = await res.json() as { sites?: Array<{ id: string; site_name: string; site_url: string }> };
-      setWpRegSites(data.sites || []);
+      const data = await res.json() as Array<{ id: string; site_name: string; site_url: string }>;
+      setWpRegSites(Array.isArray(data) ? data : []);
     }
     setWpRegSitesLoaded(true);
   }, [wpRegSitesLoaded]);
-
-  // 캐시된 키워드 로드 (blog_auto용)
-  const loadCachedKeywords = useCallback(async () => {
-    setKwCacheLoading(true);
-    try {
-      const res = await fetch('/api/scheduler/keywords?limit=50');
-      if (res.ok) {
-        const data = await res.json() as { keywords: Array<{ keyword: string; score: number; grade: string; monthly_total: number; can_rank1: boolean }>; cached: boolean };
-        setCachedKeywords(data.keywords || []);
-      }
-    } catch { /* 무시 */ }
-    setKwCacheLoading(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 키워드 분석 실행 (씨드 없이 → 계절/트렌드 자동)
-  const runKeywordDiscover = async () => {
-    setKwDiscovering(true);
-    try {
-      const res = await fetch('/api/keyword/auto-discover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 30 }),
-      });
-      if (res.ok) {
-        showToast('키워드 분석 완료! 결과를 불러옵니다...');
-        await loadCachedKeywords();
-      } else {
-        showToast('키워드 분석 실패');
-      }
-    } catch { showToast('키워드 분석 실패'); }
-    setKwDiscovering(false);
-  };
 
   const loadLogs = async (scheduleId: string) => {
     if (openLogId === scheduleId) { setOpenLogId(null); return; }
@@ -216,8 +176,8 @@ export default function SchedulerPage() {
   const openAdd = () => {
     setEditId(null);
     setForm(defaultForm());
-    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput('');
-    setCachedKeywords([]); setWpRegSitesLoaded(false);
+    setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput('');
+    setWpRegSitesLoaded(false);
     setShowModal(true);
   };
 
@@ -231,8 +191,8 @@ export default function SchedulerPage() {
     else if (s.type === 'shorts_auto') f.shorts = s.config as ShortsAutoConfig;
     else if (s.type === 'instagram_auto') f.instagram = s.config as InstagramAutoConfig;
     setForm(f);
-    setKwInput(''); setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput('');
-    setCachedKeywords([]); setWpRegSitesLoaded(false);
+    setSearchKwInput(''); setShortsTopicInput(''); setIgTopicInput('');
+    setWpRegSitesLoaded(false);
     setShowModal(true);
   };
 
@@ -252,15 +212,7 @@ export default function SchedulerPage() {
     setSaving(false);
   };
 
-  // ── keyword helper ─────────────────────────────────────────────────────
-  const addKw = (field: 'blog', input: string, setter: (v: string) => void) => {
-    const kw = input.trim(); if (!kw) return;
-    setForm(f => ({ ...f, [field]: { ...f[field], keywords: [...new Set([...(f[field] as BlogAutoConfig).keywords, kw])] } }));
-    setter('');
-  };
-  const removeKw = (field: 'blog', kw: string) =>
-    setForm(f => ({ ...f, [field]: { ...f[field], keywords: (f[field] as BlogAutoConfig).keywords.filter((k: string) => k !== kw) } }));
-
+  // ── topic helper ────────────────────────────────────────────────────────
   const addTopic = (field: 'shorts' | 'instagram', input: string, setter: (v: string) => void) => {
     const t = input.trim(); if (!t) return;
     if (field === 'shorts') setForm(f => ({ ...f, shorts: { ...f.shorts, topics: [...new Set([...f.shorts.topics, t])] } }));
@@ -449,58 +401,11 @@ export default function SchedulerPage() {
                 <div className="space-y-3 pt-2 border-t border-gray-100">
                   <p className="text-xs font-bold text-gray-700">📝 블로그 설정</p>
 
-                  {/* 키워드 자동 분석 */}
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[11px] font-semibold text-blue-800">🔍 키워드 분석 결과</p>
-                      <button onClick={runKeywordDiscover} disabled={kwDiscovering} className="px-2.5 py-1 text-[11px] bg-blue-500 text-white rounded-lg disabled:opacity-50">
-                        {kwDiscovering ? '분석 중...' : '🔄 분석 실행'}
-                      </button>
-                    </div>
-                    {kwCacheLoading ? (
-                      <p className="text-[11px] text-blue-500">키워드 불러오는 중...</p>
-                    ) : cachedKeywords.length === 0 ? (
-                      <p className="text-[11px] text-blue-600">분석된 키워드가 없습니다. 오른쪽 "분석 실행" 버튼을 누르세요.</p>
-                    ) : (
-                      <div className="space-y-1 max-h-48 overflow-y-auto">
-                        {cachedKeywords.map(kw => {
-                          const checked = form.blog.keywords.includes(kw.keyword);
-                          const gradeColor = kw.grade === 'S' ? 'bg-purple-100 text-purple-700' : kw.grade === 'A' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
-                          return (
-                            <label key={kw.keyword} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-blue-100 cursor-pointer">
-                              <input type="checkbox" checked={checked} onChange={() => {
-                                setForm(f => ({
-                                  ...f,
-                                  blog: {
-                                    ...f.blog,
-                                    keywords: checked
-                                      ? f.blog.keywords.filter(k => k !== kw.keyword)
-                                      : [...f.blog.keywords, kw.keyword],
-                                  },
-                                }));
-                              }} className="rounded" />
-                              <span className="flex-1 text-[12px] text-gray-800 font-medium">{kw.keyword}</span>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${gradeColor}`}>{kw.grade}급</span>
-                              {kw.monthly_total > 0 && <span className="text-[10px] text-gray-400">{(kw.monthly_total / 1000).toFixed(0)}K</span>}
-                              {kw.can_rank1 && <span className="text-[10px] text-emerald-600 font-semibold">1위가능</span>}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 pt-1 border-t border-blue-200">
-                      <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addKw('blog', kwInput, setKwInput)} placeholder="키워드 직접 입력 후 Enter" className="flex-1 border border-blue-200 rounded-lg px-2.5 py-1 text-[11px] focus:outline-none focus:border-blue-400 bg-white" />
-                      <button onClick={() => addKw('blog', kwInput, setKwInput)} className="px-2.5 py-1 bg-blue-500 text-white text-[11px] rounded-lg">추가</button>
-                    </div>
-                    {form.blog.keywords.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {form.blog.keywords.map(kw => (
-                          <span key={kw} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 text-white text-[11px] rounded-full">
-                            {kw}<button onClick={() => removeKw('blog', kw)} className="opacity-70 hover:opacity-100">✕</button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                  {/* 키워드 완전 자동 안내 */}
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                    <p className="text-[11px] font-semibold text-blue-800 mb-1">🤖 키워드 완전 자동화</p>
+                    <p className="text-[11px] text-blue-700">실행 시마다 네이버 수익 키워드를 자동으로 분석하여 가장 돈이 되는 키워드로 블로그 글을 발행합니다. (별도 설정 불필요)</p>
+                    <p className="text-[10px] text-blue-400 mt-1">키워드 분석 이력이 있으면 캐시 우선 사용 → 없으면 즉석 발굴</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>

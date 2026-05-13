@@ -35,13 +35,14 @@
 export type ScheduleType = 'blog_auto' | 'coupang_auto' | 'agoda_auto' | 'shorts_auto' | 'instagram_auto';
 
 export interface BlogAutoConfig {
-  keywords: string[];
-  keyword_mode: 'rotate' | 'random';
   content_type: 'product' | 'info';
   blog_platform: 'blogger' | 'wordpress';
   blogger_blog_id?: string;
-  wp_site_id?: string;       // registered wordpress_sites.id (preferred)
-  wp_url?: string;           // legacy fallback
+  wp_site_id?: string;
+  // legacy fallback fields
+  keywords?: string[];
+  keyword_mode?: 'rotate' | 'random';
+  wp_url?: string;
   wp_username?: string;
   wp_app_password?: string;
 }
