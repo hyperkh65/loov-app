@@ -96,6 +96,17 @@ async function publishToWordPress(wpUrl: string, username: string, appPassword: 
   return data.link || '';
 }
 
+async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from('wordpress_sites')
+    .select('site_url, wp_username, app_password')
+    .eq('id', siteId)
+    .single();
+  if (!data) throw new Error('등록된 WordPress 사이트를 찾을 수 없습니다');
+  return { url: data.site_url, username: data.wp_username, appPassword: data.app_password };
+}
+
 export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string; url: string; title: string }> {
   const config = schedule.config as BlogAutoConfig;
 
@@ -124,9 +135,16 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
     const blogId = config.blogger_blog_id || '7951763866955162015';
     publishedUrl = await publishToBlogger(accessToken, blogId, title, content, labels);
   } else if (config.blog_platform === 'wordpress') {
-    if (!config.wp_url || !config.wp_username || !config.wp_app_password)
-      throw new Error('WordPress 설정(URL/사용자명/앱 패스워드)이 불완전합니다');
-    publishedUrl = await publishToWordPress(config.wp_url, config.wp_username, config.wp_app_password, title, content);
+    let wpUrl: string, wpUser: string, wpPass: string;
+    if (config.wp_site_id) {
+      const creds = await getWpCredentials(config.wp_site_id);
+      wpUrl = creds.url; wpUser = creds.username; wpPass = creds.appPassword;
+    } else if (config.wp_url && config.wp_username && config.wp_app_password) {
+      wpUrl = config.wp_url; wpUser = config.wp_username; wpPass = config.wp_app_password;
+    } else {
+      throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
+    }
+    publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content);
   }
 
   // 키워드 인덱스 업데이트 (rotate 모드)
