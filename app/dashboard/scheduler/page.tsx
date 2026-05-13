@@ -407,20 +407,12 @@ export default function SchedulerPage() {
                     <p className="text-[11px] text-blue-700">실행 시마다 네이버 수익 키워드를 자동으로 분석하여 가장 돈이 되는 키워드로 블로그 글을 발행합니다. (별도 설정 불필요)</p>
                     <p className="text-[10px] text-blue-400 mt-1">키워드 분석 이력이 있으면 캐시 우선 사용 → 없으면 즉석 발굴</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">키워드 방식</label>
-                      <select value={form.blog.keyword_mode} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, keyword_mode: e.target.value as 'rotate' | 'random' } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
-                        <option value="rotate">순서대로</option>
-                        <option value="random">랜덤</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">글 유형</label>
-                      <select value={form.blog.content_type} onChange={e => setForm(f => ({ ...f, blog: { ...f.blog, content_type: e.target.value as 'product' | 'info' } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
-                        <option value="info">정보글</option>
-                        <option value="product">상품 추천글</option>
-                      </select>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">글 유형</label>
+                    <div className="flex gap-2">
+                      {[['info', '📖 정보글'], ['product', '🛒 상품 추천글']].map(([v, l]) => (
+                        <button key={v} onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, content_type: v as 'product' | 'info' } }))} className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${form.blog.content_type === v ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600 hover:border-blue-300'}`}>{l}</button>
+                      ))}
                     </div>
                   </div>
                   <div>
