@@ -1,46 +1,8 @@
 import { createAdminClient } from '@/lib/supabase-server';
-import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { pickKeywordForUser } from './keyword-picker';
+import { generateBlogContent } from '@/lib/blog-content-generator';
 import type { Schedule, BlogAutoConfig } from './index';
-
-function parseAIOutput(text: string): { title: string; content: string; metaDescription: string; labels: string[] } {
-  text = text.replace(/```[\w]*\n?/g, '').trim();
-
-  const getSection = (tag: string) => {
-    const marker = `[[[${tag}]]]`;
-    const ALL = ['TITLE', 'META', 'LABELS', 'CONTENT'];
-    const start = text.indexOf(marker);
-    if (start < 0) return '';
-    const from = start + marker.length;
-    let end = text.length;
-    for (const t of ALL) {
-      if (t === tag) continue;
-      const pos = text.indexOf(`[[[${t}]]]`, from);
-      if (pos >= 0 && pos < end) end = pos;
-    }
-    return text.slice(from, end).trim();
-  };
-
-  const title = getSection('TITLE');
-  const metaDescription = getSection('META');
-  const labels = getSection('LABELS').split(',').map(s => s.trim()).filter(Boolean);
-  const content = getSection('CONTENT');
-
-  if (!title && !content) {
-    try {
-      const m = text.match(/\{[\s\S]*\}/)?.[0] || text;
-      const j = JSON.parse(m) as { title?: string; content?: string; metaDescription?: string; labels?: string[] };
-      return {
-        title: j.title || '',
-        content: j.content || '',
-        metaDescription: j.metaDescription || '',
-        labels: Array.isArray(j.labels) ? j.labels : [],
-      };
-    } catch { /* ignore */ }
-  }
-  return { title, content, metaDescription, labels };
-}
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
   const supabase = createAdminClient();
@@ -81,13 +43,44 @@ async function publishToBlogger(accessToken: string, blogId: string, title: stri
   return data.url || data.id || '';
 }
 
-async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string): Promise<string> {
+async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null): Promise<string> {
   const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
   const apiUrl = `${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
+
+  // 대표 이미지를 Featured Image로 등록
+  let featuredMediaId: number | undefined;
+  if (featuredImageUrl) {
+    try {
+      const imgRes = await fetch(featuredImageUrl, { signal: AbortSignal.timeout(15000) });
+      if (imgRes.ok) {
+        const imgBuffer = await imgRes.arrayBuffer();
+        const ext = featuredImageUrl.split('.').pop()?.split('?')[0] || 'png';
+        const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+        const mime = mimeMap[ext] || 'image/png';
+        const uploadRes = await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/media`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${creds}`,
+            'Content-Type': mime,
+            'Content-Disposition': `attachment; filename="thumbnail.${ext}"`,
+          },
+          body: imgBuffer,
+        });
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          featuredMediaId = uploadData.id;
+        }
+      }
+    } catch { /* featured image optional */ }
+  }
+
+  const body: Record<string, unknown> = { title, content, status: 'publish' };
+  if (featuredMediaId) body.featured_media = featuredMediaId;
+
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, content, status: 'publish' }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -111,17 +104,12 @@ async function getWpCredentials(siteId: string): Promise<{ url: string; username
 export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string; url: string; title: string }> {
   const config = schedule.config as BlogAutoConfig;
 
-  // 키워드 자동 발굴 (캐시 우선 → 네이버 자동완성 폴백)
+  // 키워드 자동 발굴
   const keyword = await pickKeywordForUser(schedule.user_id);
 
-  const outputRule = `\n\n반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):\n[[[TITLE]]]\nSEO 제목 (60자 이내)\n[[[META]]]\n메타 설명 (150자 이내)\n[[[LABELS]]]\n태그1,태그2,태그3\n[[[CONTENT]]]\nHTML 본문 전체`;
+  // 기존 블로그 자동화와 동일한 품질로 콘텐츠 생성 (뉴스 수집 + 이미지 + 썸네일)
+  const { title, content, keywords, imageUrl } = await generateBlogContent(keyword);
 
-  const prompt = config.content_type === 'product'
-    ? `너는 쿠팡 파트너스 수익형 블로그 전문 마케터야. "${keyword}"에 대한 수익성 높은 구매 유도 글을 써줘.\n\n작성 규칙:\n- 제목: "추천", "순위", "비교", "가성비" 키워드 활용한 클릭유도형 SEO 제목\n- 본문: 최소 1500자, HTML 형식(h2/h3/p/ul 사용)\n- 구성: 도입(공감) → 상품 소개(장점+사용상황) → 가격/스펙 비교 → 구매 CTA\n- "광고", "홍보", "리뷰", "후기", "추천드립니다" 사용 금지${outputRule}`
-    : `너는 검색 최적화 전문 블로거야. "${keyword}"에 대한 깊이 있는 지식 정보 글을 써줘.\n\n작성 규칙:\n- 제목: 검색 의도를 반영한 SEO 제목 (60자 이내)\n- 본문: 최소 2000자, HTML 형식\n- 구성: 목차 → h2 섹션 4-6개 → h3 소섹션 → 결론 요약\n- 전문적이지만 읽기 쉬운 문체${outputRule}`;
-
-  const aiText = await generateText(prompt, 'qwen3');
-  const { title, content, labels } = parseAIOutput(aiText);
   if (!title || !content) throw new Error('AI 글 생성 실패: 출력 파싱 오류');
 
   let publishedUrl = '';
@@ -130,7 +118,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
     const accessToken = await getBloggerTokenAdmin(schedule.user_id);
     if (!accessToken) throw new Error('Blogger 계정이 연결되지 않았습니다');
     const blogId = config.blogger_blog_id || '7951763866955162015';
-    publishedUrl = await publishToBlogger(accessToken, blogId, title, content, labels);
+    publishedUrl = await publishToBlogger(accessToken, blogId, title, content, keywords);
   } else if (config.blog_platform === 'wordpress') {
     let wpUrl: string, wpUser: string, wpPass: string;
     if (config.wp_site_id) {
@@ -141,7 +129,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
     } else {
       throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
     }
-    publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content);
+    publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content, imageUrl);
   }
 
   return { keyword, url: publishedUrl, title };
