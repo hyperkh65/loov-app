@@ -39,6 +39,7 @@ export interface BlogAutoConfig {
   blog_platform: 'blogger' | 'wordpress';
   blogger_blog_id?: string;
   wp_site_id?: string;
+  ai_model?: string; // claude | gemini | qwen3 | gpt4o 등
   // legacy fallback fields
   keywords?: string[];
   keyword_mode?: 'rotate' | 'random';
