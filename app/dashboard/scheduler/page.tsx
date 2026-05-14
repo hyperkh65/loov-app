@@ -307,16 +307,29 @@ export default function SchedulerPage() {
                     {!logs[s.id]?.length ? (
                       <p className="text-[11px] text-gray-400 text-center py-3">실행 기록 없음</p>
                     ) : (
-                      (logs[s.id] as ScheduleLog[]).map(log => (
-                        <div key={log.id} className="text-[11px] flex items-start gap-2">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] flex-shrink-0 ${STATUS_STYLE[log.status] || ''}`}>
-                            {log.status === 'success' ? '✓' : log.status === 'failed' ? '✗' : '⟳'}
-                          </span>
-                          <span className="text-gray-500">{new Date(log.started_at).toLocaleString('ko-KR')}</span>
-                          {log.summary && <span className="text-gray-700 flex-1">{log.summary}</span>}
-                          {log.error && <span className="text-red-500 flex-1">{log.error.slice(0, 80)}</span>}
-                        </div>
-                      ))
+                      (logs[s.id] as ScheduleLog[]).map(log => {
+                        const publishedUrl = (log.result as Record<string, unknown> | null)?.url as string | undefined;
+                        return (
+                          <div key={log.id} className="text-[11px] space-y-0.5">
+                            <div className="flex items-start gap-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] flex-shrink-0 ${STATUS_STYLE[log.status] || ''}`}>
+                                {log.status === 'success' ? '✓' : log.status === 'failed' ? '✗' : '⟳'}
+                              </span>
+                              <span className="text-gray-500 flex-shrink-0">{new Date(log.started_at).toLocaleString('ko-KR')}</span>
+                              {log.summary && <span className="text-gray-700 flex-1">{log.summary}</span>}
+                              {log.error && <span className="text-red-500 flex-1">{log.error.slice(0, 80)}</span>}
+                            </div>
+                            {publishedUrl && (
+                              <div className="pl-8">
+                                <a href={publishedUrl} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline break-all">
+                                  🔗 {publishedUrl}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 )}
