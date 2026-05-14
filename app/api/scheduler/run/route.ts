@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
     .from('bossai_schedules')
     .select('*')
     .eq('is_active', true)
-    .neq('last_status', 'running');
+    .or('last_status.is.null,last_status.neq.running');
 
   if (scheduleId) {
     query = query.eq('id', scheduleId);
