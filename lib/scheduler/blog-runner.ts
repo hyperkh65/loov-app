@@ -108,7 +108,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   const keyword = await pickKeywordForUser(schedule.user_id);
 
   // 기존 블로그 자동화와 동일한 품질로 콘텐츠 생성 (뉴스 수집 + 이미지 + 썸네일)
-  const { title, content, keywords, imageUrl } = await generateBlogContent(keyword);
+  const { title, content, keywords, imageUrl } = await generateBlogContent(keyword, config.ai_model);
 
   if (!title || !content) throw new Error('AI 글 생성 실패: 출력 파싱 오류');
 

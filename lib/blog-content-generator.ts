@@ -310,7 +310,8 @@ export interface GeneratedBlogContent {
   imageUrl: string | null;
 }
 
-export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): Promise<GeneratedBlogContent> {
+// 모델 우선순위: claude(지시 준수 최고) → gemini(무료+고품질) → qwen3(폴백)
+export async function generateBlogContent(keyword: string, aiModel = 'claude'): Promise<GeneratedBlogContent> {
   const [newsItems, blogItems] = await Promise.all([
     searchNaver('news', keyword),
     searchNaver('blog', keyword),

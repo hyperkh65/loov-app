@@ -423,8 +423,20 @@ export default function SchedulerPage() {
                   {/* 키워드 완전 자동 안내 */}
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
                     <p className="text-[11px] font-semibold text-blue-800 mb-1">🤖 키워드 완전 자동화</p>
-                    <p className="text-[11px] text-blue-700">실행 시마다 네이버 수익 키워드를 자동으로 분석하여 가장 돈이 되는 키워드로 블로그 글을 발행합니다. (별도 설정 불필요)</p>
-                    <p className="text-[10px] text-blue-400 mt-1">키워드 분석 이력이 있으면 캐시 우선 사용 → 없으면 즉석 발굴</p>
+                    <p className="text-[11px] text-blue-700">Google Trends 실시간 트렌딩 + Naver Ad 수익 분석으로 가장 돈이 되는 키워드를 자동 선택합니다.</p>
+                    <p className="text-[10px] text-blue-400 mt-1">고급 키워드 분석 실행 이력이 있으면 캐시 우선 사용 → 없으면 실시간 발굴</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">AI 모델</label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[['claude', '🟣 Claude', '지시 준수 최고'], ['gemini', '✨ Gemini', '무료+고품질'], ['qwen3', '🔮 Qwen3', 'Ollama 무료'], ['openai', '🟢 GPT', 'GPT-4o-mini']].map(([v, l, desc]) => (
+                        <button key={v} onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, ai_model: v } }))}
+                          className={`py-2 px-1 text-center rounded-xl border transition-colors ${(form.blog.ai_model || 'claude') === v ? 'bg-purple-500 border-purple-500 text-white' : 'border-gray-200 text-gray-600 hover:border-purple-300'}`}>
+                          <div className="text-[11px] font-medium">{l}</div>
+                          <div className={`text-[9px] mt-0.5 ${(form.blog.ai_model || 'claude') === v ? 'text-purple-100' : 'text-gray-400'}`}>{desc}</div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">글 유형</label>
