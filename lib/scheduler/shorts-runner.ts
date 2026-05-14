@@ -28,7 +28,7 @@ async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
   return refreshed.access_token;
 }
 
-export async function runShortsAuto(schedule: Schedule): Promise<{ topic: string; title: string; saved: boolean }> {
+export async function runShortsAuto(schedule: Schedule): Promise<{ topic: string; title: string; saved: boolean; url: string }> {
   const config = schedule.config as ShortsAutoConfig;
   if (!config.topics?.length) throw new Error('주제가 설정되지 않았습니다');
 
