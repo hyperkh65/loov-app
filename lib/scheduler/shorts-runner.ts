@@ -72,6 +72,8 @@ export async function runShortsAuto(schedule: Schedule): Promise<{ topic: string
   const title = parsed.title || `${topic} 숏폼 스크립트`;
   const scenes = parsed.scenes || [];
 
+  let savedUrl = '';
+
   // 블로그에 스크립트 저장 (optional)
   if (config.save_to_blog && scenes.length > 0) {
     const scriptHtml = `<h2>${title}</h2>
@@ -87,15 +89,17 @@ ${(scenes as Array<{ id?: number; duration?: number; narration?: string; visual?
 </div>`).join('\n')}
 <p style="color:#6b7280;font-size:13px">자동 생성: ${new Date().toLocaleDateString('ko-KR')}</p>`;
 
+    let publishedUrl = '';
     try {
       if (config.blog_platform === 'blogger') {
         const token = await getBloggerTokenAdmin(schedule.user_id);
         if (token) {
-          await fetch(`https://www.googleapis.com/blogger/v3/blogs/${config.blogger_blog_id || '7951763866955162015'}/posts`, {
+          const res = await fetch(`https://www.googleapis.com/blogger/v3/blogs/${config.blogger_blog_id || '7951763866955162015'}/posts`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ title, content: scriptHtml, labels: ['숏폼', '스크립트', topic], kind: 'blogger#post' }),
           });
+          if (res.ok) { const d = await res.json(); publishedUrl = d.url || d.id || ''; }
         }
       } else if (config.blog_platform === 'wordpress') {
         let wpUrl = '', wpUser = '', wpPass = '';
@@ -107,14 +111,16 @@ ${(scenes as Array<{ id?: number; duration?: number; narration?: string; visual?
         }
         if (wpUrl) {
           const creds = Buffer.from(`${wpUser}:${wpPass}`).toString('base64');
-          await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`, {
+          const res = await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`, {
             method: 'POST',
             headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ title, content: scriptHtml, status: 'publish' }),
           });
+          if (res.ok) { const d = await res.json(); publishedUrl = d.link || ''; }
         }
       }
     } catch { /* 블로그 발행 실패 무시 */ }
+    if (publishedUrl) savedUrl = publishedUrl;
   }
 
   // 주제 인덱스 업데이트
@@ -123,5 +129,5 @@ ${(scenes as Array<{ id?: number; duration?: number; narration?: string; visual?
     await supabase.from('bossai_schedules').update({ keyword_index: (idx + 1) % config.topics.length }).eq('id', schedule.id);
   }
 
-  return { topic, title, saved: config.save_to_blog && scenes.length > 0 };
+  return { topic, title, saved: config.save_to_blog && scenes.length > 0, url: savedUrl };
 }
