@@ -135,9 +135,10 @@ export default function SchedulerPage() {
   const loadLogs = async (scheduleId: string) => {
     if (openLogId === scheduleId) { setOpenLogId(null); return; }
     const res = await fetch(`/api/scheduler/logs?schedule_id=${scheduleId}&limit=15`);
-    if (res.ok) setLogs(prev => ({ ...prev, [scheduleId]: (async () => await res.json())() as unknown as ScheduleLog[] }));
-    const d = await fetch(`/api/scheduler/logs?schedule_id=${scheduleId}&limit=15`);
-    if (d.ok) setLogs(prev => ({ ...prev, [scheduleId]: (async () => await d.json())() as unknown as ScheduleLog[] }));
+    if (res.ok) {
+      const data = await res.json() as ScheduleLog[];
+      setLogs(prev => ({ ...prev, [scheduleId]: data }));
+    }
     setOpenLogId(scheduleId);
   };
 
