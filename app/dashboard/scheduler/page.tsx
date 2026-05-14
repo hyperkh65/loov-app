@@ -4,6 +4,42 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Schedule, ScheduleLog, BlogAutoConfig, CoupangAutoConfig, AgodaAutoConfig, ShortsAutoConfig, InstagramAutoConfig } from '@/lib/scheduler';
 import { INTERVAL_OPTIONS, formatRelativeTime } from '@/lib/scheduler';
 
+// ── 헬퍼 함수 ─────────────────────────────────────────────────────────────
+function modelEmoji(id: string): string {
+  if (id.includes('qwen')) return '🔮';
+  if (id.includes('llama')) return '🦙';
+  if (id.includes('mistral') || id.includes('ministral')) return '🌪️';
+  if (id.includes('gemma')) return '💎';
+  if (id.includes('deepseek')) return '🧠';
+  if (id.includes('phi')) return '🔵';
+  if (id.includes('gemini')) return '✨';
+  if (id.includes('claude')) return '🟣';
+  if (id.includes('gpt') || id.includes('openai')) return '🟢';
+  return '🤖';
+}
+function modelLabel(id: string): string {
+  if (id === 'gemini') return 'Gemini';
+  if (id === 'claude') return 'Claude';
+  if (id === 'openai' || id === 'gpt4o') return 'GPT-4o';
+  return id.replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).slice(0, 20);
+}
+function errorIcon(err: string): string {
+  if (/\[AI 생성 실패\]|AI 생성|ollama|openrouter|gemini|claude|openai|timeout|모델/i.test(err)) return '🤖';
+  if (/\[발행 실패\]|발행|blogger|wordpress|publish|api 오류/i.test(err)) return '📤';
+  if (/\[키워드 발굴 실패\]|키워드|keyword/i.test(err)) return '🔍';
+  if (/network|fetch|ECONNREFUSED|서버|다운|connect/i.test(err)) return '🌐';
+  if (/인증|token|auth|로그인/i.test(err)) return '🔑';
+  return '⚠️';
+}
+function errorCategory(err: string): string {
+  if (/\[AI 생성 실패\]|ollama|openrouter|timeout|모델/i.test(err)) return 'AI 생성 오류';
+  if (/\[발행 실패\]|blogger|wordpress|publish/i.test(err)) return '블로그 발행 오류';
+  if (/\[키워드 발굴 실패\]/i.test(err)) return '키워드 발굴 오류';
+  if (/network|fetch|ECONNREFUSED|서버|다운|connect/i.test(err)) return '네트워크/서버 오류';
+  if (/인증|token|auth|로그인/i.test(err)) return '인증 오류';
+  return '실행 오류';
+}
+
 // ── 상수 ──────────────────────────────────────────────────────────────────
 const SNS_PLATFORMS = [
   { id: 'threads',   label: '🧵 스레드' },
@@ -104,6 +140,15 @@ export default function SchedulerPage() {
   const [wpRegSites, setWpRegSites] = useState<Array<{ id: string; site_name: string; site_url: string }>>([]);
   const [wpRegSitesLoaded, setWpRegSitesLoaded] = useState(false);
 
+  // AI 모델 목록
+  const [aiModels, setAiModels] = useState<Array<{ id: string; name: string; emoji: string; group: string }>>([
+    { id: 'gemini', name: 'Gemini', emoji: '✨', group: 'cloud' },
+    { id: 'claude', name: 'Claude', emoji: '🟣', group: 'cloud' },
+    { id: 'openai', name: 'GPT-4o', emoji: '🟢', group: 'cloud' },
+  ]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500); };
 
   const loadSchedules = useCallback(async () => {
@@ -118,6 +163,7 @@ export default function SchedulerPage() {
   useEffect(() => {
     if (!showModal) return;
     if (['blog_auto', 'agoda_auto', 'shorts_auto'].includes(form.type)) loadWpRegSites();
+    if (form.type === 'blog_auto') loadAiModels();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showModal, form.type]);
 
@@ -131,6 +177,28 @@ export default function SchedulerPage() {
     }
     setWpRegSitesLoaded(true);
   }, [wpRegSitesLoaded]);
+
+  const loadAiModels = useCallback(async () => {
+    if (modelsLoading) return;
+    setModelsLoading(true);
+    try {
+      const [ollamaRes, claudeRes] = await Promise.allSettled([
+        fetch('/api/ollama/models').then(r => r.ok ? r.json() : null),
+        fetch('/api/claude/models').then(r => r.ok ? r.json() : null),
+      ]);
+      const ollamaList: string[] = ollamaRes.status === 'fulfilled' && ollamaRes.value
+        ? (ollamaRes.value.popular || ollamaRes.value.models || []) : [];
+      const claudeList: string[] = claudeRes.status === 'fulfilled' && claudeRes.value
+        ? (claudeRes.value.models || []) : ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
+      const combined = [
+        { id: 'gemini', name: 'Gemini', emoji: '✨', group: 'cloud' },
+        ...claudeList.map(id => ({ id, name: id.includes('haiku') ? 'Claude Haiku' : id.includes('sonnet') ? 'Claude Sonnet' : id.includes('opus') ? 'Claude Opus' : id, emoji: '🟣', group: 'cloud' })),
+        { id: 'openai', name: 'GPT-4o', emoji: '🟢', group: 'cloud' },
+        ...ollamaList.map(id => ({ id, name: modelLabel(id), emoji: modelEmoji(id), group: 'ollama' })),
+      ];
+      if (combined.length > 0) setAiModels(combined);
+    } catch { /* keep defaults */ } finally { setModelsLoading(false); }
+  }, [modelsLoading]);
 
   const loadLogs = async (scheduleId: string) => {
     if (openLogId === scheduleId) { setOpenLogId(null); return; }
@@ -317,8 +385,19 @@ export default function SchedulerPage() {
                               </span>
                               <span className="text-gray-500 flex-shrink-0">{new Date(log.started_at).toLocaleString('ko-KR')}</span>
                               {log.summary && <span className="text-gray-700 flex-1">{log.summary}</span>}
-                              {log.error && <span className="text-red-500 flex-1">{log.error.slice(0, 80)}</span>}
+                              {log.error && (
+                                <button onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                                  className="text-red-500 flex-1 text-left hover:text-red-700">
+                                  {errorIcon(log.error)} {log.error.slice(0, 60)}{log.error.length > 60 ? '…' : ''}
+                                </button>
+                              )}
                             </div>
+                            {log.error && expandedLogId === log.id && (
+                              <div className="ml-8 p-2 bg-red-50 border border-red-100 rounded-lg">
+                                <p className="text-[10px] font-semibold text-red-700 mb-1">{errorCategory(log.error)}</p>
+                                <p className="text-[10px] text-red-600 break-all whitespace-pre-wrap">{log.error}</p>
+                              </div>
+                            )}
                             {publishedUrl && (
                               <div className="pl-8">
                                 <a href={publishedUrl} target="_blank" rel="noopener noreferrer"
@@ -427,16 +506,45 @@ export default function SchedulerPage() {
                     <p className="text-[10px] text-blue-400 mt-1">고급 키워드 분석 실행 이력이 있으면 캐시 우선 사용 → 없으면 실시간 발굴</p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1 block">AI 모델</label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[['claude', '🟣 Claude', '지시 준수 최고'], ['gemini', '✨ Gemini', '무료+고품질'], ['qwen3', '🔮 Qwen3', 'Ollama 무료'], ['openai', '🟢 GPT', 'GPT-4o-mini']].map(([v, l, desc]) => (
-                        <button key={v} onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, ai_model: v } }))}
-                          className={`py-2 px-1 text-center rounded-xl border transition-colors ${(form.blog.ai_model || 'claude') === v ? 'bg-purple-500 border-purple-500 text-white' : 'border-gray-200 text-gray-600 hover:border-purple-300'}`}>
-                          <div className="text-[11px] font-medium">{l}</div>
-                          <div className={`text-[9px] mt-0.5 ${(form.blog.ai_model || 'claude') === v ? 'text-purple-100' : 'text-gray-400'}`}>{desc}</div>
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-gray-600">AI 모델</label>
+                      <button onClick={loadAiModels} disabled={modelsLoading} className="text-[10px] text-blue-500 hover:text-blue-700">
+                        {modelsLoading ? '⟳ 로딩중...' : '🔄 새로고침'}
+                      </button>
                     </div>
+                    {aiModels.filter(m => m.group === 'cloud').length > 0 && (
+                      <p className="text-[10px] text-gray-400 mb-1">☁️ 클라우드</p>
+                    )}
+                    <div className="grid grid-cols-3 gap-1.5 mb-2">
+                      {aiModels.filter(m => m.group === 'cloud').map(m => {
+                        const selected = (form.blog.ai_model || 'qwen3') === m.id;
+                        return (
+                          <button key={m.id} onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, ai_model: m.id } }))}
+                            className={`py-2 px-1 text-center rounded-xl border transition-colors ${selected ? 'bg-purple-500 border-purple-500 text-white' : 'border-gray-200 text-gray-600 hover:border-purple-300'}`}>
+                            <div className="text-base">{m.emoji}</div>
+                            <div className="text-[10px] font-medium mt-0.5 truncate">{m.name}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {aiModels.filter(m => m.group === 'ollama').length > 0 && (
+                      <>
+                        <p className="text-[10px] text-gray-400 mb-1">🖥️ Ollama</p>
+                        <div className="grid grid-cols-3 gap-1.5 max-h-32 overflow-y-auto">
+                          {aiModels.filter(m => m.group === 'ollama').map(m => {
+                            const selected = (form.blog.ai_model || 'qwen3') === m.id;
+                            return (
+                              <button key={m.id} onClick={() => setForm(f => ({ ...f, blog: { ...f.blog, ai_model: m.id } }))}
+                                className={`py-2 px-1 text-center rounded-xl border transition-colors ${selected ? 'bg-purple-500 border-purple-500 text-white' : 'border-gray-200 text-gray-600 hover:border-purple-300'}`}>
+                                <div className="text-base">{m.emoji}</div>
+                                <div className="text-[10px] font-medium mt-0.5 truncate">{m.name}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    <p className="text-[10px] text-gray-400 mt-1.5">현재: <b>{(form.blog.ai_model || 'qwen3')}</b> · 없으면 다음 모델로 자동 전환</p>
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">글 유형</label>

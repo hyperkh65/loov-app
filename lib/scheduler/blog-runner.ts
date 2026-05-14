@@ -105,31 +105,49 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   const config = schedule.config as BlogAutoConfig;
 
   // 키워드 자동 발굴
-  const keyword = await pickKeywordForUser(schedule.user_id);
+  let keyword: string;
+  try {
+    keyword = await pickKeywordForUser(schedule.user_id);
+  } catch (e) {
+    throw new Error(`[키워드 발굴 실패] ${(e as Error).message}`);
+  }
 
-  // 기존 블로그 자동화와 동일한 품질로 콘텐츠 생성 (뉴스 수집 + 이미지 + 썸네일)
-  const { title, content, keywords, imageUrl } = await generateBlogContent(keyword, config.ai_model);
+  // 콘텐츠 생성
+  let title: string, content: string, keywords: string[], imageUrl: string | null;
+  try {
+    const result = await generateBlogContent(keyword, config.ai_model);
+    title = result.title; content = result.content; keywords = result.keywords; imageUrl = result.imageUrl;
+    if (!title || !content) throw new Error('AI 출력 파싱 오류 (title/content 없음)');
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg.startsWith('[키워드')) throw e;
+    throw new Error(`[AI 생성 실패] ${msg}`);
+  }
 
-  if (!title || !content) throw new Error('AI 글 생성 실패: 출력 파싱 오류');
-
+  // 발행
   let publishedUrl = '';
-
-  if (config.blog_platform === 'blogger') {
-    const accessToken = await getBloggerTokenAdmin(schedule.user_id);
-    if (!accessToken) throw new Error('Blogger 계정이 연결되지 않았습니다');
-    const blogId = config.blogger_blog_id || '7951763866955162015';
-    publishedUrl = await publishToBlogger(accessToken, blogId, title, content, keywords);
-  } else if (config.blog_platform === 'wordpress') {
-    let wpUrl: string, wpUser: string, wpPass: string;
-    if (config.wp_site_id) {
-      const creds = await getWpCredentials(config.wp_site_id);
-      wpUrl = creds.url; wpUser = creds.username; wpPass = creds.appPassword;
-    } else if (config.wp_url && config.wp_username && config.wp_app_password) {
-      wpUrl = config.wp_url; wpUser = config.wp_username; wpPass = config.wp_app_password;
-    } else {
-      throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
+  try {
+    if (config.blog_platform === 'blogger') {
+      const accessToken = await getBloggerTokenAdmin(schedule.user_id);
+      if (!accessToken) throw new Error('Blogger 계정이 연결되지 않았습니다');
+      const blogId = config.blogger_blog_id || '7951763866955162015';
+      publishedUrl = await publishToBlogger(accessToken, blogId, title, content, keywords);
+    } else if (config.blog_platform === 'wordpress') {
+      let wpUrl: string, wpUser: string, wpPass: string;
+      if (config.wp_site_id) {
+        const creds = await getWpCredentials(config.wp_site_id);
+        wpUrl = creds.url; wpUser = creds.username; wpPass = creds.appPassword;
+      } else if (config.wp_url && config.wp_username && config.wp_app_password) {
+        wpUrl = config.wp_url; wpUser = config.wp_username; wpPass = config.wp_app_password;
+      } else {
+        throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
+      }
+      publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content, imageUrl);
     }
-    publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content, imageUrl);
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg.startsWith('[')) throw e;
+    throw new Error(`[발행 실패] ${msg}`);
   }
 
   return { keyword, url: publishedUrl, title };
