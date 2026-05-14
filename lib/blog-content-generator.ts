@@ -112,132 +112,79 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
 export function buildBlogPrompt(keyword: string, newsItems: {title:string;description:string}[], blogItems: {title:string;description:string}[]): string {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
   const sources = [
-    ...newsItems.map((n, i) => `[뉴스${i+1}] ${n.title}\n${n.description}`),
-    ...blogItems.map((b, i) => `[블로그${i+1}] ${b.title}\n${b.description}`),
-  ].join('\n\n');
+    ...newsItems.slice(0, 5).map((n, i) => `[뉴스${i+1}] ${n.title} — ${n.description}`),
+    ...blogItems.slice(0, 5).map((b, i) => `[블로그${i+1}] ${b.title} — ${b.description}`),
+  ].join('\n');
 
-  return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
+  return `한국어 SEO 블로그 작가입니다. 아래 규칙대로 "${keyword}" 블로그 글을 작성하세요.
 
-[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 위반 시 응답 무효.
-
-${ANTI_WATERMARK_PROMPT}
-
-수집된 최신 뉴스와 블로그 자료를 철저히 분석하여, 그 내용에 기반한 정확하고 흥미로운 블로그 글을 작성합니다.
-
-═══════════════════════════════════
-■ 글 작성 핵심 원칙 (반드시 준수)
-═══════════════════════════════════
-
-【두괄식 원칙】
-- 모든 소제목과 단락의 첫 문장에 핵심 결론/사실을 먼저 쓸 것
-- "~에 대해 알아보겠습니다" "~이 중요합니다" 같은 서론식 문장 절대 금지
-- 독자가 첫 문장만 읽어도 그 단락의 핵심을 파악할 수 있어야 함
-
-【소제목 원칙】
-- 소제목은 반드시 키워드의 실제 맥락과 성격에 맞게 직접 결정할 것
-- 고정 템플릿 소제목 절대 사용 금지
-- 수집된 참고자료의 핵심 내용을 기반으로 소제목 구성
-
-【참고자료 활용 원칙】
-- 제공된 뉴스/블로그 자료의 구체적 내용(날짜, 인물명, 수치, 사건 경위)을 글에 반드시 반영
-- 자료에 없는 내용을 억지로 지어내지 말 것
-
-【문체 원칙】
-- 친근하고 읽기 쉬운 구어체 혼용, 딱딱한 공문체 금지
-- 독자가 "오, 이거 몰랐네!" 하고 무릎 칠 만한 사실 포함
-- 공감 유발 표현, 구체적 사례, 생생한 묘사 활용
-- 각 단락 최소 4문장, 충분한 내용 서술
-
-【분량 원칙】
-- 순수 텍스트(HTML 태그 제외) 최소 4000자 이상 필수
-- H2 섹션 6개, 각 섹션 단락 3개 이상
-- 각 단락은 반드시 5문장 이상
-
-포커스 키워드: "${keyword}"
 오늘 날짜: ${today}
+참고자료:
+${sources || '(없음 — 전문 지식으로 작성)'}
 
-══════════════════════════════
-■ 수집된 참고자료 (반드시 분석 후 활용)
-══════════════════════════════
+[규칙]
+1. 한국어만 사용 (외국어 문자 금지)
+2. 존재하지 않는 회사·보고서·연구 절대 지어내지 말 것
+3. 각 본문 단락은 반드시 6문장 이상 (짧은 단락 금지)
+4. 첫 문장에 핵심 결론부터 (서론식 "~에 대해 알아봅니다" 금지)
+5. 친근한 구어체, 독자가 무릎 칠 구체적 사례 포함
 
-${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성)'}
-
-══════════════════════════════
-■ 출력 형식 (이 구조 그대로 출력)
-══════════════════════════════
+[출력 형식 — 이 마커 그대로 사용, HTML 태그 없이 순수 텍스트]
 
 ===TITLE===
-[포커스 키워드를 앞에 포함한 SEO 제목, 40-60자, 참고자료 내용 반영]
+(키워드 포함 SEO 제목 40-60자)
+
 ===META===
-[포커스 키워드 포함, 독자 클릭 유발하는 메타 설명 130-160자]
-===CONTENT===
-<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[두괄식 도입 2-3문장]</span></p>
-<p data-ke-size="size16">[배경과 맥락 3-4문장]</p>
-<p data-ke-size="size16">[이 글에서 다룰 핵심 포인트 3가지 예고]</p>
-<div style="background-color:#f5f5f5;padding:15px;border-radius:8px;font-style:italic;margin-bottom:25px;font-size:15px;"><b>[핵심 한줄 요약]</b> [참고자료 기반 2-3문장 요약]</div>
-<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[글 전체 부제목]</span></b></h3>
+(메타 설명 130-160자)
 
-<h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 7-8문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+===INTRO===
+(도입부. 핵심 결론 먼저 → 배경 → 이 글에서 다룰 내용. 6문장 이상)
 
-<h2 id="section2" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. [소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 7-8문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+===S1===소제목
+(단락1: 6문장 이상)
+(단락2: 6문장 이상)
+핵심: (이 섹션 핵심 1-2문장)
 
-<h2 id="section3" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. [소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 7-8문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+===S2===소제목
+(단락1: 6문장 이상)
+(단락2: 6문장 이상)
+핵심: (이 섹션 핵심 1-2문장)
 
-<h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 7-8문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+===S3===소제목
+(단락1: 6문장 이상)
+(단락2: 6문장 이상)
+핵심: (이 섹션 핵심 1-2문장)
 
-<h2 id="section5" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. [소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 7-8문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+===S4===소제목
+(단락1: 6문장 이상)
+(단락2: 6문장 이상)
+핵심: (이 섹션 핵심 1-2문장)
 
-<h2 id="section6" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>6. [소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 7-8문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 5-6문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 + 향후 전망: 5-6문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+===S5===소제목
+(단락1: 6문장 이상)
+(단락2: 6문장 이상)
+핵심: (이 섹션 핵심 1-2문장)
 
-<div class="single-summary-card" style="border:2px solid #ccc;padding:20px;border-radius:8px;max-width:800px;background-color:#ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin:20px auto;">
-<div class="card-header" style="display:flex;align-items:center;border-bottom:2px solid #1a73e8;padding-bottom:10px;margin-bottom:10px;"><span style="font-size:24px;color:#1a73e8;margin-right:10px;">💡</span><h3 style="font-size:20px;color:#1a73e8;margin:0;" data-ke-size="size23">핵심 요약</h3></div>
-<div class="card-content" style="font-size:16px;line-height:1.5;color:#333;">
-<div class="section" style="margin-bottom:10px;"><b>첫 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[섹션1 핵심 사실]</span></div>
-<div class="section" style="margin-bottom:10px;"><b>두 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[섹션2-3 핵심 사실]</span></div>
-<div class="section" style="margin-bottom:10px;"><b>세 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[섹션4-5 핵심 사실]</span></div>
-<div class="section" style="margin-bottom:10px;"><b>네 번째 핵심:</b> <span style="background-color:#fffde7;padding:2px 5px;border-radius:3px;">[독자가 바로 실천할 행동]</span></div>
-</div>
-<div class="card-footer" style="font-size:14px;color:#777;border-top:1px dashed #ddd;padding-top:10px;margin-top:10px;text-align:center;">[마무리 한 문장]</div>
-</div>
+===S6===소제목
+(단락1: 6문장 이상)
+(단락2: 전망과 독자 행동 6문장 이상)
+핵심: (이 섹션 핵심 1-2문장)
 
-<h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
-<div style="margin:22px 0 0;">
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q1. [궁금증]</div><div style="color:#555;">[답변 2-3문장]</div></div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q2. [궁금증]</div><div style="color:#555;">[답변 2-3문장]</div></div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q3. [궁금증]</div><div style="color:#555;">[답변 2-3문장]</div></div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q4. [궁금증]</div><div style="color:#555;">[답변 2-3문장]</div></div>
-</div>
+===FAQ===
+Q: (질문1)
+A: (답변 2-3문장)
+
+Q: (질문2)
+A: (답변 2-3문장)
+
+Q: (질문3)
+A: (답변 2-3문장)
+
+Q: (질문4)
+A: (답변 2-3문장)
 
 ===KEYWORDS===
-[관련 키워드 10개 쉼표 구분]
-
-⚠️ 최종 주의사항:
-- 모든 [] 대괄호 지시문은 실제 내용으로 반드시 교체
-- HTML 태그 외 마크다운, 설명문, 대괄호 최종 출력에 절대 포함 금지`;
+(관련 키워드 10개 쉼표 구분)`;
 }
 
 // ── 콘텐츠 조립 ────────────────────────────────────────────────────────────
@@ -285,20 +232,102 @@ export function insertImagesIntoContent(content: string, imageUrls: string[], ke
 }
 
 export function parseAiOutput(raw: string) {
-  const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '');
+  const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
+
   const extract = (tag: string) => {
-    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?=====[A-Za-z]|$)`, 'i');
-    const match = cleaned.match(re);
-    return match ? match[1].trim() : '';
+    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?=====[A-Za-z0-9]|$)`, 'i');
+    const m = cleaned.match(re);
+    return m ? m[1].trim() : '';
   };
+
   const rawTitle = extract('TITLE');
   const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle).trim().slice(0, 60);
   const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
-  let content = extract('CONTENT');
-  content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
+
+  // 새 포맷(===S1===~===FAQ===) 감지
+  const hasNewFormat = /===S[1-6]===/i.test(cleaned);
+
+  let content = '';
+  if (hasNewFormat) {
+    content = buildHtmlFromSections(cleaned, title);
+  } else {
+    // 구 포맷(===CONTENT===) 호환
+    content = extract('CONTENT').replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+  }
+
   return { title, meta_description, content, keywords };
+}
+
+// ── 섹션 텍스트 → HTML 조립 (Ollama 순수텍스트 출력을 구조화된 HTML로 변환) ──
+function buildHtmlFromSections(raw: string, title: string): string {
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const wrap = (text: string) =>
+    `<p style="margin-bottom:15px;" data-ke-size="size16">${esc(text.trim())}</p>`;
+
+  const h2 = (num: number, heading: string) =>
+    `<h2 id="section${num}" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>${num}. ${esc(heading)}</b></h2>`;
+
+  const infoBox = (text: string) =>
+    `<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>${esc(text)}</div>`;
+
+  const parts: string[] = [];
+
+  // 도입부
+  const introRaw = (() => {
+    const m = raw.match(/===INTRO===\s*([\s\S]*?)(?=====[A-Z])/i);
+    return m ? m[1].trim() : '';
+  })();
+  if (introRaw) {
+    parts.push(`<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">${esc(introRaw)}</span></p>`);
+    parts.push(`<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">${esc(title)}</span></b></h3>`);
+  }
+
+  // S1~S6 섹션
+  for (let i = 1; i <= 6; i++) {
+    const m = raw.match(new RegExp(`===S${i}===([^\\n]*)\n([\\s\\S]*?)(?====[A-Z]|$)`, 'i'));
+    if (!m) continue;
+    const heading = m[1].trim();
+    const body = m[2].trim();
+
+    parts.push(h2(i, heading));
+
+    // 핵심: 줄 분리
+    const coreMatch = body.match(/핵심:\s*(.+)/i);
+    const coreText = coreMatch ? coreMatch[1].trim() : '';
+    const bodyWithoutCore = body.replace(/핵심:\s*.+/i, '').trim();
+
+    // 빈 줄 기준으로 단락 분리
+    const paragraphs = bodyWithoutCore.split(/\n{2,}/).map(p => p.replace(/\n/g, ' ').trim()).filter(Boolean);
+    for (const p of paragraphs) {
+      parts.push(wrap(p));
+    }
+
+    if (coreText) parts.push(infoBox(coreText));
+  }
+
+  // FAQ
+  const faqRaw = (() => {
+    const m = raw.match(/===FAQ===\s*([\s\S]*?)(?=====[A-Z]|$)/i);
+    return m ? m[1].trim() : '';
+  })();
+  if (faqRaw) {
+    parts.push(`<h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>`);
+    parts.push(`<div style="margin:22px 0 0;">`);
+    const qaBlocks = faqRaw.split(/\n(?=Q:)/i).filter(Boolean);
+    for (const block of qaBlocks) {
+      const qm = block.match(/Q:\s*(.+)/i);
+      const am = block.match(/A:\s*([\s\S]+)/i);
+      if (qm && am) {
+        parts.push(`<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">${esc(qm[1].trim())}</div><div style="color:#555;">${esc(am[1].trim())}</div></div>`);
+      }
+    }
+    parts.push(`</div>`);
+  }
+
+  return parts.join('\n');
 }
 
 // ── 메인 생성 함수 (스케줄러 + 대시보드 공용) ──────────────────────────────
@@ -310,8 +339,7 @@ export interface GeneratedBlogContent {
   imageUrl: string | null;
 }
 
-// 모델 우선순위: claude(지시 준수 최고) → gemini(무료+고품질) → qwen3(폴백)
-export async function generateBlogContent(keyword: string, aiModel = 'claude'): Promise<GeneratedBlogContent> {
+export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): Promise<GeneratedBlogContent> {
   const [newsItems, blogItems] = await Promise.all([
     searchNaver('news', keyword),
     searchNaver('blog', keyword),
