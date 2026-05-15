@@ -179,12 +179,21 @@ export default function StocksPage() {
     const m:Record<string,Quote>={}; d.forEach(q=>{m[q.symbol]=q;}); setIndices(m);
   }, []);
   const loadSparks = async () => {
-    const m:Record<string,number[]>={};
+    const sm:Record<string,number[]>={};
+    const qm:Record<string,Quote>={};
     await Promise.allSettled(watchlist.map(async w=>{
       const r = await fetch(`/api/stocks/chart?symbol=${w.symbol}&interval=1d&range=1mo`);
-      if(r.ok){const d=await r.json() as Candle[]; m[w.symbol]=d.map(c=>c.close);}
+      if(r.ok){
+        const d=await r.json() as Candle[];
+        sm[w.symbol]=d.map(c=>c.close);
+        if(d.length>0){
+          const last=d[d.length-1],prev=d.length>1?d[d.length-2]:null,chg=prev?last.close-prev.close:0;
+          qm[w.symbol]={symbol:w.symbol,regularMarketPrice:last.close,regularMarketOpen:last.open,regularMarketDayHigh:last.high,regularMarketDayLow:last.low,regularMarketVolume:last.volume,regularMarketChange:chg,regularMarketChangePercent:prev?(chg/prev.close)*100:0,previousClose:prev?.close,currency:isKR(w.symbol)?'KRW':'USD'};
+        }
+      }
     }));
-    setSparks(m);
+    setSparks(sm);
+    setQuotes(p=>{const m={...p};Object.entries(qm).forEach(([s,q])=>{if(!m[s]?.regularMarketPrice)m[s]=q;});return m;});
   };
   const doSearch = async (q:string) => {
     const r = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`);
@@ -195,7 +204,22 @@ export default function StocksPage() {
     if(!searchQ.trim()){doSearch('');return;}
     stRef.current = setTimeout(()=>{setSearching(true);doSearch(searchQ).finally(()=>setSearching(false));},300);
   },[searchQ]); // eslint-disable-line react-hooks/exhaustive-deps
-  const loadChart = async(sym:string,i:string,r:string)=>{setLoadingChart(true);setCandles([]);const res=await fetch(`/api/stocks/chart?symbol=${sym}&interval=${i}&range=${r}`);if(res.ok)setCandles(await res.json() as Candle[]);setLoadingChart(false);};
+  const loadChart = async(sym:string,i:string,r:string)=>{
+    setLoadingChart(true);setCandles([]);
+    const res=await fetch(`/api/stocks/chart?symbol=${sym}&interval=${i}&range=${r}`);
+    if(res.ok){
+      const data=await res.json() as Candle[];
+      setCandles(data);
+      if(data.length>0){
+        const last=data[data.length-1],prev=data.length>1?data[data.length-2]:null,chg=prev?last.close-prev.close:0;
+        setQuotes(p=>{
+          const ex=p[sym]||{};
+          return {...p,[sym]:{symbol:sym,regularMarketPrice:last.close,regularMarketOpen:last.open,regularMarketDayHigh:last.high,regularMarketDayLow:last.low,regularMarketVolume:last.volume,regularMarketChange:chg,regularMarketChangePercent:prev?(chg/prev.close)*100:0,previousClose:prev?.close,currency:isKR(sym)?'KRW':'USD',shortName:ex.shortName,longName:ex.longName,marketState:ex.marketState,fiftyTwoWeekHigh:ex.fiftyTwoWeekHigh,fiftyTwoWeekLow:ex.fiftyTwoWeekLow,marketCap:ex.marketCap}};
+        });
+      }
+    }
+    setLoadingChart(false);
+  };
   const loadNews = async(sym:string)=>{const r=await fetch(`/api/stocks/news?symbol=${sym}`);if(r.ok)setNews(await r.json() as NewsItem[]);};
   const loadJournal = async(sym:string)=>{const r=await fetch(`/api/stocks/journal?symbol=${sym}`);if(r.ok)setJournal(await r.json() as JournalEntry[]);};
   const loadPreds = async(sym:string)=>{const r=await fetch(`/api/stocks/prediction?symbol=${sym}`);if(r.ok)setPreds(await r.json() as Prediction[]);};
