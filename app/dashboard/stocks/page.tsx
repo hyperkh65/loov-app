@@ -140,20 +140,30 @@ export default function StocksPage() {
   const [actualInput, setActualInput] = useState<Record<string,string>>({});
   const [toast, setToast] = useState('');
   const showToast = (m:string) => { setToast(m); setTimeout(()=>setToast(''),2500); };
+  const lastUpdatedRef = useRef<Date|null>(null);
+  const [secAgo, setSecAgo] = useState<number|null>(null);
+  const markUpdated = () => { lastUpdatedRef.current=new Date(); setSecAgo(0); };
 
   // ── 초기화 ──────────────────────────────────────────────────────────────
   useEffect(() => { loadWL(); fetchIdx(); }, []);
   useEffect(() => {
     if (!watchlist.length) return;
     fetchQ(watchlist.map(w=>w.symbol)); loadSparks();
-    const iv = setInterval(()=>fetchQ(watchlist.map(w=>w.symbol)), 10000);
+    const iv = setInterval(()=>fetchQ(watchlist.map(w=>w.symbol)), 5000);
     return ()=>clearInterval(iv);
   }, [watchlist]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if(!selected) return; if(tab==='chart') loadChart(selected,cI,cR); else if(tab==='news') loadNews(selected); else if(tab==='journal') loadJournal(selected); else loadPreds(selected); }, [selected,tab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if(selected&&tab==='chart') loadChart(selected,cI,cR); }, [cI,cR]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if(showSearch){setTimeout(()=>sInputRef.current?.focus(),80); doSearch('');} }, [showSearch]);
   useEffect(() => {
-    const iv = setInterval(fetchIdx, 30000); return ()=>clearInterval(iv);
+    const iv = setInterval(fetchIdx, 15000); return ()=>clearInterval(iv);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 1초 카운터
+  useEffect(() => {
+    const iv = setInterval(()=>{
+      if(lastUpdatedRef.current) setSecAgo(Math.floor((Date.now()-lastUpdatedRef.current.getTime())/1000));
+    }, 1000);
+    return ()=>clearInterval(iv);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── API ─────────────────────────────────────────────────────────────────
@@ -169,8 +179,8 @@ export default function StocksPage() {
     const r = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(syms.join(','))}`);
     if(!r.ok) return;
     const d = await r.json() as Quote[];
-    setQuotes(p=>{const m={...p}; d.forEach(q=>{m[q.symbol]=q;}); return m;});
-  }, []);
+    if(d.length>0){setQuotes(p=>{const m={...p}; d.forEach(q=>{m[q.symbol]=q;}); return m;});markUpdated();}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const fetchIdx = useCallback(async () => {
     const syms = INDICES.map(i=>i.symbol).join(',');
     const r = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(syms)}`);
@@ -194,6 +204,7 @@ export default function StocksPage() {
     }));
     setSparks(sm);
     setQuotes(p=>{const m={...p};Object.entries(qm).forEach(([s,q])=>{if(!m[s]?.regularMarketPrice)m[s]=q;});return m;});
+    markUpdated();
   };
   const doSearch = async (q:string) => {
     const r = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`);
@@ -216,6 +227,7 @@ export default function StocksPage() {
           const ex=p[sym]||{};
           return {...p,[sym]:{symbol:sym,regularMarketPrice:last.close,regularMarketOpen:last.open,regularMarketDayHigh:last.high,regularMarketDayLow:last.low,regularMarketVolume:last.volume,regularMarketChange:chg,regularMarketChangePercent:prev?(chg/prev.close)*100:0,previousClose:prev?.close,currency:isKR(sym)?'KRW':'USD',shortName:ex.shortName,longName:ex.longName,marketState:ex.marketState,fiftyTwoWeekHigh:ex.fiftyTwoWeekHigh,fiftyTwoWeekLow:ex.fiftyTwoWeekLow,marketCap:ex.marketCap}};
         });
+        markUpdated();
       }
     }
     setLoadingChart(false);
@@ -426,6 +438,12 @@ export default function StocksPage() {
                       </span>
                     )}
                     {sq?.previousClose!=null&&<span className="text-sm text-gray-400">전일 {fmtP(sq.previousClose,selected)}</span>}
+                    {secAgo!=null&&(
+                      <span className="flex items-center gap-1 text-xs text-gray-400">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
+                        {secAgo<60?`${secAgo}초`:`${Math.floor(secAgo/60)}분 ${secAgo%60}초`} 전
+                      </span>
+                    )}
                   </div>
                   {/* 52주 */}
                   {sq?.fiftyTwoWeekLow!=null&&sq?.fiftyTwoWeekHigh!=null&&sq?.regularMarketPrice!=null&&(()=>{
