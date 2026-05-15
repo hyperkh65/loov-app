@@ -131,6 +131,8 @@ export default function StocksPage() {
   const [searchQ, setSearchQ] = useState('');
   const [searchRes, setSearchRes] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [allStocks, setAllStocks] = useState<SearchResult[]>([]);
+  const [mktFilter, setMktFilter] = useState<'ALL'|'KR'|'US'>('ALL');
   const stRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const sInputRef = useRef<HTMLInputElement>(null);
   const [showJF, setShowJF] = useState(false);
@@ -208,13 +210,26 @@ export default function StocksPage() {
   };
   const doSearch = async (q:string) => {
     const r = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`);
-    if(r.ok) setSearchRes(await r.json() as SearchResult[]);
+    if(!r.ok) return;
+    const d = await r.json() as SearchResult[];
+    if(!q.trim()){setAllStocks(d);setSearchRes(d);}
+    else setSearchRes(d);
   };
   useEffect(()=>{
     if(stRef.current) clearTimeout(stRef.current);
-    if(!searchQ.trim()){doSearch('');return;}
-    stRef.current = setTimeout(()=>{setSearching(true);doSearch(searchQ).finally(()=>setSearching(false));},300);
-  },[searchQ]); // eslint-disable-line react-hooks/exhaustive-deps
+    if(!searchQ.trim()){
+      // 로컬 필터 (이미 받아둔 목록에서)
+      if(allStocks.length){ setSearchRes(allStocks); return; }
+      doSearch(''); return;
+    }
+    // 로컬 목록에서 먼저 즉시 필터
+    if(allStocks.length){
+      const lq=searchQ.toLowerCase();
+      setSearchRes(allStocks.filter(s=>s.symbol.toLowerCase().includes(lq)||s.name.toLowerCase().includes(lq)).slice(0,50));
+    }
+    // 동시에 Yahoo Finance 검색도 (더 정확한 결과)
+    stRef.current = setTimeout(()=>{setSearching(true);doSearch(searchQ).finally(()=>setSearching(false));},400);
+  },[searchQ,allStocks]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadChart = async(sym:string,i:string,r:string)=>{
     setLoadingChart(true);setCandles([]);
     const res=await fetch(`/api/stocks/chart?symbol=${sym}&interval=${i}&range=${r}`);
@@ -307,59 +322,54 @@ export default function StocksPage() {
               {searching && <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"/>}
               <button onClick={()=>{setShowSearch(false);setSearchQ('');}} className="text-blue-500 text-sm font-semibold">닫기</button>
             </div>
-            <div className="max-h-[70vh] overflow-y-auto">
-              {!searchQ ? (
-                /* 검색어 없을 때: 국내/미국 그룹 표시 */
-                (['KR','US'] as const).map(mkt=>{
-                  const group = searchRes.filter(r=>r.market===mkt);
-                  if(!group.length) return null;
-                  return (
-                    <div key={mkt}>
-                      <div className="px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider sticky top-0 bg-white z-10"
-                        style={{color: mkt==='KR'?'#3B82F6':'#16A34A'}}>
-                        {mkt==='KR'?'🇰🇷 국내 주식':'🇺🇸 미국 주식'}
+            {/* 마켓 필터 탭 */}
+            <div className="flex border-b border-gray-100 px-4 pt-2 gap-3">
+              {(['ALL','KR','US'] as const).map(m=>(
+                <button key={m} onClick={()=>setMktFilter(m)}
+                  className={`text-xs font-bold pb-2 border-b-2 transition-colors ${mktFilter===m?'border-blue-500 text-blue-500':'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                  {m==='ALL'?`전체 ${allStocks.length?`(${allStocks.length.toLocaleString()})`:''}`
+                    :m==='KR'?`🇰🇷 국내 ${allStocks.length?`(${allStocks.filter(s=>s.market==='KR').length.toLocaleString()})`:''}`
+                    :`🇺🇸 미국 ${allStocks.length?`(${allStocks.filter(s=>s.market==='US').length.toLocaleString()})`:''}`}
+                </button>
+              ))}
+              {searching && <div className="ml-auto self-center w-3 h-3 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"/>}
+            </div>
+            <div className="h-[60vh] overflow-y-auto">
+              {(()=>{
+                const base = searchQ ? searchRes : allStocks;
+                const filtered = mktFilter==='ALL' ? base : base.filter(r=>r.market===mktFilter);
+                const shown = filtered.slice(0, 200); // 한 번에 200개만 렌더
+                if(!shown.length && !searching) return (
+                  <div className="py-10 text-center text-sm text-gray-400">
+                    {allStocks.length===0?'목록 불러오는 중...':'검색 결과 없음'}
+                  </div>
+                );
+                return (
+                  <>
+                    {shown.map(r=>(
+                      <button key={r.symbol} onClick={()=>addStock(r)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${r.market==='KR'?'bg-blue-50 text-blue-600':'bg-green-50 text-green-600'}`}>
+                          {r.name?.[0]||'?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{r.name}</div>
+                          <div className="text-xs text-gray-400">{r.symbol} · {r.exchange}</div>
+                        </div>
+                        {watchlist.some(w=>w.symbol===r.symbol)
+                          ? <span className="text-[10px] text-gray-400 flex-shrink-0">추가됨</span>
+                          : <span className={`text-[10px] font-bold flex-shrink-0 ${r.market==='KR'?'text-blue-400':'text-green-500'}`}>+추가</span>
+                        }
+                      </button>
+                    ))}
+                    {filtered.length > 200 && (
+                      <div className="py-3 text-center text-xs text-gray-400">
+                        {(filtered.length-200).toLocaleString()}개 더 있음 — 검색어로 좁혀보세요
                       </div>
-                      {group.map(r=>(
-                        <button key={r.symbol} onClick={()=>addStock(r)}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${r.market==='KR'?'bg-blue-50 text-blue-600':'bg-green-50 text-green-600'}`}>
-                            {r.name[0]}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-gray-900">{r.name}</div>
-                            <div className="text-xs text-gray-400">{r.symbol} · {r.exchange}</div>
-                          </div>
-                          {/* 이미 추가된 종목 표시 */}
-                          {watchlist.some(w=>w.symbol===r.symbol)
-                            ? <span className="text-[10px] text-gray-400 flex-shrink-0">추가됨</span>
-                            : <span className={`text-[10px] font-semibold flex-shrink-0 ${r.market==='KR'?'text-blue-400':'text-green-500'}`}>+ 추가</span>
-                          }
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })
-              ) : (
-                /* 검색 결과 */
-                <>
-                  {searchRes.map(r=>(
-                    <button key={r.symbol} onClick={()=>addStock(r)}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left">
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${r.market==='KR'?'bg-blue-50 text-blue-600':'bg-green-50 text-green-600'}`}>
-                        {r.name[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-gray-900">{r.name}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{r.symbol} · {r.exchange}</div>
-                      </div>
-                      <span className={`text-xs font-semibold px-2 py-1 rounded-lg flex-shrink-0 ${r.market==='KR'?'bg-blue-50 text-blue-500':'bg-green-50 text-green-600'}`}>
-                        {r.market==='KR'?'국내':'미국'}
-                      </span>
-                    </button>
-                  ))}
-                  {searchRes.length===0&&!searching&&<div className="py-10 text-center text-sm text-gray-400">검색 결과 없음</div>}
-                </>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
