@@ -10,8 +10,7 @@ interface Quote {
   regularMarketVolume?: number; regularMarketOpen?: number;
   regularMarketDayHigh?: number; regularMarketDayLow?: number;
   previousClose?: number; currency?: string; marketState?: string;
-  regularMarketTime?: number; fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number;
-  marketCap?: number;
+  regularMarketTime?: number; fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number; marketCap?: number;
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
 interface NewsItem { id: string; title: string; publisher: string; link: string; publishedAt: string; thumbnail: string | null }
@@ -20,22 +19,22 @@ interface JournalEntry {
   trade_type: 'buy' | 'sell'; quantity: number; price: number; fee: number; memo: string;
 }
 interface Prediction {
-  id: string; symbol: string; name: string; prediction_date: string;
-  predicted_close: number; actual_close: number | null; accuracy_pct: number | null;
-  direction: string | null; note: string | null;
+  id: string; symbol: string; prediction_date: string; predicted_close: number;
+  actual_close: number | null; accuracy_pct: number | null; direction: string | null; note: string | null;
 }
 interface SearchResult { symbol: string; name: string; exchange: string; market: string }
 
 // ── 유틸 ────────────────────────────────────────────────────────────────────
-function fmtPrice(p: number | undefined, currency?: string): string {
-  if (p === undefined || p === null) return '-';
-  if (currency === 'KRW' || currency === 'KRX') return p.toLocaleString('ko-KR') + '원';
-  return '$' + p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function isKrSymbol(sym: string) { return sym.endsWith('.KS') || sym.endsWith('.KQ') }
+function fmtPrice(p: number | undefined, sym: string): string {
+  if (p == null) return '-';
+  return isKrSymbol(sym)
+    ? p.toLocaleString('ko-KR') + '원'
+    : '$' + p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function fmtChg(c: number | undefined, pct: number | undefined): string {
-  if (c === undefined || pct === undefined) return '';
-  const sign = c >= 0 ? '+' : '';
-  return `${sign}${c.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+function fmtPct(p: number | undefined): string {
+  if (p == null) return '';
+  return (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
 }
 function fmtVol(v: number | undefined): string {
   if (!v) return '-';
@@ -43,176 +42,161 @@ function fmtVol(v: number | undefined): string {
   if (v >= 1e4) return (v / 1e4).toFixed(1) + '만';
   return v.toLocaleString();
 }
-function fmtMarketCap(v: number | undefined): string {
-  if (!v) return '-';
-  if (v >= 1e12) return (v / 1e12).toFixed(2) + 'T';
-  if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
-  if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
-  return v.toLocaleString();
-}
-function todayStr(): string { return new Date().toISOString().slice(0, 10) }
+function todayStr() { return new Date().toISOString().slice(0, 10) }
 function relTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 3600000) return Math.floor(diff / 60000) + '분 전';
-  if (diff < 86400000) return Math.floor(diff / 3600000) + '시간 전';
-  return Math.floor(diff / 86400000) + '일 전';
+  if (!iso) return '';
+  const d = Date.now() - new Date(iso).getTime();
+  if (d < 3600000) return Math.floor(d / 60000) + '분 전';
+  if (d < 86400000) return Math.floor(d / 3600000) + '시간 전';
+  return Math.floor(d / 86400000) + '일 전';
 }
 
-// ── 미니 스파크라인 ──────────────────────────────────────────────────────────
-function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
+// ── 스파크라인 ───────────────────────────────────────────────────────────────
+function Sparkline({ data, up }: { data: number[]; up: boolean }) {
   if (!data || data.length < 2) return <div className="w-16 h-8" />;
-  const min = Math.min(...data), max = Math.max(...data);
-  const range = max - min || 1;
-  const W = 64, H = 32;
-  const pts = data.map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * H}`).join(' ');
-  const color = positive ? '#10b981' : '#ef4444';
+  const min = Math.min(...data), max = Math.max(...data), range = max - min || 1;
+  const W = 64, H = 28;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * (H - 2) - 1}`).join(' ');
+  const color = up ? '#00C73C' : '#FF3B30';
+  const id = `sg-${Math.random().toString(36).slice(2)}`;
+  const lastX = (data.length - 1) / (data.length - 1) * W;
+  const lastY = H - ((data[data.length - 1] - min) / range) * (H - 2) - 1;
   return (
     <svg width={W} height={H} className="overflow-visible">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" />
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${H} ${pts} ${lastX},${H}`} fill={`url(#${id})`} />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lastX} cy={lastY} r="2" fill={color} />
     </svg>
   );
 }
 
-// ── 캔들스틱 차트 (Canvas) ───────────────────────────────────────────────────
+// ── 캔들차트 (Canvas) ────────────────────────────────────────────────────────
 function CandleChart({ candles, interval }: { candles: Candle[]; interval: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
+  const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (!candles.length || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const W = canvas.offsetWidth, H = canvas.offsetHeight;
-    canvas.width = W; canvas.height = H;
-    ctx.clearRect(0, 0, W, H);
+    if (!candles.length || !ref.current) return;
+    const c = ref.current;
+    const ctx = c.getContext('2d'); if (!ctx) return;
+    const W = c.offsetWidth * window.devicePixelRatio, H = c.offsetHeight * window.devicePixelRatio;
+    c.width = W; c.height = H; ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const cW = c.offsetWidth, cH = c.offsetHeight;
+    const PL = 60, PR = 8, PT = 12, PB = 40;
+    const chartW = cW - PL - PR, chartH = cH - PT - PB;
+    const vis = candles.slice(-Math.min(candles.length, Math.floor(chartW / 9)));
+    const px = vis.flatMap(c => [c.high, c.low]);
+    const minP = Math.min(...px), maxP = Math.max(...px), rng = maxP - minP || 1;
+    const maxVol = Math.max(...vis.map(c => c.volume)) || 1;
+    const VH = Math.floor(chartH * 0.2);
+    const toY = (p: number) => PT + chartH - ((p - minP) / rng) * (chartH - VH - 6);
+    const bW = Math.max(3, Math.floor(chartW / vis.length) - 2);
 
-    const PAD_L = 55, PAD_R = 10, PAD_T = 15, PAD_B = 45;
-    const chartW = W - PAD_L - PAD_R;
-    const chartH = H - PAD_T - PAD_B;
+    ctx.fillStyle = '#111116'; ctx.fillRect(0, 0, cW, cH);
 
-    const visible = candles.slice(-Math.min(candles.length, Math.floor(chartW / 8)));
-    const prices = visible.flatMap(c => [c.high, c.low]);
-    const minP = Math.min(...prices), maxP = Math.max(...prices);
-    const priceRange = maxP - minP || 1;
-    const volumes = visible.map(c => c.volume);
-    const maxVol = Math.max(...volumes) || 1;
-    const VBAR_H = Math.floor(chartH * 0.18);
-
-    const toY = (p: number) => PAD_T + chartH - ((p - minP) / priceRange) * (chartH - VBAR_H - 4);
-    const barW = Math.max(2, Math.floor(chartW / visible.length) - 1);
-
-    // background
-    ctx.fillStyle = '#111827';
-    ctx.fillRect(0, 0, W, H);
-
-    // grid
-    ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
+    // grid lines
     for (let i = 0; i <= 4; i++) {
-      const y = PAD_T + (chartH - VBAR_H - 4) / 4 * i;
-      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(W - PAD_R, y); ctx.stroke();
-      const price = maxP - (maxP - minP) / 4 * i;
-      ctx.fillStyle = '#6b7280'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
-      ctx.fillText(price >= 1000 ? price.toLocaleString('ko-KR') : price.toFixed(2), PAD_L - 3, y + 4);
+      const y = PT + (chartH - VH - 6) / 4 * i;
+      ctx.strokeStyle = '#ffffff10'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(cW - PR, y); ctx.stroke();
+      const val = maxP - (maxP - minP) / 4 * i;
+      ctx.fillStyle = '#666'; ctx.font = `${10}px -apple-system,sans-serif`; ctx.textAlign = 'right';
+      ctx.fillText(isKrSymbol('') ? val.toLocaleString('ko-KR') : val.toFixed(2), PL - 4, y + 4);
     }
 
-    // candles + volume
-    visible.forEach((c, i) => {
-      const x = PAD_L + i * (chartW / visible.length) + (chartW / visible.length - barW) / 2;
+    vis.forEach((c, i) => {
+      const x = PL + i * (chartW / vis.length) + (chartW / vis.length - bW) / 2;
       const up = c.close >= c.open;
-      const color = up ? '#10b981' : '#ef4444';
-
-      // volume bar
-      const volH = (c.volume / maxVol) * VBAR_H;
-      ctx.fillStyle = up ? '#064e3b' : '#450a0a';
-      ctx.fillRect(x, H - PAD_B - volH, barW, volH);
-
+      const col = up ? '#00C73C' : '#FF3B30';
+      // volume
+      const vh = (c.volume / maxVol) * VH;
+      ctx.fillStyle = up ? '#00C73C22' : '#FF3B3022';
+      ctx.fillRect(x, cH - PB - vh, bW, vh);
       // wick
-      ctx.strokeStyle = color; ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x + barW / 2, toY(c.high));
-      ctx.lineTo(x + barW / 2, toY(c.low));
-      ctx.stroke();
-
+      ctx.strokeStyle = col; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + bW / 2, toY(c.high)); ctx.lineTo(x + bW / 2, toY(c.low)); ctx.stroke();
       // body
-      const bodyTop = toY(Math.max(c.open, c.close));
-      const bodyH = Math.max(1, Math.abs(toY(c.open) - toY(c.close)));
-      ctx.fillStyle = color;
-      ctx.fillRect(x, bodyTop, barW, bodyH);
+      const bt = toY(Math.max(c.open, c.close));
+      const bh = Math.max(1, Math.abs(toY(c.open) - toY(c.close)));
+      ctx.fillStyle = col; ctx.fillRect(x, bt, bW, bh);
     });
 
-    // x-axis dates
-    ctx.fillStyle = '#6b7280'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
-    const step = Math.ceil(visible.length / 6);
-    visible.forEach((c, i) => {
+    // x labels
+    ctx.fillStyle = '#555'; ctx.font = `9px -apple-system,sans-serif`; ctx.textAlign = 'center';
+    const step = Math.ceil(vis.length / 6);
+    vis.forEach((c, i) => {
       if (i % step !== 0) return;
-      const x = PAD_L + (i + 0.5) * (chartW / visible.length);
+      const x = PL + (i + 0.5) * (chartW / vis.length);
       const d = new Date(c.time * 1000);
-      const label = interval === '1d' || interval === '5d'
-        ? `${d.getMonth() + 1}/${d.getDate()}`
-        : interval === '1wk' || interval === '1mo'
-          ? `${d.getFullYear().toString().slice(2)}/${d.getMonth() + 1}`
-          : `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-      ctx.fillText(label, x, H - PAD_B + 14);
+      const lbl = interval.includes('m') || interval === '1h'
+        ? `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`
+        : interval === '1wk' || interval === '1mo' ? `${d.getFullYear().toString().slice(2)}/${d.getMonth()+1}`
+        : `${d.getMonth()+1}/${d.getDate()}`;
+      ctx.fillText(lbl, x, cH - PB + 14);
     });
 
-    // last price line
-    const last = visible[visible.length - 1];
+    // last price
+    const last = vis[vis.length - 1];
     if (last) {
       const y = toY(last.close);
-      ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(W - PAD_R, y); ctx.stroke();
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = '#FFB74D55'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(cW - PR, y); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText(last.close >= 1000 ? last.close.toLocaleString('ko-KR') : last.close.toFixed(2), W - PAD_R + 2, y + 4);
     }
   }, [candles, interval]);
-
-  return <canvas ref={canvasRef} className="w-full h-full" style={{ display: 'block' }} />;
+  return <canvas ref={ref} className="w-full h-full" style={{ display: 'block' }} />;
 }
 
-// ── 메인 컴포넌트 ────────────────────────────────────────────────────────────
+// ── 메인 ─────────────────────────────────────────────────────────────────────
 export default function StocksPage() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  const [sparklines, setSparklines] = useState<Record<string, number[]>>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<'chart' | 'news' | 'journal' | 'prediction'>('chart');
   const [candles, setCandles] = useState<Candle[]>([]);
-  const [chartInterval, setChartInterval] = useState<string>('1d');
-  const [chartRange, setChartRange] = useState<string>('3mo');
+  const [chartInterval, setChartInterval] = useState('1d');
+  const [chartRange, setChartRange] = useState('3mo');
   const [news, setNews] = useState<NewsItem[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loadingChart, setLoadingChart] = useState(false);
-  const [loadingNews, setLoadingNews] = useState(false);
 
-  // 검색
+  // 검색 모달
+  const [showSearch, setShowSearch] = useState(false);
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // 매매일지 폼
   const [showJournalForm, setShowJournalForm] = useState(false);
-  const [jForm, setJForm] = useState({ trade_date: todayStr(), trade_type: 'buy' as 'buy' | 'sell', quantity: '', price: '', fee: '', memo: '' });
+  const [jForm, setJForm] = useState({ trade_date: todayStr(), trade_type: 'buy' as 'buy'|'sell', quantity: '', price: '', fee: '', memo: '' });
 
   // 종가예측 폼
   const [showPredForm, setShowPredForm] = useState(false);
   const [pForm, setPForm] = useState({ prediction_date: todayStr(), predicted_close: '', direction: 'up', note: '' });
   const [actualInput, setActualInput] = useState<Record<string, string>>({});
 
-  // toast
   const [toast, setToast] = useState('');
-  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
+  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2500); };
+  const [dbError, setDbError] = useState(false);
 
-  // ── 초기 로드 ──────────────────────────────────────────────────────────────
+  // ── 초기 로드 ────────────────────────────────────────────────────────────
   useEffect(() => { loadWatchlist(); }, []);
 
   useEffect(() => {
     if (watchlist.length === 0) return;
     refreshQuotes();
-    const iv = setInterval(refreshQuotes, 30000);
+    loadSparklines();
+    const iv = setInterval(refreshQuotes, 10000); // 10초
     return () => clearInterval(iv);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchlist]);
 
   useEffect(() => {
@@ -221,17 +205,26 @@ export default function StocksPage() {
     if (tab === 'news') loadNews(selected);
     if (tab === 'journal') loadJournal(selected);
     if (tab === 'prediction') loadPredictions(selected);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, tab]);
 
   useEffect(() => {
     if (selected && tab === 'chart') loadChart(selected, chartInterval, chartRange);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartInterval, chartRange]);
 
-  // ── API 함수 ───────────────────────────────────────────────────────────────
+  // 검색 모달 열릴 때 인기종목 로드
+  useEffect(() => {
+    if (showSearch) {
+      setTimeout(() => searchInputRef.current?.focus(), 100);
+      loadPopular();
+    }
+  }, [showSearch]);
+
+  // ── API ──────────────────────────────────────────────────────────────────
   const loadWatchlist = async () => {
     const res = await fetch('/api/stocks/watchlist');
+    if (res.status === 500) { setDbError(true); return; }
     if (res.ok) {
       const data = await res.json() as WatchItem[];
       setWatchlist(data);
@@ -241,8 +234,8 @@ export default function StocksPage() {
 
   const refreshQuotes = useCallback(async () => {
     if (watchlist.length === 0) return;
-    const symbols = watchlist.map(w => w.symbol).join(',');
-    const res = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(symbols)}`);
+    const syms = watchlist.map(w => w.symbol).join(',');
+    const res = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(syms)}`);
     if (res.ok) {
       const data = await res.json() as Quote[];
       const map: Record<string, Quote> = {};
@@ -251,82 +244,88 @@ export default function StocksPage() {
     }
   }, [watchlist]);
 
+  const loadSparklines = async () => {
+    const map: Record<string, number[]> = {};
+    await Promise.allSettled(watchlist.map(async w => {
+      const res = await fetch(`/api/stocks/chart?symbol=${w.symbol}&interval=1d&range=1mo`);
+      if (res.ok) {
+        const data = await res.json() as Candle[];
+        map[w.symbol] = data.map(c => c.close);
+      }
+    }));
+    setSparklines(map);
+  };
+
   const loadChart = async (sym: string, interval: string, range: string) => {
     setLoadingChart(true);
     const res = await fetch(`/api/stocks/chart?symbol=${sym}&interval=${interval}&range=${range}`);
     if (res.ok) setCandles(await res.json() as Candle[]);
     setLoadingChart(false);
   };
-
   const loadNews = async (sym: string) => {
-    setLoadingNews(true);
     const res = await fetch(`/api/stocks/news?symbol=${sym}`);
     if (res.ok) setNews(await res.json() as NewsItem[]);
-    setLoadingNews(false);
   };
-
   const loadJournal = async (sym: string) => {
     const res = await fetch(`/api/stocks/journal?symbol=${sym}`);
     if (res.ok) setJournal(await res.json() as JournalEntry[]);
   };
-
   const loadPredictions = async (sym: string) => {
     const res = await fetch(`/api/stocks/prediction?symbol=${sym}`);
     if (res.ok) setPredictions(await res.json() as Prediction[]);
   };
 
-  // ── 검색 ──────────────────────────────────────────────────────────────────
+  // ── 검색 ─────────────────────────────────────────────────────────────────
+  const loadPopular = async () => {
+    const res = await fetch('/api/stocks/search?q=');
+    if (res.ok) setSearchResults(await res.json() as SearchResult[]);
+  };
+
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (!searchQ.trim()) { setSearchResults([]); return; }
+    if (!searchQ.trim()) { loadPopular(); return; }
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(searchQ)}`);
       if (res.ok) setSearchResults(await res.json() as SearchResult[]);
       setSearching(false);
-    }, 400);
+    }, 300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQ]);
 
-  const addToWatchlist = async (r: SearchResult) => {
+  const addStock = async (r: SearchResult) => {
     const res = await fetch('/api/stocks/watchlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol: r.symbol, name: r.name, market: r.market }),
     });
+    if (res.status === 500) { setDbError(true); showToast('DB 테이블 생성 필요'); return; }
     if (res.ok) {
-      setSearchQ(''); setSearchResults([]);
+      setShowSearch(false); setSearchQ('');
       await loadWatchlist();
+      setSelected(r.symbol);
       showToast(`${r.name} 추가됨`);
     }
   };
 
-  const removeFromWatchlist = async (item: WatchItem) => {
+  const removeStock = async (item: WatchItem) => {
     await fetch(`/api/stocks/watchlist/${item.id}`, { method: 'DELETE' });
-    setWatchlist(prev => prev.filter(w => w.id !== item.id));
-    if (selected === item.symbol) setSelected(watchlist.find(w => w.id !== item.id)?.symbol || null);
-    showToast(`${item.name} 삭제됨`);
+    const next = watchlist.filter(w => w.id !== item.id);
+    setWatchlist(next);
+    if (selected === item.symbol) setSelected(next[0]?.symbol || null);
   };
 
-  // ── 매매일지 저장 ──────────────────────────────────────────────────────────
+  // ── 매매일지 ──────────────────────────────────────────────────────────────
   const saveJournal = async () => {
     if (!selected || !jForm.quantity || !jForm.price) return;
     const wItem = watchlist.find(w => w.symbol === selected);
     const res = await fetch('/api/stocks/journal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        symbol: selected, name: wItem?.name || selected,
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: selected, name: wItem?.name || selected,
         trade_date: jForm.trade_date, trade_type: jForm.trade_type,
         quantity: parseInt(jForm.quantity), price: parseFloat(jForm.price),
-        fee: parseFloat(jForm.fee || '0'), memo: jForm.memo,
-      }),
+        fee: parseFloat(jForm.fee || '0'), memo: jForm.memo }),
     });
-    if (res.ok) {
-      setShowJournalForm(false);
-      setJForm({ trade_date: todayStr(), trade_type: 'buy', quantity: '', price: '', fee: '', memo: '' });
-      loadJournal(selected);
-      showToast('거래 기록됨');
-    }
+    if (res.ok) { setShowJournalForm(false); setJForm({ trade_date: todayStr(), trade_type: 'buy', quantity: '', price: '', fee: '', memo: '' }); loadJournal(selected); showToast('거래 기록됨'); }
   };
 
   const deleteJournal = async (id: string) => {
@@ -335,473 +334,475 @@ export default function StocksPage() {
     if (selected) loadJournal(selected);
   };
 
-  // ── 종가예측 저장 ──────────────────────────────────────────────────────────
+  // ── 종가예측 ──────────────────────────────────────────────────────────────
   const savePrediction = async () => {
     if (!selected || !pForm.predicted_close) return;
     const wItem = watchlist.find(w => w.symbol === selected);
     const res = await fetch('/api/stocks/prediction', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        symbol: selected, name: wItem?.name || selected,
-        prediction_date: pForm.prediction_date,
-        predicted_close: parseFloat(pForm.predicted_close),
-        direction: pForm.direction, note: pForm.note,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: selected, name: wItem?.name || selected,
+        prediction_date: pForm.prediction_date, predicted_close: parseFloat(pForm.predicted_close),
+        direction: pForm.direction, note: pForm.note }),
     });
-    if (res.ok) {
-      setShowPredForm(false);
-      setPForm({ prediction_date: todayStr(), predicted_close: '', direction: 'up', note: '' });
-      loadPredictions(selected);
-      showToast('예측 기록됨');
-    }
+    if (res.ok) { setShowPredForm(false); setPForm({ prediction_date: todayStr(), predicted_close: '', direction: 'up', note: '' }); loadPredictions(selected); showToast('예측 기록됨'); }
   };
 
   const updateActual = async (pred: Prediction) => {
-    const v = actualInput[pred.id];
-    if (!v) return;
-    const res = await fetch('/api/stocks/prediction', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: pred.id, actual_close: parseFloat(v) }),
-    });
-    if (res.ok) {
-      setActualInput(p => { const n = { ...p }; delete n[pred.id]; return n; });
-      if (selected) loadPredictions(selected);
-      showToast('실제 종가 기록됨');
-    }
+    const v = actualInput[pred.id]; if (!v) return;
+    const res = await fetch('/api/stocks/prediction', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pred.id, actual_close: parseFloat(v) }) });
+    if (res.ok) { setActualInput(p => { const n = { ...p }; delete n[pred.id]; return n; }); if (selected) loadPredictions(selected); showToast('실제 종가 기록됨'); }
   };
 
-  // ── 포트폴리오 계산 ────────────────────────────────────────────────────────
+  // ── 포트폴리오 계산 ───────────────────────────────────────────────────────
   const calcPortfolio = (sym: string) => {
     const entries = journal.filter(j => j.symbol === sym);
     let shares = 0, totalCost = 0;
-    entries.forEach(e => {
-      if (e.trade_type === 'buy') { shares += e.quantity; totalCost += e.quantity * e.price + (e.fee || 0); }
-      else { shares -= e.quantity; }
-    });
+    entries.forEach(e => { if (e.trade_type === 'buy') { shares += e.quantity; totalCost += e.quantity * e.price + (e.fee || 0); } else { shares -= e.quantity; } });
     if (shares <= 0) return null;
-    const avgCost = totalCost / (shares + entries.filter(e => e.trade_type === 'sell').reduce((s, e) => s + e.quantity, 0) || 1);
-    const current = quotes[sym]?.regularMarketPrice;
-    const pnl = current ? (current - avgCost) * shares : null;
-    const pnlPct = current ? ((current - avgCost) / avgCost) * 100 : null;
-    return { shares, avgCost, pnl, pnlPct };
+    const sellQty = entries.filter(e => e.trade_type === 'sell').reduce((s, e) => s + e.quantity, 0);
+    const avgCost = totalCost / ((shares + sellQty) || 1);
+    const cur = quotes[sym]?.regularMarketPrice;
+    return { shares, avgCost, pnl: cur ? (cur - avgCost) * shares : null, pnlPct: cur ? ((cur - avgCost) / avgCost) * 100 : null };
   };
 
-  // ── 선택된 종목 정보 ───────────────────────────────────────────────────────
-  const selectedQuote = selected ? quotes[selected] : null;
-  const isUp = (selectedQuote?.regularMarketChange ?? 0) >= 0;
+  const sq = selected ? quotes[selected] : null;
+  const isUp = (sq?.regularMarketChange ?? 0) >= 0;
   const portfolio = selected ? calcPortfolio(selected) : null;
+  const selName = watchlist.find(w => w.symbol === selected)?.name || selected || '';
 
-  // ── 렌더 ──────────────────────────────────────────────────────────────────
+  // ── 렌더 ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#0A0A0F] text-white select-none overflow-hidden">
+
       {/* 토스트 */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2 rounded-full text-sm shadow-lg">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-white text-gray-900 px-4 py-2 rounded-full text-sm font-medium shadow-2xl">
           {toast}
         </div>
       )}
 
-      {/* ── 헤더 ─────────────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold">📈 주식 투자</h1>
-          {/* 검색창 */}
-          <div className="relative flex-1 max-w-sm">
-            <input
-              value={searchQ}
-              onChange={e => setSearchQ(e.target.value)}
-              placeholder="종목 검색 (삼성전자, AAPL...)"
-              className="w-full bg-gray-800 text-white text-sm rounded-lg px-3 py-1.5 pl-8 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
-            {searching && <span className="absolute right-2 top-2 text-gray-400 text-xs">...</span>}
-            {searchResults.length > 0 && (
-              <div className="absolute top-full mt-1 w-full bg-gray-800 rounded-lg shadow-xl z-40 max-h-64 overflow-y-auto border border-gray-700">
-                {searchResults.map(r => (
-                  <button key={r.symbol} onClick={() => addToWatchlist(r)}
-                    className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-700 text-left text-sm">
-                    <div>
-                      <div className="font-medium">{r.name}</div>
-                      <div className="text-gray-400 text-xs">{r.symbol} · {r.exchange}</div>
+      {/* DB 오류 배너 */}
+      {dbError && (
+        <div className="flex-shrink-0 bg-orange-500/10 border-b border-orange-500/30 px-4 py-2 text-xs text-orange-300">
+          ⚠️ DB 테이블 없음 — Supabase에서 <strong>bossai_stock_watchlist</strong>, <strong>bossai_stock_journal</strong>, <strong>bossai_stock_predictions</strong> 테이블을 생성해주세요
+        </div>
+      )}
+
+      {/* 검색 모달 오버레이 */}
+      {showSearch && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowSearch(false); setSearchQ(''); } }}>
+          <div className="mx-auto w-full max-w-lg mt-16 rounded-2xl overflow-hidden" style={{ background: '#1C1C1E' }}>
+            {/* 검색 입력 */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+              <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input ref={searchInputRef} value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                placeholder="종목명 또는 코드 검색"
+                className="flex-1 bg-transparent text-white text-base placeholder-gray-500 focus:outline-none" />
+              {searching && <div className="w-4 h-4 border-2 border-gray-500 border-t-white rounded-full animate-spin" />}
+              <button onClick={() => { setShowSearch(false); setSearchQ(''); }} className="text-gray-400 hover:text-white text-sm">닫기</button>
+            </div>
+            {/* 결과 */}
+            <div className="max-h-96 overflow-y-auto">
+              {!searchQ && <div className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">인기 종목</div>}
+              {searchResults.map(r => (
+                <button key={r.symbol} onClick={() => addStock(r)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors text-left">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${r.market === 'KR' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>
+                      {r.name[0]}
                     </div>
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${r.market === 'KR' ? 'bg-blue-900 text-blue-300' : 'bg-green-900 text-green-300'}`}>
-                      {r.market === 'KR' ? '국내' : '미국'}
-                    </span>
-                  </button>
+                    <div>
+                      <div className="text-sm font-medium">{r.name}</div>
+                      <div className="text-xs text-gray-500">{r.symbol} · {r.exchange}</div>
+                    </div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.market === 'KR' ? 'bg-blue-500/15 text-blue-400' : 'bg-green-500/15 text-green-400'}`}>
+                    {r.market === 'KR' ? '국내' : '미국'}
+                  </span>
+                </button>
+              ))}
+              {searchResults.length === 0 && searchQ && !searching && (
+                <div className="px-4 py-8 text-center text-gray-500 text-sm">검색 결과 없음</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 헤더 ──────────────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #ffffff0d' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold">📈</span>
+          <span className="font-bold text-base">주식</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-gray-600">10초 갱신</div>
+          <button onClick={() => setShowSearch(true)}
+            className="flex items-center gap-2 bg-white/8 hover:bg-white/12 transition-colors rounded-xl px-3 py-2 text-sm text-gray-300">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            종목 추가
+          </button>
+        </div>
+      </div>
+
+      {/* ── 메인 레이아웃 ───────────────────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* ── 왼쪽: 관심종목 ─────────────────────────────────────────────── */}
+        <div className="flex-shrink-0 w-52 flex flex-col border-r overflow-y-auto" style={{ borderColor: '#ffffff0d', background: '#0D0D12' }}>
+          <div className="px-3 pt-3 pb-1">
+            <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider">관심종목</span>
+          </div>
+          {watchlist.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-2xl">📊</div>
+              <div className="text-xs text-gray-500 leading-relaxed">관심 종목을<br/>추가해보세요</div>
+              <button onClick={() => setShowSearch(true)} className="text-xs bg-white/8 hover:bg-white/12 px-3 py-1.5 rounded-lg text-gray-300 transition-colors">+ 종목 추가</button>
+            </div>
+          ) : (
+            <div className="space-y-0.5 px-1.5 pb-2">
+              {watchlist.map(w => {
+                const q = quotes[w.symbol];
+                const up = (q?.regularMarketChange ?? 0) >= 0;
+                const isSelected = selected === w.symbol;
+                const sp = sparklines[w.symbol] || [];
+                return (
+                  <div key={w.symbol} onClick={() => { setSelected(w.symbol); setTab('chart'); }}
+                    className={`group relative cursor-pointer rounded-xl p-2.5 transition-all ${isSelected ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                    {isSelected && <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-white rounded-full" />}
+                    <div className="flex items-start justify-between gap-1 mb-1.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-semibold truncate">{w.name}</div>
+                        <div className="text-[10px] text-gray-600 mt-0.5">{w.symbol.endsWith('.KS') ? 'KOSPI' : w.symbol.endsWith('.KQ') ? 'KOSDAQ' : 'NASDAQ/NYSE'}</div>
+                      </div>
+                      <button onClick={e => { e.stopPropagation(); removeStock(w); }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-600 hover:text-red-400 text-xs flex-shrink-0">✕</button>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <div className="text-sm font-bold tabular-nums">
+                          {q ? fmtPrice(q.regularMarketPrice, w.symbol) : <span className="text-gray-600">-</span>}
+                        </div>
+                        <div className={`text-[11px] font-medium ${up ? 'text-[#00C73C]' : 'text-[#FF3B30]'}`}>
+                          {q ? fmtPct(q.regularMarketChangePercent) : ''}
+                        </div>
+                      </div>
+                      <Sparkline data={sp} up={up} />
+                    </div>
+                  </div>
+                );
+              })}
+              <button onClick={() => setShowSearch(true)} className="w-full mt-1 py-2 text-xs text-gray-600 hover:text-gray-400 transition-colors flex items-center justify-center gap-1">
+                <span>+</span> 종목 추가
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── 오른쪽: 종목 상세 ───────────────────────────────────────────── */}
+        {!selected ? (
+          <div className="flex-1 flex items-center justify-center text-gray-600">
+            <div className="text-center">
+              <div className="text-5xl mb-3 opacity-30">📈</div>
+              <div className="text-sm">왼쪽에서 종목을 선택하세요</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* 종목 헤더 */}
+            <div className="flex-shrink-0 px-6 pt-5 pb-4" style={{ borderBottom: '1px solid #ffffff0d' }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-xl font-bold truncate">{sq?.shortName || sq?.longName || selName}</h2>
+                    {sq?.marketState && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${sq.marketState === 'REGULAR' ? 'bg-[#00C73C]/15 text-[#00C73C]' : 'bg-gray-700 text-gray-400'}`}>
+                        {sq.marketState === 'REGULAR' ? '● 장중' : sq.marketState === 'PRE' ? '프리마켓' : sq.marketState === 'POST' ? '애프터' : '마감'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-600">{selected}</div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className={`text-3xl font-black tabular-nums ${isUp ? 'text-white' : 'text-white'}`}>
+                    {fmtPrice(sq?.regularMarketPrice, selected)}
+                  </div>
+                  <div className={`text-sm font-semibold mt-0.5 ${isUp ? 'text-[#00C73C]' : 'text-[#FF3B30]'}`}>
+                    {sq ? (isUp ? '+' : '') + sq.regularMarketChange?.toFixed(isKrSymbol(selected) ? 0 : 2) + ' (' + fmtPct(sq.regularMarketChangePercent) + ')' : ''}
+                  </div>
+                </div>
+              </div>
+
+              {/* 주요 지표 */}
+              <div className="mt-4 grid grid-cols-4 gap-2">
+                {[
+                  { label: '시가', value: fmtPrice(sq?.regularMarketOpen, selected) },
+                  { label: '고가', value: fmtPrice(sq?.regularMarketDayHigh, selected), color: 'text-[#00C73C]' },
+                  { label: '저가', value: fmtPrice(sq?.regularMarketDayLow, selected), color: 'text-[#FF3B30]' },
+                  { label: '거래량', value: fmtVol(sq?.regularMarketVolume) },
+                ].map(item => (
+                  <div key={item.label} className="rounded-xl p-2.5" style={{ background: '#1C1C1E' }}>
+                    <div className="text-[10px] text-gray-600 mb-0.5">{item.label}</div>
+                    <div className={`text-xs font-semibold tabular-nums ${item.color || 'text-white'}`}>{item.value}</div>
+                  </div>
                 ))}
               </div>
-            )}
-          </div>
-          <div className="text-xs text-gray-500">30초 자동갱신</div>
-        </div>
-      </div>
 
-      {/* ── 즐겨찾기 바 ──────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 overflow-x-auto">
-        <div className="flex gap-2 px-3 py-2 min-w-max">
-          {watchlist.length === 0 && (
-            <div className="text-gray-500 text-sm px-2 py-1">위 검색창에서 종목을 추가하세요</div>
-          )}
-          {watchlist.map(w => {
-            const q = quotes[w.symbol];
-            const up = (q?.regularMarketChange ?? 0) >= 0;
-            const isKr = w.symbol.endsWith('.KS') || w.symbol.endsWith('.KQ');
-            return (
-              <div key={w.symbol} className={`relative group flex-shrink-0 cursor-pointer rounded-lg px-3 py-2 border transition-all ${selected === w.symbol ? 'bg-blue-900/40 border-blue-600' : 'bg-gray-800 border-gray-700 hover:border-gray-600'}`}
-                onClick={() => setSelected(w.symbol)}>
-                <button onClick={e => { e.stopPropagation(); removeFromWatchlist(w); }}
-                  className="absolute -top-1 -right-1 hidden group-hover:flex w-4 h-4 bg-red-500 rounded-full text-xs items-center justify-center leading-none">×</button>
-                <div className="flex items-center gap-2">
-                  <div>
-                    <div className="text-xs font-medium text-gray-300 whitespace-nowrap">{w.name}</div>
-                    <div className="text-sm font-bold whitespace-nowrap">
-                      {q ? (isKr ? (q.regularMarketPrice?.toLocaleString('ko-KR') + '원') : ('$' + q.regularMarketPrice?.toFixed(2))) : '-'}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className={`text-xs font-medium ${up ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {q ? `${up ? '+' : ''}${q.regularMarketChangePercent?.toFixed(2)}%` : ''}
-                    </div>
-                    <div className="text-xs text-gray-500">{w.symbol.endsWith('.KS') ? 'KOSPI' : w.symbol.endsWith('.KQ') ? 'KOSDAQ' : 'US'}</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── 본문 ─────────────────────────────────────────────────────────── */}
-      {!selected ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500">
-          <div className="text-center">
-            <div className="text-4xl mb-2">📈</div>
-            <div>위에서 종목을 검색해서 추가하세요</div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* 종목 헤더 */}
-          <div className="flex-shrink-0 bg-gray-900 px-4 py-3 border-b border-gray-800">
-            <div className="flex flex-wrap items-start gap-x-6 gap-y-1">
-              <div>
-                <div className="text-xl font-bold">{selectedQuote?.shortName || selectedQuote?.longName || watchlist.find(w => w.symbol === selected)?.name || selected}</div>
-                <div className="text-xs text-gray-400">{selected} · {selectedQuote?.marketState === 'REGULAR' ? '🟢 장중' : selectedQuote?.marketState === 'PRE' ? '🌅 프리마켓' : selectedQuote?.marketState === 'POST' ? '🌙 애프터마켓' : '🔴 장 마감'}</div>
-              </div>
-              <div>
-                <div className={`text-2xl font-bold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {fmtPrice(selectedQuote?.regularMarketPrice, selectedQuote?.currency)}
-                </div>
-                <div className={`text-sm ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {fmtChg(selectedQuote?.regularMarketChange, selectedQuote?.regularMarketChangePercent)}
-                </div>
-              </div>
-              <div className="hidden sm:grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-400">
-                <div>시가: <span className="text-gray-200">{fmtPrice(selectedQuote?.regularMarketOpen, selectedQuote?.currency)}</span></div>
-                <div>고가: <span className="text-emerald-300">{fmtPrice(selectedQuote?.regularMarketDayHigh, selectedQuote?.currency)}</span></div>
-                <div>전일: <span className="text-gray-200">{fmtPrice(selectedQuote?.previousClose, selectedQuote?.currency)}</span></div>
-                <div>저가: <span className="text-red-300">{fmtPrice(selectedQuote?.regularMarketDayLow, selectedQuote?.currency)}</span></div>
-              </div>
-              <div className="hidden sm:grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-400">
-                <div>거래량: <span className="text-gray-200">{fmtVol(selectedQuote?.regularMarketVolume)}</span></div>
-                <div>시총: <span className="text-gray-200">{fmtMarketCap(selectedQuote?.marketCap)}</span></div>
-                <div>52주고: <span className="text-emerald-300">{fmtPrice(selectedQuote?.fiftyTwoWeekHigh, selectedQuote?.currency)}</span></div>
-                <div>52주저: <span className="text-red-300">{fmtPrice(selectedQuote?.fiftyTwoWeekLow, selectedQuote?.currency)}</span></div>
-              </div>
+              {/* 포트폴리오 요약 (보유 시) */}
               {portfolio && (
-                <div className={`ml-auto px-3 py-1.5 rounded-lg text-xs border ${(portfolio.pnl ?? 0) >= 0 ? 'bg-emerald-900/30 border-emerald-700' : 'bg-red-900/30 border-red-700'}`}>
-                  <div className="font-semibold">{portfolio.shares}주 보유</div>
-                  <div>평균 {fmtPrice(portfolio.avgCost, selectedQuote?.currency)}</div>
+                <div className="mt-3 rounded-xl px-3 py-2.5 flex items-center justify-between" style={{ background: '#1C1C1E' }}>
+                  <div className="text-xs text-gray-500">{portfolio.shares}주 보유 · 평균 {fmtPrice(portfolio.avgCost, selected)}</div>
                   {portfolio.pnl !== null && (
-                    <div className={(portfolio.pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                      {(portfolio.pnl ?? 0) >= 0 ? '+' : ''}{portfolio.pnl?.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}
-                      ({(portfolio.pnlPct ?? 0) >= 0 ? '+' : ''}{portfolio.pnlPct?.toFixed(2)}%)
+                    <div className={`text-sm font-bold ${(portfolio.pnl) >= 0 ? 'text-[#00C73C]' : 'text-[#FF3B30]'}`}>
+                      {portfolio.pnl >= 0 ? '+' : ''}{portfolio.pnl.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}
+                      <span className="text-xs ml-1">({portfolio.pnlPct! >= 0 ? '+' : ''}{portfolio.pnlPct!.toFixed(2)}%)</span>
                     </div>
                   )}
                 </div>
               )}
             </div>
-          </div>
 
-          {/* 탭 */}
-          <div className="flex-shrink-0 flex border-b border-gray-800 bg-gray-900">
-            {[
-              { id: 'chart', label: '📊 차트' },
-              { id: 'news', label: '📰 뉴스' },
-              { id: 'journal', label: '📝 매매일지' },
-              { id: 'prediction', label: '🎯 종가예측' },
-            ].map(t => (
-              <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-200'}`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+            {/* 탭 */}
+            <div className="flex-shrink-0 flex px-6 gap-6" style={{ borderBottom: '1px solid #ffffff0d' }}>
+              {[{ id: 'chart', label: '차트' }, { id: 'news', label: '뉴스' }, { id: 'journal', label: '매매일지' }, { id: 'prediction', label: '종가예측' }].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
+                  className={`py-3 text-sm font-semibold border-b-2 transition-colors -mb-px ${tab === t.id ? 'border-white text-white' : 'border-transparent text-gray-600 hover:text-gray-400'}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
 
-          {/* 탭 컨텐츠 */}
-          <div className="flex-1 overflow-y-auto">
+            {/* 탭 콘텐츠 */}
+            <div className="flex-1 overflow-y-auto">
 
-            {/* ── 차트 탭 ─────────────────────────────────────────────── */}
-            {tab === 'chart' && (
-              <div className="flex flex-col h-full">
-                {/* 인터벌 선택 */}
-                <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800 flex-wrap">
-                  <div className="flex gap-1">
+              {/* 차트 탭 */}
+              {tab === 'chart' && (
+                <div className="flex flex-col h-full">
+                  {/* 인터벌 버튼 */}
+                  <div className="flex-shrink-0 flex gap-1 px-4 pt-3 pb-2 flex-wrap">
                     {[
-                      { interval: '1m', range: '1d', label: '1분' },
-                      { interval: '5m', range: '5d', label: '5분' },
-                      { interval: '15m', range: '5d', label: '15분' },
-                      { interval: '1h', range: '1mo', label: '1시간' },
-                      { interval: '1d', range: '3mo', label: '일봉' },
-                      { interval: '1d', range: '1y', label: '1년' },
-                      { interval: '1wk', range: '2y', label: '주봉' },
-                      { interval: '1mo', range: '5y', label: '월봉' },
-                    ].map(opt => (
-                      <button key={`${opt.interval}-${opt.range}`}
-                        onClick={() => { setChartInterval(opt.interval); setChartRange(opt.range); }}
-                        className={`px-2 py-1 text-xs rounded ${chartInterval === opt.interval && chartRange === opt.range ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-                        {opt.label}
+                      { i: '5m',  r: '5d',  l: '5분' },
+                      { i: '15m', r: '5d',  l: '15분' },
+                      { i: '1h',  r: '1mo', l: '1시간' },
+                      { i: '1d',  r: '3mo', l: '일봉' },
+                      { i: '1d',  r: '1y',  l: '1년' },
+                      { i: '1wk', r: '2y',  l: '주봉' },
+                      { i: '1mo', r: '5y',  l: '월봉' },
+                    ].map(o => (
+                      <button key={o.i+o.r} onClick={() => { setChartInterval(o.i); setChartRange(o.r); }}
+                        className={`px-3 py-1 text-xs rounded-full font-medium transition-colors ${chartInterval === o.i && chartRange === o.r ? 'bg-white text-black' : 'bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}>
+                        {o.l}
                       </button>
                     ))}
+                    {loadingChart && <div className="w-4 h-4 border-2 border-gray-600 border-t-gray-300 rounded-full animate-spin ml-1 self-center" />}
                   </div>
-                  {loadingChart && <span className="text-xs text-gray-500">로딩중...</span>}
+                  <div className="flex-1 min-h-0 px-2 pb-2">
+                    {candles.length > 0
+                      ? <CandleChart candles={candles} interval={chartInterval} />
+                      : <div className="flex items-center justify-center h-full text-gray-700 text-sm">{loadingChart ? '로딩중...' : '데이터 없음'}</div>}
+                  </div>
                 </div>
-                {/* 캔들 차트 */}
-                <div className="flex-1 min-h-0 p-2">
-                  {candles.length > 0
-                    ? <CandleChart candles={candles} interval={chartInterval} />
-                    : <div className="flex items-center justify-center h-full text-gray-500">{loadingChart ? '차트 로딩중...' : '데이터 없음'}</div>
-                  }
-                </div>
-              </div>
-            )}
+              )}
 
-            {/* ── 뉴스 탭 ─────────────────────────────────────────────── */}
-            {tab === 'news' && (
-              <div className="p-4">
-                {loadingNews && <div className="text-gray-500 text-sm">뉴스 로딩중...</div>}
-                {!loadingNews && news.length === 0 && <div className="text-gray-500 text-sm">뉴스가 없습니다.</div>}
-                <div className="space-y-3">
+              {/* 뉴스 탭 */}
+              {tab === 'news' && (
+                <div className="px-4 py-3 space-y-2">
+                  {news.length === 0 && <div className="py-12 text-center text-gray-600 text-sm">뉴스가 없습니다</div>}
                   {news.map(n => (
                     <a key={n.id} href={n.link} target="_blank" rel="noopener noreferrer"
-                      className="flex gap-3 p-3 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors">
-                      {n.thumbnail && <img src={n.thumbnail} alt="" className="w-16 h-12 object-cover rounded flex-shrink-0" />}
+                      className="flex gap-3 p-3 rounded-2xl hover:bg-white/5 transition-colors"
+                      style={{ background: '#1C1C1E' }}>
+                      {n.thumbnail && <img src={n.thumbnail} alt="" className="w-16 h-12 object-cover rounded-xl flex-shrink-0" />}
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium line-clamp-2">{n.title}</div>
-                        <div className="text-xs text-gray-400 mt-1">{n.publisher} · {relTime(n.publishedAt)}</div>
+                        <div className="text-sm font-medium leading-snug line-clamp-2">{n.title}</div>
+                        <div className="text-[11px] text-gray-600 mt-1.5">{n.publisher} · {relTime(n.publishedAt)}</div>
                       </div>
                     </a>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* ── 매매일지 탭 ──────────────────────────────────────────── */}
-            {tab === 'journal' && (
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">매매 기록</h3>
+              {/* 매매일지 탭 */}
+              {tab === 'journal' && (
+                <div className="px-4 py-3">
                   <button onClick={() => setShowJournalForm(true)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-1.5 rounded-lg">+ 거래 추가</button>
-                </div>
+                    className="w-full py-3 rounded-2xl text-sm font-semibold mb-4 transition-colors"
+                    style={{ background: '#1C1C1E', color: '#fff' }}>
+                    + 거래 기록
+                  </button>
 
-                {/* 거래 입력 폼 */}
-                {showJournalForm && (
-                  <div className="bg-gray-800 rounded-xl p-4 mb-4 border border-gray-700">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs text-gray-400">날짜</label>
-                        <input type="date" value={jForm.trade_date} onChange={e => setJForm(p => ({ ...p, trade_date: e.target.value }))}
-                          className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
+                  {showJournalForm && (
+                    <div className="rounded-2xl p-4 mb-4" style={{ background: '#1C1C1E' }}>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="text-xs text-gray-600">날짜</span>
+                          <input type="date" value={jForm.trade_date} onChange={e => setJForm(p => ({ ...p, trade_date: e.target.value }))}
+                            className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-600">구분</span>
+                          <div className="flex gap-2 mt-1">
+                            {['buy','sell'].map(t => (
+                              <button key={t} onClick={() => setJForm(p => ({ ...p, trade_type: t as 'buy'|'sell' }))}
+                                className={`flex-1 py-2 text-sm rounded-xl font-semibold transition-colors ${jForm.trade_type === t ? (t==='buy' ? 'bg-blue-500 text-white' : 'bg-[#FF3B30] text-white') : 'bg-white/5 text-gray-500'}`}>
+                                {t === 'buy' ? '매수' : '매도'}
+                              </button>
+                            ))}
+                          </div>
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-600">수량</span>
+                          <input type="number" value={jForm.quantity} onChange={e => setJForm(p => ({ ...p, quantity: e.target.value }))}
+                            placeholder="100" className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-600">단가</span>
+                          <input type="number" value={jForm.price} onChange={e => setJForm(p => ({ ...p, price: e.target.value }))}
+                            placeholder="83200" className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-600">수수료</span>
+                          <input type="number" value={jForm.fee} onChange={e => setJForm(p => ({ ...p, fee: e.target.value }))}
+                            placeholder="0" className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-600">메모</span>
+                          <input value={jForm.memo} onChange={e => setJForm(p => ({ ...p, memo: e.target.value }))}
+                            placeholder="메모" className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
                       </div>
-                      <div>
-                        <label className="text-xs text-gray-400">구분</label>
-                        <div className="flex gap-2 mt-0.5">
-                          {['buy', 'sell'].map(t => (
-                            <button key={t} onClick={() => setJForm(p => ({ ...p, trade_type: t as 'buy' | 'sell' }))}
-                              className={`flex-1 py-1.5 text-sm rounded ${jForm.trade_type === t ? (t === 'buy' ? 'bg-blue-600 text-white' : 'bg-red-600 text-white') : 'bg-gray-700 text-gray-400'}`}>
-                              {t === 'buy' ? '매수' : '매도'}
-                            </button>
-                          ))}
+                      {jForm.quantity && jForm.price && (
+                        <div className="mt-3 text-sm text-gray-400">
+                          거래금액 <span className="font-bold text-white">{(parseInt(jForm.quantity) * parseFloat(jForm.price)).toLocaleString('ko-KR')}</span>
                         </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">수량</label>
-                        <input type="number" value={jForm.quantity} onChange={e => setJForm(p => ({ ...p, quantity: e.target.value }))}
-                          placeholder="100" className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">단가</label>
-                        <input type="number" value={jForm.price} onChange={e => setJForm(p => ({ ...p, price: e.target.value }))}
-                          placeholder="83200" className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">수수료</label>
-                        <input type="number" value={jForm.fee} onChange={e => setJForm(p => ({ ...p, fee: e.target.value }))}
-                          placeholder="0" className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">메모</label>
-                        <input value={jForm.memo} onChange={e => setJForm(p => ({ ...p, memo: e.target.value }))}
-                          placeholder="기록 메모" className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
+                      )}
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={saveJournal} className="flex-1 py-2.5 bg-white text-black text-sm font-bold rounded-xl">저장</button>
+                        <button onClick={() => setShowJournalForm(false)} className="flex-1 py-2.5 bg-white/8 text-gray-400 text-sm rounded-xl">취소</button>
                       </div>
                     </div>
-                    {jForm.quantity && jForm.price && (
-                      <div className="mt-2 text-sm text-gray-300">
-                        거래금액: <span className="font-bold text-white">
-                          {(parseInt(jForm.quantity) * parseFloat(jForm.price)).toLocaleString('ko-KR')}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex gap-2 mt-3">
-                      <button onClick={saveJournal} className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-1.5 rounded-lg">저장</button>
-                      <button onClick={() => setShowJournalForm(false)} className="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-4 py-1.5 rounded-lg">취소</button>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {/* 수익률 요약 */}
-                {portfolio && (
-                  <div className={`rounded-xl p-3 mb-4 border ${(portfolio.pnl ?? 0) >= 0 ? 'bg-emerald-900/20 border-emerald-700/50' : 'bg-red-900/20 border-red-700/50'}`}>
-                    <div className="text-xs text-gray-400 mb-1">포트폴리오 요약</div>
-                    <div className="flex gap-4 flex-wrap">
-                      <div><span className="text-xs text-gray-400">보유수량 </span><span className="font-bold">{portfolio.shares}주</span></div>
-                      <div><span className="text-xs text-gray-400">평균단가 </span><span className="font-bold">{portfolio.avgCost?.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}</span></div>
-                      {portfolio.pnl !== null && <>
-                        <div><span className="text-xs text-gray-400">평가손익 </span><span className={`font-bold ${(portfolio.pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(portfolio.pnl ?? 0) >= 0 ? '+' : ''}{portfolio.pnl?.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}</span></div>
-                        <div><span className="text-xs text-gray-400">수익률 </span><span className={`font-bold ${(portfolio.pnlPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(portfolio.pnlPct ?? 0) >= 0 ? '+' : ''}{portfolio.pnlPct?.toFixed(2)}%</span></div>
-                      </>}
-                    </div>
-                  </div>
-                )}
-
-                {/* 거래 목록 */}
-                <div className="space-y-2">
-                  {journal.length === 0 && <div className="text-gray-500 text-sm">매매 기록이 없습니다.</div>}
-                  {journal.map(j => (
-                    <div key={j.id} className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
-                      <div className="flex items-center gap-3">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${j.trade_type === 'buy' ? 'bg-blue-900 text-blue-300' : 'bg-red-900 text-red-300'}`}>
-                          {j.trade_type === 'buy' ? '매수' : '매도'}
-                        </span>
-                        <div>
-                          <div className="text-sm">{j.trade_date} · {j.quantity.toLocaleString()}주 × {j.price.toLocaleString('ko-KR')}</div>
-                          <div className="text-xs text-gray-400">
-                            합계 {(j.quantity * j.price).toLocaleString('ko-KR')} {j.fee ? `· 수수료 ${j.fee.toLocaleString()}` : ''}
-                            {j.memo ? ` · ${j.memo}` : ''}
+                  {journal.length === 0 && !showJournalForm && <div className="py-8 text-center text-gray-600 text-sm">매매 기록이 없습니다</div>}
+                  <div className="space-y-2">
+                    {journal.map(j => (
+                      <div key={j.id} className="flex items-center justify-between rounded-2xl px-3 py-3" style={{ background: '#1C1C1E' }}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${j.trade_type === 'buy' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'}`}>
+                            {j.trade_type === 'buy' ? '매' : '도'}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium">{j.trade_date} · {j.quantity.toLocaleString()}주 × {j.price.toLocaleString('ko-KR')}</div>
+                            <div className="text-xs text-gray-600">
+                              합계 {(j.quantity * j.price).toLocaleString('ko-KR')}{j.memo ? ` · ${j.memo}` : ''}
+                            </div>
                           </div>
                         </div>
+                        <button onClick={() => deleteJournal(j.id)} className="text-gray-700 hover:text-red-400 text-xs transition-colors">삭제</button>
                       </div>
-                      <button onClick={() => deleteJournal(j.id)} className="text-gray-500 hover:text-red-400 text-xs px-2">삭제</button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* ── 종가예측 탭 ──────────────────────────────────────────── */}
-            {tab === 'prediction' && (
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">종가 예측 기록</h3>
+              {/* 종가예측 탭 */}
+              {tab === 'prediction' && (
+                <div className="px-4 py-3">
                   <button onClick={() => setShowPredForm(true)}
-                    className="bg-purple-600 hover:bg-purple-500 text-white text-sm px-3 py-1.5 rounded-lg">+ 예측 추가</button>
-                </div>
+                    className="w-full py-3 rounded-2xl text-sm font-semibold mb-4" style={{ background: '#1C1C1E', color: '#fff' }}>
+                    + 오늘 종가 예측
+                  </button>
 
-                {/* 예측 입력 폼 */}
-                {showPredForm && (
-                  <div className="bg-gray-800 rounded-xl p-4 mb-4 border border-gray-700">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs text-gray-400">예측 날짜</label>
-                        <input type="date" value={pForm.prediction_date} onChange={e => setPForm(p => ({ ...p, prediction_date: e.target.value }))}
-                          className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">예상 종가</label>
-                        <input type="number" value={pForm.predicted_close} onChange={e => setPForm(p => ({ ...p, predicted_close: e.target.value }))}
-                          placeholder="83500" className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">방향</label>
-                        <div className="flex gap-1 mt-0.5">
-                          {[{ v: 'up', l: '📈 상승' }, { v: 'down', l: '📉 하락' }, { v: 'neutral', l: '➡️ 횡보' }].map(d => (
-                            <button key={d.v} onClick={() => setPForm(p => ({ ...p, direction: d.v }))}
-                              className={`flex-1 py-1 text-xs rounded ${pForm.direction === d.v ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400'}`}>
-                              {d.l}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">메모</label>
-                        <input value={pForm.note} onChange={e => setPForm(p => ({ ...p, note: e.target.value }))}
-                          placeholder="예측 근거" className="w-full bg-gray-700 text-white text-sm rounded px-2 py-1.5 mt-0.5" />
-                      </div>
-                    </div>
-                    <div className="flex gap-2 mt-3">
-                      <button onClick={savePrediction} className="bg-purple-600 hover:bg-purple-500 text-white text-sm px-4 py-1.5 rounded-lg">저장</button>
-                      <button onClick={() => setShowPredForm(false)} className="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-4 py-1.5 rounded-lg">취소</button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 정확도 통계 */}
-                {predictions.filter(p => p.accuracy_pct !== null).length > 0 && (() => {
-                  const withActual = predictions.filter(p => p.accuracy_pct !== null);
-                  const avgAcc = withActual.reduce((s, p) => s + (p.accuracy_pct ?? 0), 0) / withActual.length;
-                  const hitRate = withActual.filter(p => (p.accuracy_pct ?? 0) >= 95).length / withActual.length * 100;
-                  return (
-                    <div className="bg-purple-900/20 border border-purple-700/50 rounded-xl p-3 mb-4">
-                      <div className="text-xs text-gray-400 mb-1">예측 성과</div>
-                      <div className="flex gap-4">
-                        <div><span className="text-xs text-gray-400">평균 정확도 </span><span className="font-bold text-purple-300">{avgAcc.toFixed(1)}%</span></div>
-                        <div><span className="text-xs text-gray-400">±5% 적중률 </span><span className="font-bold text-purple-300">{hitRate.toFixed(0)}%</span></div>
-                        <div><span className="text-xs text-gray-400">기록 수 </span><span className="font-bold">{withActual.length}건</span></div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 예측 목록 */}
-                <div className="space-y-2">
-                  {predictions.length === 0 && <div className="text-gray-500 text-sm">예측 기록이 없습니다.</div>}
-                  {predictions.map(p => (
-                    <div key={p.id} className="bg-gray-800 rounded-lg px-3 py-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium">{p.prediction_date}</span>
-                          <span className="text-xs">{p.direction === 'up' ? '📈' : p.direction === 'down' ? '📉' : '➡️'}</span>
-                          <span className="text-sm">예상 <span className="font-bold text-yellow-300">{p.predicted_close.toLocaleString('ko-KR')}</span></span>
-                          {p.actual_close !== null && (
-                            <span className="text-sm">실제 <span className={`font-bold ${p.actual_close >= p.predicted_close ? 'text-emerald-300' : 'text-red-300'}`}>{p.actual_close.toLocaleString('ko-KR')}</span></span>
-                          )}
-                          {p.accuracy_pct !== null && (
-                            <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${(p.accuracy_pct ?? 0) >= 95 ? 'bg-emerald-900 text-emerald-300' : (p.accuracy_pct ?? 0) >= 85 ? 'bg-yellow-900 text-yellow-300' : 'bg-red-900 text-red-300'}`}>
-                              {p.accuracy_pct.toFixed(1)}%
-                            </span>
-                          )}
-                        </div>
-                        {/* 실제 종가 입력 */}
-                        {p.actual_close === null && (
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <input type="number" value={actualInput[p.id] || ''} onChange={e => setActualInput(prev => ({ ...prev, [p.id]: e.target.value }))}
-                              placeholder="실제종가" className="w-20 bg-gray-700 text-white text-xs rounded px-2 py-1" />
-                            <button onClick={() => updateActual(p)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-2 py-1 rounded">확인</button>
+                  {showPredForm && (
+                    <div className="rounded-2xl p-4 mb-4" style={{ background: '#1C1C1E' }}>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="text-xs text-gray-600">날짜</span>
+                          <input type="date" value={pForm.prediction_date} onChange={e => setPForm(p => ({ ...p, prediction_date: e.target.value }))}
+                            className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-600">예상 종가</span>
+                          <input type="number" value={pForm.predicted_close} onChange={e => setPForm(p => ({ ...p, predicted_close: e.target.value }))}
+                            placeholder="83500" className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
+                        <label className="col-span-2 block">
+                          <span className="text-xs text-gray-600">방향</span>
+                          <div className="flex gap-2 mt-1">
+                            {[{v:'up',l:'📈 상승'},{v:'down',l:'📉 하락'},{v:'neutral',l:'➡️ 횡보'}].map(d => (
+                              <button key={d.v} onClick={() => setPForm(p => ({ ...p, direction: d.v }))}
+                                className={`flex-1 py-2 text-sm rounded-xl transition-colors ${pForm.direction === d.v ? 'bg-white/15 text-white' : 'bg-white/5 text-gray-600'}`}>
+                                {d.l}
+                              </button>
+                            ))}
                           </div>
-                        )}
+                        </label>
+                        <label className="col-span-2 block">
+                          <span className="text-xs text-gray-600">예측 근거</span>
+                          <input value={pForm.note} onChange={e => setPForm(p => ({ ...p, note: e.target.value }))}
+                            placeholder="예측 근거를 입력하세요" className="w-full mt-1 bg-white/5 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20" />
+                        </label>
                       </div>
-                      {p.note && <div className="text-xs text-gray-400 mt-1">💬 {p.note}</div>}
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={savePrediction} className="flex-1 py-2.5 bg-white text-black text-sm font-bold rounded-xl">저장</button>
+                        <button onClick={() => setShowPredForm(false)} className="flex-1 py-2.5 bg-white/8 text-gray-400 text-sm rounded-xl">취소</button>
+                      </div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* 정확도 통계 */}
+                  {predictions.filter(p => p.accuracy_pct !== null).length > 0 && (() => {
+                    const w = predictions.filter(p => p.accuracy_pct !== null);
+                    const avg = w.reduce((s, p) => s + (p.accuracy_pct ?? 0), 0) / w.length;
+                    const hit = w.filter(p => (p.accuracy_pct ?? 0) >= 95).length / w.length * 100;
+                    return (
+                      <div className="rounded-2xl p-3 mb-3 grid grid-cols-3 gap-2" style={{ background: '#1C1C1E' }}>
+                        <div className="text-center"><div className="text-lg font-black">{avg.toFixed(1)}%</div><div className="text-[10px] text-gray-600 mt-0.5">평균 정확도</div></div>
+                        <div className="text-center"><div className="text-lg font-black">{hit.toFixed(0)}%</div><div className="text-[10px] text-gray-600 mt-0.5">±5% 적중률</div></div>
+                        <div className="text-center"><div className="text-lg font-black">{w.length}</div><div className="text-[10px] text-gray-600 mt-0.5">기록 수</div></div>
+                      </div>
+                    );
+                  })()}
+
+                  {predictions.length === 0 && !showPredForm && <div className="py-8 text-center text-gray-600 text-sm">예측 기록이 없습니다</div>}
+                  <div className="space-y-2">
+                    {predictions.map(p => (
+                      <div key={p.id} className="rounded-2xl px-3 py-3" style={{ background: '#1C1C1E' }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium">{p.prediction_date}</span>
+                            <span>{p.direction === 'up' ? '📈' : p.direction === 'down' ? '📉' : '➡️'}</span>
+                            <span className="text-sm">예상 <span className="font-bold text-yellow-400">{p.predicted_close.toLocaleString('ko-KR')}</span></span>
+                            {p.actual_close !== null && <span className="text-sm">실제 <span className={`font-bold ${p.actual_close >= p.predicted_close ? 'text-[#00C73C]' : 'text-[#FF3B30]'}`}>{p.actual_close.toLocaleString('ko-KR')}</span></span>}
+                            {p.accuracy_pct !== null && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${p.accuracy_pct >= 95 ? 'bg-[#00C73C]/15 text-[#00C73C]' : p.accuracy_pct >= 85 ? 'bg-yellow-500/15 text-yellow-400' : 'bg-[#FF3B30]/15 text-[#FF3B30]'}`}>
+                                {p.accuracy_pct.toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                          {p.actual_close === null && (
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <input type="number" value={actualInput[p.id] || ''} onChange={e => setActualInput(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                placeholder="실제종가" className="w-24 bg-white/5 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none" />
+                              <button onClick={() => updateActual(p)} className="bg-[#00C73C]/20 text-[#00C73C] text-xs px-2 py-1.5 rounded-lg font-medium">확인</button>
+                            </div>
+                          )}
+                        </div>
+                        {p.note && <div className="text-xs text-gray-600 mt-1.5">{p.note}</div>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
