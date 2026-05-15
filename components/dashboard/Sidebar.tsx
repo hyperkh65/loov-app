@@ -65,6 +65,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: '투자',
+    items: [
+      { href: '/dashboard/stocks', icon: '📈', label: '주식 투자' },
+    ],
+  },
+  {
     label: '성장',
     items: [
       { href: '/dashboard/insights',  icon: '🧠', label: 'AI 인사이트' },

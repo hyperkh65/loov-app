@@ -29,6 +29,7 @@
     "fast-xml-parser": "^5.5.10",
     "html2canvas": "^1.4.1",
     "leaflet": "^1.9.4",
+    "lightweight-charts": "^5.2.0",
     "lucide-react": "^0.577.0",
     "mammoth": "^1.11.0",
     "mp4-muxer": "^5.2.2",
