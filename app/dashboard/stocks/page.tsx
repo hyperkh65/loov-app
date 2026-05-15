@@ -220,7 +220,7 @@ export default function StocksPage() {
     }
     setLoadingChart(false);
   };
-  const loadNews = async(sym:string)=>{const r=await fetch(`/api/stocks/news?symbol=${sym}`);if(r.ok)setNews(await r.json() as NewsItem[]);};
+  const loadNews = async(sym:string)=>{const name=watchlist.find(w=>w.symbol===sym)?.name||'';const r=await fetch(`/api/stocks/news?symbol=${encodeURIComponent(sym)}&name=${encodeURIComponent(name)}`);if(r.ok)setNews(await r.json() as NewsItem[]);};
   const loadJournal = async(sym:string)=>{const r=await fetch(`/api/stocks/journal?symbol=${sym}`);if(r.ok)setJournal(await r.json() as JournalEntry[]);};
   const loadPreds = async(sym:string)=>{const r=await fetch(`/api/stocks/prediction?symbol=${sym}`);if(r.ok)setPreds(await r.json() as Prediction[]);};
 
