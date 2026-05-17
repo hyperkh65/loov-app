@@ -7,71 +7,52 @@ interface Stock { symbol: string; name: string; exchange: string; market: string
 // ── 서버 메모리 캐시 (재시작 전까지 유지) ─────────────────────────────────
 const cache: { kr: Stock[]; us: Stock[]; expiry: number } = { kr: [], us: [], expiry: 0 };
 
-// ── 최근 영업일 목록 (주말 제외, 최대 5개) ───────────────────────────────
-function recentWeekdays(n = 5): string[] {
-  const dates: string[] = [];
-  const d = new Date();
-  while (dates.length < n) {
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) {
-      dates.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`);
-    }
-    d.setDate(d.getDate() - 1);
+// ── 네이버 증시 시세 목록 스크래핑 (KOSPI/KOSDAQ 전체 상장 종목) ──────────
+async function fetchNaverMarket(sosok: 0|1, exchange: string, suffix: 'KS'|'KQ'): Promise<Stock[]> {
+  const stocks: Stock[] = [];
+  const seen = new Set<string>();
+
+  async function fetchPage(page: number): Promise<Stock[]> {
+    const url = `https://finance.naver.com/sise/sise_market_sum.nhn?sosok=${sosok}&page=${page}`;
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept-Language': 'ko-KR,ko;q=0.9' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return [];
+      const buf = await res.arrayBuffer();
+      const html = new TextDecoder('euc-kr').decode(buf);
+      // 종목코드 + 이름 추출
+      const items = [...html.matchAll(/code=(\d{6})[^>]*>([^<]+)<\/a>/g)];
+      return items
+        .filter(m => /^\d{6}$/.test(m[1]))
+        .map(m => ({ symbol: `${m[1]}.${suffix}`, name: m[2].trim(), exchange, market: 'KR' }));
+    } catch { return []; }
   }
-  return dates;
-}
 
-// ── 한국 KRX 전체 목록 fetch ──────────────────────────────────────────────
-async function fetchKrxAll(): Promise<Stock[]> {
-  const results: Stock[] = [];
-
-  for (const [mktId, exchange] of [['STK', 'KOSPI'], ['KSQ', 'KOSDAQ']] as const) {
-    let fetched = false;
-    for (const trdDd of recentWeekdays(5)) {
-      try {
-        const body = new URLSearchParams({
-          bld: 'dbms/MDC/STAT/standard/MDCSTAT01901',
-          locale: 'ko_KR',
-          mktId,
-          trdDd,
-          share: '1',
-          money: '1',
-          csvxls_isNo: 'false',
-        });
-        const res = await fetch('https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-            'Referer': 'https://data.krx.co.kr/',
-            'Accept': 'application/json',
-          },
-          body: body.toString(),
-          signal: AbortSignal.timeout(12000),
-        });
-        if (!res.ok) continue;
-        const data = await res.json() as { OutBlock_1?: Array<{ ISU_SRT_CD: string; ISU_ABBRV: string }> };
-        const rows = data.OutBlock_1 || [];
-        if (!rows.length) continue; // 휴장일이면 빈 배열 → 이전 날 재시도
-        for (const r of rows) {
-          if (r.ISU_SRT_CD && r.ISU_ABBRV) {
-            results.push({
-              symbol: `${r.ISU_SRT_CD}.${mktId === 'STK' ? 'KS' : 'KQ'}`,
-              name: r.ISU_ABBRV.trim(),
-              exchange,
-              market: 'KR',
-            });
-          }
-        }
-        fetched = true;
-        break;
-      } catch (e) {
-        console.error(`[krx] ${mktId} ${trdDd}:`, (e as Error).message);
+  // 배치 10페이지씩 병렬 fetch, 빈 페이지 만나면 종료
+  for (let start = 1; start <= 80; start += 10) {
+    const pages = Array.from({ length: 10 }, (_, i) => start + i);
+    const results = await Promise.all(pages.map(fetchPage));
+    let anyData = false;
+    for (const items of results) {
+      for (const s of items) {
+        if (!seen.has(s.symbol)) { seen.add(s.symbol); stocks.push(s); anyData = true; }
       }
     }
-    if (!fetched) console.error(`[krx] ${mktId}: 모든 날짜 실패`);
+    if (!anyData) break;
   }
-  return results;
+
+  console.log(`[naver] ${exchange}: ${stocks.length}종목 로드`);
+  return stocks;
+}
+
+async function fetchKrxAll(): Promise<Stock[]> {
+  const [kospi, kosdaq] = await Promise.all([
+    fetchNaverMarket(0, 'KOSPI', 'KS'),
+    fetchNaverMarket(1, 'KOSDAQ', 'KQ'),
+  ]);
+  return [...kospi, ...kosdaq];
 }
 
 // ── 미국 Finnhub 전체 목록 fetch ──────────────────────────────────────────
