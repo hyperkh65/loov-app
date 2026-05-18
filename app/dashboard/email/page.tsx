@@ -382,6 +382,7 @@ export default function EmailPage() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<EmailItem[] | null>(null);
   const [backing, setBacking] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<Record<string, number> | null>(null);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 계정 목록 로드
@@ -412,7 +413,7 @@ export default function EmailPage() {
     try {
       const res = await fetch(`/api/email/inbox?accountId=${selectedAccount.id}&folder=${encodeURIComponent(folder)}&limit=0`);
       const d = await res.json();
-      if (d.messages) { setEmails(d.messages); setTotal(d.total); setPage(1); }
+      if (d.messages) { setEmails(d.messages); setTotal(d.total); setPage(1); setDebugInfo(d._debug ?? null); }
     } catch { /* ignore */ }
     setLoading(false);
   }, [selectedAccount, folder]);
@@ -616,6 +617,14 @@ export default function EmailPage() {
               className="p-1.5 text-gray-400 hover:text-blue-600 text-sm">🔄</button>
           </div>
         </div>
+
+        {/* 디버그 정보 */}
+        {debugInfo && (
+          <div className="px-3 py-1 bg-yellow-50 border-b text-[10px] font-mono text-yellow-800 space-y-0.5">
+            <div>mailbox.exists(total)={debugInfo.total} | range={debugInfo.start}:{debugInfo.end}</div>
+            <div>fetched={debugInfo.fetched} | cap={debugInfo.cap}</div>
+          </div>
+        )}
 
         {/* 검색창 */}
         <div className="px-3 py-2 border-b">

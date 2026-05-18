@@ -39,13 +39,14 @@ export async function GET(req: NextRequest) {
       const mailbox = client.mailbox as { exists?: number } | false;
       const total = (mailbox && typeof mailbox === 'object') ? (mailbox.exists ?? 0) : 0;
 
-      // limitParam=0 → 전체 (최대 2000), limitParam>0 → 페이징
-      const cap = limitParam > 0 ? limitParam : 2000;
+      // limitParam=0 → 전체 (최대 5000), limitParam>0 → 페이징
+      const cap = limitParam > 0 ? limitParam : 5000;
       const end = total;
-      const start = Math.max(1, end - cap * page + 1);
+      const start = Math.max(1, end - cap + 1);
+
+      console.log(`[EMAIL DEBUG] folder=${folder} total=${total} start=${start} end=${end} cap=${cap}`);
 
       if (total > 0 && start <= end) {
-        // bodyStructure 제거 → 속도 대폭 향상 (첨부파일 여부는 상세 열 때 확인)
         for await (const msg of client.fetch(`${start}:${end}`, {
           uid: true, flags: true, envelope: true,
         })) {
@@ -62,9 +63,11 @@ export async function GET(req: NextRequest) {
           });
         }
       }
+
+      console.log(`[EMAIL DEBUG] fetched=${messages.length}`);
       messages.reverse();
       await client.logout();
-      return NextResponse.json({ messages, total, page, folder });
+      return NextResponse.json({ messages, total, page, folder, _debug: { total, start, end, cap, fetched: messages.length } });
     } finally {
       lock.release();
     }
