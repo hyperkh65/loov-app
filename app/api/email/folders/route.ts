@@ -31,6 +31,8 @@ export async function GET(req: NextRequest) {
 
     const folders = list
       .filter(f => !(f.flags?.has('\\Noselect')))
+      // 이름이 특수문자만으로 된 구분자 폴더 제외 (예: ---------, ^^^^^)
+      .filter(f => /[a-zA-Z가-힣぀-鿿0-9]/.test(f.name))
       .map(f => ({
         path: f.path,
         name: f.name,
