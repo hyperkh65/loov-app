@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
+import { markdownToHtml } from '@/lib/blog-content-generator';
 
 function parseAIOutput(text: string): { title: string; content: string; metaDescription: string; labels: string[] } {
   // Strip markdown code fences
@@ -26,16 +27,21 @@ function parseAIOutput(text: string): { title: string; content: string; metaDesc
   const metaDescription = getSection('META');
   const labelsRaw = getSection('LABELS');
   const labels = labelsRaw ? labelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-  const content = getSection('CONTENT');
+  const rawContent = getSection('CONTENT');
+  // AI가 HTML 대신 마크다운으로 출력한 경우 변환
+  const content = rawContent && !/<[a-z][\s\S]*>/i.test(rawContent)
+    ? markdownToHtml(rawContent)
+    : rawContent;
 
   // 구분자 없으면 JSON 폴백
   if (!title && !content) {
     try {
       const raw = text.match(/\{[\s\S]*\}/)?.[0] || text;
       const j = JSON.parse(raw) as { title?: string; content?: string; metaDescription?: string; labels?: string[] };
+      const jContent = j.content || '';
       return {
         title: j.title || '',
-        content: j.content || '',
+        content: jContent && !/<[a-z][\s\S]*>/i.test(jContent) ? markdownToHtml(jContent) : jContent,
         metaDescription: j.metaDescription || '',
         labels: Array.isArray(j.labels) ? j.labels : [],
       };
