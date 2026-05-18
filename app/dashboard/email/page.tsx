@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 // ── 타입 ─────────────────────────────────────────────────────────────────────
 interface EmailAccount {
@@ -377,7 +377,12 @@ export default function EmailPage() {
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [composeInit, setComposeInit] = useState<Partial<ComposeData>>({});
-  const [view, setView] = useState<'list' | 'detail'>('list'); // mobile view
+  const [view, setView] = useState<'list' | 'detail'>('list');
+  const [searchQ, setSearchQ] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<EmailItem[] | null>(null);
+  const [backing, setBacking] = useState(false);
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 계정 목록 로드
   useEffect(() => {
@@ -414,6 +419,50 @@ export default function EmailPage() {
 
   useEffect(() => { loadEmails(); }, [loadEmails]);
 
+  // 자동 새로고침 — 60초마다 (새 메일 동기화)
+  useEffect(() => {
+    if (!selectedAccount) return;
+    if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    autoRefreshRef.current = setInterval(() => {
+      if (!searching && !detailLoading) loadEmails();
+    }, 60000);
+    return () => { if (autoRefreshRef.current) clearInterval(autoRefreshRef.current); };
+  }, [selectedAccount, folder, loadEmails, searching, detailLoading]);
+
+  // 검색
+  const doSearch = useCallback(async () => {
+    if (!selectedAccount || !searchQ.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/email/search?accountId=${selectedAccount.id}&folder=${encodeURIComponent(folder)}&q=${encodeURIComponent(searchQ.trim())}`);
+      const d = await res.json();
+      setSearchResults(Array.isArray(d) ? d : []);
+    } catch { setSearchResults([]); }
+    setSearching(false);
+  }, [selectedAccount, folder, searchQ]);
+
+  const clearSearch = () => { setSearchQ(''); setSearchResults(null); };
+
+  // 백업 다운로드
+  const doBackup = useCallback(async () => {
+    if (!selectedAccount) return;
+    setBacking(true);
+    try {
+      const url = `/api/email/backup?accountId=${selectedAccount.id}&folder=${encodeURIComponent(folder)}&limit=500`;
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+      const filename = match ? decodeURIComponent(match[1]) : `backup_${folder}.json`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch { /* ignore */ }
+    setBacking(false);
+  }, [selectedAccount, folder]);
+
   // 메일 상세 로드
   const loadDetail = useCallback(async (item: EmailItem) => {
     if (!selectedAccount) return;
@@ -429,6 +478,8 @@ export default function EmailPage() {
     } catch { /* ignore */ }
     setDetailLoading(false);
   }, [selectedAccount, folder]);
+
+  const displayEmails = useMemo(() => searchResults ?? emails, [searchResults, emails]);
 
   const openEmail = (item: EmailItem) => {
     setSelectedEmail(item);
@@ -540,27 +591,59 @@ export default function EmailPage() {
             className="px-3 py-2 border rounded-xl text-sm text-gray-600">＋</button>
         </div>
 
-        <div className="flex items-center justify-between px-4 py-2.5 border-b">
+        {/* 폴더명 + 새로고침 + 백업 */}
+        <div className="flex items-center justify-between px-4 py-2 border-b">
           <div>
-            <p className="font-semibold text-sm">{folderLabel({ path: folder, name: folder }).label}</p>
-            {total > 0 && <p className="text-[10px] text-gray-400">{total}개</p>}
+            <p className="font-semibold text-sm">{searchResults ? `검색: "${searchQ}"` : folderLabel({ path: folder, name: folder }).label}</p>
+            <p className="text-[10px] text-gray-400">
+              {searchResults ? `${searchResults.length}개` : total > 0 ? `${total}개` : ''}
+            </p>
           </div>
-          <button onClick={loadEmails} className="text-gray-400 hover:text-gray-600 text-sm p-1">🔄</button>
+          <div className="flex items-center gap-1">
+            <button onClick={doBackup} disabled={backing || !selectedAccount}
+              title="백업 다운로드"
+              className="p-1.5 text-gray-400 hover:text-green-600 disabled:opacity-40 text-sm">
+              {backing ? '⏳' : '💾'}
+            </button>
+            <button onClick={() => { clearSearch(); loadEmails(); }} title="새로고침"
+              className="p-1.5 text-gray-400 hover:text-blue-600 text-sm">🔄</button>
+          </div>
+        </div>
+
+        {/* 검색창 */}
+        <div className="px-3 py-2 border-b">
+          <form onSubmit={e => { e.preventDefault(); doSearch(); }} className="flex gap-1.5">
+            <input
+              value={searchQ}
+              onChange={e => { setSearchQ(e.target.value); if (!e.target.value) clearSearch(); }}
+              placeholder="제목, 발신자, 내용 검색..."
+              className="flex-1 px-3 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-gray-50"
+            />
+            {searchResults ? (
+              <button type="button" onClick={clearSearch}
+                className="px-2 py-1.5 text-xs border rounded-lg hover:bg-gray-50 text-gray-500">✕</button>
+            ) : (
+              <button type="submit" disabled={searching || !searchQ.trim()}
+                className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-40">
+                {searching ? '...' : '검색'}
+              </button>
+            )}
+          </form>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {loading && (
+          {(loading || searching) && (
             <div className="flex items-center justify-center h-32">
               <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             </div>
           )}
-          {!loading && emails.length === 0 && (
+          {!loading && !searching && displayEmails.length === 0 && (
             <div className="flex flex-col items-center justify-center h-32 text-gray-400 text-sm">
               <p className="text-2xl mb-1">📭</p>
-              {accounts.length === 0 ? '계정을 추가해 주세요' : '메일이 없습니다'}
+              {searchResults ? '검색 결과 없음' : accounts.length === 0 ? '계정을 추가해 주세요' : '메일이 없습니다'}
             </div>
           )}
-          {emails.map(item => (
+          {!loading && !searching && displayEmails.map(item => (
             <button key={item.uid}
               onClick={() => openEmail(item)}
               className={`w-full text-left border-b px-4 py-3 hover:bg-gray-50 transition ${selectedEmail?.uid === item.uid ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''} ${!item.seen ? 'bg-white' : 'bg-gray-50/50'}`}>
@@ -579,12 +662,12 @@ export default function EmailPage() {
             </button>
           ))}
 
-          {total > 30 && (
+          {!searchResults && total > 30 && (
             <div className="flex items-center justify-center gap-3 p-3">
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
                 className="px-3 py-1.5 text-xs border rounded-lg disabled:opacity-40">← 이전</button>
-              <span className="text-xs text-gray-500">{page}페이지</span>
-              <button disabled={page * 30 >= total} onClick={() => setPage(p => p + 1)}
+              <span className="text-xs text-gray-500">{page}페이지 / {Math.ceil(total / 30)}p</span>
+              <button disabled={page >= Math.ceil(total / 30)} onClick={() => setPage(p => p + 1)}
                 className="px-3 py-1.5 text-xs border rounded-lg disabled:opacity-40">다음 →</button>
             </div>
           )}

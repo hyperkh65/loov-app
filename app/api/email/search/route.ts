@@ -10,8 +10,9 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const accountId = sp.get('accountId');
   const folder = sp.get('folder') || 'INBOX';
-  const page = parseInt(sp.get('page') || '1', 10);
-  const limit = 30;
+  const q = (sp.get('q') || '').trim();
+
+  if (!q) return NextResponse.json([]);
 
   const { data: acc } = await supabase
     .from('bossai_email_accounts')
@@ -35,16 +36,21 @@ export async function GET(req: NextRequest) {
     const messages: unknown[] = [];
 
     try {
-      const mailbox = client.mailbox as { exists?: number } | false;
-      const total = (mailbox && typeof mailbox === 'object') ? (mailbox.exists ?? 0) : 0;
-      // 최신부터 내림차순: page1 = (total-limit+1):total, page2 = (total-2*limit+1):(total-limit)
-      const end = Math.min(total, total - (page - 1) * limit);
-      const start = Math.max(1, end - limit + 1);
+      // IMAP SEARCH: 제목 + 발신자 + 본문 검색
+      const uids = await client.search({
+        or: [
+          { subject: q },
+          { from: q },
+          { text: q },
+        ],
+      }, { uid: true });
 
-      if (total > 0 && start <= end) {
-        for await (const msg of client.fetch(`${start}:${end}`, {
+      if (uids && uids.length > 0) {
+        // 최신 50개만
+        const recent = uids.slice(-50);
+        for await (const msg of client.fetch(recent, {
           uid: true, flags: true, envelope: true, bodyStructure: true,
-        })) {
+        }, { uid: true })) {
           messages.push({
             uid: msg.uid,
             seq: msg.seq,
@@ -54,28 +60,19 @@ export async function GET(req: NextRequest) {
             date: msg.envelope?.date ?? null,
             seen: msg.flags?.has('\\Seen') ?? false,
             flagged: msg.flags?.has('\\Flagged') ?? false,
-            hasAttachment: hasAttachments(msg.bodyStructure),
+            hasAttachment: false,
           });
         }
+        messages.reverse();
       }
-      messages.reverse();
-      await client.logout();
-      return NextResponse.json({ messages, total, page, folder });
     } finally {
       lock.release();
     }
+
+    await client.logout();
+    return NextResponse.json(messages);
   } catch (e) {
     await client.logout().catch(() => {});
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasAttachments(structure: any): boolean {
-  if (!structure) return false;
-  if (structure.disposition?.value?.toLowerCase() === 'attachment') return true;
-  if (Array.isArray(structure.childNodes)) {
-    return structure.childNodes.some(hasAttachments);
-  }
-  return false;
 }
