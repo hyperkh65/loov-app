@@ -253,11 +253,59 @@ export function parseAiOutput(raw: string) {
   if (hasNewFormat) {
     content = buildHtmlFromSections(cleaned, title);
   } else {
-    // 구 포맷(===CONTENT===) 호환
-    content = extract('CONTENT').replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+    // 구 포맷(===CONTENT===) 호환 — 마크다운이면 HTML로 변환
+    const raw = extract('CONTENT').replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+    content = /<[a-z][\s\S]*>/i.test(raw) ? raw : markdownToHtml(raw);
   }
 
   return { title, meta_description, content, keywords };
+}
+
+// ── 마크다운 → HTML 인라인 변환 ─────────────────────────────────────────────
+function mdInline(s: string): string {
+  // HTML 엔티티 이스케이프 후 마크다운 인라인 변환
+  let r = s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  r = r.replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>');
+  r = r.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  r = r.replace(/\*([^*]+?)\*/g, '<i>$1</i>');
+  r = r.replace(/`([^`]+?)`/g, '<code>$1</code>');
+  return r;
+}
+
+// ── 마크다운 블록 → HTML 변환 (===CONTENT=== 구 포맷 폴백용) ────────────────
+export function markdownToHtml(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inUl = false;
+
+  const closeUl = () => { if (inUl) { out.push('</ul>'); inUl = false; } };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line) { closeUl(); out.push(''); continue; }
+
+    if (/^#{4,}\s/.test(line)) {
+      closeUl();
+      out.push(`<h4>${mdInline(line.replace(/^#{4,}\s/, ''))}</h4>`);
+    } else if (/^###\s/.test(line)) {
+      closeUl();
+      out.push(`<h3 style="margin-bottom:15px;" data-ke-size="size23"><b>${mdInline(line.replace(/^###\s/, ''))}</b></h3>`);
+    } else if (/^##\s/.test(line)) {
+      closeUl();
+      out.push(`<h2 style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;" data-ke-size="size26"><b>${mdInline(line.replace(/^##\s/, ''))}</b></h2>`);
+    } else if (/^#\s/.test(line)) {
+      closeUl();
+      out.push(`<h2 style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;" data-ke-size="size26"><b>${mdInline(line.replace(/^#\s/, ''))}</b></h2>`);
+    } else if (/^[-*]\s/.test(line)) {
+      if (!inUl) { out.push('<ul style="margin:10px 0 10px 20px;">'); inUl = true; }
+      out.push(`<li style="margin-bottom:6px;">${mdInline(line.replace(/^[-*]\s/, ''))}</li>`);
+    } else {
+      closeUl();
+      out.push(`<p style="margin-bottom:15px;" data-ke-size="size16">${mdInline(line)}</p>`);
+    }
+  }
+  closeUl();
+  return out.join('\n');
 }
 
 // ── 섹션 텍스트 → HTML 조립 (Ollama 순수텍스트 출력을 구조화된 HTML로 변환) ──
@@ -265,13 +313,13 @@ function buildHtmlFromSections(raw: string, title: string): string {
   const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   const wrap = (text: string) =>
-    `<p style="margin-bottom:15px;" data-ke-size="size16">${esc(text.trim())}</p>`;
+    `<p style="margin-bottom:15px;" data-ke-size="size16">${mdInline(text.trim())}</p>`;
 
   const h2 = (num: number, heading: string) =>
     `<h2 id="section${num}" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>${num}. ${esc(heading)}</b></h2>`;
 
   const infoBox = (text: string) =>
-    `<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>${esc(text)}</div>`;
+    `<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>${mdInline(text)}</div>`;
 
   const parts: string[] = [];
 
