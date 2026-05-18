@@ -241,7 +241,8 @@ export function parseAiOutput(raw: string) {
   };
 
   const rawTitle = extract('TITLE');
-  const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle).trim().slice(0, 60);
+  const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle)
+    .replace(/\*+/g, '').replace(/^#+\s*/, '').trim().slice(0, 60);
   const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
@@ -253,9 +254,15 @@ export function parseAiOutput(raw: string) {
   if (hasNewFormat) {
     content = buildHtmlFromSections(cleaned, title);
   } else {
-    // 구 포맷(===CONTENT===) 호환 — 마크다운이면 HTML로 변환
-    const raw = extract('CONTENT').replace(/===KEYWORDS===[\s\S]*/i, '').trim();
-    content = /<[a-z][\s\S]*>/i.test(raw) ? raw : markdownToHtml(raw);
+    // 구 포맷(===CONTENT===) 호환
+    const rawC = extract('CONTENT').replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+    if (/<[a-z][\s\S]*>/i.test(rawC)) {
+      // HTML 있음 — 인라인 ** 만 변환
+      content = rawC.replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    } else {
+      // 순수 마크다운 — 전체 변환
+      content = markdownToHtml(rawC);
+    }
   }
 
   return { title, meta_description, content, keywords };
