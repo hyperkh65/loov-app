@@ -16,6 +16,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/chat',       icon: '💬', label: '채팅 센터' },
       { href: '/dashboard/free-ai',    icon: '🆓', label: '무료AI 체험하기' },
       { href: '/dashboard/schedule',   icon: '📅', label: '스케줄' },
+      { href: '/dashboard/email',      icon: '✉️', label: '이메일' },
     ],
   },
   {
