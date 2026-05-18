@@ -473,8 +473,8 @@ export default function EmailPage() {
   return (
     <div className="flex h-[calc(100vh-64px)] bg-gray-50 overflow-hidden">
       {/* ── 왼쪽 사이드바 ───────────────────────────────────────────── */}
-      <aside className="w-52 shrink-0 bg-white border-r flex flex-col hidden md:flex">
-        <div className="p-3 border-b">
+      <aside className="w-52 shrink-0 bg-white border-r flex flex-col hidden md:flex overflow-hidden">
+        <div className="p-3 border-b shrink-0">
           <button onClick={() => { setShowCompose(true); setComposeInit({}); }}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition">
             ✏️ 메일 쓰기
@@ -482,7 +482,7 @@ export default function EmailPage() {
         </div>
 
         {/* 계정 목록 */}
-        <div className="p-2">
+        <div className="p-2 shrink-0 border-b">
           {accounts.map(acc => (
             <button key={acc.id}
               onClick={() => { setSelectedAccount(acc); setFolder('INBOX'); setPage(1); }}
@@ -500,9 +500,9 @@ export default function EmailPage() {
           </button>
         </div>
 
-        {/* 폴더 목록 */}
+        {/* 폴더 목록 — 스크롤 가능 */}
         {sortedFolders.length > 0 && (
-          <div className="p-2 border-t mt-1">
+          <div className="flex-1 overflow-y-auto p-2">
             <p className="text-[10px] font-semibold text-gray-400 px-2 mb-1">폴더</p>
             {sortedFolders.map(f => {
               const { icon, label } = folderLabel(f);
@@ -529,7 +529,7 @@ export default function EmailPage() {
       </aside>
 
       {/* ── 메일 목록 ───────────────────────────────────────────────── */}
-      <section className={`w-full md:w-80 shrink-0 bg-white border-r flex flex-col ${view === 'detail' ? 'hidden md:flex' : 'flex'}`}>
+      <section className={`w-full md:w-80 shrink-0 bg-white border-r flex flex-col overflow-hidden ${view === 'detail' ? 'hidden md:flex' : 'flex'}`}>
         {/* 모바일 툴바 */}
         <div className="md:hidden flex items-center gap-2 p-3 border-b">
           <button onClick={() => { setShowCompose(true); setComposeInit({}); }}
