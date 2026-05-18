@@ -405,17 +405,17 @@ export default function EmailPage() {
       .catch(() => {});
   }, [selectedAccount]);
 
-  // 메일 목록 로드
+  // 메일 목록 로드 — 전체 헤더 한 번에 (limit=0)
   const loadEmails = useCallback(async () => {
     if (!selectedAccount) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/email/inbox?accountId=${selectedAccount.id}&folder=${encodeURIComponent(folder)}&page=${page}`);
+      const res = await fetch(`/api/email/inbox?accountId=${selectedAccount.id}&folder=${encodeURIComponent(folder)}&limit=0`);
       const d = await res.json();
-      if (d.messages) { setEmails(d.messages); setTotal(d.total); }
+      if (d.messages) { setEmails(d.messages); setTotal(d.total); setPage(1); }
     } catch { /* ignore */ }
     setLoading(false);
-  }, [selectedAccount, folder, page]);
+  }, [selectedAccount, folder]);
 
   useEffect(() => { loadEmails(); }, [loadEmails]);
 
@@ -437,11 +437,12 @@ export default function EmailPage() {
       const res = await fetch(`/api/email/search?accountId=${selectedAccount.id}&folder=${encodeURIComponent(folder)}&q=${encodeURIComponent(searchQ.trim())}`);
       const d = await res.json();
       setSearchResults(Array.isArray(d) ? d : []);
+      setPage(1);
     } catch { setSearchResults([]); }
     setSearching(false);
   }, [selectedAccount, folder, searchQ]);
 
-  const clearSearch = () => { setSearchQ(''); setSearchResults(null); };
+  const clearSearch = () => { setSearchQ(''); setSearchResults(null); setPage(1); };
 
   // 백업 다운로드
   const doBackup = useCallback(async () => {
@@ -479,7 +480,13 @@ export default function EmailPage() {
     setDetailLoading(false);
   }, [selectedAccount, folder]);
 
-  const displayEmails = useMemo(() => searchResults ?? emails, [searchResults, emails]);
+  const PAGE_SIZE = 50;
+  const baseList = useMemo(() => searchResults ?? emails, [searchResults, emails]);
+  const totalPages = Math.ceil(baseList.length / PAGE_SIZE);
+  const displayEmails = useMemo(
+    () => baseList.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [baseList, page]
+  );
 
   const openEmail = (item: EmailItem) => {
     setSelectedEmail(item);
@@ -662,13 +669,17 @@ export default function EmailPage() {
             </button>
           ))}
 
-          {!searchResults && total > 30 && (
-            <div className="flex items-center justify-center gap-3 p-3">
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 p-3">
+              <button disabled={page <= 1} onClick={() => setPage(1)}
+                className="px-2 py-1.5 text-xs border rounded-lg disabled:opacity-40">«</button>
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
                 className="px-3 py-1.5 text-xs border rounded-lg disabled:opacity-40">← 이전</button>
-              <span className="text-xs text-gray-500">{page}페이지 / {Math.ceil(total / 30)}p</span>
-              <button disabled={page >= Math.ceil(total / 30)} onClick={() => setPage(p => p + 1)}
+              <span className="text-xs text-gray-500">{page} / {totalPages}</span>
+              <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
                 className="px-3 py-1.5 text-xs border rounded-lg disabled:opacity-40">다음 →</button>
+              <button disabled={page >= totalPages} onClick={() => setPage(totalPages)}
+                className="px-2 py-1.5 text-xs border rounded-lg disabled:opacity-40">»</button>
             </div>
           )}
         </div>
