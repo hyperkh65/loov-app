@@ -3,11 +3,21 @@ import { createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { markdownToHtml } from '@/lib/blog-content-generator';
 
+// 제목에서 마크다운 기호 제거
+function stripMdTitle(s: string): string {
+  return s.replace(/\*+/g, '').replace(/^#+\s*/, '').replace(/`/g, '').trim();
+}
+
+// HTML이 섞여있어도 인라인 마크다운(**bold**) 항상 변환
+function fixInlineMd(s: string): string {
+  return s
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+}
+
 function parseAIOutput(text: string): { title: string; content: string; metaDescription: string; labels: string[] } {
-  // Strip markdown code fences
   text = text.replace(/```[\w]*\n?/g, '').trim();
 
-  // [[[TAG]]] 구분자 방식 파싱
   const getSection = (tag: string) => {
     const marker = `[[[${tag}]]]`;
     const ALL = ['TITLE', 'META', 'LABELS', 'CONTENT'];
@@ -23,14 +33,16 @@ function parseAIOutput(text: string): { title: string; content: string; metaDesc
     return text.slice(from, end).trim();
   };
 
-  const title = getSection('TITLE');
+  // 제목: ** 기호 제거
+  const title = stripMdTitle(getSection('TITLE'));
   const metaDescription = getSection('META');
   const labelsRaw = getSection('LABELS');
   const labels = labelsRaw ? labelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
   const rawContent = getSection('CONTENT');
-  // AI가 HTML 대신 마크다운으로 출력한 경우 변환
-  const content = rawContent && !/<[a-z][\s\S]*>/i.test(rawContent)
-    ? markdownToHtml(rawContent)
+  // HTML 없으면 전체 변환, HTML 있어도 인라인 ** 항상 변환
+  const content = rawContent
+    ? (/<[a-z][\s\S]*>/i.test(rawContent) ? fixInlineMd(rawContent) : markdownToHtml(rawContent))
     : rawContent;
 
   // 구분자 없으면 JSON 폴백
@@ -40,8 +52,10 @@ function parseAIOutput(text: string): { title: string; content: string; metaDesc
       const j = JSON.parse(raw) as { title?: string; content?: string; metaDescription?: string; labels?: string[] };
       const jContent = j.content || '';
       return {
-        title: j.title || '',
-        content: jContent && !/<[a-z][\s\S]*>/i.test(jContent) ? markdownToHtml(jContent) : jContent,
+        title: stripMdTitle(j.title || ''),
+        content: jContent
+          ? (/<[a-z][\s\S]*>/i.test(jContent) ? fixInlineMd(jContent) : markdownToHtml(jContent))
+          : jContent,
         metaDescription: j.metaDescription || '',
         labels: Array.isArray(j.labels) ? j.labels : [],
       };
