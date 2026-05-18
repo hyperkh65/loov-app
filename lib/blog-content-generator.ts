@@ -322,8 +322,10 @@ function buildHtmlFromSections(raw: string, title: string): string {
   const wrap = (text: string) =>
     `<p style="margin-bottom:15px;" data-ke-size="size16">${mdInline(text.trim())}</p>`;
 
-  const h2 = (num: number, heading: string) =>
-    `<h2 id="section${num}" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>${num}. ${esc(heading)}</b></h2>`;
+  const h2 = (num: number, heading: string) => {
+    const clean = heading.replace(/\*+/g, '').replace(/`/g, '').trim();
+    return `<h2 id="section${num}" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>${num}. ${esc(clean)}</b></h2>`;
+  };
 
   const infoBox = (text: string) =>
     `<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>${mdInline(text)}</div>`;
@@ -336,7 +338,8 @@ function buildHtmlFromSections(raw: string, title: string): string {
     return m ? m[1].trim() : '';
   })();
   if (introRaw) {
-    parts.push(`<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">${esc(introRaw)}</span></p>`);
+    const introParagraphs = introRaw.split(/\n{2,}/).map(p => p.replace(/\n/g, ' ').trim()).filter(Boolean);
+    for (const p of introParagraphs) parts.push(wrap(p));
     parts.push(`<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">${esc(title)}</span></b></h3>`);
   }
 
@@ -376,7 +379,7 @@ function buildHtmlFromSections(raw: string, title: string): string {
       const qm = block.match(/Q:\s*(.+)/i);
       const am = block.match(/A:\s*([\s\S]+)/i);
       if (qm && am) {
-        parts.push(`<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">${esc(qm[1].trim())}</div><div style="color:#555;">${esc(am[1].trim())}</div></div>`);
+        parts.push(`<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">${mdInline(qm[1].trim())}</div><div style="color:#555;">${mdInline(am[1].trim())}</div></div>`);
       }
     }
     parts.push(`</div>`);
