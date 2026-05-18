@@ -37,8 +37,9 @@ export async function GET(req: NextRequest) {
     try {
       const mailbox = client.mailbox as { exists?: number } | false;
       const total = (mailbox && typeof mailbox === 'object') ? (mailbox.exists ?? 0) : 0;
-      const start = Math.max(1, total - (page * limit) + 1);
-      const end = Math.max(1, total - ((page - 1) * limit));
+      // 최신부터 내림차순: page1 = (total-limit+1):total, page2 = (total-2*limit+1):(total-limit)
+      const end = Math.min(total, total - (page - 1) * limit);
+      const start = Math.max(1, end - limit + 1);
 
       if (total > 0 && start <= end) {
         for await (const msg of client.fetch(`${start}:${end}`, {
