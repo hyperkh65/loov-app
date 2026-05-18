@@ -10,8 +10,9 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const accountId = sp.get('accountId');
   const folder = sp.get('folder') || 'INBOX';
+  // page/limit은 하위 호환 유지, 기본은 전체 로드
   const page = parseInt(sp.get('page') || '1', 10);
-  const limit = 30;
+  const limitParam = parseInt(sp.get('limit') || '0', 10); // 0 = 전체
 
   const { data: acc } = await supabase
     .from('bossai_email_accounts')
@@ -37,9 +38,13 @@ export async function GET(req: NextRequest) {
     try {
       const mailbox = client.mailbox as { exists?: number } | false;
       const total = (mailbox && typeof mailbox === 'object') ? (mailbox.exists ?? 0) : 0;
-      // 최신부터 내림차순: page1 = (total-limit+1):total, page2 = (total-2*limit+1):(total-limit)
-      const end = Math.min(total, total - (page - 1) * limit);
-      const start = Math.max(1, end - limit + 1);
+
+      // limitParam=0이면 전체, 아니면 페이징
+      let start = 1, end = total;
+      if (limitParam > 0) {
+        end = Math.min(total, total - (page - 1) * limitParam);
+        start = Math.max(1, end - limitParam + 1);
+      }
 
       if (total > 0 && start <= end) {
         for await (const msg of client.fetch(`${start}:${end}`, {
