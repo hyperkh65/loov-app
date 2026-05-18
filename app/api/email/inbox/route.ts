@@ -39,16 +39,15 @@ export async function GET(req: NextRequest) {
       const mailbox = client.mailbox as { exists?: number } | false;
       const total = (mailbox && typeof mailbox === 'object') ? (mailbox.exists ?? 0) : 0;
 
-      // limitParam=0이면 전체, 아니면 페이징
-      let start = 1, end = total;
-      if (limitParam > 0) {
-        end = Math.min(total, total - (page - 1) * limitParam);
-        start = Math.max(1, end - limitParam + 1);
-      }
+      // limitParam=0 → 전체 (최대 2000), limitParam>0 → 페이징
+      const cap = limitParam > 0 ? limitParam : 2000;
+      const end = total;
+      const start = Math.max(1, end - cap * page + 1);
 
       if (total > 0 && start <= end) {
+        // bodyStructure 제거 → 속도 대폭 향상 (첨부파일 여부는 상세 열 때 확인)
         for await (const msg of client.fetch(`${start}:${end}`, {
-          uid: true, flags: true, envelope: true, bodyStructure: true,
+          uid: true, flags: true, envelope: true,
         })) {
           messages.push({
             uid: msg.uid,
@@ -59,7 +58,7 @@ export async function GET(req: NextRequest) {
             date: msg.envelope?.date ?? null,
             seen: msg.flags?.has('\\Seen') ?? false,
             flagged: msg.flags?.has('\\Flagged') ?? false,
-            hasAttachment: hasAttachments(msg.bodyStructure),
+            hasAttachment: false,
           });
         }
       }
@@ -73,14 +72,4 @@ export async function GET(req: NextRequest) {
     await client.logout().catch(() => {});
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasAttachments(structure: any): boolean {
-  if (!structure) return false;
-  if (structure.disposition?.value?.toLowerCase() === 'attachment') return true;
-  if (Array.isArray(structure.childNodes)) {
-    return structure.childNodes.some(hasAttachments);
-  }
-  return false;
 }
