@@ -73,16 +73,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   return (
     <div className="min-h-screen bg-white">
       {/* 헤더 */}
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-5 h-14 flex items-center justify-between">
-          <Link href="/shops" className="flex items-center gap-2 text-gray-700 hover:text-gray-900 text-sm">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
+        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+          <Link href="/shops" className="flex items-center gap-2 text-gray-600 hover:text-red-500 text-sm transition">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             쇼핑몰
           </Link>
-          <span className="font-bold text-xl tracking-tight">LOOV</span>
+          <Link href="/shops" className="font-black text-xl tracking-tight text-gray-900">LOOV<span className="text-red-500">.</span></Link>
           <Link href="/shops/cart" className="relative p-2">
-            <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
-            {totalCount() > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">{totalCount()}</span>}
+            <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+            {totalCount() > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">{totalCount()}</span>}
           </Link>
         </div>
       </header>
@@ -175,12 +175,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <div className="flex gap-3 mb-8">
               <button
                 onClick={handleAdd}
-                className={`flex-1 py-4 rounded-2xl font-semibold text-sm transition-all duration-200 ${added ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700 active:scale-[0.98]'}`}
+                className={`flex-1 py-4 rounded font-semibold text-sm transition-all duration-200 ${added ? 'bg-green-500 text-white' : 'bg-red-500 text-white hover:bg-red-600 active:scale-[0.98]'}`}
               >
                 {added ? '✓ 장바구니 추가됨' : '장바구니 담기'}
               </button>
               <Link href="/shops/cart"
-                className="px-6 py-4 rounded-2xl border-2 border-gray-900 text-gray-900 font-semibold text-sm hover:bg-gray-900 hover:text-white transition text-center">
+                className="px-6 py-4 rounded border-2 border-gray-900 text-gray-900 font-semibold text-sm hover:bg-gray-900 hover:text-white transition text-center">
                 바로 구매
               </Link>
             </div>
