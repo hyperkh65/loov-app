@@ -86,3 +86,25 @@ insert into shop_categories (name, slug, icon, sort_order) values
   ('생활용품', 'living', '🏠', 2),
   ('조명', 'lighting', '💡', 3)
 on conflict (slug) do nothing;
+
+-- 배너
+create table if not exists shop_banners (
+  id bigserial primary key,
+  title text not null default '',
+  subtitle text default '',
+  image_url text,
+  link_url text,
+  bg_color text default 'linear-gradient(135deg,#1a1a2e,#0f3460)',
+  text_color text default '#ffffff',
+  badge_text text,
+  cta_text text default '쇼핑하기',
+  sort_order int default 0,
+  is_active bool default true,
+  created_at timestamptz default now()
+);
+
+-- 샘플 배너
+insert into shop_banners (title, subtitle, badge_text, cta_text, bg_color, sort_order) values
+  ('여름 특가 세일', '전 품목 최대 50% 할인', '🔥 LIMITED', '지금 쇼핑하기', 'linear-gradient(135deg,#1a1a2e,#16213e,#0f3460)', 0),
+  ('신상 조명 컬렉션', '공간을 바꾸는 빛의 예술', '✨ NEW', '컬렉션 보기', 'linear-gradient(135deg,#2d1b69,#11998e,#38ef7d)', 1)
+on conflict do nothing;
