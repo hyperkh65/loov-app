@@ -302,12 +302,19 @@ function BannerModal({ banner, onClose, onSaved }: { banner: Banner | null; onCl
         </div>
 
         {/* 미리보기 */}
-        <div className="h-28 flex items-center justify-center text-center px-6 relative overflow-hidden mx-4 mt-4 rounded-xl" style={{ background: form.bg_color, color: form.text_color }}>
-          {form.image_url && <Image src={form.image_url} alt="" fill className="object-cover opacity-30" />}
+        <div className="h-36 flex items-center justify-center text-center px-6 relative overflow-hidden mx-4 mt-4 rounded-xl"
+          style={{ background: form.image_url ? undefined : form.bg_color, color: '#ffffff' }}>
+          {form.image_url ? (
+            <>
+              <Image src={form.image_url} alt="" fill className="object-cover" unoptimized />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
+            </>
+          ) : null}
           <div className="relative z-10">
             {form.badge_text && <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold block mb-1">{form.badge_text}</span>}
-            <p className="font-black text-lg leading-tight">{form.title || '배너 제목'}</p>
-            <p className="text-xs opacity-70">{form.subtitle || '부제목'}</p>
+            <p className="font-black text-xl leading-tight drop-shadow">{form.title || '배너 제목'}</p>
+            <p className="text-xs opacity-80 mt-0.5">{form.subtitle || '부제목'}</p>
+            <p className="text-[10px] mt-2 bg-white text-gray-800 font-bold px-3 py-1 rounded-full inline-block">{form.cta_text || '쇼핑하기'} →</p>
           </div>
         </div>
 

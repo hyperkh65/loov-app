@@ -90,7 +90,7 @@ const NAV_GROUPS = [
     label: '쇼핑몰',
     items: [
       { href: '/dashboard/shop', icon: '🛍️', label: '쇼핑몰 관리' },
-      { href: '/shop',           icon: '🏪', label: '쇼핑몰 바로가기' },
+      { href: '/shops',          icon: '🏪', label: '쇼핑몰 바로가기' },
     ],
   },
   {
