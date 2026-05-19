@@ -149,7 +149,7 @@ function HeroBanner({ banners }: { banners: Banner[] }) {
 
   const go = useCallback((idx: number) => {
     setFade(false);
-    setTimeout(() => { setCur(idx); setFade(true); }, 150);
+    setTimeout(() => { setCur(idx); setFade(true); }, 200);
   }, []);
 
   useEffect(() => {
@@ -161,34 +161,52 @@ function HeroBanner({ banners }: { banners: Banner[] }) {
   const scrollToProducts = () => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' });
 
   return (
-    <div className="relative h-72 md:h-96 overflow-hidden">
-      {/* 배경 */}
-      <div className={`absolute inset-0 transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}
-        style={{ background: b.bg_color }}>
-        {b.image_url && <Image src={b.image_url} alt={b.title} fill className="object-cover opacity-40" />}
+    <div className="relative h-80 md:h-[480px] overflow-hidden">
+      {/* 배경 레이어 */}
+      <div className={`absolute inset-0 transition-opacity duration-500 ${fade ? 'opacity-100' : 'opacity-0'}`}>
+        {b.image_url ? (
+          <>
+            <Image src={b.image_url} alt={b.title} fill className="object-cover scale-105 transition-transform duration-[8000ms] hover:scale-100" priority />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
+          </>
+        ) : (
+          <div className="absolute inset-0" style={{ background: b.bg_color }} />
+        )}
       </div>
+
       {/* 콘텐츠 */}
-      <div className={`relative z-10 h-full flex flex-col items-center justify-center text-center px-6 transition-all duration-300 ${fade ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-        style={{ color: b.text_color }}>
-        {b.badge_text && <span className="text-xs font-black bg-white/20 backdrop-blur px-3 py-1 rounded-full mb-4 tracking-widest">{b.badge_text}</span>}
-        <h2 className="text-3xl md:text-5xl font-black leading-tight mb-3 drop-shadow">{b.title}</h2>
-        <p className="text-base md:text-lg opacity-80 mb-6 font-medium">{b.subtitle}</p>
+      <div className={`relative z-10 h-full flex flex-col items-center justify-center text-center px-6 transition-all duration-500 ${fade ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
+        style={{ color: b.image_url ? '#ffffff' : b.text_color }}>
+        {b.badge_text && (
+          <span className="text-xs font-black bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full mb-5 tracking-widest border border-white/30">
+            {b.badge_text}
+          </span>
+        )}
+        <h2 className="text-4xl md:text-6xl font-black leading-tight mb-3 drop-shadow-2xl">{b.title}</h2>
+        <p className="text-base md:text-xl opacity-90 mb-8 font-medium drop-shadow">{b.subtitle}</p>
         <button onClick={b.link_url ? undefined : scrollToProducts}
-          className="px-7 py-3 bg-white/20 hover:bg-white/30 backdrop-blur border border-white/40 rounded-full text-sm font-bold transition hover:scale-105 active:scale-95">
+          className="px-8 py-3.5 bg-white text-gray-900 hover:bg-gray-100 rounded-full text-sm font-black transition hover:scale-105 active:scale-95 shadow-xl">
           {b.cta_text ?? '쇼핑하기'} →
         </button>
       </div>
+
       {/* 이전/다음 */}
       <button onClick={() => go((cur - 1 + list.length) % list.length)}
-        className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 hover:bg-black/40 backdrop-blur text-white flex items-center justify-center text-lg transition">‹</button>
+        className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-sm text-white flex items-center justify-center text-xl transition shadow-lg">‹</button>
       <button onClick={() => go((cur + 1) % list.length)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 hover:bg-black/40 backdrop-blur text-white flex items-center justify-center text-lg transition">›</button>
+        className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-sm text-white flex items-center justify-center text-xl transition shadow-lg">›</button>
+
       {/* 도트 */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex gap-2">
         {list.map((_, i) => (
           <button key={i} onClick={() => go(i)}
-            className={`rounded-full transition-all duration-300 ${i === cur ? 'w-6 h-2 bg-white' : 'w-2 h-2 bg-white/40 hover:bg-white/70'}`} />
+            className={`rounded-full transition-all duration-300 ${i === cur ? 'w-7 h-2.5 bg-white' : 'w-2.5 h-2.5 bg-white/40 hover:bg-white/70'}`} />
         ))}
+      </div>
+
+      {/* 슬라이드 인디케이터 (우하단) */}
+      <div className="absolute bottom-5 right-5 text-white/60 text-xs font-medium tabular-nums">
+        {cur + 1} / {list.length}
       </div>
     </div>
   );
@@ -333,6 +351,12 @@ export default function ShopsPage() {
                   🛒{cartCount > 0 && <span className="absolute -top-1 -right-2 text-[10px] bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center font-bold">{cartCount}</span>}
                 </span>
                 <span className="text-[10px] text-gray-500 hidden md:block">장바구니</span>
+              </Link>
+              <Link href="/dashboard/shop"
+                className="hidden md:flex flex-col items-center gap-0.5 p-2 hover:text-gray-900 transition-colors text-gray-400"
+                title="관리자 페이지">
+                <span className="text-lg">⚙️</span>
+                <span className="text-[10px]">관리자</span>
               </Link>
             </div>
           </div>
