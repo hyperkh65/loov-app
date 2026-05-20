@@ -12,7 +12,20 @@ const KOREAN_ONLY_SUFFIX = `
 반드시 한국어로만 작성하세요.
 중국어(漢字·简体·繁體), 일본어(ひらがな·カタカナ·漢字), 러시아어(Кириллица), 아랍어 등
 어떤 외국어 문자도 절대 포함하지 마세요.
-영문 브랜드명·고유명사(예: iPhone, Netflix)는 그대로 사용 가능.
+
+【영어 단어 사용 절대 금지 — 한국어 동의어로 반드시 대체】
+한국어 표현이 있는 영어 단어는 어떤 상황에서도 절대 영어로 쓰지 마세요.
+- content → 콘텐츠 | marketing → 마케팅 | system → 시스템 | feedback → 피드백
+- update → 업데이트 | design → 디자인 | performance → 성능 | platform → 플랫폼
+- service → 서비스 | brand → 브랜드 | business → 비즈니스 | strategy → 전략
+- process → 프로세스 | trend → 트렌드 | user → 사용자 | data → 데이터
+- channel → 채널 | online → 온라인 | offline → 오프라인 | quality → 품질
+- review → 리뷰 | experience → 경험 | customer → 고객 | solution → 솔루션
+- global → 글로벌 | network → 네트워크 | digital → 디지털 | traffic → 트래픽
+- algorithm → 알고리즘 | image → 이미지 | video → 영상 | share → 공유
+- app → 앱 | homepage → 홈페이지 | search → 검색 | post → 게시물
+
+예외: iPhone, Netflix, Google, YouTube, Amazon 등 고유 브랜드명·제품명은 영어 그대로 사용 가능.
 위 규칙을 어기면 응답 전체가 무효 처리됩니다.`.trim();
 
 // CJK 한자·일본어 가나·키릴 등 외국어 제거 (한글·라틴·숫자·일반기호 보존)
@@ -29,6 +42,54 @@ function stripForeignChars(text: string): string {
     .replace(/[؀-ۿ]/g, '')   // Arabic
     .replace(/ {2,}/g, ' ')            // 연속 공백 정리
     .trim();
+}
+
+// 한국어 동의어가 있는 영어 단어를 강제 치환 (===MARKER=== 줄은 보호)
+const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
+  [/\bcontent(s)?\b/gi, '콘텐츠'],
+  [/\bmarketing\b/gi, '마케팅'],
+  [/\bsystem(s)?\b/gi, '시스템'],
+  [/\bfeedback\b/gi, '피드백'],
+  [/\bupdate(s)?\b/gi, '업데이트'],
+  [/\bdesign(s)?\b/gi, '디자인'],
+  [/\bperformance\b/gi, '성능'],
+  [/\bplatform(s)?\b/gi, '플랫폼'],
+  [/\bservice(s)?\b/gi, '서비스'],
+  [/\bbrand(s)?\b/gi, '브랜드'],
+  [/\bbusiness(es)?\b/gi, '비즈니스'],
+  [/\bstrateg(y|ies)\b/gi, '전략'],
+  [/\bprocess(es)?\b/gi, '프로세스'],
+  [/\btrend(s)?\b/gi, '트렌드'],
+  [/\buser(s)?\b/gi, '사용자'],
+  [/\bdata\b/gi, '데이터'],
+  [/\bchannel(s)?\b/gi, '채널'],
+  [/\bonline\b/gi, '온라인'],
+  [/\boffline\b/gi, '오프라인'],
+  [/\bquality\b/gi, '품질'],
+  [/\breview(s)?\b/gi, '리뷰'],
+  [/\bexperience(s)?\b/gi, '경험'],
+  [/\bcustomer(s)?\b/gi, '고객'],
+  [/\bsolution(s)?\b/gi, '솔루션'],
+  [/\bglobal\b/gi, '글로벌'],
+  [/\bnetwork(s)?\b/gi, '네트워크'],
+  [/\bdigital\b/gi, '디지털'],
+  [/\btraffic\b/gi, '트래픽'],
+  [/\balgorithm(s)?\b/gi, '알고리즘'],
+  [/\bimage(s)?\b/gi, '이미지'],
+  [/\bvideo(s)?\b/gi, '영상'],
+  [/\bshare(s)?\b/gi, '공유'],
+  [/\bpost(s)?\b/gi, '게시물'],
+];
+
+function replaceEnglishWords(text: string): string {
+  return text.split('\n').map(line => {
+    if (/^===\w/.test(line.trim())) return line; // ===MARKER=== 줄 보호
+    let result = line;
+    for (const [pattern, replacement] of ENGLISH_TO_KOREAN_MAP) {
+      result = result.replace(pattern, replacement);
+    }
+    return result;
+  }).join('\n');
 }
 
 const OPENROUTER_MODELS = [
@@ -281,8 +342,8 @@ export async function generateText(
     catch (e) { errors.push(`Claude: ${e}`); return false; }
   };
 
-  // ── 결과에서 외국어 문자 자동 제거 ─────────────────────────
-  const clean = (r: string | false) => r ? stripForeignChars(r) : false;
+  // ── 결과에서 외국어 문자 제거 + 영어 단어 한국어 치환 ──────────
+  const clean = (r: string | false) => r ? replaceEnglishWords(stripForeignChars(r)) : false;
 
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
   let result: string | false = false;

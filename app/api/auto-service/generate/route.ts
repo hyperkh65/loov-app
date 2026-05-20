@@ -75,7 +75,7 @@ function buildPrompt(keyword: string, newsItems: {title:string;description:strin
 
   return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
 
-[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 위반 시 응답 무효.
+[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 한국어 동의어가 있는 영어 단어 절대 사용 금지: content→콘텐츠, marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, trend→트렌드, user→사용자, data→데이터, review→리뷰, digital→디지털, global→글로벌, online→온라인, channel→채널, quality→품질, experience→경험, customer→고객, solution→솔루션, network→네트워크, traffic→트래픽, algorithm→알고리즘, image→이미지, video→영상, post→게시물. 고유 브랜드명(iPhone, Google, YouTube 등)만 예외. 위반 시 응답 무효.
 
 ${ANTI_WATERMARK_PROMPT}
 
