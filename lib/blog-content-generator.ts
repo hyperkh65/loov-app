@@ -123,7 +123,7 @@ export function buildBlogPrompt(keyword: string, newsItems: {title:string;descri
 ${sources || '(없음 — 전문 지식으로 작성)'}
 
 [규칙]
-1. 한국어만 사용 (외국어 문자 금지)
+1. 한국어만 사용. 한국어 동의어가 있는 영어 단어 절대 금지 (content→콘텐츠, marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, data→데이터, trend→트렌드, user→사용자, review→리뷰, digital→디지털, global→글로벌 등). 고유 브랜드명(iPhone, Google 등)만 예외.
 2. 존재하지 않는 회사·보고서·연구 절대 지어내지 말 것
 3. 각 본문 단락은 반드시 6문장 이상 (짧은 단락 금지)
 4. 첫 문장에 핵심 결론부터 (서론식 "~에 대해 알아봅니다" 금지)
