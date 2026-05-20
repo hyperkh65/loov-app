@@ -51,153 +51,191 @@ interface DatabaseItem {
   last_edited_time?: string;
 }
 
-// ─── Block Renderer ───────────────────────────────────────────────────────────
+// ─── Block Renderer (Notion 스타일) ──────────────────────────────────────────
 
 function richTextToJsx(richText: unknown[]): React.ReactNode {
   if (!Array.isArray(richText)) return null;
   return richText.map((t: unknown, i: number) => {
     const token = t as Record<string, unknown>;
     const text = (token.plain_text as string) || '';
-    const ann = (token.annotations as Record<string, boolean>) || {};
+    const ann = (token.annotations as Record<string, unknown>) || {};
+    const color = (ann.color as string) || 'default';
+
+    const colorMap: Record<string, string> = {
+      red: 'text-red-600', blue: 'text-blue-600', green: 'text-green-600',
+      yellow: 'text-yellow-600', orange: 'text-orange-500', purple: 'text-purple-600',
+      pink: 'text-pink-600', brown: 'text-amber-700', gray: 'text-gray-500',
+      red_background: 'bg-red-100', blue_background: 'bg-blue-100',
+      green_background: 'bg-green-100', yellow_background: 'bg-yellow-100',
+      orange_background: 'bg-orange-100', purple_background: 'bg-purple-100',
+      pink_background: 'bg-pink-100', gray_background: 'bg-gray-100',
+    };
+    const colorClass = color !== 'default' ? (colorMap[color] || '') : '';
+
     let node: React.ReactNode = text;
-    if (ann.bold) node = <strong key={i}>{node}</strong>;
+    if (ann.code) node = <code key={i} className="bg-[#f1f1ef] text-[#eb5757] font-mono text-[85%] px-1.5 py-0.5 rounded">{node}</code>;
+    if (ann.bold) node = <strong key={i} className="font-semibold">{node}</strong>;
     if (ann.italic) node = <em key={i}>{node}</em>;
-    if (ann.code) node = <code key={i} className="bg-slate-700 text-emerald-300 px-1 rounded text-sm font-mono">{node}</code>;
     if (ann.strikethrough) node = <del key={i}>{node}</del>;
-    if ((token.href as string)) node = <a key={i} href={token.href as string} className="text-indigo-400 underline" target="_blank" rel="noopener noreferrer">{node}</a>;
+    if (ann.underline) node = <span key={i} className="underline">{node}</span>;
+    if (token.href) node = <a key={i} href={token.href as string} className="text-blue-600 underline decoration-blue-300 hover:decoration-blue-600" target="_blank" rel="noopener noreferrer">{node}</a>;
+    if (colorClass && !(ann.code)) node = <span key={i} className={colorClass}>{node}</span>;
     return <span key={i}>{node}</span>;
   });
 }
 
-function BlockRenderer({ block }: { block: NotionBlock }) {
+const CALLOUT_COLORS: Record<string, { bg: string; border: string }> = {
+  blue_background:   { bg: 'bg-blue-50',   border: 'border-blue-100' },
+  yellow_background: { bg: 'bg-yellow-50', border: 'border-yellow-100' },
+  green_background:  { bg: 'bg-green-50',  border: 'border-green-100' },
+  red_background:    { bg: 'bg-red-50',    border: 'border-red-100' },
+  purple_background: { bg: 'bg-purple-50', border: 'border-purple-100' },
+  orange_background: { bg: 'bg-orange-50', border: 'border-orange-100' },
+  pink_background:   { bg: 'bg-pink-50',   border: 'border-pink-100' },
+  gray_background:   { bg: 'bg-gray-100',  border: 'border-gray-200' },
+  default:           { bg: 'bg-gray-100',  border: 'border-gray-200' },
+};
+
+function BlockRenderer({ block, listIndex = 0 }: { block: NotionBlock; listIndex?: number }) {
   const { type, content, depth } = block;
   const data = content as Record<string, unknown>;
-  const indentClass = depth > 0 ? `ml-${Math.min(depth * 4, 16)}` : '';
+  const rt = (data.rich_text as unknown[]) || [];
+  const indentPx = depth > 0 ? depth * 24 : 0;
+  const textCls = 'text-[#37352f] text-[15px] leading-[1.75]';
 
   switch (type) {
     case 'paragraph': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
-      return <p className={`text-slate-300 my-1.5 ${indentClass}`}>{text || <span className="text-slate-600">&#8203;</span>}</p>;
-    }
-    case 'heading_1': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
-      return <h1 className="text-2xl font-bold text-white mt-6 mb-3">{text}</h1>;
-    }
-    case 'heading_2': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
-      return <h2 className="text-xl font-bold text-white mt-5 mb-2">{text}</h2>;
-    }
-    case 'heading_3': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
-      return <h3 className="text-lg font-semibold text-slate-100 mt-4 mb-2">{text}</h3>;
-    }
-    case 'bulleted_list_item': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
+      const inner = richTextToJsx(rt);
       return (
-        <div className={`flex items-start gap-2 my-0.5 ${indentClass}`}>
-          <span className="text-slate-400 mt-1.5 flex-shrink-0">•</span>
-          <span className="text-slate-300">{text}</span>
-        </div>
+        <p style={{ paddingLeft: indentPx }} className={`${textCls} my-[2px] min-h-[1.75em]`}>
+          {inner || <span>&#8203;</span>}
+        </p>
       );
     }
-    case 'numbered_list_item': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
+    case 'heading_1':
       return (
-        <div className={`flex items-start gap-2 my-0.5 ${indentClass}`}>
-          <span className="text-slate-400 mt-0.5 flex-shrink-0 w-5 text-right">1.</span>
-          <span className="text-slate-300">{text}</span>
+        <h1 style={{ paddingLeft: indentPx }} className="text-[1.875rem] font-bold text-[#37352f] mt-[1.4em] mb-1 leading-tight">
+          {richTextToJsx(rt)}
+        </h1>
+      );
+    case 'heading_2':
+      return (
+        <h2 style={{ paddingLeft: indentPx }} className="text-[1.5rem] font-bold text-[#37352f] mt-[1.1em] mb-1 leading-tight border-b border-[#e9e9e7] pb-1">
+          {richTextToJsx(rt)}
+        </h2>
+      );
+    case 'heading_3':
+      return (
+        <h3 style={{ paddingLeft: indentPx }} className="text-[1.25rem] font-semibold text-[#37352f] mt-[0.8em] mb-0.5 leading-tight">
+          {richTextToJsx(rt)}
+        </h3>
+      );
+    case 'bulleted_list_item':
+      return (
+        <div style={{ paddingLeft: indentPx + 24 }} className={`${textCls} relative my-[2px]`}>
+          <span className="absolute text-[#9b9b9b]" style={{ left: indentPx + 4, top: '0.15em', fontSize: '1.2em' }}>•</span>
+          {richTextToJsx(rt)}
         </div>
       );
-    }
+    case 'numbered_list_item':
+      return (
+        <div style={{ paddingLeft: indentPx + 28 }} className={`${textCls} relative my-[2px]`}>
+          <span className="absolute text-[#37352f] text-[14px]" style={{ left: indentPx, top: '1px', minWidth: 24, textAlign: 'right' }}>
+            {listIndex}.
+          </span>
+          {richTextToJsx(rt)}
+        </div>
+      );
     case 'to_do': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
       const checked = data.checked as boolean;
       return (
-        <div className={`flex items-start gap-2 my-0.5 ${indentClass}`}>
-          <div className={`w-4 h-4 mt-0.5 rounded border flex-shrink-0 flex items-center justify-center ${
-            checked ? 'bg-indigo-500 border-indigo-500' : 'border-slate-500'
+        <div style={{ paddingLeft: indentPx }} className={`flex items-start gap-2 ${textCls} my-[2px]`}>
+          <div className={`mt-[3px] w-[18px] h-[18px] rounded-sm border-2 flex-shrink-0 flex items-center justify-center ${
+            checked ? 'bg-[#2383e2] border-[#2383e2]' : 'border-[#d3d3d3]'
           }`}>
-            {checked && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+            {checked && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
           </div>
-          <span className={`text-slate-300 ${checked ? 'line-through text-slate-500' : ''}`}>{text}</span>
+          <span className={checked ? 'line-through text-[#9b9b9b]' : ''}>{richTextToJsx(rt)}</span>
         </div>
       );
     }
-    case 'code': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
-      const lang = (data.language as string) || '';
+    case 'quote':
       return (
-        <div className="my-3">
-          {lang && <div className="text-xs text-slate-500 mb-1 font-mono">{lang}</div>}
-          <pre className="bg-slate-900 border border-slate-700 rounded-lg p-4 overflow-x-auto text-sm font-mono text-emerald-300">
-            <code>{text}</code>
+        <blockquote style={{ paddingLeft: indentPx + 16 }} className={`${textCls} border-l-[3px] border-[#37352f] pl-4 my-1`}>
+          {richTextToJsx(rt)}
+        </blockquote>
+      );
+    case 'code': {
+      const lang = (data.language as string) || '';
+      const codeText = (rt as unknown[]).map((t: unknown) => ((t as Record<string, unknown>).plain_text as string) || '').join('');
+      return (
+        <div className="my-3 rounded-sm overflow-hidden border border-[#e9e9e7]">
+          {lang && <div className="bg-[#f7f6f3] text-[#9b9b9b] text-[11px] font-mono px-4 py-1.5 border-b border-[#e9e9e7]">{lang}</div>}
+          <pre className="bg-[#f7f6f3] px-5 py-4 overflow-x-auto text-[13px] font-mono text-[#37352f] leading-relaxed whitespace-pre-wrap">
+            <code>{codeText}</code>
           </pre>
         </div>
       );
     }
-    case 'quote': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
-      return (
-        <blockquote className="border-l-4 border-indigo-500 pl-4 my-2 text-slate-400 italic">
-          {text}
-        </blockquote>
-      );
-    }
     case 'callout': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
-      const icon = (data.icon as Record<string, unknown>);
+      const icon = data.icon as Record<string, unknown>;
       const emoji = icon?.type === 'emoji' ? (icon.emoji as string) : '💡';
-      const color = (data.color as string) || 'gray';
-      const colorMap: Record<string, string> = {
-        blue: 'bg-blue-500/10 border-blue-500/30',
-        yellow: 'bg-yellow-500/10 border-yellow-500/30',
-        green: 'bg-green-500/10 border-green-500/30',
-        red: 'bg-red-500/10 border-red-500/30',
-        purple: 'bg-purple-500/10 border-purple-500/30',
-        gray: 'bg-slate-700/50 border-slate-600',
-      };
-      const colorClass = colorMap[color.split('_')[0]] || colorMap.gray;
+      const color = (data.color as string) || 'gray_background';
+      const cc = CALLOUT_COLORS[color] || CALLOUT_COLORS.default;
       return (
-        <div className={`flex gap-3 rounded-lg border p-3 my-2 ${colorClass}`}>
-          <span className="text-lg flex-shrink-0">{emoji}</span>
-          <span className="text-slate-300">{text}</span>
+        <div className={`flex gap-3 rounded-md border p-4 my-2 ${cc.bg} ${cc.border}`}>
+          <span className="text-xl flex-shrink-0 leading-[1.75]">{emoji}</span>
+          <span className={`${textCls} flex-1`}>{richTextToJsx(rt)}</span>
         </div>
       );
     }
     case 'divider':
-      return <hr className="border-slate-700 my-4" />;
+      return <hr className="border-[#e9e9e7] my-6" />;
     case 'image': {
-      const imgData = data as Record<string, unknown>;
-      const url = imgData.type === 'external'
-        ? (imgData.external as Record<string, string>)?.url
-        : (imgData.file as Record<string, string>)?.url;
-      const caption = richTextToJsx((imgData.caption as unknown[]) || []);
+      const url = data.type === 'external'
+        ? (data.external as Record<string, string>)?.url
+        : (data.file as Record<string, string>)?.url;
+      const caption = richTextToJsx((data.caption as unknown[]) || []);
       return (
         <figure className="my-4">
           {url && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={url}
-              alt={String(caption || '')}
-              className="rounded-lg max-w-full"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
+            <img src={url} alt="" className="max-w-full rounded-sm" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           )}
-          {caption && <figcaption className="text-xs text-slate-500 mt-1 text-center">{caption}</figcaption>}
+          {(data.caption as unknown[])?.length > 0 && (
+            <figcaption className="text-[12px] text-[#9b9b9b] mt-1.5 text-center">{caption}</figcaption>
+          )}
         </figure>
       );
     }
+    case 'video': {
+      const url = data.type === 'external'
+        ? (data.external as Record<string, string>)?.url
+        : (data.file as Record<string, string>)?.url;
+      if (!url) return null;
+      const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
+      if (isYoutube) {
+        const vid = url.includes('youtu.be') ? url.split('/').pop()?.split('?')[0] : new URL(url).searchParams.get('v');
+        return (
+          <div className="my-4 aspect-video">
+            <iframe src={`https://www.youtube.com/embed/${vid}`} className="w-full h-full rounded-sm" allowFullScreen />
+          </div>
+        );
+      }
+      return (
+        <div className="my-4"><video src={url} controls className="max-w-full rounded-sm" /></div>
+      );
+    }
     case 'file': {
-      const fileData = data as Record<string, unknown>;
-      const url = fileData.type === 'external'
-        ? (fileData.external as Record<string, string>)?.url
-        : (fileData.file as Record<string, string>)?.url;
-      const caption = richTextToJsx((fileData.caption as unknown[]) || []);
+      const url = data.type === 'external'
+        ? (data.external as Record<string, string>)?.url
+        : (data.file as Record<string, string>)?.url;
+      const caption = richTextToJsx((data.caption as unknown[]) || []);
       return (
         <div className="my-2">
-          <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300">
-            <span>📎</span>
-            <span>{caption || 'File'}</span>
+          <a href={url} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-[14px] text-[#37352f] hover:bg-[#f1f1ef] rounded px-2 py-1 transition-colors border border-[#e9e9e7]">
+            <span>📎</span><span className="underline">{caption || '파일'}</span>
           </a>
         </div>
       );
@@ -205,48 +243,71 @@ function BlockRenderer({ block }: { block: NotionBlock }) {
     case 'embed': {
       const url = data.url as string;
       return (
-        <div className="my-3 bg-slate-800 rounded-lg p-3 text-sm text-slate-400">
-          <span>🔗 Embed: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline truncate">{url}</a>
+        <div className="my-3 border border-[#e9e9e7] rounded-sm p-3 text-[13px] text-[#9b9b9b] flex items-center gap-2">
+          <span>🔗</span>
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline truncate">{url}</a>
+        </div>
+      );
+    }
+    case 'bookmark': {
+      const url = (data.url as string) || '';
+      return (
+        <div className="my-2 border border-[#e9e9e7] rounded-sm hover:bg-[#f7f6f3] transition-colors">
+          <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3">
+            <span>🔖</span>
+            <span className="text-[14px] text-blue-600 underline truncate">{url}</span>
+          </a>
         </div>
       );
     }
     case 'toggle': {
-      const text = richTextToJsx((data.rich_text as unknown[]) || []);
+      const inner = richTextToJsx(rt);
       return (
-        <details className="my-2 group">
-          <summary className="cursor-pointer text-slate-300 hover:text-white flex items-center gap-2">
-            <span className="text-slate-500 group-open:rotate-90 transition-transform inline-block">▶</span>
-            {text}
+        <details className="my-1 group" style={{ paddingLeft: indentPx }}>
+          <summary className={`cursor-pointer ${textCls} flex items-center gap-1.5 hover:bg-[#f1f1ef] rounded px-1 py-0.5 -mx-1 list-none`}>
+            <span className="text-[#9b9b9b] text-xs transition-transform group-open:rotate-90 inline-block">▶</span>
+            {inner}
           </summary>
-          <div className="ml-5 mt-1 text-slate-400 text-sm">
-            (내용은 중첩 블록에 있습니다)
+          <div className="ml-5 mt-1 border-l border-[#e9e9e7] pl-3 text-[14px] text-[#9b9b9b]">
+            (하위 블록 내용은 동기화 후 표시됩니다)
           </div>
         </details>
       );
     }
+    case 'table_of_contents':
+      return <div className="my-2 text-[13px] text-[#9b9b9b] border border-[#e9e9e7] rounded-sm px-3 py-2">📑 목차</div>;
     case 'child_database': {
       const title = (data.title as string) || 'Database';
       return (
-        <div className="my-2 flex items-center gap-2 text-slate-400 bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+        <div className="my-2 flex items-center gap-2 border border-[#e9e9e7] rounded-sm px-3 py-2.5 hover:bg-[#f7f6f3] transition-colors">
           <span>🗃️</span>
-          <span className="font-medium text-slate-300">{title}</span>
-          <span className="text-xs bg-slate-700 px-2 py-0.5 rounded">Database</span>
+          <span className="text-[14px] font-medium text-[#37352f]">{title}</span>
+          <span className="text-[11px] text-[#9b9b9b] bg-[#f1f1ef] px-2 py-0.5 rounded ml-auto">데이터베이스</span>
         </div>
       );
     }
     case 'child_page': {
       const title = (data.title as string) || 'Page';
       return (
-        <div className="my-2 flex items-center gap-2 text-slate-400 bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-          <span>📄</span>
-          <span className="font-medium text-slate-300">{title}</span>
+        <div className="my-1 flex items-center gap-2 hover:bg-[#f1f1ef] rounded px-1 py-0.5 -mx-1 cursor-pointer">
+          <span className="text-base">📄</span>
+          <span className="text-[14px] text-[#37352f]">{title}</span>
         </div>
       );
     }
     default:
       return null;
   }
+}
+
+function renderBlocks(blocks: NotionBlock[]): React.ReactNode[] {
+  const result: React.ReactNode[] = [];
+  let olCount = 0;
+  for (const block of blocks) {
+    if (block.type === 'numbered_list_item') { olCount++; } else { olCount = 0; }
+    result.push(<BlockRenderer key={block.id} block={block} listIndex={olCount} />);
+  }
+  return result;
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -754,83 +815,88 @@ export default function NotionMirrorPage() {
               </div>
             </div>
 
-            {/* Page Detail */}
-            <div className="flex-1 bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden flex flex-col">
+            {/* Page Detail - Notion 스타일 화이트 뷰어 */}
+            <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
               {!selectedPage ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500">
-                  <span className="text-4xl mb-3">👈</span>
-                  <span className="text-sm">왼쪽에서 페이지를 선택하세요</span>
+                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                  <span className="text-5xl mb-4">📄</span>
+                  <span className="text-sm font-medium text-gray-500">왼쪽에서 페이지를 선택하세요</span>
                 </div>
               ) : (
                 <>
-                  {/* Page Header */}
-                  <div className="px-6 py-4 border-b border-slate-700/50">
-                    {selectedPage.cover && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={selectedPage.cover}
-                        alt="cover"
-                        className="w-full h-32 object-cover rounded-lg mb-4"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    )}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{selectedPage.icon || '📄'}</span>
-                        <h2 className="text-xl font-bold text-white">{selectedPage.title || '(제목 없음)'}</h2>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setViewMode('render')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            viewMode === 'render' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          렌더링
-                        </button>
-                        <button
-                          onClick={() => setViewMode('markdown')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            viewMode === 'markdown' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          Markdown
-                        </button>
-                        {selectedPage.url && (
-                          <a
-                            href={selectedPage.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                          >
-                            Notion에서 열기 ↗
-                          </a>
-                        )}
-                      </div>
+                  {/* 툴바 */}
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-[#fafafa]">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                      <span>수정: {formatDate(selectedPage.last_edited_time)}</span>
+                      <span>·</span>
+                      <span>동기화: {formatDate(selectedPage.synced_at)}</span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-2">
-                      수정: {formatDate(selectedPage.last_edited_time)} · 동기화: {formatDate(selectedPage.synced_at)}
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setViewMode('render')}
+                        className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${viewMode === 'render' ? 'bg-gray-200 text-gray-800' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}>
+                        미리보기
+                      </button>
+                      <button onClick={() => setViewMode('markdown')}
+                        className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${viewMode === 'markdown' ? 'bg-gray-200 text-gray-800' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}>
+                        Markdown
+                      </button>
+                      {selectedPage.url && (
+                        <a href={selectedPage.url} target="_blank" rel="noopener noreferrer"
+                          className="px-2.5 py-1 rounded text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          Notion
+                        </a>
+                      )}
                     </div>
                   </div>
 
-                  {/* Page Content */}
-                  <div className="flex-1 overflow-y-auto px-6 py-4">
+                  {/* 페이지 본문 */}
+                  <div className="flex-1 overflow-y-auto">
                     {pageDetailLoading ? (
-                      <div className="flex items-center justify-center h-32">
-                        <svg className="w-6 h-6 animate-spin text-slate-500" fill="none" viewBox="0 0 24 24">
+                      <div className="flex flex-col items-center justify-center h-40 gap-3">
+                        <svg className="w-6 h-6 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
+                        <span className="text-sm text-gray-400">로딩 중...</span>
                       </div>
                     ) : viewMode === 'markdown' ? (
-                      <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">{pageMarkdown || '(마크다운 없음)'}</pre>
-                    ) : pageBlocks.length === 0 ? (
-                      <div className="text-slate-500 text-sm text-center py-8">블록이 없습니다</div>
+                      <div className="p-8">
+                        <pre className="text-[13px] text-gray-700 font-mono whitespace-pre-wrap leading-relaxed bg-gray-50 rounded-lg p-4 border border-gray-100">{pageMarkdown || '(마크다운 없음)'}</pre>
+                      </div>
                     ) : (
-                      <div className="max-w-3xl">
-                        {pageBlocks.map((block) => (
-                          <BlockRenderer key={block.id} block={block} />
-                        ))}
+                      <div>
+                        {/* 커버 이미지 */}
+                        {selectedPage.cover && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={selectedPage.cover} alt="cover"
+                            className="w-full h-[200px] object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        )}
+
+                        {/* 아이콘 + 제목 */}
+                        <div className="px-12 pt-8 pb-2 max-w-[900px] mx-auto">
+                          {selectedPage.icon && (
+                            <div className={`text-5xl mb-3 ${selectedPage.cover ? '-mt-8' : ''}`}>
+                              {selectedPage.icon.startsWith('http') ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={selectedPage.icon} alt="" className="w-12 h-12 rounded" />
+                              ) : selectedPage.icon}
+                            </div>
+                          )}
+                          <h1 className="text-[2.5rem] font-bold text-[#37352f] leading-tight tracking-tight mb-6">
+                            {selectedPage.title || '(제목 없음)'}
+                          </h1>
+                        </div>
+
+                        {/* 블록 콘텐츠 */}
+                        {pageBlocks.length === 0 ? (
+                          <div className="px-12 pb-8 text-gray-400 text-sm max-w-[900px] mx-auto">내용이 없습니다</div>
+                        ) : (
+                          <div className="px-12 pb-16 max-w-[900px] mx-auto">
+                            {renderBlocks(pageBlocks)}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
