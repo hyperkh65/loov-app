@@ -51,6 +51,187 @@ interface DatabaseItem {
   last_edited_time?: string;
 }
 
+// ─── Notion 컬러 ─────────────────────────────────────────────────────────────
+const NOTION_SELECT_COLORS: Record<string, { bg: string; text: string }> = {
+  default:  { bg: '#e3e2e0', text: '#37352f' },
+  gray:     { bg: '#e3e2e0', text: '#37352f' },
+  brown:    { bg: '#eee0da', text: '#64473a' },
+  orange:   { bg: '#fadec9', text: '#8d4b1a' },
+  yellow:   { bg: '#fdeea0', text: '#6b5c2e' },
+  green:    { bg: '#dbeddb', text: '#2e6b3e' },
+  blue:     { bg: '#d3e5ef', text: '#2b5a7a' },
+  purple:   { bg: '#e8deee', text: '#5b3d7a' },
+  pink:     { bg: '#f5e0e9', text: '#7a3157' },
+  red:      { bg: '#ffe2dd', text: '#8d2b20' },
+};
+
+// ─── 프로퍼티 값 렌더링 ───────────────────────────────────────────────────────
+function PropCell({ value }: { value: Record<string, unknown> }) {
+  const type = value.type as string;
+
+  if (type === 'title') {
+    const text = (value.title as Record<string, unknown>[])?.map(t => (t.plain_text as string) || '').join('') || '';
+    return <span className="font-medium text-[#37352f] text-[13px]">{text || <span className="text-gray-300">제목 없음</span>}</span>;
+  }
+  if (type === 'rich_text') {
+    const text = (value.rich_text as Record<string, unknown>[])?.map(t => (t.plain_text as string) || '').join('') || '';
+    return <span className="text-[#37352f] text-[13px] truncate max-w-[200px] block">{text}</span>;
+  }
+  if (type === 'select' && value.select) {
+    const sel = value.select as Record<string, string>;
+    const c = NOTION_SELECT_COLORS[sel.color || 'default'] || NOTION_SELECT_COLORS.default;
+    return <span className="inline-block px-2 py-0.5 rounded text-[12px] font-medium whitespace-nowrap" style={{ background: c.bg, color: c.text }}>{sel.name}</span>;
+  }
+  if (type === 'status' && value.status) {
+    const sel = value.status as Record<string, string>;
+    const c = NOTION_SELECT_COLORS[sel.color || 'default'] || NOTION_SELECT_COLORS.default;
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium whitespace-nowrap" style={{ color: c.text }}>
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.text }} />
+        {sel.name}
+      </span>
+    );
+  }
+  if (type === 'multi_select' && Array.isArray(value.multi_select)) {
+    const items = value.multi_select as Record<string, string>[];
+    return (
+      <div className="flex flex-wrap gap-1">
+        {items.map((sel, i) => {
+          const c = NOTION_SELECT_COLORS[sel.color || 'default'] || NOTION_SELECT_COLORS.default;
+          return <span key={i} className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap" style={{ background: c.bg, color: c.text }}>{sel.name}</span>;
+        })}
+      </div>
+    );
+  }
+  if (type === 'date' && value.date) {
+    const d = value.date as Record<string, string>;
+    const fmt = (s: string) => {
+      try { return new Date(s).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }); } catch { return s; }
+    };
+    return <span className="text-[#37352f] text-[13px]">{fmt(d.start)}{d.end ? ` → ${fmt(d.end)}` : ''}</span>;
+  }
+  if (type === 'number' && value.number !== null && value.number !== undefined) {
+    return <span className="text-[#37352f] text-[13px]">{String(value.number)}</span>;
+  }
+  if (type === 'checkbox') {
+    return (
+      <div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center ${value.checkbox ? 'bg-[#2383e2] border-[#2383e2]' : 'border-[#d3d3d3]'}`}>
+        {!!value.checkbox && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+      </div>
+    );
+  }
+  if (type === 'people' && Array.isArray(value.people)) {
+    const people = value.people as Record<string, unknown>[];
+    return (
+      <div className="flex items-center gap-1">
+        {people.map((p, i) => {
+          const name = (p.name as string) || (p.id as string)?.slice(0, 4) || '?';
+          const avatar = (p.avatar_url as string) || null;
+          return avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={i} src={avatar} alt={name} className="w-5 h-5 rounded-full" title={name} />
+          ) : (
+            <div key={i} className="w-5 h-5 rounded-full bg-blue-200 flex items-center justify-center text-[10px] font-bold text-blue-700" title={name}>
+              {name[0]?.toUpperCase()}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  if (type === 'url' && value.url) {
+    return <a href={value.url as string} target="_blank" rel="noopener noreferrer" className="text-blue-500 text-[13px] underline truncate max-w-[160px] block">{value.url as string}</a>;
+  }
+  if (type === 'email' && value.email) {
+    return <span className="text-[13px] text-[#37352f]">{value.email as string}</span>;
+  }
+  if (type === 'phone_number' && value.phone_number) {
+    return <span className="text-[13px] text-[#37352f]">{value.phone_number as string}</span>;
+  }
+  if (type === 'formula') {
+    const f = value.formula as Record<string, unknown>;
+    const val = f?.string || f?.number || f?.boolean;
+    if (val !== undefined) return <span className="text-[13px] text-[#37352f]">{String(val)}</span>;
+  }
+  if (type === 'relation' && Array.isArray(value.relation)) {
+    const rels = value.relation as Record<string, string>[];
+    return <span className="text-[13px] text-gray-400">{rels.length > 0 ? `${rels.length}개 연결` : ''}</span>;
+  }
+  return null;
+}
+
+const PROP_TYPE_ICON: Record<string, string> = {
+  title: 'Aa', rich_text: '≡', select: '◉', multi_select: '⊞', status: '●',
+  date: '📅', number: '#', checkbox: '✓', people: '👤', url: '🔗',
+  email: '✉', phone_number: '📞', formula: 'ƒ', relation: '↗', rollup: '∑',
+  created_time: '🕐', last_edited_time: '🕐', created_by: '👤', last_edited_by: '👤',
+};
+
+// ─── Notion 테이블 뷰 ─────────────────────────────────────────────────────────
+function NotionTable({ items, formatDate }: { items: DatabaseItem[]; formatDate: (s?: string | null) => string }) {
+  // 컬럼 추출: title 타입 먼저, 나머지는 등장 순서대로
+  const colMap = new Map<string, string>(); // key → type
+  for (const item of items) {
+    for (const [k, v] of Object.entries(item.properties || {})) {
+      const prop = v as Record<string, unknown>;
+      if (!colMap.has(k)) colMap.set(k, prop.type as string);
+    }
+  }
+  // title 먼저 정렬
+  const cols = [...colMap.entries()].sort((a, b) => (a[1] === 'title' ? -1 : b[1] === 'title' ? 1 : 0));
+
+  return (
+    <div className="overflow-auto h-full">
+      <table className="w-full border-collapse text-left" style={{ minWidth: Math.max(800, cols.length * 140) }}>
+        <thead>
+          <tr className="border-b border-gray-200 bg-[#fafafa] sticky top-0 z-10">
+            {cols.map(([key, type]) => (
+              <th key={key} className="px-3 py-2 text-[11px] font-semibold text-gray-500 whitespace-nowrap border-r border-gray-100 last:border-r-0"
+                style={{ minWidth: type === 'title' ? 200 : 130 }}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-[10px] text-gray-400">{PROP_TYPE_ICON[type] || '—'}</span>
+                  {key}
+                </span>
+              </th>
+            ))}
+            <th className="px-3 py-2 text-[11px] font-semibold text-gray-500 whitespace-nowrap" style={{ minWidth: 130 }}>
+              수정 시간
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id} className="border-b border-gray-100 hover:bg-[#f7f6f3] transition-colors group">
+              {cols.map(([key]) => {
+                const prop = (item.properties?.[key] || {}) as Record<string, unknown>;
+                return (
+                  <td key={key} className="px-3 py-2 align-middle border-r border-gray-100 last:border-r-0 max-w-[250px]">
+                    {key === cols[0][0] ? (
+                      <div className="flex items-center gap-1.5">
+                        {item.icon && <span className="text-sm flex-shrink-0">{item.icon}</span>}
+                        <PropCell value={prop} />
+                      </div>
+                    ) : (
+                      <PropCell value={prop} />
+                    )}
+                  </td>
+                );
+              })}
+              <td className="px-3 py-2 text-[12px] text-gray-400 whitespace-nowrap">{formatDate(item.last_edited_time)}</td>
+            </tr>
+          ))}
+          {/* 빈 행 추가 버튼 (노션 스타일) */}
+          <tr className="border-b border-gray-100">
+            <td colSpan={cols.length + 1} className="px-4 py-2">
+              <span className="text-[13px] text-gray-300 hover:text-gray-500 cursor-default">+ 새 항목</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Block Renderer (Notion 스타일) ──────────────────────────────────────────
 
 function richTextToJsx(richText: unknown[]): React.ReactNode {
@@ -908,50 +1089,34 @@ export default function NotionMirrorPage() {
 
         {/* ── Tab: 데이터베이스 ─────────────────────────────────────────── */}
         {activeTab === 'databases' && (
-          <div className="flex gap-6 h-[calc(100vh-220px)]">
-            {/* Databases List */}
-            <div className="w-72 flex-shrink-0 bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden flex flex-col">
+          <div className="flex gap-4 h-[calc(100vh-220px)]">
+            {/* 왼쪽: DB 목록 */}
+            <div className="w-60 flex-shrink-0 bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden flex flex-col">
               <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-slate-300">데이터베이스 목록</h2>
-                <button
-                  onClick={loadDatabases}
-                  className="text-slate-400 hover:text-white transition-colors"
-                  title="새로고침"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
+                <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">데이터베이스 목록</h2>
+                <button onClick={loadDatabases} className="text-slate-500 hover:text-white transition-colors" title="새로고침">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
               </div>
-
               <div className="flex-1 overflow-y-auto">
                 {dbsLoading ? (
                   <div className="flex items-center justify-center h-32">
-                    <svg className="w-6 h-6 animate-spin text-slate-500" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                    <svg className="w-5 h-5 animate-spin text-slate-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
                   </div>
                 ) : databases.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-32 text-slate-500 text-sm">
-                    <span className="text-2xl mb-2">🗃️</span>
-                    <span>동기화된 DB가 없습니다</span>
+                  <div className="flex flex-col items-center justify-center h-32 text-slate-600 text-xs gap-2">
+                    <span className="text-2xl">🗃️</span><span>동기화된 DB가 없습니다</span>
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-800">
+                  <div className="py-1">
                     {databases.map((db) => (
-                      <button
-                        key={db.id}
-                        onClick={() => loadDbItems(db)}
-                        className={`w-full text-left px-4 py-3 hover:bg-slate-800/60 transition-colors ${
-                          selectedDb?.id === db.id ? 'bg-indigo-600/20 border-l-2 border-indigo-500' : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-base flex-shrink-0">🗃️</span>
-                          <span className="text-sm text-slate-200 truncate font-medium">{db.title || '(제목 없음)'}</span>
+                      <button key={db.id} onClick={() => loadDbItems(db)}
+                        className={`w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-slate-800/60 transition-colors ${selectedDb?.id === db.id ? 'bg-indigo-600/20 border-l-2 border-indigo-500' : ''}`}>
+                        <span className="text-base flex-shrink-0">🗃️</span>
+                        <div className="min-w-0">
+                          <p className="text-sm text-slate-200 truncate font-medium">{db.title || '(제목 없음)'}</p>
+                          <p className="text-[10px] text-slate-600 mt-0.5">{formatDate(db.synced_at)}</p>
                         </div>
-                        <div className="text-xs text-slate-500 mt-1 ml-6">{formatDate(db.synced_at)}</div>
                       </button>
                     ))}
                   </div>
@@ -959,99 +1124,37 @@ export default function NotionMirrorPage() {
               </div>
             </div>
 
-            {/* Database Items */}
-            <div className="flex-1 bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden flex flex-col">
+            {/* 오른쪽: 테이블 뷰 */}
+            <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
               {!selectedDb ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500">
-                  <span className="text-4xl mb-3">👈</span>
-                  <span className="text-sm">왼쪽에서 데이터베이스를 선택하세요</span>
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                  <span className="text-5xl">🗃️</span>
+                  <span className="text-sm font-medium text-gray-500">왼쪽에서 데이터베이스를 선택하세요</span>
                 </div>
               ) : (
                 <>
-                  <div className="px-6 py-4 border-b border-slate-700/50">
-                    <div className="flex items-center gap-3">
+                  {/* DB 헤더 */}
+                  <div className="px-6 py-4 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="text-2xl">🗃️</span>
-                      <div>
-                        <h2 className="text-xl font-bold text-white">{selectedDb.title || '(제목 없음)'}</h2>
-                        {selectedDb.description && (
-                          <p className="text-sm text-slate-400 mt-0.5">{selectedDb.description}</p>
-                        )}
-                      </div>
+                      <h2 className="text-xl font-bold text-[#37352f]">{selectedDb.title || '(제목 없음)'}</h2>
                     </div>
-                    <div className="text-xs text-slate-500 mt-2">
-                      {dbItems.length}개 항목 · 동기화: {formatDate(selectedDb.synced_at)}
-                    </div>
+                    <p className="text-xs text-gray-400 mt-1 ml-8">{dbItems.length}개 항목 · 동기화: {formatDate(selectedDb.synced_at)}</p>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4">
+                  {/* 테이블 */}
+                  <div className="flex-1 overflow-auto">
                     {dbItemsLoading ? (
-                      <div className="flex items-center justify-center h-32">
-                        <svg className="w-6 h-6 animate-spin text-slate-500" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
+                      <div className="flex flex-col items-center justify-center h-40 gap-3">
+                        <svg className="w-6 h-6 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                        <span className="text-sm text-gray-400">불러오는 중...</span>
                       </div>
                     ) : dbItems.length === 0 ? (
-                      <div className="text-slate-500 text-sm text-center py-8">항목이 없습니다</div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {dbItems.map((item) => (
-                          <div
-                            key={item.id}
-                            className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden hover:border-indigo-500/50 transition-colors"
-                          >
-                            {item.cover && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={item.cover}
-                                alt=""
-                                className="w-full h-24 object-cover"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            )}
-                            <div className="p-3">
-                              <div className="flex items-center gap-2 mb-2">
-                                {item.icon && (
-                                  <span className="text-base flex-shrink-0">{item.icon}</span>
-                                )}
-                                <h3 className="font-semibold text-slate-100 truncate">{item.title || '(제목 없음)'}</h3>
-                              </div>
-                              {/* Properties */}
-                              <div className="space-y-1">
-                                {Object.entries(item.properties || {})
-                                  .slice(0, 4)
-                                  .map(([key, value]) => {
-                                    const v = value as Record<string, unknown>;
-                                    let displayVal = '';
-                                    if (v.type === 'select' && v.select) {
-                                      displayVal = (v.select as Record<string, string>).name || '';
-                                    } else if (v.type === 'multi_select' && Array.isArray(v.multi_select)) {
-                                      displayVal = (v.multi_select as Record<string, string>[]).map((s) => s.name).join(', ');
-                                    } else if (v.type === 'date' && v.date) {
-                                      displayVal = (v.date as Record<string, string>).start || '';
-                                    } else if (v.type === 'number' && v.number !== null) {
-                                      displayVal = String(v.number);
-                                    } else if (v.type === 'checkbox') {
-                                      displayVal = v.checkbox ? '✓' : '✗';
-                                    } else if (v.type === 'rich_text' && Array.isArray(v.rich_text)) {
-                                      displayVal = (v.rich_text as Record<string, unknown>[]).map((t) => (t as Record<string, string>).plain_text || '').join('');
-                                    } else if (v.type === 'title' && Array.isArray(v.title)) {
-                                      displayVal = (v.title as Record<string, unknown>[]).map((t) => (t as Record<string, string>).plain_text || '').join('');
-                                    }
-                                    if (!displayVal) return null;
-                                    return (
-                                      <div key={key} className="flex items-center gap-2 text-xs">
-                                        <span className="text-slate-500 truncate max-w-20">{key}</span>
-                                        <span className="text-slate-300 truncate">{displayVal}</span>
-                                      </div>
-                                    );
-                                  })}
-                              </div>
-                              <div className="text-xs text-slate-600 mt-2">{formatDate(item.last_edited_time)}</div>
-                            </div>
-                          </div>
-                        ))}
+                      <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2">
+                        <span className="text-3xl">📭</span><span className="text-sm">항목이 없습니다</span>
                       </div>
+                    ) : (
+                      <NotionTable items={dbItems} formatDate={formatDate} />
                     )}
                   </div>
                 </>
