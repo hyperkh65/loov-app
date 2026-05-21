@@ -73,6 +73,7 @@ export default function WpToSnsPage() {
   const [snsConns, setSnsConns] = useState<SnsConn[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<Record<number, string>>({});
+  const [generating, setGenerating] = useState<Set<number>>(new Set());
   const [publishing, setPublishing] = useState(false);
   const [results, setResults] = useState<PublishResult[]>([]);
   const [done, setDone] = useState(false);
@@ -120,15 +121,33 @@ export default function WpToSnsPage() {
     else setSelectedIds(new Set(posts.map(p => p.id)));
   };
 
-  const openModal = () => {
+  const generateHook = async (post: WpPost) => {
+    setGenerating(prev => new Set(prev).add(post.id));
+    try {
+      const res = await fetch('/api/wordpress/generate-sns-hook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: post.title, excerpt: post.excerpt }),
+      });
+      const data = await res.json();
+      if (data.hook) setMessages(prev => ({ ...prev, [post.id]: data.hook }));
+    } catch { /* keep existing message */ } finally {
+      setGenerating(prev => { const n = new Set(prev); n.delete(post.id); return n; });
+    }
+  };
+
+  const openModal = async () => {
     const sel = posts.filter(p => selectedIds.has(p.id));
-    const msgs: Record<number, string> = {};
-    sel.forEach(p => { msgs[p.id] = buildMessage(p); });
-    setMessages(msgs);
+    const initMsgs: Record<number, string> = {};
+    sel.forEach(p => { initMsgs[p.id] = buildMessage(p); });
+    setMessages(initMsgs);
     setSelectedPlatforms(new Set(snsConns.map(c => c.platform)));
+    setGenerating(new Set(sel.map(p => p.id)));
     setResults([]);
     setDone(false);
     setShowModal(true);
+    // 모달 오픈과 동시에 AI 후킹 문구 병렬 생성
+    await Promise.all(sel.map(post => generateHook(post)));
   };
 
   const closeModal = () => { setShowModal(false); setDone(false); };
@@ -137,30 +156,69 @@ export default function WpToSnsPage() {
     const sel = posts.filter(p => selectedIds.has(p.id));
     const platforms = Array.from(selectedPlatforms);
     if (!platforms.length) { alert('SNS 계정을 1개 이상 선택해주세요'); return; }
+
+    const threadsSelected = platforms.includes('threads');
+    const otherPlatforms = platforms.filter(p => p !== 'threads');
+
     setPublishing(true);
     const allResults: PublishResult[] = [];
+
     for (const post of sel) {
-      const content = messages[post.id] || buildMessage(post);
-      const body: Record<string, unknown> = { content, platforms };
-      if (post.featured_image) body.media_urls = [post.featured_image];
-      try {
-        const res = await fetch('/api/sns/post-now', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (Array.isArray(data.results)) {
-          data.results.forEach((r: { platform: string; success: boolean; error?: string }) => {
-            allResults.push({ postTitle: post.title, platform: r.platform, success: r.success, error: r.error });
+      const hook = (messages[post.id] || buildMessage(post)).trim();
+      const mediaUrls = post.featured_image ? [post.featured_image] : undefined;
+
+      // Threads: 후킹 문구만 본문 → 링크는 댓글로
+      if (threadsSelected) {
+        try {
+          const body: Record<string, unknown> = {
+            content: hook,
+            platforms: ['threads'],
+            thread_items: [{ content: `🔗 ${post.link}` }],
+          };
+          if (mediaUrls) body.media_urls = mediaUrls;
+          const res = await fetch('/api/sns/post-now', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
           });
-        } else {
-          platforms.forEach(pl => allResults.push({ postTitle: post.title, platform: pl, success: false, error: data.error || '알 수 없는 오류' }));
+          const data = await res.json();
+          if (Array.isArray(data.results)) {
+            data.results.forEach((r: { platform: string; success: boolean; error?: string }) => {
+              allResults.push({ postTitle: post.title, platform: r.platform, success: r.success, error: r.error });
+            });
+          } else {
+            allResults.push({ postTitle: post.title, platform: 'threads', success: false, error: data.error || '오류' });
+          }
+        } catch (e) {
+          allResults.push({ postTitle: post.title, platform: 'threads', success: false, error: String(e) });
         }
-      } catch (e) {
-        platforms.forEach(pl => allResults.push({ postTitle: post.title, platform: pl, success: false, error: String(e) }));
+      }
+
+      // 기타 플랫폼: 후킹 문구 + 링크 본문에 포함
+      if (otherPlatforms.length) {
+        const contentWithLink = `${hook}\n\n🔗 ${post.link}`;
+        try {
+          const body: Record<string, unknown> = { content: contentWithLink, platforms: otherPlatforms };
+          if (mediaUrls) body.media_urls = mediaUrls;
+          const res = await fetch('/api/sns/post-now', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (Array.isArray(data.results)) {
+            data.results.forEach((r: { platform: string; success: boolean; error?: string }) => {
+              allResults.push({ postTitle: post.title, platform: r.platform, success: r.success, error: r.error });
+            });
+          } else {
+            otherPlatforms.forEach(pl => allResults.push({ postTitle: post.title, platform: pl, success: false, error: data.error || '오류' }));
+          }
+        } catch (e) {
+          otherPlatforms.forEach(pl => allResults.push({ postTitle: post.title, platform: pl, success: false, error: String(e) }));
+        }
       }
     }
+
     setResults(allResults);
     setPublishing(false);
     setDone(true);
@@ -441,50 +499,76 @@ export default function WpToSnsPage() {
                 </div>
               ) : (
                 <>
-                  {/* Selected posts with editable messages */}
+                  {/* Selected posts with AI hook messages */}
                   <div className="mb-6">
-                    <h3 className="text-sm font-semibold text-gray-600 mb-3 uppercase tracking-wide">
-                      선택된 글 ({selectedPosts.length}개)
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">
+                        선택된 글 ({selectedPosts.length}개)
+                      </h3>
+                      <span className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full">✨ AI 후킹 문구 자동 생성</span>
+                    </div>
                     <div className="space-y-4">
-                      {selectedPosts.map(post => (
-                        <div key={post.id} className="border border-gray-200 rounded-xl overflow-hidden">
-                          <div className="flex gap-3 p-3 bg-gray-50 border-b border-gray-100">
-                            {post.featured_image_thumb && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={post.featured_image_thumb}
-                                alt=""
-                                className="w-14 h-14 rounded-lg object-cover shrink-0"
-                              />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{post.title}</p>
-                              <a
-                                href={post.link}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={e => e.stopPropagation()}
-                                className="text-xs text-blue-500 hover:underline truncate block mt-0.5"
-                              >
-                                {post.link}
-                              </a>
-                              {!post.featured_image && (
-                                <span className="text-xs text-amber-500 mt-1 block">⚠️ 대표이미지 없음</span>
+                      {selectedPosts.map(post => {
+                        const isGenerating = generating.has(post.id);
+                        const threadsActive = selectedPlatforms.has('threads');
+                        return (
+                          <div key={post.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                            {/* Post info */}
+                            <div className="flex gap-3 p-3 bg-gray-50 border-b border-gray-100">
+                              {post.featured_image_thumb && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={post.featured_image_thumb} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-800 line-clamp-2">{post.title}</p>
+                                <a href={post.link} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                  className="text-xs text-blue-500 hover:underline truncate block mt-0.5">{post.link}</a>
+                                {!post.featured_image && (
+                                  <span className="text-xs text-amber-500 mt-0.5 block">⚠️ 대표이미지 없음</span>
+                                )}
+                              </div>
+                            </div>
+                            {/* Message editor */}
+                            <div className="p-3">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-xs text-gray-400">
+                                  후킹 문구 (수정 가능)
+                                  {threadsActive && (
+                                    <span className="ml-2 text-purple-500">· Threads는 링크를 댓글로 자동 발행</span>
+                                  )}
+                                </label>
+                                <button
+                                  onClick={() => generateHook(post)}
+                                  disabled={isGenerating}
+                                  className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-40 flex items-center gap-1"
+                                >
+                                  {isGenerating
+                                    ? <><span className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin inline-block" /> 생성 중...</>
+                                    : '↺ AI 재생성'}
+                                </button>
+                              </div>
+                              {isGenerating ? (
+                                <div className="w-full h-24 bg-purple-50 rounded-lg flex items-center justify-center gap-2 text-sm text-purple-500">
+                                  <span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                                  AI가 후킹 문구를 생성하고 있습니다...
+                                </div>
+                              ) : (
+                                <textarea
+                                  value={messages[post.id] || ''}
+                                  onChange={e => setMessages(prev => ({ ...prev, [post.id]: e.target.value }))}
+                                  rows={5}
+                                  className="w-full text-sm border border-gray-200 rounded-lg p-2.5 resize-y focus:outline-none focus:ring-2 focus:ring-purple-200"
+                                />
+                              )}
+                              {threadsActive && !isGenerating && (
+                                <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                                  🧵 Threads: 위 문구로 발행 → 댓글로 <span className="font-mono bg-gray-100 px-1 rounded">🔗 {post.link.slice(0, 40)}...</span> 자동 추가
+                                </p>
                               )}
                             </div>
                           </div>
-                          <div className="p-3">
-                            <label className="text-xs text-gray-400 mb-1 block">발행 메시지 (수정 가능)</label>
-                            <textarea
-                              value={messages[post.id] || ''}
-                              onChange={e => setMessages(prev => ({ ...prev, [post.id]: e.target.value }))}
-                              rows={5}
-                              className="w-full text-sm border border-gray-200 rounded-lg p-2.5 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200"
-                            />
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -522,6 +606,9 @@ export default function WpToSnsPage() {
                               <p className="text-sm font-medium text-gray-800">{PLATFORM_NAMES[conn.platform] || conn.platform}</p>
                               <p className="text-xs text-gray-400">
                                 @{conn.platform_username || conn.platform_display_name || '-'}
+                                {conn.platform === 'threads' && (
+                                  <span className="ml-1 text-purple-400">· 링크는 댓글로</span>
+                                )}
                               </p>
                             </div>
                           </label>
@@ -532,10 +619,15 @@ export default function WpToSnsPage() {
 
                   <button
                     onClick={handlePublish}
-                    disabled={publishing || selectedPlatforms.size === 0}
+                    disabled={publishing || selectedPlatforms.size === 0 || generating.size > 0}
                     className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
                   >
-                    {publishing ? (
+                    {generating.size > 0 ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        AI 문구 생성 중...
+                      </>
+                    ) : publishing ? (
                       <>
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         발행 중...
