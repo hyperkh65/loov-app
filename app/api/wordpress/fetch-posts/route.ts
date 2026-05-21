@@ -45,12 +45,14 @@ export async function GET(req: NextRequest) {
 
   const auth = 'Basic ' + Buffer.from(`${site.wp_username}:${site.app_password}`).toString('base64');
 
+  const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
+
   const params = new URLSearchParams({
     '_embed': 'wp:featuredmedia',
     'per_page': String(perPage),
     'page': String(page),
     'orderby': 'date',
-    'order': 'desc',
+    'order': order,
   });
   if (status !== 'any') params.set('status', status);
   if (search.trim()) params.set('search', search.trim());
