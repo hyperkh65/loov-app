@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -29,10 +29,12 @@ export async function POST(req: NextRequest) {
 
 후킹 멘트만 출력 (제목, 따옴표, 설명 없이 본문만):`;
 
-  try {
-    const hook = await generateText(prompt, 'qwen3');
-    return NextResponse.json({ hook: hook.trim() });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+  // gemini(빠름) → qwen3(Ollama) → claude 순으로 시도
+  for (const model of ['gemini', 'qwen3', 'claude']) {
+    try {
+      const hook = await generateText(prompt, model);
+      if (hook?.trim()) return NextResponse.json({ hook: hook.trim() });
+    } catch { continue; }
   }
+  return NextResponse.json({ error: '생성 실패' }, { status: 500 });
 }

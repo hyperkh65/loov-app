@@ -547,19 +547,23 @@ export default function WpToSnsPage() {
                                     : '↺ AI 재생성'}
                                 </button>
                               </div>
-                              {isGenerating ? (
-                                <div className="w-full h-24 bg-purple-50 rounded-lg flex items-center justify-center gap-2 text-sm text-purple-500">
-                                  <span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-                                  AI가 후킹 문구를 생성하고 있습니다...
-                                </div>
-                              ) : (
+                              <div className="relative">
                                 <textarea
                                   value={messages[post.id] || ''}
                                   onChange={e => setMessages(prev => ({ ...prev, [post.id]: e.target.value }))}
                                   rows={5}
-                                  className="w-full text-sm border border-gray-200 rounded-lg p-2.5 resize-y focus:outline-none focus:ring-2 focus:ring-purple-200"
+                                  disabled={isGenerating}
+                                  className={`w-full text-sm border rounded-lg p-2.5 resize-y focus:outline-none focus:ring-2 focus:ring-purple-200 transition ${
+                                    isGenerating ? 'border-purple-200 bg-purple-50 text-gray-400' : 'border-gray-200'
+                                  }`}
                                 />
-                              )}
+                                {isGenerating && (
+                                  <div className="absolute top-2 right-2 flex items-center gap-1 bg-purple-100 text-purple-600 text-xs px-2 py-1 rounded-full">
+                                    <span className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin" />
+                                    AI 생성 중
+                                  </div>
+                                )}
+                              </div>
                               {threadsActive && !isGenerating && (
                                 <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
                                   🧵 Threads: 위 문구로 발행 → 댓글로 <span className="font-mono bg-gray-100 px-1 rounded">🔗 {post.link.slice(0, 40)}...</span> 자동 추가
@@ -619,15 +623,10 @@ export default function WpToSnsPage() {
 
                   <button
                     onClick={handlePublish}
-                    disabled={publishing || selectedPlatforms.size === 0 || generating.size > 0}
+                    disabled={publishing || selectedPlatforms.size === 0}
                     className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
                   >
-                    {generating.size > 0 ? (
-                      <>
-                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        AI 문구 생성 중...
-                      </>
-                    ) : publishing ? (
+                    {publishing ? (
                       <>
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         발행 중...
