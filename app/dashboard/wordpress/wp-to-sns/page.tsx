@@ -51,7 +51,12 @@ const PLATFORM_NAMES: Record<string, string> = {
 function buildMessage(post: WpPost): string {
   const excerpt = post.excerpt.trim();
   const short = excerpt.length > 150 ? excerpt.slice(0, 150) + '...' : excerpt;
-  return [post.title, short, `🔗 ${post.link}`].filter(Boolean).join('\n\n');
+  return [post.title, short].filter(Boolean).join('\n\n');
+}
+
+// 혹시 메시지에 링크가 들어 있으면 제거 (안전장치)
+function stripLink(text: string, link: string): string {
+  return text.replace(link, '').replace(/🔗\s*/g, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 export default function WpToSnsPage() {
@@ -164,7 +169,7 @@ export default function WpToSnsPage() {
     const allResults: PublishResult[] = [];
 
     for (const post of sel) {
-      const hook = (messages[post.id] || buildMessage(post)).trim();
+      const hook = stripLink((messages[post.id] || buildMessage(post)).trim(), post.link);
       const mediaUrls = post.featured_image ? [post.featured_image] : undefined;
 
       // Threads: 후킹 문구만 본문 → 링크는 댓글로
