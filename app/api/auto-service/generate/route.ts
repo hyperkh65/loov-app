@@ -340,9 +340,17 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
   });
 }
 
+function fixCorruptedMarkers(text: string): string {
+  return text
+    .replace(/===\s*(콘텐츠|내용|본문)\s*===/gi, '===CONTENT===')
+    .replace(/===\s*제목\s*===/gi, '===TITLE===')
+    .replace(/===\s*메타\s*===/gi, '===META===')
+    .replace(/===\s*키워드s?\s*===/gi, '===KEYWORDS===');
+}
+
 function parseAiOutput(raw: string) {
   // 마크다운 코드블록 제거
-  const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '');
+  const cleaned = fixCorruptedMarkers(raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, ''));
 
   const extract = (tag: string) => {
     const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?=====[A-Za-z]|$)`, 'i');
