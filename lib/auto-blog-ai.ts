@@ -84,6 +84,7 @@ const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
 function replaceEnglishWords(text: string): string {
   return text.split('\n').map(line => {
     if (/^===\w/.test(line.trim())) return line; // ===MARKER=== 줄 보호
+    if (/<[a-zA-Z][^>]*>/.test(line)) return line; // HTML 태그가 있는 줄 보호
     let result = line;
     for (const [pattern, replacement] of ENGLISH_TO_KOREAN_MAP) {
       result = result.replace(pattern, replacement);
