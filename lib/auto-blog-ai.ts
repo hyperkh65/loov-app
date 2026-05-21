@@ -15,17 +15,19 @@ const KOREAN_ONLY_SUFFIX = `
 
 【영어 단어 사용 절대 금지 — 한국어 동의어로 반드시 대체】
 한국어 표현이 있는 영어 단어는 어떤 상황에서도 절대 영어로 쓰지 마세요.
-- content → 콘텐츠 | marketing → 마케팅 | system → 시스템 | feedback → 피드백
-- update → 업데이트 | design → 디자인 | performance → 성능 | platform → 플랫폼
-- service → 서비스 | brand → 브랜드 | business → 비즈니스 | strategy → 전략
-- process → 프로세스 | trend → 트렌드 | user → 사용자 | data → 데이터
-- channel → 채널 | online → 온라인 | offline → 오프라인 | quality → 품질
-- review → 리뷰 | experience → 경험 | customer → 고객 | solution → 솔루션
-- global → 글로벌 | network → 네트워크 | digital → 디지털 | traffic → 트래픽
-- algorithm → 알고리즘 | image → 이미지 | video → 영상 | share → 공유
-- app → 앱 | homepage → 홈페이지 | search → 검색 | post → 게시물
+- marketing → 마케팅 | system → 시스템 | feedback → 피드백 | update → 업데이트
+- design → 디자인 | performance → 성능 | platform → 플랫폼 | service → 서비스
+- brand → 브랜드 | business → 비즈니스 | strategy → 전략 | process → 프로세스
+- trend → 트렌드 | channel → 채널 | online → 온라인 | offline → 오프라인
+- quality → 품질 | review → 리뷰 | experience → 경험 | customer → 고객
+- solution → 솔루션 | global → 글로벌 | network → 네트워크 | digital → 디지털
+- traffic → 트래픽 | algorithm → 알고리즘 | share → 공유 | app → 앱
+- homepage → 홈페이지 | search → 검색 | escalation → 에스컬레이션
+- broadcasting → 방송 | humanitarian → 인도주의 | universal → 다양한
+- Israel → 이스라엘 | Palestinian → 팔레스타인
 
 예외: iPhone, Netflix, Google, YouTube, Amazon 등 고유 브랜드명·제품명은 영어 그대로 사용 가능.
+단, ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 같은 출력 마커는 반드시 영문 그대로 유지.
 위 규칙을 어기면 응답 전체가 무효 처리됩니다.`.trim();
 
 // CJK 한자·일본어 가나·키릴 등 외국어 제거 (한글·라틴·숫자·일반기호 보존)
@@ -44,9 +46,9 @@ function stripForeignChars(text: string): string {
     .trim();
 }
 
-// 한국어 동의어가 있는 영어 단어를 강제 치환 (===MARKER=== 줄은 보호)
+// 한국어 동의어가 있는 영어 단어를 강제 치환
+// ※ content/data/post/image/video는 HTML 속성·출력 마커와 충돌하므로 제외
 const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
-  [/\bcontent(s)?\b/gi, '콘텐츠'],
   [/\bmarketing\b/gi, '마케팅'],
   [/\bsystem(s)?\b/gi, '시스템'],
   [/\bfeedback\b/gi, '피드백'],
@@ -60,8 +62,6 @@ const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
   [/\bstrateg(y|ies)\b/gi, '전략'],
   [/\bprocess(es)?\b/gi, '프로세스'],
   [/\btrend(s)?\b/gi, '트렌드'],
-  [/\buser(s)?\b/gi, '사용자'],
-  [/\bdata\b/gi, '데이터'],
   [/\bchannel(s)?\b/gi, '채널'],
   [/\bonline\b/gi, '온라인'],
   [/\boffline\b/gi, '오프라인'],
@@ -75,10 +75,14 @@ const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
   [/\bdigital\b/gi, '디지털'],
   [/\btraffic\b/gi, '트래픽'],
   [/\balgorithm(s)?\b/gi, '알고리즘'],
-  [/\bimage(s)?\b/gi, '이미지'],
-  [/\bvideo(s)?\b/gi, '영상'],
   [/\bshare(s)?\b/gi, '공유'],
-  [/\bpost(s)?\b/gi, '게시물'],
+  [/\bescalation\b/gi, '에스컬레이션'],
+  [/\bbroadcast(ing)?\b/gi, '방송'],
+  [/\bhumanitarian\b/gi, '인도주의'],
+  [/\buniversal\b/gi, '다양한'],
+  [/\bversatile\b/gi, '다재다능한'],
+  [/\bIsrael\b/g, '이스라엘'],
+  [/\bPalestinian(s)?\b/gi, '팔레스타인'],
 ];
 
 function replaceEnglishWords(text: string): string {
