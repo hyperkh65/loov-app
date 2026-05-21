@@ -91,6 +91,8 @@ function buildPrompt(keyword: string, news: {title:string;description:string}[],
   return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
 수집된 최신 뉴스와 블로그 자료를 철저히 분석하여, 그 내용에 기반한 정확하고 흥미로운 블로그 글을 작성합니다.
 
+[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어·일본어·러시아어 등 외국어 문자 절대 금지. 한국어 동의어가 있는 영어 단어 절대 사용 금지: marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, trend→트렌드, review→리뷰, digital→디지털, global→글로벌, online→온라인, channel→채널, quality→품질, experience→경험, customer→고객, solution→솔루션, network→네트워크, traffic→트래픽, algorithm→알고리즘, share→공유, escalation→에스컬레이션, broadcasting→방송, humanitarian→인도주의, universal→다양한, Israel→이스라엘, Palestinian→팔레스타인. 고유 브랜드명(iPhone, Google, YouTube 등)만 예외. ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 마커는 반드시 영문 그대로 유지.
+
 ═══════════════════════════════════
 ■ 글 작성 핵심 원칙 (반드시 준수)
 ═══════════════════════════════════
