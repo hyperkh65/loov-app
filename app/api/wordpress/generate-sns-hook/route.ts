@@ -29,12 +29,11 @@ export async function POST(req: NextRequest) {
 
 후킹 멘트만 출력 (제목, 따옴표, 설명 없이 본문만):`;
 
-  // gemini(빠름) → qwen3(Ollama) → claude 순으로 시도
-  for (const model of ['gemini', 'qwen3', 'claude']) {
-    try {
-      const hook = await generateText(prompt, model);
-      if (hook?.trim()) return NextResponse.json({ hook: hook.trim() });
-    } catch { continue; }
+  try {
+    const hook = await generateText(prompt, 'qwen3');
+    if (hook?.trim()) return NextResponse.json({ hook: hook.trim() });
+    return NextResponse.json({ error: '빈 응답' }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
   }
-  return NextResponse.json({ error: '생성 실패' }, { status: 500 });
 }
