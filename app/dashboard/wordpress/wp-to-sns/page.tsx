@@ -65,6 +65,8 @@ export default function WpToSnsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('publish');
+  const [order, setOrder] = useState<'desc' | 'asc'>('desc');
+  const [pageInput, setPageInput] = useState('1');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const [showModal, setShowModal] = useState(false);
@@ -95,13 +97,18 @@ export default function WpToSnsPage() {
     if (!siteId) return;
     setLoading(true);
     try {
-      const p = new URLSearchParams({ site_id: siteId, per_page: '12', page: String(page), status: statusFilter });
+      const p = new URLSearchParams({ site_id: siteId, per_page: '12', page: String(page), status: statusFilter, order });
       if (search) p.set('search', search);
       const res = await fetch(`/api/wordpress/fetch-posts?${p}`);
       const data = await res.json();
-      if (data.posts) { setPosts(data.posts); setTotal(data.total); setTotalPages(data.totalPages); }
+      if (data.posts) {
+        setPosts(data.posts);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+        setPageInput(String(page));
+      }
     } finally { setLoading(false); }
-  }, [siteId, page, search, statusFilter]);
+  }, [siteId, page, search, statusFilter, order]);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
 
@@ -214,6 +221,14 @@ export default function WpToSnsPage() {
                 <option value="draft">임시저장</option>
                 <option value="any">전체</option>
               </select>
+              <select
+                value={order}
+                onChange={e => { setOrder(e.target.value as 'desc' | 'asc'); setPage(1); }}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="desc">최신순</option>
+                <option value="asc">오래된순</option>
+              </select>
               <button
                 onClick={() => { setSearch(searchInput); setPage(1); }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition"
@@ -309,7 +324,14 @@ export default function WpToSnsPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex justify-center items-center gap-2 mb-6">
+              <div className="flex justify-center items-center gap-2 mb-6 flex-wrap">
+                <button
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-40 hover:bg-gray-50"
+                >
+                  ««
+                </button>
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
@@ -317,13 +339,40 @@ export default function WpToSnsPage() {
                 >
                   ← 이전
                 </button>
-                <span className="text-sm text-gray-600">{page} / {totalPages}</span>
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    const n = parseInt(pageInput);
+                    if (!isNaN(n)) setPage(Math.max(1, Math.min(totalPages, n)));
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={pageInput}
+                    onChange={e => setPageInput(e.target.value)}
+                    className="w-16 px-2 py-1.5 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                  <span className="text-sm text-gray-400">/ {totalPages}</span>
+                  <button type="submit" className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                    이동
+                  </button>
+                </form>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
                   className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-40 hover:bg-gray-50"
                 >
                   다음 →
+                </button>
+                <button
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-40 hover:bg-gray-50"
+                >
+                  »»
                 </button>
               </div>
             )}
