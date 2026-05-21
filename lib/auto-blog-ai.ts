@@ -85,15 +85,22 @@ const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
   [/\bPalestinian(s)?\b/gi, '팔레스타인'],
 ];
 
+function replaceInText(text: string): string {
+  let result = text;
+  for (const [pattern, replacement] of ENGLISH_TO_KOREAN_MAP) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 function replaceEnglishWords(text: string): string {
   return text.split('\n').map(line => {
     if (/^===\w/.test(line.trim())) return line; // ===MARKER=== 줄 보호
-    if (/<[a-zA-Z][^>]*>/.test(line)) return line; // HTML 태그가 있는 줄 보호
-    let result = line;
-    for (const [pattern, replacement] of ENGLISH_TO_KOREAN_MAP) {
-      result = result.replace(pattern, replacement);
-    }
-    return result;
+    // HTML 줄도 태그 사이 텍스트만 치환 (속성값 보호)
+    return line.replace(/(<[^>]*>)|([^<]+)/g, (match, tag, textContent) => {
+      if (tag) return tag; // <태그 ...> 는 그대로
+      return textContent ? replaceInText(textContent) : match;
+    });
   }).join('\n');
 }
 
