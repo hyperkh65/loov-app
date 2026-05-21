@@ -29,6 +29,7 @@ const NAV_GROUPS = [
     label: 'ERP 시스템',
     items: [
       { href: '/dashboard/erp/accounting',      icon: '💰', label: '회계/영업 ERP' },
+      { href: '/dashboard/accounting',           icon: '📒', label: '자동 회계장부' },
       { href: '/dashboard/erp/quotes',          icon: '📋', label: '견적 관리' },
       { href: '/dashboard/erp/purchase-orders', icon: '🛒', label: '발주 관리' },
       { href: '/dashboard/erp/imports',         icon: '🚢', label: '수입 관리' },
