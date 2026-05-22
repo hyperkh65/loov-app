@@ -93,7 +93,7 @@ export default function AutoServicePage() {
     { id: 'deepseek-r1', name: 'DeepSeek R1', emoji: '🧠', group: 'ollama' },
     { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku', emoji: '🟣', group: 'claude' },
     { id: 'claude-sonnet-4-6', name: 'Claude Sonnet', emoji: '🟣', group: 'claude' },
-    { id: 'claude-opus-4-6', name: 'Claude Opus', emoji: '🟣', group: 'claude' },
+    { id: 'claude-opus-4-7', name: 'Claude Opus', emoji: '🟣', group: 'claude' },
   ]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -185,7 +185,7 @@ export default function AutoServicePage() {
         : [];
       const claudeList: string[] = claudeRes.status === 'fulfilled' && claudeRes.value
         ? (claudeRes.value.models || [])
-        : ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-6'];
+        : ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-7'];
       const combined = [
         ...ollamaPopular.map((id: string) => ({ id, name: modelLabel(id), emoji: modelEmoji(id), group: 'ollama' })),
         ...claudeList.map((id: string) => ({

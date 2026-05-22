@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, DragEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, DragEvent, Fragment } from 'react';
 
 interface Attachment {
   url: string;
@@ -21,6 +21,12 @@ interface AccountEntry {
   attachments: Attachment[];
   created_at: string;
   updated_at: string | null;
+}
+
+interface MonthStat {
+  month: number;
+  income: number;
+  expense: number;
 }
 
 const INCOME_CATEGORIES = [
@@ -102,6 +108,11 @@ export default function AccountingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [monthlyStats, setMonthlyStats] = useState<MonthStat[]>([]);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+
   const [showModal, setShowModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<AccountEntry | null>(null);
 
@@ -145,7 +156,63 @@ export default function AccountingPage() {
     }
   }, [year, month, typeFilter]);
 
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/accounting/stats?year=${year}`);
+      const json = await res.json();
+      if (res.ok) setMonthlyStats(json.monthly || []);
+    } catch {}
+  }, [year]);
+
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // Client-side filtering
+  const filteredEntries = entries.filter((e) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const inDesc = e.description?.toLowerCase().includes(q) ?? false;
+      const inMemo = e.memo?.toLowerCase().includes(q) ?? false;
+      if (!inDesc && !inMemo) return false;
+    }
+    if (categoryFilter && e.account_category !== categoryFilter) return false;
+    return true;
+  });
+
+  const isFiltered = searchQuery || categoryFilter;
+  const displayIncome = isFiltered
+    ? filteredEntries.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0)
+    : totalIncome;
+  const displayExpense = isFiltered
+    ? filteredEntries.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0)
+    : totalExpense;
+  const netProfit = displayIncome - displayExpense;
+
+  // Category breakdown from filtered entries
+  const categoryTotals = filteredEntries.reduce((acc, e) => {
+    if (!acc[e.account_category]) acc[e.account_category] = { income: 0, expense: 0 };
+    acc[e.account_category][e.type] += e.amount;
+    return acc;
+  }, {} as Record<string, { income: number; expense: number }>);
+
+  const incomeByCategory = Object.entries(categoryTotals)
+    .filter(([, v]) => v.income > 0)
+    .sort((a, b) => b[1].income - a[1].income);
+  const expenseByCategory = Object.entries(categoryTotals)
+    .filter(([, v]) => v.expense > 0)
+    .sort((a, b) => b[1].expense - a[1].expense);
+
+  // Unique categories available in current entries (for filter dropdown)
+  const availableCategories = [...new Set(entries.map((e) => e.account_category))].sort();
+
+  // Monthly chart data
+  const chartData = Array.from({ length: 12 }, (_, i) => {
+    const found = monthlyStats.find((m) => m.month === i + 1);
+    return { month: i + 1, income: found?.income || 0, expense: found?.expense || 0 };
+  });
+  const maxChartVal = Math.max(...chartData.flatMap((d) => [d.income, d.expense]), 1);
+
+  const formCategories = formType === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
 
   function openAddModal() {
     setEditingEntry(null);
@@ -281,6 +348,7 @@ export default function AccountingPage() {
 
       closeModal();
       fetchEntries();
+      fetchStats();
     } catch {
       setFormError('네트워크 오류가 발생했습니다');
     } finally {
@@ -296,6 +364,7 @@ export default function AccountingPage() {
       const json = await res.json();
       if (!res.ok) { alert(json.error || '삭제 실패'); return; }
       fetchEntries();
+      fetchStats();
     } catch {
       alert('삭제 중 오류가 발생했습니다');
     } finally {
@@ -305,7 +374,7 @@ export default function AccountingPage() {
 
   function exportCSV() {
     const rows = [['날짜', '유형', '계정과목', '적요', '금액', '메모']];
-    entries.forEach((e) => {
+    filteredEntries.forEach((e) => {
       rows.push([
         e.date,
         e.type === 'income' ? '수입' : '지출',
@@ -334,9 +403,6 @@ export default function AccountingPage() {
     });
   }
 
-  const netProfit = totalIncome - totalExpense;
-  const categories = formType === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
-
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -353,7 +419,7 @@ export default function AccountingPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={exportCSV}
-              disabled={loading || entries.length === 0}
+              disabled={loading || filteredEntries.length === 0}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-all disabled:opacity-40"
             >
               <span>📥</span> CSV
@@ -427,11 +493,17 @@ export default function AccountingPage() {
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-slate-900/60 border border-emerald-500/20 rounded-2xl p-4">
             <div className="text-xs text-slate-400 mb-1">💰 총 수입</div>
-            <div className="text-lg font-black text-emerald-400">₩{formatKRW(totalIncome)}</div>
+            <div className="text-lg font-black text-emerald-400">₩{formatKRW(displayIncome)}</div>
+            {isFiltered && totalIncome !== displayIncome && (
+              <div className="text-[10px] text-slate-500 mt-0.5">전체 ₩{formatKRW(totalIncome)}</div>
+            )}
           </div>
           <div className="bg-slate-900/60 border border-red-500/20 rounded-2xl p-4">
             <div className="text-xs text-slate-400 mb-1">💸 총 지출</div>
-            <div className="text-lg font-black text-red-400">₩{formatKRW(totalExpense)}</div>
+            <div className="text-lg font-black text-red-400">₩{formatKRW(displayExpense)}</div>
+            {isFiltered && totalExpense !== displayExpense && (
+              <div className="text-[10px] text-slate-500 mt-0.5">전체 ₩{formatKRW(totalExpense)}</div>
+            )}
           </div>
           <div className={`bg-slate-900/60 border rounded-2xl p-4 ${netProfit >= 0 ? 'border-indigo-500/20' : 'border-orange-500/20'}`}>
             <div className="text-xs text-slate-400 mb-1">📊 순이익</div>
@@ -439,6 +511,164 @@ export default function AccountingPage() {
               {netProfit >= 0 ? '' : '-'}₩{formatKRW(Math.abs(netProfit))}
             </div>
           </div>
+        </div>
+
+        {/* 월별 차트 */}
+        <div className="bg-slate-900/60 border border-slate-700/50 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-bold text-white">{year}년 월별 수입/지출</div>
+            <div className="flex items-center gap-3 text-xs text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" />
+                수입
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" />
+                지출
+              </span>
+            </div>
+          </div>
+          <div className="flex items-end gap-1 h-32">
+            {chartData.map((d, i) => {
+              const incomeH = (d.income / maxChartVal) * 100;
+              const expenseH = (d.expense / maxChartVal) * 100;
+              const isSelected = month === i + 1;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className={`w-full flex items-end gap-0.5 h-28 cursor-pointer rounded-t group`}
+                    onClick={() => setMonth(month === i + 1 ? null : i + 1)}
+                    title={`${i + 1}월 수입 ₩${formatKRW(d.income)} / 지출 ₩${formatKRW(d.expense)}`}
+                  >
+                    <div
+                      className={`flex-1 rounded-t-sm transition-all duration-200 ${isSelected ? 'opacity-100' : 'opacity-50 group-hover:opacity-80'} bg-emerald-500`}
+                      style={{ height: `${Math.max(incomeH, 2)}%`, minHeight: d.income > 0 ? '3px' : '0' }}
+                    />
+                    <div
+                      className={`flex-1 rounded-t-sm transition-all duration-200 ${isSelected ? 'opacity-100' : 'opacity-50 group-hover:opacity-80'} bg-red-500`}
+                      style={{ height: `${Math.max(expenseH, 2)}%`, minHeight: d.expense > 0 ? '3px' : '0' }}
+                    />
+                  </div>
+                  <div className={`text-[10px] transition-colors ${isSelected ? 'text-white font-bold' : 'text-slate-500'}`}>
+                    {i + 1}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 계정과목별 집계 */}
+        {(incomeByCategory.length > 0 || expenseByCategory.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {incomeByCategory.length > 0 && typeFilter !== 'expense' && (
+              <div className="bg-slate-900/60 border border-emerald-500/10 rounded-2xl p-4">
+                <div className="text-sm font-bold text-emerald-400 mb-3">수입 계정과목별</div>
+                <div className="space-y-2.5">
+                  {incomeByCategory.map(([cat, totals]) => (
+                    <div key={cat} className="space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <button
+                          onClick={() => setCategoryFilter(categoryFilter === cat ? '' : cat)}
+                          className={`transition-colors ${categoryFilter === cat ? 'text-emerald-300 font-bold' : 'text-slate-300 hover:text-emerald-300'}`}
+                        >
+                          {cat}
+                        </button>
+                        <span className="text-emerald-400 font-semibold tabular-nums">
+                          ₩{formatKRW(totals.income)}
+                          <span className="text-slate-500 font-normal ml-1">
+                            ({displayIncome > 0 ? Math.round((totals.income / displayIncome) * 100) : 0}%)
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                          style={{ width: `${displayIncome > 0 ? (totals.income / displayIncome) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {expenseByCategory.length > 0 && typeFilter !== 'income' && (
+              <div className="bg-slate-900/60 border border-red-500/10 rounded-2xl p-4">
+                <div className="text-sm font-bold text-red-400 mb-3">지출 계정과목별</div>
+                <div className="space-y-2.5">
+                  {expenseByCategory.map(([cat, totals]) => (
+                    <div key={cat} className="space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <button
+                          onClick={() => setCategoryFilter(categoryFilter === cat ? '' : cat)}
+                          className={`transition-colors ${categoryFilter === cat ? 'text-red-300 font-bold' : 'text-slate-300 hover:text-red-300'}`}
+                        >
+                          {cat}
+                        </button>
+                        <span className="text-red-400 font-semibold tabular-nums">
+                          ₩{formatKRW(totals.expense)}
+                          <span className="text-slate-500 font-normal ml-1">
+                            ({displayExpense > 0 ? Math.round((totals.expense / displayExpense) * 100) : 0}%)
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-red-500 rounded-full transition-all duration-500"
+                          style={{ width: `${displayExpense > 0 ? (totals.expense / displayExpense) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 검색 + 카테고리 필터 */}
+        <div className="flex flex-wrap gap-2">
+          <div className="relative flex-1 min-w-48">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="적요, 메모 검색..."
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl pl-9 pr-4 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-sm"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="bg-slate-800/60 border border-slate-700/50 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none min-w-36"
+          >
+            <option value="">모든 계정과목</option>
+            {availableCategories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+          {(searchQuery || categoryFilter) && (
+            <button
+              onClick={() => { setSearchQuery(''); setCategoryFilter(''); }}
+              className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm transition-all"
+            >
+              초기화
+            </button>
+          )}
+          {isFiltered && (
+            <div className="flex items-center px-3 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+              {filteredEntries.length}건
+            </div>
+          )}
         </div>
 
         {/* 오류 */}
@@ -455,13 +685,17 @@ export default function AccountingPage() {
               <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mr-3" />
               불러오는 중...
             </div>
-          ) : entries.length === 0 ? (
+          ) : filteredEntries.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
               <span className="text-4xl">📭</span>
-              <div className="text-sm">거래 내역이 없습니다</div>
-              <button onClick={openAddModal} className="text-indigo-400 text-sm hover:text-indigo-300 transition-colors">
-                + 첫 거래를 추가해보세요
-              </button>
+              <div className="text-sm">
+                {isFiltered ? '검색 결과가 없습니다' : '거래 내역이 없습니다'}
+              </div>
+              {!isFiltered && (
+                <button onClick={openAddModal} className="text-indigo-400 text-sm hover:text-indigo-300 transition-colors">
+                  + 첫 거래를 추가해보세요
+                </button>
+              )}
             </div>
           ) : (
             <table className="w-full">
@@ -471,18 +705,16 @@ export default function AccountingPage() {
                   <th className="px-4 py-3 text-left">유형</th>
                   <th className="px-4 py-3 text-left">계정과목</th>
                   <th className="px-4 py-3 text-left">적요</th>
+                  <th className="px-4 py-3 text-left">메모</th>
                   <th className="px-4 py-3 text-right">금액</th>
                   <th className="px-4 py-3 text-center">첨부</th>
                   <th className="px-4 py-3 text-center">관리</th>
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry) => (
-                  <>
-                    <tr
-                      key={entry.id}
-                      className="border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors group"
-                    >
+                {filteredEntries.map((entry) => (
+                  <Fragment key={entry.id}>
+                    <tr className="border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors group">
                       <td className="px-4 py-3 text-sm text-slate-300 whitespace-nowrap">
                         {entry.date.slice(5).replace('-', '/')}
                       </td>
@@ -496,8 +728,11 @@ export default function AccountingPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{entry.account_category}</td>
-                      <td className="px-4 py-3 text-sm text-slate-400 max-w-xs truncate">
+                      <td className="px-4 py-3 text-sm text-slate-400 max-w-[180px] truncate">
                         {entry.description || <span className="text-slate-600">-</span>}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-500 max-w-[140px] truncate">
+                        {entry.memo || <span className="text-slate-700">-</span>}
                       </td>
                       <td className={`px-4 py-3 text-sm font-bold text-right whitespace-nowrap ${
                         entry.type === 'income' ? 'text-emerald-400' : 'text-red-400'
@@ -535,8 +770,8 @@ export default function AccountingPage() {
                       </td>
                     </tr>
                     {expandedAttachments.has(entry.id) && entry.attachments && entry.attachments.length > 0 && (
-                      <tr key={`${entry.id}-attachments`} className="bg-slate-800/30 border-b border-slate-800/60">
-                        <td colSpan={7} className="px-4 py-3">
+                      <tr className="bg-slate-800/30 border-b border-slate-800/60">
+                        <td colSpan={8} className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
                             {entry.attachments.map((att, i) => (
                               <a
@@ -557,7 +792,7 @@ export default function AccountingPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -571,16 +806,20 @@ export default function AccountingPage() {
               <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mr-3" />
               불러오는 중...
             </div>
-          ) : entries.length === 0 ? (
+          ) : filteredEntries.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
               <span className="text-4xl">📭</span>
-              <div className="text-sm">거래 내역이 없습니다</div>
-              <button onClick={openAddModal} className="text-indigo-400 text-sm hover:text-indigo-300">
-                + 첫 거래를 추가해보세요
-              </button>
+              <div className="text-sm">
+                {isFiltered ? '검색 결과가 없습니다' : '거래 내역이 없습니다'}
+              </div>
+              {!isFiltered && (
+                <button onClick={openAddModal} className="text-indigo-400 text-sm hover:text-indigo-300">
+                  + 첫 거래를 추가해보세요
+                </button>
+              )}
             </div>
           ) : (
-            entries.map((entry) => (
+            filteredEntries.map((entry) => (
               <div key={entry.id} className="bg-slate-900/60 border border-slate-700/50 rounded-2xl p-4 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -599,6 +838,9 @@ export default function AccountingPage() {
                 </div>
                 {entry.description && (
                   <div className="text-sm text-slate-300">{entry.description}</div>
+                )}
+                {entry.memo && (
+                  <div className="text-xs text-slate-500">{entry.memo}</div>
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-500">{entry.date}</span>
@@ -652,7 +894,6 @@ export default function AccountingPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="w-full max-w-lg bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-            {/* 모달 헤더 */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
               <h2 className="text-base font-black text-white">
                 {editingEntry ? '거래 수정' : '거래 추가'}
@@ -665,9 +906,7 @@ export default function AccountingPage() {
               </button>
             </div>
 
-            {/* 모달 본문 */}
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {/* 유형 토글 */}
               <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800/60 rounded-xl">
                 <button
                   onClick={() => handleTypeChange('income')}
@@ -691,7 +930,6 @@ export default function AccountingPage() {
                 </button>
               </div>
 
-              {/* 날짜 */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">날짜</label>
                 <input
@@ -702,7 +940,6 @@ export default function AccountingPage() {
                 />
               </div>
 
-              {/* 금액 */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">금액 (원)</label>
                 <div className="relative">
@@ -718,7 +955,6 @@ export default function AccountingPage() {
                 </div>
               </div>
 
-              {/* 적요 */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">적요 (거래 내용)</label>
                 <input
@@ -730,7 +966,6 @@ export default function AccountingPage() {
                 />
               </div>
 
-              {/* 계정과목 */}
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">계정과목</label>
@@ -746,13 +981,12 @@ export default function AccountingPage() {
                   className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
                 >
                   <option value="">계정과목 선택</option>
-                  {categories.map((cat) => (
+                  {formCategories.map((cat) => (
                     <option key={cat.value} value={cat.value}>{cat.label}</option>
                   ))}
                 </select>
               </div>
 
-              {/* 메모 */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">메모 (선택)</label>
                 <textarea
@@ -764,7 +998,6 @@ export default function AccountingPage() {
                 />
               </div>
 
-              {/* 첨부파일 */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">첨부파일 (영수증 등)</label>
                 <div
@@ -788,7 +1021,7 @@ export default function AccountingPage() {
                       <span className="text-2xl">📎</span>
                       <div className="text-xs text-slate-400 text-center">
                         클릭하거나 파일을 끌어다 놓으세요<br />
-                        <span className="text-slate-500">최대 20MB</span>
+                        <span className="text-slate-500">최대 50MB</span>
                       </div>
                     </>
                   )}
@@ -823,7 +1056,6 @@ export default function AccountingPage() {
                 )}
               </div>
 
-              {/* 오류 */}
               {formError && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
                   {formError}
@@ -831,7 +1063,6 @@ export default function AccountingPage() {
               )}
             </div>
 
-            {/* 모달 푸터 */}
             <div className="flex items-center gap-3 px-5 py-4 border-t border-slate-700/50 flex-shrink-0">
               <button
                 onClick={closeModal}

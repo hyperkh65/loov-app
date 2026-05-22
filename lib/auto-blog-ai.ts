@@ -329,27 +329,28 @@ export async function generateText(
   // ── 나머지 provider 헬퍼 ────────────────────────────────
   const tryGemini = async () => {
     const key = await getSetting('GEMINI_API_KEY');
-    if (!key) return false;
+    if (!key) { errors.push('Gemini: API 키 미설정'); return false; }
     try { return await callGemini(key, prompt); }
     catch (e) { errors.push(`Gemini: ${e}`); return false; }
   };
   const tryOpenRouter = async () => {
     const key = clientOpenrouterKey || await getSetting('OPENROUTER_API_KEY');
-    if (!key) return false;
+    if (!key) { errors.push('OpenRouter: API 키 미설정'); return false; }
     for (const model of OPENROUTER_MODELS) {
       try { return await callOpenRouter(key, model, prompt); } catch { continue; }
     }
+    errors.push('OpenRouter: 모든 모델 실패');
     return false;
   };
   const tryOpenAI = async () => {
     const key = await getSetting('OPENAI_API_KEY');
-    if (!key) return false;
+    if (!key) { errors.push('OpenAI: API 키 미설정'); return false; }
     try { return await callOpenAI(key, prompt); }
     catch (e) { errors.push(`OpenAI: ${e}`); return false; }
   };
   const tryClaude = async (model?: string) => {
     const key = await getSetting('CLAUDE_API_KEY');
-    if (!key) return false;
+    if (!key) { errors.push('Claude: API 키 미설정'); return false; }
     try { return await callClaude(key, prompt, model); }
     catch (e) { errors.push(`Claude: ${e}`); return false; }
   };

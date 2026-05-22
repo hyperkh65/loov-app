@@ -85,7 +85,7 @@ async function getLatestClaudeModel(tier: 'sonnet' | 'haiku' | 'opus', apiKey: s
   const FALLBACK: Record<string, string> = {
     sonnet: 'claude-sonnet-4-6',
     haiku:  'claude-haiku-4-5-20251001',
-    opus:   'claude-opus-4-6',
+    opus:   'claude-opus-4-7',
   };
   try {
     const now = Date.now();
