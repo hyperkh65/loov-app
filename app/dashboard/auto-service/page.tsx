@@ -167,11 +167,25 @@ export default function AutoServicePage() {
   const [schedWpSiteIds, setSchedWpSiteIds] = useState<string[]>([]);
   const [scheduling, setScheduling] = useState(false);
 
-  // localStorage에서 무료AI 페이지의 키 읽기 (서버로 전달용)
-  const getAiKeys = () => ({
-    clientOllamaKey: localStorage.getItem('freeai_ollama_key') || undefined,
-    clientOpenrouterKey: localStorage.getItem('freeai_openrouter_key') || undefined,
-  });
+  // localStorage에서 키 읽기 (서버로 전달용)
+  const getAiKeys = () => {
+    let clientGlobalAIKey: string | undefined;
+    let clientGlobalAIModel: string | undefined;
+    try {
+      const stored = localStorage.getItem('bossai-v2');
+      if (stored) {
+        const { state } = JSON.parse(stored) as { state?: { companySettings?: { globalAIConfig?: { apiKey?: string; model?: string } } } };
+        const cfg = state?.companySettings?.globalAIConfig;
+        if (cfg?.apiKey) { clientGlobalAIKey = cfg.apiKey; clientGlobalAIModel = cfg.model; }
+      }
+    } catch { /* ignore */ }
+    return {
+      clientOllamaKey: localStorage.getItem('freeai_ollama_key') || undefined,
+      clientOpenrouterKey: localStorage.getItem('freeai_openrouter_key') || undefined,
+      clientGlobalAIKey,
+      clientGlobalAIModel,
+    };
+  };
 
   const loadModels = useCallback(async () => {
     setModelsLoading(true);

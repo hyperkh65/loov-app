@@ -391,7 +391,7 @@ export async function POST(req: NextRequest) {
   }
   const supabase = isBot ? await createAdminClient() : await createClient();
 
-  const { keyword, ai_model = 'qwen3', clientOllamaKey, clientOpenrouterKey } = await req.json();
+  const { keyword, ai_model = 'qwen3', clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel } = await req.json();
   if (!keyword?.trim()) return NextResponse.json({ error: '키워드를 입력하세요' }, { status: 400 });
 
   // 1. 뉴스/블로그 수집
@@ -408,7 +408,7 @@ export async function POST(req: NextRequest) {
   let scrapedImages: { url: string; title: string }[] = [];
   try {
     [rawOutput, scrapedImages] = await Promise.all([
-      generateText(prompt, ai_model, clientOllamaKey, clientOpenrouterKey),
+      generateText(prompt, ai_model, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel),
       scrapeArticleImages(allSourceItems),
     ]);
   } catch (err) {

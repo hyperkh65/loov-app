@@ -173,12 +173,12 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
   throw new Error('Gemini 모든 모델 실패');
 }
 
-async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
+async function callOpenAI(apiKey: string, prompt: string, model = 'gpt-4o-mini'): Promise<string> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model,
       messages: [{ role: 'user', content: prompt }],
     }),
     signal: AbortSignal.timeout(540_000),
@@ -272,6 +272,8 @@ export async function generateText(
   preferModel: string = 'qwen3',
   clientOllamaKey?: string,
   clientOpenrouterKey?: string,
+  clientGlobalAIKey?: string,
+  clientGlobalAIModel?: string,
 ): Promise<string> {
   // 한국어 강제 지시문 추가 (중복 방지)
   if (!prompt.includes('[언어 규칙 - 절대 준수]')) {
@@ -355,6 +357,13 @@ export async function generateText(
     try { return await callOpenAI(key, prompt); }
     catch (e) { errors.push(`OpenAI: ${e}`); return false; }
   };
+  // AI 직원 기본 설정 키 (localStorage → 클라이언트에서 전달)
+  const tryGlobalAI = async () => {
+    if (!clientGlobalAIKey) return false;
+    const model = clientGlobalAIModel || 'gpt-4o';
+    try { return await callOpenAI(clientGlobalAIKey, prompt, model); }
+    catch (e) { errors.push(`GlobalAI(${model}): ${e}`); return false; }
+  };
   const tryClaude = async (model?: string) => {
     const key = await getSetting('CLAUDE_API_KEY');
     if (!key) { errors.push('Claude: API 키 미설정'); return false; }
@@ -390,6 +399,7 @@ export async function generateText(
   if (!preferModel.startsWith('gemini') && preferModel !== 'gemini') fallbacks.push(tryGemini);
   if (!preferModel.startsWith('claude')) fallbacks.push(() => tryClaude());
   if (preferModel !== 'openrouter') fallbacks.push(tryOpenRouter);
+  fallbacks.push(tryGlobalAI);
   if (!preferModel.startsWith('gpt') && preferModel !== 'openai') fallbacks.push(tryOpenAI);
 
   for (const fn of fallbacks) {
