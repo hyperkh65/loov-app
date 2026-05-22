@@ -305,31 +305,31 @@ export async function generateText(
       'mistral', 'mistral-small3.1', 'gemma3', 'deepseek-r1',
       'phi4', 'phi4-mini', 'ministral-3',
     ];
-    // 모델 목록은 첫 번째 키로 한 번만 조회 (Ollama Cloud는 모든 키가 동일 모델 공유)
-    const available = await getAvailableOllamaModels(ollamaKeys[0]);
-    let toTry: string[];
-    if (available.length > 0) {
-      const priority = available.filter(m => m === mainModel || m.startsWith(mainModel + ':'));
-      const rest = available.filter(m => !priority.includes(m));
-      toTry = [...priority, ...rest];
-    } else {
-      // 모델 목록 조회 실패 시 :cloud 접미사도 함께 시도
-      const withCloud = [mainModel + ':cloud', mainModel,
-        ...OLLAMA_FALLBACKS.filter(m => m !== mainModel).flatMap(m => [m + ':cloud', m])
-      ];
-      toTry = [...new Set(withCloud)];
-    }
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
+      // 키마다 모델 목록 조회 — 429 한도 초과된 키는 빈 목록 반환하므로 다음 키로 넘어감
+      const available = await getAvailableOllamaModels(key);
+      let toTry: string[];
+      if (available.length > 0) {
+        const priority = available.filter(m => m === mainModel || m.startsWith(mainModel + ':'));
+        const rest = available.filter(m => !priority.includes(m));
+        toTry = [...priority, ...rest];
+      } else {
+        // 모델 목록 조회 실패 시 :cloud 접미사도 함께 시도
+        const withCloud = [mainModel + ':cloud', mainModel,
+          ...OLLAMA_FALLBACKS.filter(m => m !== mainModel).flatMap(m => [m + ':cloud', m])
+        ];
+        toTry = [...new Set(withCloud)];
+      }
       for (const model of toTry) {
         try { return await callOllama(key, model, prompt); }
         catch (e) {
-          if (firstErrors.length < 2) firstErrors.push(`${model}: ${String(e).slice(0, 80)}`);
+          if (firstErrors.length < 3) firstErrors.push(`key${ollamaKeys.indexOf(key) + 1}/${model}: ${String(e).slice(0, 60)}`);
           continue;
         }
       }
     }
-    errors.push(`Ollama: 모든 키/모델 실패${firstErrors.length ? ` (${firstErrors.join(', ')})` : ''}`);
+    errors.push(`Ollama: 모든 키/모델 실패${firstErrors.length ? ` (${firstErrors.join(' | ')})` : ''}`);
     return false;
   };
 
