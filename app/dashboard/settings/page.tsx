@@ -77,7 +77,7 @@ export default function SettingsPage() {
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
 
   // Claude models state (동적 로드)
-  const [claudeModels, setClaudeModels] = useState<string[]>(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001']);
+  const [claudeModels, setClaudeModels] = useState<string[]>(['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001']);
 
   // OpenRouter state
   const [openrouterKey, setOpenrouterKey] = useState('');

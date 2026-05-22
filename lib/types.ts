@@ -12,7 +12,7 @@ export interface AIProviderConfig {
 }
 
 export const AI_PROVIDER_INFO: Record<AIProvider, { label: string; models: string[]; placeholder: string }> = {
-  claude:      { label: 'Claude (Anthropic)', models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'], placeholder: 'sk-ant-...' },
+  claude:      { label: 'Claude (Anthropic)', models: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'], placeholder: 'sk-ant-...' },
   gemini:      { label: 'Gemini (Google)',    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],            placeholder: 'AIza...' },
   gpt4o:       { label: 'GPT-4o (OpenAI)',   models: ['gpt-4o', 'gpt-4o-mini'],                                              placeholder: 'sk-...' },
   gpt4:        { label: 'GPT-4 (OpenAI)',    models: ['gpt-4-turbo', 'gpt-4'],                                               placeholder: 'sk-...' },

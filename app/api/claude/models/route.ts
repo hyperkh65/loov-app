@@ -8,7 +8,7 @@ import { getSetting } from '@/lib/get-setting';
 
 // 로컬 fallback (API 실패 또는 키 없을 때)
 const FALLBACK_MODELS = [
-  'claude-opus-4-6',
+  'claude-opus-4-7',
   'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001',
 ];
