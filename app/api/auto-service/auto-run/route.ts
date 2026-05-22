@@ -376,6 +376,8 @@ async function generateArticleForUser(
   aiModel: string,
   clientOllamaKey?: string,
   clientOpenrouterKey?: string,
+  clientGlobalAIKey?: string,
+  clientGlobalAIModel?: string,
 ): Promise<{ ok: boolean; reason?: string }> {
   // 최근 7일 내 같은 키워드 글 있으면 스킵
   const { data: existing } = await supabase
@@ -400,7 +402,7 @@ async function generateArticleForUser(
     let rawOutput: string;
     let scrapedImages: { url: string; title: string }[] = [];
     [rawOutput, scrapedImages] = await Promise.all([
-      generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey),
+      generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel),
       scrapeArticleImages(allSourceItems),
     ]);
 
@@ -522,7 +524,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey } = await req.json();
+  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel } = await req.json();
   const adminSupabase = createAdminClient();
 
   const encoder = new TextEncoder();
@@ -547,7 +549,7 @@ export async function POST(req: NextRequest) {
           if (generated >= max) break;
           send({ type: 'progress', keyword, status: 'generating' });
 
-          const result = await generateArticleForUser(adminSupabase, user!.id, keyword, ai_model, clientOllamaKey, clientOpenrouterKey);
+          const result = await generateArticleForUser(adminSupabase, user!.id, keyword, ai_model, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel);
           if (result.ok) {
             generated++;
             usedKeywords.push(keyword);
