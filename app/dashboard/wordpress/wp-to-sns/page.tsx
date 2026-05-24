@@ -33,6 +33,31 @@ interface PublishResult {
   error?: string;
 }
 
+interface AutoJob {
+  id: string;
+  status: 'running' | 'stopped' | 'completed';
+  current_page: number;
+  current_post_index: number;
+  total_done: number;
+  total_success: number;
+  total_failed: number;
+  page_from: number;
+  page_to: number;
+  interval_seconds: number;
+  next_run_at: string;
+  created_at: string;
+}
+
+interface JobLog {
+  id: string;
+  post_title: string;
+  post_url: string;
+  platform: string;
+  success: boolean;
+  error_message: string | null;
+  created_at: string;
+}
+
 const PLATFORM_ICONS: Record<string, string> = {
   twitter: '🐦', threads: '🧵', facebook: '📘', instagram: '📸', linkedin: '💼',
 };
@@ -59,6 +84,10 @@ function stripLink(text: string, link: string): string {
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function fmtTime(d: string) {
+  return new Date(d).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 export default function WpToSnsPage() {
@@ -92,24 +121,22 @@ export default function WpToSnsPage() {
   const [results, setResults] = useState<PublishResult[]>([]);
   const [done, setDone] = useState(false);
 
-  // ── 자동 발행 ────────────────────────────────────
+  // ── 자동 발행 설정 ────────────────────────────────────
   const [autoSNS, setAutoSNS] = useState<Set<string>>(new Set());
   const [autoUseAI, setAutoUseAI] = useState(true);
   const [autoOrder, setAutoOrder] = useState<'desc' | 'asc'>('desc');
   const [autoPageFrom, setAutoPageFrom] = useState(1);
   const [autoPageTo, setAutoPageTo] = useState(1);
   const [autoInterval, setAutoInterval] = useState(60);
-  const [autoRunning, setAutoRunning] = useState(false);
-  const [showAutoLog, setShowAutoLog] = useState(false);
-  const [autoProgress, setAutoProgress] = useState<{
-    total: number; done: number; success: number; failed: number;
-    currentPost: string; currentPage: number; waitSec: number;
-    results: PublishResult[]; finished: boolean;
-  }>({ total: 0, done: 0, success: 0, failed: 0, currentPost: '', currentPage: 0, waitSec: 0, results: [], finished: false });
+  const [autoPageToInitialized, setAutoPageToInitialized] = useState(false);
 
-  const autoStopRef = useRef(false);
-  const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const autoPageToInitialized = useRef(false);
+  // ── 자동 발행 서버 작업 상태 ──────────────────────
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [autoJob, setAutoJob] = useState<AutoJob | null>(null);
+  const [jobLogs, setJobLogs] = useState<JobLog[]>([]);
+  const [showAutoLog, setShowAutoLog] = useState(false);
+  const [autoStarting, setAutoStarting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── 초기 로드 ─────────────────────────────────────
   useEffect(() => {
@@ -126,17 +153,46 @@ export default function WpToSnsPage() {
     });
   }, []);
 
-  // ── 자동 발행 끝 페이지: 사이트 변경 시 리셋, 첫 로드 시만 자동 설정 ──
+  // ── 사이트 변경 시 끝 페이지 초기화 ──────────────
+  useEffect(() => { setAutoPageToInitialized(false); }, [siteId]);
+
+  // ── totalPages 첫 로드 시에만 autoPageTo 설정 ──────
   useEffect(() => {
-    autoPageToInitialized.current = false;
+    if (totalPages > 0 && !autoPageToInitialized) {
+      setAutoPageTo(totalPages);
+      setAutoPageToInitialized(true);
+    }
+  }, [totalPages, autoPageToInitialized]);
+
+  // ── 기존 실행 중인 작업 복구 ──────────────────────
+  useEffect(() => {
+    if (!siteId) return;
+    fetch(`/api/sns-auto-job/status?site_id=${siteId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.job && data.job.status === 'running') {
+          setJobId(data.job.id);
+          setAutoJob(data.job);
+          setJobLogs(data.logs || []);
+          setShowAutoLog(true);
+        }
+      });
   }, [siteId]);
 
+  // ── 폴링: 작업 실행 중일 때 3초마다 상태 갱신 ────
   useEffect(() => {
-    if (totalPages > 0 && !autoPageToInitialized.current) {
-      setAutoPageTo(totalPages);
-      autoPageToInitialized.current = true;
-    }
-  }, [totalPages]);
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (!jobId || !autoJob || autoJob.status !== 'running') return;
+
+    pollRef.current = setInterval(async () => {
+      const res = await fetch(`/api/sns-auto-job/status?job_id=${jobId}`);
+      const data = await res.json();
+      if (data.job) setAutoJob(data.job);
+      if (data.logs) setJobLogs(data.logs);
+    }, 3000);
+
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [jobId, autoJob?.status]);
 
   // ── 글 목록 로드 ──────────────────────────────────
   const loadPosts = useCallback(async () => {
@@ -246,94 +302,66 @@ export default function WpToSnsPage() {
     setResults(allResults); setPublishing(false); setDone(true);
   };
 
-  // ── 자동 발행 ─────────────────────────────────────
-  const sleepCancellable = async (ms: number) => {
-    const end = Date.now() + ms;
-    let remaining = Math.ceil(ms / 1000);
-    setAutoProgress(prev => ({ ...prev, waitSec: remaining }));
-    if (waitTimerRef.current) clearInterval(waitTimerRef.current);
-    waitTimerRef.current = setInterval(() => {
-      remaining--;
-      setAutoProgress(prev => ({ ...prev, waitSec: Math.max(0, remaining) }));
-    }, 1000);
-    while (Date.now() < end) {
-      if (autoStopRef.current) break;
-      await new Promise(r => setTimeout(r, 100));
-    }
-    if (waitTimerRef.current) { clearInterval(waitTimerRef.current); waitTimerRef.current = null; }
-    setAutoProgress(prev => ({ ...prev, waitSec: 0 }));
-  };
-
+  // ── 자동 발행 시작 (서버에 작업 생성) ─────────────
   const startAutoRun = async () => {
     if (!siteId || autoSNS.size === 0) { alert('사이트와 SNS 계정을 선택해주세요'); return; }
-    autoStopRef.current = false;
-    setAutoRunning(true);
-    setShowAutoLog(true);
+    if (autoPageFrom > autoPageTo) { alert('시작 페이지가 끝 페이지보다 클 수 없습니다'); return; }
 
-    const fromPage = Math.max(1, autoPageFrom);
-    const toPage = Math.min(totalPages, autoPageTo);
-    const platforms = Array.from(autoSNS);
-
-    let doneCount = 0, successCount = 0, failedCount = 0;
-    const allResults: PublishResult[] = [];
-    setAutoProgress({ total: 0, done: 0, success: 0, failed: 0, currentPost: '', currentPage: fromPage, waitSec: 0, results: [], finished: false });
-
-    for (let p = fromPage; p <= toPage; p++) {
-      if (autoStopRef.current) break;
-
-      const params = new URLSearchParams({ site_id: siteId, per_page: '12', page: String(p), status: 'publish', order: autoOrder });
-      const res = await fetch(`/api/wordpress/fetch-posts?${params}`);
+    setAutoStarting(true);
+    try {
+      const res = await fetch('/api/sns-auto-job/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          site_id: siteId,
+          sns_platforms: Array.from(autoSNS),
+          use_ai: autoUseAI,
+          post_order: autoOrder,
+          page_from: autoPageFrom,
+          page_to: autoPageTo,
+          interval_seconds: autoInterval,
+        }),
+      });
       const data = await res.json();
-      const pagePosts: WpPost[] = data.posts || [];
-
-      const estimatedTotal = Math.min(data.total || 0, (toPage - fromPage + 1) * 12);
-
-      for (let i = 0; i < pagePosts.length; i++) {
-        if (autoStopRef.current) break;
-        const post = pagePosts[i];
-        setAutoProgress(prev => ({ ...prev, total: estimatedTotal, currentPost: post.title, currentPage: p }));
-
-        let message = buildMessage(post);
-        if (autoUseAI) {
-          try {
-            const hookRes = await fetch('/api/wordpress/generate-sns-hook', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title: post.title, excerpt: post.excerpt }),
-            });
-            const hookData = await hookRes.json();
-            if (hookData.hook) message = hookData.hook;
-          } catch { /* 기본 메시지 유지 */ }
-        }
-
-        const postResults = await publishPostToSNS(post, message, platforms);
-        allResults.push(...postResults);
-        doneCount++;
-        successCount += postResults.filter(r => r.success).length;
-        failedCount += postResults.filter(r => !r.success).length;
-
-        setAutoProgress(prev => ({
-          ...prev, total: estimatedTotal, done: doneCount,
-          success: successCount, failed: failedCount,
-          results: [...allResults],
-        }));
-
-        const isLast = p === toPage && i === pagePosts.length - 1;
-        if (!autoStopRef.current && !isLast) {
-          await sleepCancellable(autoInterval * 1000);
-        }
+      if (data.job_id) {
+        setJobId(data.job_id);
+        setAutoJob({
+          id: data.job_id, status: 'running',
+          current_page: autoPageFrom, current_post_index: 0,
+          total_done: 0, total_success: 0, total_failed: 0,
+          page_from: autoPageFrom, page_to: autoPageTo,
+          interval_seconds: autoInterval,
+          next_run_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+        setJobLogs([]);
+        setShowAutoLog(true);
+      } else {
+        alert(data.error || '작업 생성 실패');
       }
+    } finally {
+      setAutoStarting(false);
     }
-
-    setAutoRunning(false);
-    setAutoProgress(prev => ({ ...prev, finished: true, waitSec: 0 }));
   };
 
-  const stopAutoRun = () => {
-    autoStopRef.current = true;
-    if (waitTimerRef.current) { clearInterval(waitTimerRef.current); waitTimerRef.current = null; }
+  // ── 자동 발행 중지 ────────────────────────────────
+  const stopAutoRun = async () => {
+    if (!jobId) return;
+    await fetch('/api/sns-auto-job/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId }),
+    });
+    setAutoJob(prev => prev ? { ...prev, status: 'stopped' } : prev);
   };
 
+  const isAutoRunning = autoJob?.status === 'running';
   const selectedPosts = posts.filter(p => selectedIds.has(p.id));
+
+  // 예상 다음 발행 시간
+  const nextRunSec = autoJob?.next_run_at
+    ? Math.max(0, Math.round((new Date(autoJob.next_run_at).getTime() - Date.now()) / 1000))
+    : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -345,7 +373,6 @@ export default function WpToSnsPage() {
             <h1 className="text-2xl font-bold text-gray-800">WordPress 글 → SNS 발행</h1>
             <p className="text-sm text-gray-400 mt-0.5">등록된 사이트의 글을 SNS에 공유하세요</p>
           </div>
-          {/* Tab */}
           <div className="flex bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
             <button
               onClick={() => setTab('manual')}
@@ -358,6 +385,7 @@ export default function WpToSnsPage() {
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'auto' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-gray-700'}`}
             >
               🤖 자동 발행
+              {isAutoRunning && <span className="ml-1.5 w-2 h-2 bg-green-400 rounded-full inline-block animate-pulse" />}
             </button>
           </div>
         </div>
@@ -387,16 +415,17 @@ export default function WpToSnsPage() {
               </span>
             </div>
 
-            {/* ═══════════════════════════════════════════════
-                자동 발행 탭
-            ═══════════════════════════════════════════════ */}
+            {/* ═══ 자동 발행 탭 ═══ */}
             {tab === 'auto' && (
               <div className="space-y-4">
-                {/* Settings card */}
+                {/* 설정 카드 */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                   <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
                     <span className="text-lg">⚙️</span>
                     <h2 className="font-bold text-gray-800">자동 발행 설정</h2>
+                    <span className="ml-auto text-xs text-indigo-500 bg-indigo-50 px-2.5 py-1 rounded-full font-medium">
+                      브라우저 종료 후에도 서버에서 계속 실행
+                    </span>
                   </div>
                   <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -420,6 +449,7 @@ export default function WpToSnsPage() {
                                   setAutoSNS(prev => { const n = new Set(prev); e.target.checked ? n.add(conn.platform) : n.delete(conn.platform); return n; });
                                 }}
                                 className="w-4 h-4 rounded text-indigo-600"
+                                disabled={isAutoRunning}
                               />
                               <span className="text-lg">{PLATFORM_ICONS[conn.platform] || '📱'}</span>
                               <div>
@@ -441,7 +471,8 @@ export default function WpToSnsPage() {
                         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
                           <button
                             onClick={() => setAutoUseAI(!autoUseAI)}
-                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${autoUseAI ? 'bg-indigo-500' : 'bg-gray-300'}`}
+                            disabled={isAutoRunning}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${autoUseAI ? 'bg-indigo-500' : 'bg-gray-300'} disabled:opacity-50`}
                           >
                             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoUseAI ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
@@ -462,7 +493,8 @@ export default function WpToSnsPage() {
                             <button
                               key={val}
                               onClick={() => setAutoOrder(val)}
-                              className={`py-2.5 px-3 rounded-xl border text-sm font-medium transition-all ${autoOrder === val ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                              disabled={isAutoRunning}
+                              className={`py-2.5 px-3 rounded-xl border text-sm font-medium transition-all disabled:opacity-50 ${autoOrder === val ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
                             >
                               {icon} {label}
                             </button>
@@ -482,7 +514,8 @@ export default function WpToSnsPage() {
                           <input
                             type="number" min={1} max={totalPages} value={autoPageFrom}
                             onChange={e => setAutoPageFrom(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            disabled={isAutoRunning}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:bg-gray-50"
                           />
                         </div>
                         <span className="text-gray-400 mt-5">~</span>
@@ -491,7 +524,8 @@ export default function WpToSnsPage() {
                           <input
                             type="number" min={1} max={totalPages} value={autoPageTo}
                             onChange={e => setAutoPageTo(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            disabled={isAutoRunning}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:bg-gray-50"
                           />
                         </div>
                       </div>
@@ -510,7 +544,8 @@ export default function WpToSnsPage() {
                           <button
                             key={opt.value}
                             onClick={() => setAutoInterval(opt.value)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${autoInterval === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
+                            disabled={isAutoRunning}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border disabled:opacity-50 ${autoInterval === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
                           >
                             {opt.label}
                           </button>
@@ -520,18 +555,19 @@ export default function WpToSnsPage() {
                     </div>
                   </div>
 
-                  {/* 시작 버튼 */}
+                  {/* 시작/중지 버튼 */}
                   <div className="px-5 py-4 border-t border-gray-100 bg-gray-50">
-                    {!autoRunning ? (
+                    {!isAutoRunning ? (
                       <button
                         onClick={startAutoRun}
-                        disabled={autoSNS.size === 0 || autoPageFrom > autoPageTo}
+                        disabled={autoSNS.size === 0 || autoPageFrom > autoPageTo || autoStarting}
                         className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition disabled:opacity-40 flex items-center justify-center gap-2"
                       >
-                        🚀 자동 발행 시작
-                        <span className="text-indigo-200 font-normal">
-                          (p.{autoPageFrom}~{autoPageTo} · {INTERVAL_OPTIONS.find(o => o.value === autoInterval)?.label} 간격)
-                        </span>
+                        {autoStarting ? (
+                          <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />작업 생성 중...</>
+                        ) : (
+                          <>🚀 자동 발행 시작 <span className="text-indigo-200 font-normal">(p.{autoPageFrom}~{autoPageTo} · {INTERVAL_OPTIONS.find(o => o.value === autoInterval)?.label} 간격)</span></>
+                        )}
                       </button>
                     ) : (
                       <button
@@ -545,14 +581,15 @@ export default function WpToSnsPage() {
                 </div>
 
                 {/* 진행 현황 */}
-                {(autoRunning || autoProgress.done > 0) && (
+                {autoJob && (
                   <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        {autoRunning && <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" />}
+                        {isAutoRunning && <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" />}
                         <h3 className="font-bold text-gray-800">
-                          {autoProgress.finished ? '발행 완료' : autoRunning ? '발행 진행 중...' : '발행 중지됨'}
+                          {autoJob.status === 'completed' ? '✅ 발행 완료' : isAutoRunning ? '발행 진행 중...' : '⏹ 발행 중지됨'}
                         </h3>
+                        <span className="text-xs text-gray-400">p.{autoJob.current_page} / {autoJob.page_to}</span>
                       </div>
                       <button onClick={() => setShowAutoLog(!showAutoLog)} className="text-xs text-gray-400 hover:text-gray-600">
                         {showAutoLog ? '로그 숨기기' : '로그 보기'}
@@ -562,15 +599,19 @@ export default function WpToSnsPage() {
                       {/* 진행바 */}
                       <div>
                         <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-sm font-semibold text-gray-700">
-                            {autoProgress.done} / {autoProgress.total > 0 ? autoProgress.total : '?'}개 완료
-                          </span>
-                          <span className="text-xs text-gray-400">p.{autoProgress.currentPage}</span>
+                          <span className="text-sm font-semibold text-gray-700">{autoJob.total_done}개 발행 완료</span>
+                          {isAutoRunning && nextRunSec > 0 && (
+                            <span className="text-xs text-indigo-500 font-semibold">다음 발행까지 {nextRunSec}초</span>
+                          )}
                         </div>
                         <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full transition-all duration-300"
-                            style={{ width: autoProgress.total > 0 ? `${(autoProgress.done / autoProgress.total) * 100}%` : '0%' }}
+                            className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full transition-all duration-500"
+                            style={{
+                              width: autoJob.page_to > autoJob.page_from
+                                ? `${Math.min(100, ((autoJob.current_page - autoJob.page_from) / (autoJob.page_to - autoJob.page_from + 1)) * 100)}%`
+                                : autoJob.status === 'completed' ? '100%' : '5%'
+                            }}
                           />
                         </div>
                       </div>
@@ -578,52 +619,32 @@ export default function WpToSnsPage() {
                       {/* 통계 */}
                       <div className="grid grid-cols-3 gap-3">
                         <div className="bg-gray-50 rounded-xl p-3 text-center">
-                          <div className="text-2xl font-black text-indigo-600">{autoProgress.done}</div>
+                          <div className="text-2xl font-black text-indigo-600">{autoJob.total_done}</div>
                           <div className="text-xs text-gray-400 mt-0.5">총 발행</div>
                         </div>
                         <div className="bg-green-50 rounded-xl p-3 text-center">
-                          <div className="text-2xl font-black text-green-600">{autoProgress.success}</div>
+                          <div className="text-2xl font-black text-green-600">{autoJob.total_success}</div>
                           <div className="text-xs text-gray-400 mt-0.5">성공</div>
                         </div>
                         <div className="bg-red-50 rounded-xl p-3 text-center">
-                          <div className="text-2xl font-black text-red-500">{autoProgress.failed}</div>
+                          <div className="text-2xl font-black text-red-500">{autoJob.total_failed}</div>
                           <div className="text-xs text-gray-400 mt-0.5">실패</div>
                         </div>
                       </div>
 
-                      {/* 현재 상태 */}
-                      {autoRunning && (
-                        <div className="bg-indigo-50 rounded-xl px-4 py-3 flex items-center gap-3">
-                          {autoProgress.waitSec > 0 ? (
-                            <>
-                              <span className="text-2xl font-black text-indigo-500 w-10 text-center">{autoProgress.waitSec}</span>
-                              <div>
-                                <p className="text-xs font-semibold text-indigo-600">다음 발행까지 대기 중</p>
-                                <p className="text-xs text-indigo-400 truncate max-w-xs">다음: {autoProgress.currentPost}</p>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <span className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                              <div>
-                                <p className="text-xs font-semibold text-indigo-600">발행 중</p>
-                                <p className="text-xs text-indigo-400 truncate max-w-xs">{autoProgress.currentPost}</p>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-
                       {/* 결과 로그 */}
-                      {showAutoLog && autoProgress.results.length > 0 && (
+                      {showAutoLog && jobLogs.length > 0 && (
                         <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                          {[...autoProgress.results].reverse().map((r, i) => (
-                            <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-xl text-xs ${r.success ? 'bg-green-50' : 'bg-red-50'}`}>
+                          {jobLogs.map((r) => (
+                            <div key={r.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl text-xs ${r.success ? 'bg-green-50' : 'bg-red-50'}`}>
                               <span className="shrink-0 mt-0.5">{r.success ? '✅' : '❌'}</span>
-                              <div className="min-w-0">
-                                <span className="font-semibold">{PLATFORM_ICONS[r.platform]} {PLATFORM_NAMES[r.platform] || r.platform}</span>
-                                <span className="text-gray-500 ml-1.5 truncate">{r.postTitle}</span>
-                                {r.error && <p className="text-red-500 mt-0.5 break-words">{r.error}</p>}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-semibold">{PLATFORM_ICONS[r.platform]} {PLATFORM_NAMES[r.platform] || r.platform}</span>
+                                  <span className="text-gray-500 truncate">{r.post_title}</span>
+                                  <span className="text-gray-300 ml-auto shrink-0">{fmtTime(r.created_at)}</span>
+                                </div>
+                                {r.error_message && <p className="text-red-500 mt-0.5 break-words">{r.error_message}</p>}
                               </div>
                             </div>
                           ))}
@@ -635,12 +656,9 @@ export default function WpToSnsPage() {
               </div>
             )}
 
-            {/* ═══════════════════════════════════════════════
-                수동 발행 탭
-            ═══════════════════════════════════════════════ */}
+            {/* ═══ 수동 발행 탭 ═══ */}
             {tab === 'manual' && (
               <>
-                {/* Controls */}
                 <div className="flex flex-wrap gap-2 mb-4">
                   <input
                     type="text" placeholder="글 검색..." value={searchInput}
@@ -666,7 +684,6 @@ export default function WpToSnsPage() {
                   <button onClick={loadPosts} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">↻</button>
                 </div>
 
-                {/* Select all */}
                 {!loading && posts.length > 0 && (
                   <div className="flex items-center gap-4 mb-3">
                     <button onClick={toggleAll} className="text-sm text-blue-600 hover:underline">
@@ -676,7 +693,6 @@ export default function WpToSnsPage() {
                   </div>
                 )}
 
-                {/* Post grid */}
                 {loading ? (
                   <div className="flex justify-center py-24">
                     <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -718,7 +734,6 @@ export default function WpToSnsPage() {
                   </div>
                 )}
 
-                {/* Pagination */}
                 {totalPages > 1 && (
                   <div className="flex justify-center items-center gap-2 mb-6 flex-wrap">
                     <button onClick={() => setPage(1)} disabled={page === 1} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-40 hover:bg-gray-50">««</button>
@@ -746,7 +761,6 @@ export default function WpToSnsPage() {
             <div className="flex items-center gap-3">
               <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{selectedIds.size}개 선택됨</span>
               <button onClick={() => setSelectedIds(new Set())} className="text-xs text-gray-400 hover:text-gray-600">선택 해제</button>
-              {/* AI 토글 */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setUseAI(!useAI)}
@@ -793,7 +807,6 @@ export default function WpToSnsPage() {
                 </div>
               ) : (
                 <>
-                  {/* 선택된 글 */}
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">선택된 글 ({selectedPosts.length}개)</h3>
@@ -846,7 +859,6 @@ export default function WpToSnsPage() {
                     </div>
                   </div>
 
-                  {/* SNS 선택 */}
                   <div className="mb-6">
                     <h3 className="text-sm font-semibold text-gray-600 mb-3 uppercase tracking-wide">발행할 SNS 계정</h3>
                     {snsConns.length === 0 ? (
