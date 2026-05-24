@@ -109,6 +109,7 @@ export default function WpToSnsPage() {
 
   const autoStopRef = useRef(false);
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoPageToInitialized = useRef(false);
 
   // ── 초기 로드 ─────────────────────────────────────
   useEffect(() => {
@@ -125,8 +126,17 @@ export default function WpToSnsPage() {
     });
   }, []);
 
-  // ── 자동 발행 설정 sync ──────────────────────────
-  useEffect(() => { setAutoPageTo(totalPages); }, [totalPages]);
+  // ── 자동 발행 끝 페이지: 사이트 변경 시 리셋, 첫 로드 시만 자동 설정 ──
+  useEffect(() => {
+    autoPageToInitialized.current = false;
+  }, [siteId]);
+
+  useEffect(() => {
+    if (totalPages > 0 && !autoPageToInitialized.current) {
+      setAutoPageTo(totalPages);
+      autoPageToInitialized.current = true;
+    }
+  }, [totalPages]);
 
   // ── 글 목록 로드 ──────────────────────────────────
   const loadPosts = useCallback(async () => {
