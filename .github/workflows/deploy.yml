@@ -89,6 +89,7 @@ jobs:
           DEPLOY_SECRET=${{ secrets.DEPLOY_SECRET }}
           CRON_SECRET=${{ secrets.CRON_SECRET }}
           BOT_SECRET=${{ secrets.CRON_SECRET }}
+          WORKER_SECRET=${{ secrets.WORKER_SECRET }}
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REDIRECT_URI=https://loov.co.kr/api/google/callback
