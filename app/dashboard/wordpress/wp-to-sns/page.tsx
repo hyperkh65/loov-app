@@ -276,7 +276,7 @@ export default function WpToSnsPage() {
       const data = await res.json();
       const pagePosts: WpPost[] = data.posts || [];
 
-      const estimatedTotal = (toPage - fromPage) * 12 + (data.total || 0);
+      const estimatedTotal = Math.min(data.total || 0, (toPage - fromPage + 1) * 12);
 
       for (let i = 0; i < pagePosts.length; i++) {
         if (autoStopRef.current) break;
