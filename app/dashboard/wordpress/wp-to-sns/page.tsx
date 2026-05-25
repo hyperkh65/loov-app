@@ -515,7 +515,7 @@ export default function WpToSnsPage() {
                         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
                           <button
                             onClick={() => setAutoUseAI(!autoUseAI)}
-                            disabled={isAutoRunning}
+
                             className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${autoUseAI ? 'bg-indigo-500' : 'bg-gray-300'} disabled:opacity-50`}
                           >
                             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoUseAI ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -537,7 +537,7 @@ export default function WpToSnsPage() {
                             <button
                               key={val}
                               onClick={() => setAutoOrder(val)}
-                              disabled={isAutoRunning}
+  
                               className={`py-2.5 px-3 rounded-xl border text-sm font-medium transition-all disabled:opacity-50 ${autoOrder === val ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
                             >
                               {icon} {label}
@@ -595,7 +595,7 @@ export default function WpToSnsPage() {
                           <button
                             key={opt.value}
                             onClick={() => setAutoInterval(opt.value)}
-                            disabled={isAutoRunning}
+
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border disabled:opacity-50 ${autoInterval === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
                           >
                             {opt.label}
@@ -614,7 +614,7 @@ export default function WpToSnsPage() {
                         <div className="flex flex-wrap gap-1.5">
                           <button
                             onClick={() => setThreadsInterval(null)}
-                            disabled={isAutoRunning}
+
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border disabled:opacity-50 ${threadsInterval === null ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
                           >
                             기본 간격
@@ -627,7 +627,7 @@ export default function WpToSnsPage() {
                             <button
                               key={opt.value}
                               onClick={() => setThreadsInterval(opt.value)}
-                              disabled={isAutoRunning}
+  
                               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border disabled:opacity-50 ${threadsInterval === opt.value ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}
                             >
                               {opt.label}
