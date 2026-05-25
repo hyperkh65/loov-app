@@ -451,7 +451,7 @@ export default function WpToSnsPage() {
                                   setAutoSNS(prev => { const n = new Set(prev); e.target.checked ? n.add(conn.platform) : n.delete(conn.platform); return n; });
                                 }}
                                 className="w-4 h-4 rounded text-indigo-600"
-                                disabled={isAutoRunning}
+
                               />
                               <span className="text-lg">{PLATFORM_ICONS[conn.platform] || '📱'}</span>
                               <div>
