@@ -35,7 +35,6 @@ function buildHookPrompt(title: string, excerpt: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  // 워커 시크릿 검증
   const workerSecret = req.headers.get('X-Worker-Secret');
   if (!workerSecret || workerSecret !== process.env.WORKER_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -45,7 +44,6 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const nowISO = now.toISOString();
 
-  // 실행 대기 중인 작업 조회 (next_run_at 지났고 잠금 없는 것)
   const { data: jobs } = await admin
     .from('bossai_sns_auto_jobs')
     .select('*')
@@ -56,7 +54,6 @@ export async function POST(req: NextRequest) {
     .limit(3);
 
   if (!jobs?.length) {
-    // 실행 중인 작업이 있는지 확인 (locked 포함)
     const { count } = await admin.from('bossai_sns_auto_jobs')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'running');
@@ -67,15 +64,14 @@ export async function POST(req: NextRequest) {
   let minNextRunMs = Infinity;
 
   for (const job of jobs) {
-    // 낙관적 잠금: locked_until을 2분 후로 설정
     const lockUntil = new Date(Date.now() + 120000).toISOString();
     const { data: locked } = await admin.from('bossai_sns_auto_jobs')
       .update({ locked_until: lockUntil, updated_at: nowISO })
       .eq('id', job.id)
-      .lte('locked_until', nowISO)  // 아직 잠기지 않은 것만
+      .lte('locked_until', nowISO)
       .select('id');
 
-    if (!locked?.length) continue; // 다른 워커가 이미 처리 중
+    if (!locked?.length) continue;
 
     try {
       const nextRunMs = await processJob(admin, job);
@@ -83,7 +79,6 @@ export async function POST(req: NextRequest) {
       if (nextRunMs < minNextRunMs) minNextRunMs = nextRunMs;
     } catch (e) {
       console.error(`[sns-auto-job] job ${job.id} 처리 오류:`, e);
-      // 잠금 해제
       await admin.from('bossai_sns_auto_jobs')
         .update({ locked_until: new Date(Date.now() - 1000).toISOString() })
         .eq('id', job.id);
@@ -113,6 +108,8 @@ async function processJob(
     current_page,
     current_post_index,
     interval_seconds,
+    threads_interval_seconds,
+    threads_next_run_at,
     total_done,
     total_success,
     total_failed,
@@ -127,10 +124,16 @@ async function processJob(
     current_page: number;
     current_post_index: number;
     interval_seconds: number;
+    threads_interval_seconds: number | null;
+    threads_next_run_at: string | null;
     total_done: number;
     total_success: number;
     total_failed: number;
   };
+
+  // Threads 별도 간격: 아직 시간 안됐는지 확인
+  const threadsReady = !threads_interval_seconds || !threads_next_run_at ||
+    new Date(threads_next_run_at) <= new Date();
 
   // WordPress 사이트 자격증명 조회
   const { data: site } = await admin.from('wordpress_sites')
@@ -164,7 +167,6 @@ async function processJob(
     });
     if (wpRes.ok) posts = await wpRes.json();
   } catch {
-    // 네트워크 오류 시 잠금 해제 후 재시도 예약
     await admin.from('bossai_sns_auto_jobs')
       .update({ locked_until: new Date(Date.now() - 1000).toISOString(), updated_at: new Date().toISOString() })
       .eq('id', jobId);
@@ -217,35 +219,51 @@ async function processJob(
   const mediaUrls = post.featured_image ? [post.featured_image] : undefined;
   const hook = message.replace(post.link || '', '').replace(/🔗\s*/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
-  const threadsSelected = platforms.includes('threads');
+  const threadsInList = platforms.includes('threads');
   const others = platforms.filter(p => p !== 'threads');
+  let newThreadsNextRunAt: string | null = null;
 
-  if (threadsSelected) {
-    const { data: conn } = await admin.from('sns_connections')
-      .select('access_token, platform_user_id')
-      .eq('user_id', user_id).eq('platform', 'threads').eq('is_active', true)
-      .limit(1).maybeSingle();
-
-    if (!conn) {
-      publishResults.push({ platform: 'threads', success: false, error: '연결되지 않은 플랫폼' });
+  // Threads 발행 (별도 간격 체크)
+  if (threadsInList) {
+    if (!threadsReady) {
+      // 아직 시간 안됨 - 로그 없이 스킵 (실패 아님)
     } else {
-      try {
-        const { id: postId } = await postToPlatformWithMedia(
-          'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
-          hook, mediaUrls
-        );
-        await new Promise(r => setTimeout(r, 15000));
-        await postCommentOnOwnPost(
-          'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
-          postId, `🔗 ${post.link}`, undefined
-        );
-        publishResults.push({ platform: 'threads', success: true });
-      } catch (e) {
-        publishResults.push({ platform: 'threads', success: false, error: e instanceof Error ? e.message : String(e) });
+      const { data: conn } = await admin.from('sns_connections')
+        .select('access_token, platform_user_id')
+        .eq('user_id', user_id).eq('platform', 'threads').eq('is_active', true)
+        .limit(1).maybeSingle();
+
+      if (!conn) {
+        publishResults.push({ platform: 'threads', success: false, error: '연결되지 않은 플랫폼' });
+      } else {
+        try {
+          const { id: postId } = await postToPlatformWithMedia(
+            'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
+            hook, mediaUrls
+          );
+          await new Promise(r => setTimeout(r, 15000));
+          await postCommentOnOwnPost(
+            'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
+            postId, `🔗 ${post.link}`, undefined
+          );
+          publishResults.push({ platform: 'threads', success: true });
+          // Threads 별도 간격 다음 실행 시간 설정
+          if (threads_interval_seconds) {
+            newThreadsNextRunAt = new Date(Date.now() + threads_interval_seconds * 1000).toISOString();
+          }
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          publishResults.push({ platform: 'threads', success: false, error: errMsg });
+          // API 오류(6xx)면 더 긴 간격으로 재시도 예약
+          if (threads_interval_seconds) {
+            newThreadsNextRunAt = new Date(Date.now() + threads_interval_seconds * 1000).toISOString();
+          }
+        }
       }
     }
   }
 
+  // 나머지 플랫폼 발행
   for (const platform of others) {
     const { data: conn } = await admin.from('sns_connections')
       .select('access_token, platform_user_id')
@@ -292,17 +310,20 @@ async function processJob(
   const isCompleted = isLastOnPage && nextPage > page_to;
   const nextRunAt = new Date(Date.now() + interval_seconds * 1000).toISOString();
 
-  await admin.from('bossai_sns_auto_jobs').update({
+  const updatePayload: Record<string, unknown> = {
     current_page: isCompleted ? current_page : nextPage,
     current_post_index: isCompleted ? current_post_index : nextIndex,
     status: isCompleted ? 'completed' : 'running',
     total_done: total_done + 1,
     total_success: total_success + successCount,
     total_failed: total_failed + failedCount,
-    next_run_at: isCompleted ? nextRunAt : nextRunAt,
+    next_run_at: nextRunAt,
     locked_until: new Date(Date.now() - 1000).toISOString(),
     updated_at: new Date().toISOString(),
-  }).eq('id', jobId);
+  };
+  if (newThreadsNextRunAt) updatePayload.threads_next_run_at = newThreadsNextRunAt;
+
+  await admin.from('bossai_sns_auto_jobs').update(updatePayload).eq('id', jobId);
 
   return isCompleted ? 0 : interval_seconds * 1000;
 }
