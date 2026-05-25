@@ -720,6 +720,24 @@ export default function WpToSnsPage() {
                             </div>
                           </div>
                           <div className="p-5 space-y-4">
+                            {/* Threads 쿨다운 경고 */}
+                            {isJobRunning && job.threads_next_run_at && (() => {
+                              const msUntil = new Date(job.threads_next_run_at).getTime() - Date.now();
+                              if (msUntil <= 60000) return null;
+                              const minsUntil = Math.ceil(msUntil / 60000);
+                              const isRateLimit = minsUntil >= 55;
+                              return (
+                                <div className={`rounded-lg px-3 py-2 text-xs flex items-center gap-2 ${isRateLimit ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+                                  <span>🧵</span>
+                                  <span>
+                                    {isRateLimit
+                                      ? `Threads API 일일 한도 초과 · ${minsUntil >= 60 ? `${Math.ceil(minsUntil / 60)}시간` : `${minsUntil}분`} 후 재시도`
+                                      : `Threads 다음 발행까지 ${minsUntil}분 대기 중`
+                                    }
+                                  </span>
+                                </div>
+                              );
+                            })()}
                             {/* 진행바 */}
                             <div>
                               <div className="flex justify-between items-center mb-1.5">

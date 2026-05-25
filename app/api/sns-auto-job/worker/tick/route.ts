@@ -18,6 +18,12 @@ function stripTags(html: string): string {
   return decodeHtmlEntities(html.replace(/<[^>]+>/g, ''));
 }
 
+function isRateLimitError(msg: string): boolean {
+  return /code["\s:]+(?:4|17|32|613)\b/i.test(msg) ||
+    /rate.?limit|request.?limit|throttl|daily.?limit|quota/i.test(msg) ||
+    /OAuthException.*(?:4|17|32|613)/i.test(msg);
+}
+
 async function translateMessage(text: string, targetLang: string): Promise<string> {
   if (targetLang === 'ko') return text;
   const langName = targetLang === 'ja' ? '일본어' : '영어';
@@ -273,10 +279,16 @@ async function processJob(
           );
           publishResults.push({ platform: 'threads', label, success: true });
         } catch (e) {
-          publishResults.push({ platform: 'threads', label, success: false, error: e instanceof Error ? e.message : String(e) });
+          const errMsg = e instanceof Error ? e.message : String(e);
+          publishResults.push({ platform: 'threads', label, success: false, error: errMsg });
+          // 레이트 리밋 감지 시 1시간 강제 쿨다운
+          if (isRateLimitError(errMsg)) {
+            newThreadsNextRunAt = new Date(Date.now() + 3600 * 1000).toISOString();
+          }
         }
       }
-      if (threads_interval_seconds) {
+      // 레이트 리밋으로 이미 쿨다운 설정된 경우 제외하고 정상 간격 적용
+      if (!newThreadsNextRunAt && threads_interval_seconds) {
         newThreadsNextRunAt = new Date(Date.now() + threads_interval_seconds * 1000).toISOString();
       }
     }
