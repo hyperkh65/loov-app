@@ -18,6 +18,18 @@ function stripTags(html: string): string {
   return decodeHtmlEntities(html.replace(/<[^>]+>/g, ''));
 }
 
+async function translateMessage(text: string, targetLang: string): Promise<string> {
+  if (targetLang === 'ko') return text;
+  const langName = targetLang === 'ja' ? '일본어' : '영어';
+  try {
+    const translated = await generateText(
+      `다음 한국어 SNS 포스트를 ${langName}로 자연스럽게 번역해. 이모지와 줄바꿈은 그대로 유지해. 번역문만 출력:\n\n${text}`,
+      'claude'
+    );
+    return translated?.trim() || text;
+  } catch { return text; }
+}
+
 function buildHookPrompt(title: string, excerpt: string): string {
   return `아래 블로그 글의 제목과 요약을 보고, SNS에 올릴 후킹 멘트를 작성해.
 제목: ${title}
@@ -102,6 +114,7 @@ async function processJob(
     user_id,
     site_id,
     sns_platforms,
+    sns_connection_configs,
     use_ai,
     post_order,
     page_to,
@@ -118,6 +131,7 @@ async function processJob(
     user_id: string;
     site_id: string;
     sns_platforms: string[];
+    sns_connection_configs: { platform: string; platform_user_id: string; language: string }[] | null;
     use_ai: boolean;
     post_order: string;
     page_to: number;
@@ -215,74 +229,82 @@ async function processJob(
 
   // SNS 발행
   const platforms = Array.isArray(sns_platforms) ? sns_platforms : [];
-  const publishResults: { platform: string; success: boolean; error?: string }[] = [];
+  const publishResults: { platform: string; label: string; success: boolean; error?: string }[] = [];
   const mediaUrls = post.featured_image ? [post.featured_image] : undefined;
   const hook = message.replace(post.link || '', '').replace(/🔗\s*/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
-  const threadsInList = platforms.includes('threads');
-  const others = platforms.filter(p => p !== 'threads');
+  // connection configs 없으면 기존 방식(플랫폼명 기반) 폴백
+  type ConnCfg = { platform: string; platform_user_id: string; language: string };
+  const connConfigs: ConnCfg[] = Array.isArray(sns_connection_configs) && sns_connection_configs.length
+    ? sns_connection_configs
+    : platforms.map(p => ({ platform: p, platform_user_id: '', language: 'ko' }));
+
+  const threadsConfigs = connConfigs.filter(c => c.platform === 'threads');
+  const otherConfigs = connConfigs.filter(c => c.platform !== 'threads');
   let newThreadsNextRunAt: string | null = null;
 
-  // Threads 발행 (별도 간격 체크)
-  if (threadsInList) {
+  // Threads 발행 (별도 간격 체크, 다중 계정 지원)
+  if (threadsConfigs.length > 0) {
     if (!threadsReady) {
-      // 아직 시간 안됨 - 로그 없이 스킵 (실패 아님)
+      // 아직 시간 안됨 - 스킵
     } else {
-      const { data: conn } = await admin.from('sns_connections')
-        .select('access_token, platform_user_id')
-        .eq('user_id', user_id).eq('platform', 'threads').eq('is_active', true)
-        .limit(1).maybeSingle();
+      for (const cfg of threadsConfigs) {
+        let q = admin.from('sns_connections')
+          .select('access_token, platform_user_id')
+          .eq('user_id', user_id).eq('platform', 'threads').eq('is_active', true);
+        if (cfg.platform_user_id) q = q.eq('platform_user_id', cfg.platform_user_id);
+        const { data: conn } = await q.limit(1).maybeSingle();
 
-      if (!conn) {
-        publishResults.push({ platform: 'threads', success: false, error: '연결되지 않은 플랫폼' });
-      } else {
+        const label = `threads${cfg.language !== 'ko' ? `(${cfg.language})` : ''}`;
+        if (!conn) {
+          publishResults.push({ platform: 'threads', label, success: false, error: '연결되지 않은 플랫폼' });
+          continue;
+        }
         try {
+          const translatedHook = await translateMessage(hook, cfg.language);
           const { id: postId } = await postToPlatformWithMedia(
             'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
-            hook, mediaUrls
+            translatedHook, mediaUrls
           );
           await new Promise(r => setTimeout(r, 15000));
           await postCommentOnOwnPost(
             'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
             postId, `🔗 ${post.link}`, undefined
           );
-          publishResults.push({ platform: 'threads', success: true });
-          // Threads 별도 간격 다음 실행 시간 설정
-          if (threads_interval_seconds) {
-            newThreadsNextRunAt = new Date(Date.now() + threads_interval_seconds * 1000).toISOString();
-          }
+          publishResults.push({ platform: 'threads', label, success: true });
         } catch (e) {
-          const errMsg = e instanceof Error ? e.message : String(e);
-          publishResults.push({ platform: 'threads', success: false, error: errMsg });
-          // API 오류(6xx)면 더 긴 간격으로 재시도 예약
-          if (threads_interval_seconds) {
-            newThreadsNextRunAt = new Date(Date.now() + threads_interval_seconds * 1000).toISOString();
-          }
+          publishResults.push({ platform: 'threads', label, success: false, error: e instanceof Error ? e.message : String(e) });
         }
+      }
+      if (threads_interval_seconds) {
+        newThreadsNextRunAt = new Date(Date.now() + threads_interval_seconds * 1000).toISOString();
       }
     }
   }
 
-  // 나머지 플랫폼 발행
-  for (const platform of others) {
-    const { data: conn } = await admin.from('sns_connections')
+  // 나머지 플랫폼 발행 (다중 계정 + 번역 지원)
+  for (const cfg of otherConfigs) {
+    let q = admin.from('sns_connections')
       .select('access_token, platform_user_id')
-      .eq('user_id', user_id).eq('platform', platform).eq('is_active', true)
-      .limit(1).maybeSingle();
+      .eq('user_id', user_id).eq('platform', cfg.platform).eq('is_active', true);
+    if (cfg.platform_user_id) q = q.eq('platform_user_id', cfg.platform_user_id);
+    const { data: conn } = await q.limit(1).maybeSingle();
 
+    const label = `${cfg.platform}${cfg.language !== 'ko' ? `(${cfg.language})` : ''}`;
     if (!conn) {
-      publishResults.push({ platform, success: false, error: '연결되지 않은 플랫폼' });
+      publishResults.push({ platform: cfg.platform, label, success: false, error: '연결되지 않은 플랫폼' });
       continue;
     }
     try {
-      const content = `${hook}\n\n🔗 ${post.link}`;
+      const translatedHook = await translateMessage(hook, cfg.language);
+      const content = `${translatedHook}\n\n🔗 ${post.link}`;
       await postToPlatformWithMedia(
-        platform as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
+        cfg.platform as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
         content, mediaUrls
       );
-      publishResults.push({ platform, success: true });
+      publishResults.push({ platform: cfg.platform, label, success: true });
     } catch (e) {
-      publishResults.push({ platform, success: false, error: e instanceof Error ? e.message : String(e) });
+      publishResults.push({ platform: cfg.platform, label, success: false, error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -293,7 +315,7 @@ async function processJob(
         job_id: jobId,
         post_title: post.title,
         post_url: post.link,
-        platform: r.platform,
+        platform: r.label || r.platform,
         success: r.success,
         error_message: r.error || null,
       }))
