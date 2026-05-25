@@ -44,8 +44,12 @@ interface AutoJob {
   page_from: number;
   page_to: number;
   interval_seconds: number;
+  threads_interval_seconds: number | null;
+  threads_next_run_at: string | null;
   next_run_at: string;
   created_at: string;
+  sns_platforms: string[];
+  post_order: string;
 }
 
 interface JobLog {
@@ -128,13 +132,13 @@ export default function WpToSnsPage() {
   const [autoPageFrom, setAutoPageFrom] = useState(1);
   const [autoPageTo, setAutoPageTo] = useState(1);
   const [autoInterval, setAutoInterval] = useState(60);
+  const [threadsInterval, setThreadsInterval] = useState<number | null>(null);
   const [autoPageToInitialized, setAutoPageToInitialized] = useState(false);
 
-  // ── 자동 발행 서버 작업 상태 ──────────────────────
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [autoJob, setAutoJob] = useState<AutoJob | null>(null);
-  const [jobLogs, setJobLogs] = useState<JobLog[]>([]);
-  const [showAutoLog, setShowAutoLog] = useState(false);
+  // ── 자동 발행 서버 작업 상태 (다중 작업 지원) ────────
+  const [autoJobs, setAutoJobs] = useState<AutoJob[]>([]);
+  const [jobLogsMap, setJobLogsMap] = useState<Record<string, JobLog[]>>({});
+  const [showLogFor, setShowLogFor] = useState<Record<string, boolean>>({});
   const [autoStarting, setAutoStarting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -170,29 +174,28 @@ export default function WpToSnsPage() {
     fetch(`/api/sns-auto-job/status?site_id=${siteId}`)
       .then(r => r.json())
       .then(data => {
-        if (data.job && data.job.status === 'running') {
-          setJobId(data.job.id);
-          setAutoJob(data.job);
-          setJobLogs(data.logs || []);
-          setShowAutoLog(true);
+        if (data.jobs?.length) {
+          setAutoJobs(data.jobs);
+          setJobLogsMap(data.logsByJob || {});
         }
       });
   }, [siteId]);
 
-  // ── 폴링: 작업 실행 중일 때 3초마다 상태 갱신 ────
+  // ── 폴링: 실행 중인 작업이 있을 때 3초마다 상태 갱신 ──
+  const hasRunningJobs = autoJobs.some(j => j.status === 'running');
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    if (!jobId || !autoJob || autoJob.status !== 'running') return;
+    if (!siteId || !hasRunningJobs) return;
 
     pollRef.current = setInterval(async () => {
-      const res = await fetch(`/api/sns-auto-job/status?job_id=${jobId}`);
+      const res = await fetch(`/api/sns-auto-job/status?site_id=${siteId}`);
       const data = await res.json();
-      if (data.job) setAutoJob(data.job);
-      if (data.logs) setJobLogs(data.logs);
+      if (data.jobs) setAutoJobs(data.jobs);
+      if (data.logsByJob) setJobLogsMap(data.logsByJob);
     }, 3000);
 
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [jobId, autoJob?.status]);
+  }, [siteId, hasRunningJobs]);
 
   // ── 글 목록 로드 ──────────────────────────────────
   const loadPosts = useCallback(async () => {
@@ -320,22 +323,26 @@ export default function WpToSnsPage() {
           page_from: autoPageFrom,
           page_to: autoPageTo,
           interval_seconds: autoInterval,
+          threads_interval_seconds: threadsInterval,
         }),
       });
       const data = await res.json();
       if (data.job_id) {
-        setJobId(data.job_id);
-        setAutoJob({
+        const newJob: AutoJob = {
           id: data.job_id, status: 'running',
           current_page: autoPageFrom, current_post_index: 0,
           total_done: 0, total_success: 0, total_failed: 0,
           page_from: autoPageFrom, page_to: autoPageTo,
           interval_seconds: autoInterval,
+          threads_interval_seconds: threadsInterval,
+          threads_next_run_at: null,
           next_run_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
-        });
-        setJobLogs([]);
-        setShowAutoLog(true);
+          sns_platforms: Array.from(autoSNS),
+          post_order: autoOrder,
+        };
+        setAutoJobs(prev => [newJob, ...prev]);
+        setJobLogsMap(prev => ({ ...prev, [data.job_id]: [] }));
       } else {
         alert(data.error || '작업 생성 실패');
       }
@@ -345,23 +352,18 @@ export default function WpToSnsPage() {
   };
 
   // ── 자동 발행 중지 ────────────────────────────────
-  const stopAutoRun = async () => {
-    if (!jobId) return;
+  const stopAutoRun = async (jobId: string) => {
     await fetch('/api/sns-auto-job/stop', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: jobId }),
     });
-    setAutoJob(prev => prev ? { ...prev, status: 'stopped' } : prev);
+    setAutoJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'stopped' } : j));
   };
 
-  const isAutoRunning = autoJob?.status === 'running';
+  const isAutoRunning = autoJobs.some(j => j.status === 'running');
+  const runningCount = autoJobs.filter(j => j.status === 'running').length;
   const selectedPosts = posts.filter(p => selectedIds.has(p.id));
-
-  // 예상 다음 발행 시간
-  const nextRunSec = autoJob?.next_run_at
-    ? Math.max(0, Math.round((new Date(autoJob.next_run_at).getTime() - Date.now()) / 1000))
-    : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -553,104 +555,170 @@ export default function WpToSnsPage() {
                       </div>
                       <p className="text-xs text-gray-400 mt-1.5">글 1개 발행 후 {INTERVAL_OPTIONS.find(o => o.value === autoInterval)?.label} 대기</p>
                     </div>
+
+                    {/* Threads 별도 간격 */}
+                    {autoSNS.has('threads') && (
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                          🧵 Threads 별도 간격 <span className="text-gray-400 font-normal normal-case">(일일 250회 제한)</span>
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => setThreadsInterval(null)}
+                            disabled={isAutoRunning}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border disabled:opacity-50 ${threadsInterval === null ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}
+                          >
+                            기본 간격
+                          </button>
+                          {[
+                            { label: '6분', value: 360 }, { label: '10분', value: 600 },
+                            { label: '30분', value: 1800 }, { label: '1시간', value: 3600 },
+                            { label: '2시간', value: 7200 },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setThreadsInterval(opt.value)}
+                              disabled={isAutoRunning}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border disabled:opacity-50 ${threadsInterval === opt.value ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1.5">
+                          {threadsInterval === null
+                            ? 'Threads도 기본 간격과 동일하게 발행'
+                            : `Threads는 ${[{ label: '6분', value: 360 }, { label: '10분', value: 600 }, { label: '30분', value: 1800 }, { label: '1시간', value: 3600 }, { label: '2시간', value: 7200 }].find(o => o.value === threadsInterval)?.label}마다 발행 (하루 최대 ${Math.floor(86400 / threadsInterval)}회)`
+                          }
+                        </p>
+                      </div>
+                    )}
                   </div>
 
-                  {/* 시작/중지 버튼 */}
+                  {/* 시작 버튼 */}
                   <div className="px-5 py-4 border-t border-gray-100 bg-gray-50">
-                    {!isAutoRunning ? (
-                      <button
-                        onClick={startAutoRun}
-                        disabled={autoSNS.size === 0 || autoPageFrom > autoPageTo || autoStarting}
-                        className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition disabled:opacity-40 flex items-center justify-center gap-2"
-                      >
-                        {autoStarting ? (
-                          <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />작업 생성 중...</>
-                        ) : (
-                          <>🚀 자동 발행 시작 <span className="text-indigo-200 font-normal">(p.{autoPageFrom}~{autoPageTo} · {INTERVAL_OPTIONS.find(o => o.value === autoInterval)?.label} 간격)</span></>
-                        )}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={stopAutoRun}
-                        className="w-full py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition flex items-center justify-center gap-2"
-                      >
-                        ⏹ 자동 발행 중지
-                      </button>
+                    <button
+                      onClick={startAutoRun}
+                      disabled={autoSNS.size === 0 || autoPageFrom > autoPageTo || autoStarting || runningCount >= 3}
+                      className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      {autoStarting ? (
+                        <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />작업 생성 중...</>
+                      ) : (
+                        <>🚀 자동 발행 시작 <span className="text-indigo-200 font-normal">(p.{autoPageFrom}~{autoPageTo} · {INTERVAL_OPTIONS.find(o => o.value === autoInterval)?.label} 간격)</span></>
+                      )}
+                    </button>
+                    {runningCount >= 3 && (
+                      <p className="text-xs text-center text-amber-600 mt-2">최대 3개 작업 동시 실행 중 · 아래에서 중지 후 새 작업 시작</p>
+                    )}
+                    {runningCount > 0 && runningCount < 3 && (
+                      <p className="text-xs text-center text-indigo-400 mt-2">{runningCount}개 실행 중 · 최대 {3 - runningCount}개 더 추가 가능</p>
                     )}
                   </div>
                 </div>
 
-                {/* 진행 현황 */}
-                {autoJob && (
-                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {isAutoRunning && <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" />}
-                        <h3 className="font-bold text-gray-800">
-                          {autoJob.status === 'completed' ? '✅ 발행 완료' : isAutoRunning ? '발행 진행 중...' : '⏹ 발행 중지됨'}
-                        </h3>
-                        <span className="text-xs text-gray-400">p.{autoJob.current_page} / {autoJob.page_to}</span>
-                      </div>
-                      <button onClick={() => setShowAutoLog(!showAutoLog)} className="text-xs text-gray-400 hover:text-gray-600">
-                        {showAutoLog ? '로그 숨기기' : '로그 보기'}
-                      </button>
-                    </div>
-                    <div className="p-5 space-y-4">
-                      {/* 진행바 */}
-                      <div>
-                        <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-sm font-semibold text-gray-700">{autoJob.total_done}개 발행 완료</span>
-                          {isAutoRunning && nextRunSec > 0 && (
-                            <span className="text-xs text-indigo-500 font-semibold">다음 발행까지 {nextRunSec}초</span>
-                          )}
-                        </div>
-                        <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full transition-all duration-500"
-                            style={{
-                              width: autoJob.page_to > autoJob.page_from
-                                ? `${Math.min(100, ((autoJob.current_page - autoJob.page_from) / (autoJob.page_to - autoJob.page_from + 1)) * 100)}%`
-                                : autoJob.status === 'completed' ? '100%' : '5%'
-                            }}
-                          />
-                        </div>
-                      </div>
+                {/* 진행 현황 (다중 작업) */}
+                {autoJobs.length > 0 && (
+                  <div className="space-y-3">
+                    {autoJobs.map(job => {
+                      const secToNext = Math.max(0, Math.floor((new Date(job.next_run_at).getTime() - Date.now()) / 1000));
+                      const isJobRunning = job.status === 'running';
+                      const logs = jobLogsMap[job.id] || [];
+                      const showLog = showLogFor[job.id] || false;
+                      const platforms = Array.isArray(job.sns_platforms) ? job.sns_platforms : [];
 
-                      {/* 통계 */}
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-gray-50 rounded-xl p-3 text-center">
-                          <div className="text-2xl font-black text-indigo-600">{autoJob.total_done}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">총 발행</div>
-                        </div>
-                        <div className="bg-green-50 rounded-xl p-3 text-center">
-                          <div className="text-2xl font-black text-green-600">{autoJob.total_success}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">성공</div>
-                        </div>
-                        <div className="bg-red-50 rounded-xl p-3 text-center">
-                          <div className="text-2xl font-black text-red-500">{autoJob.total_failed}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">실패</div>
-                        </div>
-                      </div>
-
-                      {/* 결과 로그 */}
-                      {showAutoLog && jobLogs.length > 0 && (
-                        <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                          {jobLogs.map((r) => (
-                            <div key={r.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl text-xs ${r.success ? 'bg-green-50' : 'bg-red-50'}`}>
-                              <span className="shrink-0 mt-0.5">{r.success ? '✅' : '❌'}</span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-semibold">{PLATFORM_ICONS[r.platform]} {PLATFORM_NAMES[r.platform] || r.platform}</span>
-                                  <span className="text-gray-500 truncate">{r.post_title}</span>
-                                  <span className="text-gray-300 ml-auto shrink-0">{fmtTime(r.created_at)}</span>
-                                </div>
-                                {r.error_message && <p className="text-red-500 mt-0.5 break-words">{r.error_message}</p>}
+                      return (
+                        <div key={job.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {isJobRunning && <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" />}
+                              <h3 className="font-bold text-gray-800">
+                                {job.status === 'completed' ? '✅ 완료' : isJobRunning ? '발행 중...' : '⏹ 중지됨'}
+                              </h3>
+                              <span className="text-xs text-gray-400">p.{job.page_from}~{job.page_to} · 현재 p.{job.current_page}</span>
+                              <div className="flex gap-1">
+                                {platforms.map(p => (
+                                  <span key={p} title={PLATFORM_NAMES[p] || p}>{PLATFORM_ICONS[p] || '📱'}</span>
+                                ))}
                               </div>
                             </div>
-                          ))}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setShowLogFor(prev => ({ ...prev, [job.id]: !showLog }))}
+                                className="text-xs text-gray-400 hover:text-gray-600"
+                              >
+                                {showLog ? '로그 숨기기' : '로그 보기'}
+                              </button>
+                              {isJobRunning && (
+                                <button
+                                  onClick={() => stopAutoRun(job.id)}
+                                  className="text-xs bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1 rounded-lg font-semibold"
+                                >
+                                  ⏹ 중지
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="p-5 space-y-4">
+                            {/* 진행바 */}
+                            <div>
+                              <div className="flex justify-between items-center mb-1.5">
+                                <span className="text-sm font-semibold text-gray-700">{job.total_done}개 발행 완료</span>
+                                {isJobRunning && secToNext > 0 && (
+                                  <span className="text-xs text-indigo-500 font-semibold">다음 발행까지 {secToNext}초</span>
+                                )}
+                              </div>
+                              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full transition-all duration-500"
+                                  style={{
+                                    width: job.page_to > job.page_from
+                                      ? `${Math.min(100, ((job.current_page - job.page_from) / (job.page_to - job.page_from + 1)) * 100)}%`
+                                      : job.status === 'completed' ? '100%' : '5%',
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            {/* 통계 */}
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="bg-gray-50 rounded-xl p-3 text-center">
+                                <div className="text-2xl font-black text-indigo-600">{job.total_done}</div>
+                                <div className="text-xs text-gray-400 mt-0.5">총 발행</div>
+                              </div>
+                              <div className="bg-green-50 rounded-xl p-3 text-center">
+                                <div className="text-2xl font-black text-green-600">{job.total_success}</div>
+                                <div className="text-xs text-gray-400 mt-0.5">성공</div>
+                              </div>
+                              <div className="bg-red-50 rounded-xl p-3 text-center">
+                                <div className="text-2xl font-black text-red-500">{job.total_failed}</div>
+                                <div className="text-xs text-gray-400 mt-0.5">실패</div>
+                              </div>
+                            </div>
+                            {/* 로그 */}
+                            {showLog && logs.length > 0 && (
+                              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                                {logs.map(r => (
+                                  <div key={r.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl text-xs ${r.success ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <span className="shrink-0 mt-0.5">{r.success ? '✅' : '❌'}</span>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-semibold">{PLATFORM_ICONS[r.platform]} {PLATFORM_NAMES[r.platform] || r.platform}</span>
+                                        <span className="text-gray-500 truncate">{r.post_title}</span>
+                                        <span className="text-gray-300 ml-auto shrink-0">{fmtTime(r.created_at)}</span>
+                                      </div>
+                                      {r.error_message && <p className="text-red-500 mt-0.5 break-words">{r.error_message}</p>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {showLog && logs.length === 0 && (
+                              <p className="text-xs text-center text-gray-400 py-2">아직 발행 기록이 없습니다</p>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
