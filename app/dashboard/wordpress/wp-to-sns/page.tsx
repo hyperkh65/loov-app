@@ -21,9 +21,16 @@ interface WpPost {
 
 interface SnsConn {
   platform: string;
+  platform_user_id: string;
   platform_username: string;
   platform_display_name: string;
   is_active: boolean;
+}
+
+interface ConnConfig {
+  platform: string;
+  platform_user_id: string;
+  language: 'ko' | 'ja' | 'en';
 }
 
 interface PublishResult {
@@ -49,6 +56,7 @@ interface AutoJob {
   next_run_at: string;
   created_at: string;
   sns_platforms: string[];
+  sns_connection_configs?: ConnConfig[];
   post_order: string;
 }
 
@@ -126,7 +134,7 @@ export default function WpToSnsPage() {
   const [done, setDone] = useState(false);
 
   // ── 자동 발행 설정 ────────────────────────────────────
-  const [autoSNS, setAutoSNS] = useState<Set<string>>(new Set());
+  const [selectedConns, setSelectedConns] = useState<ConnConfig[]>([]);
   const [autoUseAI, setAutoUseAI] = useState(true);
   const [autoOrder, setAutoOrder] = useState<'desc' | 'asc'>('desc');
   const [autoPageFrom, setAutoPageFrom] = useState(1);
@@ -152,7 +160,7 @@ export default function WpToSnsPage() {
         const active = data.filter((c: SnsConn) => c.is_active);
         setSnsConns(active);
         setSelectedPlatforms(new Set(active.map((c: SnsConn) => c.platform)));
-        setAutoSNS(new Set(active.map((c: SnsConn) => c.platform)));
+        setSelectedConns(active.map((c: SnsConn) => ({ platform: c.platform, platform_user_id: c.platform_user_id, language: 'ko' as const })));
       }
     });
   }, []);
@@ -305,19 +313,33 @@ export default function WpToSnsPage() {
     setResults(allResults); setPublishing(false); setDone(true);
   };
 
+  const toggleConn = (conn: SnsConn, checked: boolean) => {
+    if (checked) {
+      setSelectedConns(prev => [...prev, { platform: conn.platform, platform_user_id: conn.platform_user_id, language: 'ko' }]);
+    } else {
+      setSelectedConns(prev => prev.filter(c => c.platform_user_id !== conn.platform_user_id));
+    }
+  };
+
+  const setConnLang = (platform_user_id: string, language: 'ko' | 'ja' | 'en') => {
+    setSelectedConns(prev => prev.map(c => c.platform_user_id === platform_user_id ? { ...c, language } : c));
+  };
+
   // ── 자동 발행 시작 (서버에 작업 생성) ─────────────
   const startAutoRun = async () => {
-    if (!siteId || autoSNS.size === 0) { alert('사이트와 SNS 계정을 선택해주세요'); return; }
+    if (!siteId || selectedConns.length === 0) { alert('사이트와 SNS 계정을 선택해주세요'); return; }
     if (autoPageFrom > autoPageTo) { alert('시작 페이지가 끝 페이지보다 클 수 없습니다'); return; }
 
     setAutoStarting(true);
     try {
+      const snsPlatforms = [...new Set(selectedConns.map(c => c.platform))];
       const res = await fetch('/api/sns-auto-job/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           site_id: siteId,
-          sns_platforms: Array.from(autoSNS),
+          sns_platforms: snsPlatforms,
+          sns_connection_configs: selectedConns,
           use_ai: autoUseAI,
           post_order: autoOrder,
           page_from: autoPageFrom,
@@ -338,7 +360,8 @@ export default function WpToSnsPage() {
           threads_next_run_at: null,
           next_run_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
-          sns_platforms: Array.from(autoSNS),
+          sns_platforms: snsPlatforms,
+          sns_connection_configs: selectedConns,
           post_order: autoOrder,
         };
         setAutoJobs(prev => [newJob, ...prev]);
@@ -431,10 +454,10 @@ export default function WpToSnsPage() {
                   </div>
                   <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                    {/* SNS 선택 */}
+                    {/* SNS 선택 + 언어 */}
                     <div>
                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                        📱 발행할 SNS
+                        📱 발행할 SNS · 언어
                       </label>
                       {snsConns.length === 0 ? (
                         <p className="text-sm text-gray-400">
@@ -442,25 +465,44 @@ export default function WpToSnsPage() {
                         </p>
                       ) : (
                         <div className="space-y-2">
-                          {snsConns.map(conn => (
-                            <label key={conn.platform} className="flex items-center gap-3 p-2.5 rounded-xl border border-gray-200 cursor-pointer hover:bg-gray-50">
-                              <input
-                                type="checkbox"
-                                checked={autoSNS.has(conn.platform)}
-                                onChange={e => {
-                                  setAutoSNS(prev => { const n = new Set(prev); e.target.checked ? n.add(conn.platform) : n.delete(conn.platform); return n; });
-                                }}
-                                className="w-4 h-4 rounded text-indigo-600"
-
-                              />
-                              <span className="text-lg">{PLATFORM_ICONS[conn.platform] || '📱'}</span>
-                              <div>
-                                <p className="text-sm font-medium text-gray-800">{PLATFORM_NAMES[conn.platform]}</p>
-                                <p className="text-xs text-gray-400">@{conn.platform_username || conn.platform_display_name || '-'}</p>
+                          {snsConns.map(conn => {
+                            const selConn = selectedConns.find(c => c.platform_user_id === conn.platform_user_id);
+                            const isSelected = !!selConn;
+                            return (
+                              <div key={conn.platform_user_id || conn.platform} className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${isSelected ? 'border-indigo-300 bg-indigo-50/40' : 'border-gray-200'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={e => toggleConn(conn, e.target.checked)}
+                                  className="w-4 h-4 rounded text-indigo-600 shrink-0"
+                                />
+                                <span className="text-lg shrink-0">{PLATFORM_ICONS[conn.platform] || '📱'}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-800">{PLATFORM_NAMES[conn.platform]}</p>
+                                  <p className="text-xs text-gray-400 truncate">@{conn.platform_username || conn.platform_display_name || '-'}</p>
+                                </div>
+                                {isSelected && (
+                                  <div className="flex gap-1 shrink-0">
+                                    {(['ko', 'ja', 'en'] as const).map(lang => (
+                                      <button
+                                        key={lang}
+                                        type="button"
+                                        onClick={() => setConnLang(conn.platform_user_id, lang)}
+                                        className={`text-sm px-1.5 py-0.5 rounded-md border transition ${selConn.language === lang ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-gray-200 hover:border-indigo-300'}`}
+                                        title={lang === 'ko' ? '한국어' : lang === 'ja' ? '일본어' : '영어'}
+                                      >
+                                        {lang === 'ko' ? '🇰🇷' : lang === 'ja' ? '🇯🇵' : '🇺🇸'}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                            </label>
-                          ))}
+                            );
+                          })}
                         </div>
+                      )}
+                      {selectedConns.some(c => c.language !== 'ko') && (
+                        <p className="text-xs text-purple-500 mt-2">✨ 비한국어 계정은 AI가 번역 후 발행</p>
                       )}
                     </div>
 
@@ -516,24 +558,31 @@ export default function WpToSnsPage() {
                           <input
                             type="number" min={1} max={totalPages} value={autoPageFrom}
                             onChange={e => setAutoPageFrom(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
-                            disabled={isAutoRunning}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:bg-gray-50"
+                            className={`w-full border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 ${autoPageFrom > autoPageTo ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                           />
                         </div>
-                        <span className="text-gray-400 mt-5">~</span>
+                        <button
+                          type="button"
+                          onClick={() => { const t = autoPageFrom; setAutoPageFrom(autoPageTo); setAutoPageTo(t); }}
+                          className="mt-5 px-2 py-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition text-lg"
+                          title="시작/끝 바꾸기"
+                        >⇄</button>
                         <div className="flex-1">
                           <p className="text-xs text-gray-400 mb-1">끝 페이지</p>
                           <input
                             type="number" min={1} max={totalPages} value={autoPageTo}
                             onChange={e => setAutoPageTo(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
-                            disabled={isAutoRunning}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:bg-gray-50"
+                            className={`w-full border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 ${autoPageFrom > autoPageTo ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                           />
                         </div>
                       </div>
-                      <p className="text-xs text-indigo-500 mt-1.5">
-                        약 {Math.max(0, autoPageTo - autoPageFrom + 1) * 12}개 글 처리 예정
-                      </p>
+                      {autoPageFrom > autoPageTo ? (
+                        <p className="text-xs text-red-500 mt-1.5">⚠️ 시작 페이지가 끝 페이지보다 큽니다 · ⇄ 버튼으로 바꾸세요</p>
+                      ) : (
+                        <p className="text-xs text-indigo-500 mt-1.5">
+                          약 {Math.max(0, autoPageTo - autoPageFrom + 1) * 12}개 글 처리 예정
+                        </p>
+                      )}
                     </div>
 
                     {/* 발행 간격 */}
@@ -557,7 +606,7 @@ export default function WpToSnsPage() {
                     </div>
 
                     {/* Threads 별도 간격 */}
-                    {autoSNS.has('threads') && (
+                    {selectedConns.some(c => c.platform === 'threads') && (
                       <div>
                         <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                           🧵 Threads 별도 간격 <span className="text-gray-400 font-normal normal-case">(일일 250회 제한)</span>
@@ -599,7 +648,7 @@ export default function WpToSnsPage() {
                   <div className="px-5 py-4 border-t border-gray-100 bg-gray-50">
                     <button
                       onClick={startAutoRun}
-                      disabled={autoSNS.size === 0 || autoPageFrom > autoPageTo || autoStarting || runningCount >= 3}
+                      disabled={selectedConns.length === 0 || autoPageFrom > autoPageTo || autoStarting || runningCount >= 3}
                       className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition disabled:opacity-40 flex items-center justify-center gap-2"
                     >
                       {autoStarting ? (
