@@ -556,8 +556,8 @@ export default function WpToSnsPage() {
                         <div className="flex-1">
                           <p className="text-xs text-gray-400 mb-1">시작 페이지</p>
                           <input
-                            type="number" min={1} max={totalPages} value={autoPageFrom}
-                            onChange={e => setAutoPageFrom(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
+                            type="number" min={1} value={autoPageFrom}
+                            onChange={e => setAutoPageFrom(Math.max(1, parseInt(e.target.value) || 1))}
                             className={`w-full border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 ${autoPageFrom > autoPageTo ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                           />
                         </div>
@@ -570,8 +570,8 @@ export default function WpToSnsPage() {
                         <div className="flex-1">
                           <p className="text-xs text-gray-400 mb-1">끝 페이지</p>
                           <input
-                            type="number" min={1} max={totalPages} value={autoPageTo}
-                            onChange={e => setAutoPageTo(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
+                            type="number" min={1} value={autoPageTo}
+                            onChange={e => setAutoPageTo(Math.max(1, parseInt(e.target.value) || 1))}
                             className={`w-full border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 ${autoPageFrom > autoPageTo ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                           />
                         </div>
@@ -666,6 +666,17 @@ export default function WpToSnsPage() {
                   </div>
                 </div>
 
+                {/* 서버 실행 중 배너 */}
+                {runningCount > 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2.5">
+                    <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0" />
+                    <p className="text-sm text-green-700 font-medium">
+                      서버에서 {runningCount}개 작업 실행 중
+                      <span className="font-normal text-green-600 ml-1">· 브라우저 닫아도 계속 발행됩니다</span>
+                    </p>
+                  </div>
+                )}
+
                 {/* 진행 현황 (다중 작업) */}
                 {autoJobs.length > 0 && (
                   <div className="space-y-3">
@@ -673,7 +684,7 @@ export default function WpToSnsPage() {
                       const secToNext = Math.max(0, Math.floor((new Date(job.next_run_at).getTime() - Date.now()) / 1000));
                       const isJobRunning = job.status === 'running';
                       const logs = jobLogsMap[job.id] || [];
-                      const showLog = showLogFor[job.id] || false;
+                      const showLog = job.id in showLogFor ? showLogFor[job.id] : isJobRunning;
                       const platforms = Array.isArray(job.sns_platforms) ? job.sns_platforms : [];
 
                       return (
@@ -712,7 +723,9 @@ export default function WpToSnsPage() {
                             {/* 진행바 */}
                             <div>
                               <div className="flex justify-between items-center mb-1.5">
-                                <span className="text-sm font-semibold text-gray-700">{job.total_done}개 발행 완료</span>
+                                <span className="text-sm font-semibold text-gray-700">
+                                  {job.total_done}개 글 처리 · 성공 {job.total_success} / 실패 {job.total_failed}
+                                </span>
                                 {isJobRunning && secToNext > 0 && (
                                   <span className="text-xs text-indigo-500 font-semibold">다음 발행까지 {secToNext}초</span>
                                 )}
@@ -732,37 +745,43 @@ export default function WpToSnsPage() {
                             <div className="grid grid-cols-3 gap-3">
                               <div className="bg-gray-50 rounded-xl p-3 text-center">
                                 <div className="text-2xl font-black text-indigo-600">{job.total_done}</div>
-                                <div className="text-xs text-gray-400 mt-0.5">총 발행</div>
+                                <div className="text-xs text-gray-400 mt-0.5">처리 글</div>
                               </div>
                               <div className="bg-green-50 rounded-xl p-3 text-center">
                                 <div className="text-2xl font-black text-green-600">{job.total_success}</div>
-                                <div className="text-xs text-gray-400 mt-0.5">성공</div>
+                                <div className="text-xs text-gray-400 mt-0.5">발행 성공</div>
                               </div>
                               <div className="bg-red-50 rounded-xl p-3 text-center">
                                 <div className="text-2xl font-black text-red-500">{job.total_failed}</div>
-                                <div className="text-xs text-gray-400 mt-0.5">실패</div>
+                                <div className="text-xs text-gray-400 mt-0.5">발행 실패</div>
                               </div>
                             </div>
                             {/* 로그 */}
-                            {showLog && logs.length > 0 && (
-                              <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                                {logs.map(r => (
-                                  <div key={r.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl text-xs ${r.success ? 'bg-green-50' : 'bg-red-50'}`}>
-                                    <span className="shrink-0 mt-0.5">{r.success ? '✅' : '❌'}</span>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="font-semibold">{PLATFORM_ICONS[r.platform]} {PLATFORM_NAMES[r.platform] || r.platform}</span>
-                                        <span className="text-gray-500 truncate">{r.post_title}</span>
-                                        <span className="text-gray-300 ml-auto shrink-0">{fmtTime(r.created_at)}</span>
+                            {showLog && (
+                              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                                {logs.length === 0 ? (
+                                  <p className="text-xs text-center text-gray-400 py-3">아직 발행 기록이 없습니다</p>
+                                ) : logs.map(r => {
+                                  const basePlatform = r.platform.split('(')[0];
+                                  const langTag = r.platform.includes('(') ? r.platform.slice(r.platform.indexOf('(')) : '';
+                                  return (
+                                    <div key={r.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl text-xs ${r.success ? 'bg-green-50' : 'bg-red-50'}`}>
+                                      <span className="shrink-0 mt-0.5">{r.success ? '✅' : '❌'}</span>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="font-semibold">
+                                            {PLATFORM_ICONS[basePlatform] || '📱'} {PLATFORM_NAMES[basePlatform] || basePlatform}
+                                            {langTag && <span className="text-purple-500 ml-0.5">{langTag}</span>}
+                                          </span>
+                                          <span className="text-gray-500 truncate flex-1">{r.post_title}</span>
+                                          <span className="text-gray-300 shrink-0">{fmtTime(r.created_at)}</span>
+                                        </div>
+                                        {r.error_message && <p className="text-red-500 mt-0.5 break-words">{r.error_message}</p>}
                                       </div>
-                                      {r.error_message && <p className="text-red-500 mt-0.5 break-words">{r.error_message}</p>}
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
-                            )}
-                            {showLog && logs.length === 0 && (
-                              <p className="text-xs text-center text-gray-400 py-2">아직 발행 기록이 없습니다</p>
                             )}
                           </div>
                         </div>
