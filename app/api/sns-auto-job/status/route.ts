@@ -12,23 +12,36 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminClient();
 
-  let query = admin.from('bossai_sns_auto_jobs')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  // 단일 작업 조회
+  if (jobId) {
+    const { data: job } = await admin.from('bossai_sns_auto_jobs')
+      .select('*').eq('id', jobId).eq('user_id', user.id).maybeSingle();
+    if (!job) return NextResponse.json({ job: null, logs: [] });
+    const { data: logs } = await admin.from('bossai_sns_auto_job_logs')
+      .select('*').eq('job_id', job.id).order('created_at', { ascending: false }).limit(30);
+    return NextResponse.json({ job, logs: logs || [] });
+  }
 
-  if (jobId) query = query.eq('id', jobId);
-  else if (siteId) query = query.eq('site_id', siteId);
+  // 사이트의 모든 실행 중인 작업 조회
+  if (siteId) {
+    const { data: jobs } = await admin.from('bossai_sns_auto_jobs')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('site_id', siteId)
+      .in('status', ['running', 'completed', 'stopped'])
+      .order('created_at', { ascending: false })
+      .limit(5);
 
-  const { data: job } = await query.maybeSingle();
-  if (!job) return NextResponse.json({ job: null, logs: [] });
+    if (!jobs?.length) return NextResponse.json({ jobs: [], logsByJob: {} });
 
-  const { data: logs } = await admin.from('bossai_sns_auto_job_logs')
-    .select('*')
-    .eq('job_id', job.id)
-    .order('created_at', { ascending: false })
-    .limit(50);
+    const logsByJob: Record<string, unknown[]> = {};
+    for (const job of jobs) {
+      const { data: logs } = await admin.from('bossai_sns_auto_job_logs')
+        .select('*').eq('job_id', job.id).order('created_at', { ascending: false }).limit(50);
+      logsByJob[job.id] = logs || [];
+    }
+    return NextResponse.json({ jobs, logsByJob });
+  }
 
-  return NextResponse.json({ job, logs: logs || [] });
+  return NextResponse.json({ jobs: [], logsByJob: {} });
 }
