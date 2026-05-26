@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { generateText } from '@/lib/auto-blog-ai';
+import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import type { Platform } from '@/lib/sns/platforms';
 
 export const maxDuration = 300;
@@ -240,7 +241,7 @@ async function processJob(
   const hook = message.replace(post.link || '', '').replace(/🔗\s*/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
   // connection configs 없으면 기존 방식(플랫폼명 기반) 폴백
-  type ConnCfg = { platform: string; platform_user_id: string; language: string };
+  type ConnCfg = { platform: string; platform_user_id: string; language: string; use_news_card?: boolean };
   const connConfigs: ConnCfg[] = Array.isArray(sns_connection_configs) && sns_connection_configs.length
     ? sns_connection_configs
     : platforms.map(p => ({ platform: p, platform_user_id: '', language: 'ko' }));
@@ -310,9 +311,21 @@ async function processJob(
     try {
       const translatedHook = await translateMessage(hook, cfg.language);
       const content = `${translatedHook}\n\n🔗 ${post.link}`;
+
+      // Instagram 뉴스카드: use_news_card 활성화 시 썸네일 자동 생성
+      let postMediaUrls = mediaUrls;
+      if (cfg.platform === 'instagram' && cfg.use_news_card) {
+        try {
+          const newsCardUrl = await generateAndUploadThumbnail(post.title, post.title.slice(0, 20), 'blue');
+          postMediaUrls = [newsCardUrl];
+        } catch {
+          // 뉴스카드 생성 실패 시 원본 이미지 사용
+        }
+      }
+
       await postToPlatformWithMedia(
         cfg.platform as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
-        content, mediaUrls
+        content, postMediaUrls
       );
       publishResults.push({ platform: cfg.platform, label, success: true });
     } catch (e) {

@@ -31,6 +31,7 @@ interface ConnConfig {
   platform: string;
   platform_user_id: string;
   language: 'ko' | 'ja' | 'en';
+  use_news_card?: boolean;
 }
 
 interface PublishResult {
@@ -325,6 +326,10 @@ export default function WpToSnsPage() {
     setSelectedConns(prev => prev.map(c => c.platform_user_id === platform_user_id ? { ...c, language } : c));
   };
 
+  const toggleConnNewsCard = (platform_user_id: string) => {
+    setSelectedConns(prev => prev.map(c => c.platform_user_id === platform_user_id ? { ...c, use_news_card: !c.use_news_card } : c));
+  };
+
   // ── 자동 발행 시작 (서버에 작업 생성) ─────────────
   const startAutoRun = async () => {
     if (!siteId || selectedConns.length === 0) { alert('사이트와 SNS 계정을 선택해주세요'); return; }
@@ -482,7 +487,7 @@ export default function WpToSnsPage() {
                                   <p className="text-xs text-gray-400 truncate">@{conn.platform_username || conn.platform_display_name || '-'}</p>
                                 </div>
                                 {isSelected && (
-                                  <div className="flex gap-1 shrink-0">
+                                  <div className="flex gap-1 shrink-0 flex-wrap justify-end">
                                     {(['ko', 'ja', 'en'] as const).map(lang => (
                                       <button
                                         key={lang}
@@ -494,6 +499,16 @@ export default function WpToSnsPage() {
                                         {lang === 'ko' ? '🇰🇷' : lang === 'ja' ? '🇯🇵' : '🇺🇸'}
                                       </button>
                                     ))}
+                                    {conn.platform === 'instagram' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleConnNewsCard(conn.platform_user_id)}
+                                        title="뉴스카드 자동 생성"
+                                        className={`text-xs px-1.5 py-0.5 rounded-md border transition font-bold ${selConn.use_news_card ? 'bg-pink-500 border-pink-500 text-white' : 'bg-white border-gray-200 text-gray-400 hover:border-pink-300'}`}
+                                      >
+                                        🗞️
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -503,6 +518,9 @@ export default function WpToSnsPage() {
                       )}
                       {selectedConns.some(c => c.language !== 'ko') && (
                         <p className="text-xs text-purple-500 mt-2">✨ 비한국어 계정은 AI가 번역 후 발행</p>
+                      )}
+                      {selectedConns.some(c => c.platform === 'instagram' && c.use_news_card) && (
+                        <p className="text-xs text-pink-500 mt-1">🗞️ Instagram: 블로그 제목으로 뉴스카드 자동 생성 후 첨부</p>
                       )}
                     </div>
 

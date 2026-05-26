@@ -138,7 +138,7 @@ export default function AutoServicePage() {
   // 대표이미지 편집기 (Canvas 기반)
   const [thumbTitle, setThumbTitle] = useState('');
   const [thumbSubTitle, setThumbSubTitle] = useState('');
-  const [thumbColor, setThumbColor] = useState<'dark' | 'blue' | 'green'>('dark');
+  const [thumbColor, setThumbColor] = useState<'dark' | 'blue' | 'green' | 'red' | 'orange' | 'violet' | 'teal' | 'golden'>('dark');
   const [thumbGenerating, setThumbGenerating] = useState(false);
   const [thumbRepUrl, setThumbRepUrl] = useState<string | null>(null);
   const [thumbBgQuery, setThumbBgQuery] = useState('');
@@ -510,6 +510,7 @@ export default function AutoServicePage() {
           title: previewArticle.title,
           keyword: previewArticle.keyword || '',
           color_scheme: thumbColor,
+          sub: thumbSubTitle || undefined,
         }),
       });
       const data = await res.json();
@@ -1387,10 +1388,20 @@ export default function AutoServicePage() {
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold text-gray-700">🖼️ 대표이미지 자동 생성</p>
                     <div className="flex gap-2 items-center">
-                      {(['dark', 'blue', 'green'] as const).map(c => (
-                        <button key={c} onClick={() => setThumbColor(c)}
-                          className={`w-5 h-5 rounded-full border-2 transition-all ${thumbColor === c ? 'border-gray-800 scale-125' : 'border-gray-300'} ${c === 'dark' ? 'bg-gray-700' : c === 'blue' ? 'bg-blue-700' : 'bg-green-700'}`}
-                          title={c} />
+                      {([
+                        { id: 'dark',   bg: '#10042a', label: '다크' },
+                        { id: 'blue',   bg: '#001858', label: '블루' },
+                        { id: 'green',  bg: '#002a14', label: '그린' },
+                        { id: 'red',    bg: '#320006', label: '레드' },
+                        { id: 'orange', bg: '#2c1000', label: '오렌지' },
+                        { id: 'violet', bg: '#140028', label: '바이올렛' },
+                        { id: 'teal',   bg: '#002838', label: '틸' },
+                        { id: 'golden', bg: '#281600', label: '골든' },
+                      ] as const).map(c => (
+                        <button key={c.id} onClick={() => setThumbColor(c.id)}
+                          title={c.label}
+                          className={`w-5 h-5 rounded-full border-2 transition-all ${thumbColor === c.id ? 'border-gray-800 scale-125 ring-2 ring-offset-1 ring-gray-400' : 'border-gray-300 hover:scale-110'}`}
+                          style={{ background: c.bg }} />
                       ))}
                       {thumbRepUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
