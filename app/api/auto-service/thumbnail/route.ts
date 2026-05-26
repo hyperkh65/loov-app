@@ -11,13 +11,13 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { article_id, title, keyword, color_scheme = 'blue', bg_image_url } = await req.json();
+  const { article_id, title, keyword, color_scheme = 'blue', bg_image_url, sub } = await req.json();
   if (!article_id || !title || !keyword)
     return NextResponse.json({ error: 'article_id, title, keyword 필요' }, { status: 400 });
 
   let imageUrl: string | null = null;
   try {
-    imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme, bg_image_url || undefined);
+    imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme, bg_image_url || undefined, undefined, sub || undefined);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
