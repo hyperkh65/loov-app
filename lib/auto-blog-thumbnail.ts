@@ -4,13 +4,17 @@ import { uploadToR2 } from './r2-storage'
 export async function generateAndUploadThumbnail(
   title: string,
   keyword: string,
-  colorScheme: 'blue' | 'dark' | 'green' = 'blue',
+  colorScheme: 'blue' | 'dark' | 'green' | 'red' | 'orange' | 'violet' | 'teal' | 'golden' = 'blue',
   bgImageUrl?: string,
+  site?: string,
+  sub?: string,
 ): Promise<string> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr'
 
   const params = new URLSearchParams({ title, keyword, color: colorScheme })
   if (bgImageUrl) params.set('bg', bgImageUrl)
+  if (site) params.set('site', site)
+  if (sub) params.set('sub', sub)
 
   const genUrl = `${appUrl}/api/gen-thumbnail?${params.toString()}`
   const res = await fetch(genUrl, { signal: AbortSignal.timeout(25_000) })
