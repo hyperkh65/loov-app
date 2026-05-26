@@ -30,6 +30,22 @@ const KOREAN_ONLY_SUFFIX = `
 단, ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 같은 출력 마커는 반드시 영문 그대로 유지.
 위 규칙을 어기면 응답 전체가 무효 처리됩니다.`.trim();
 
+// AI think 블록 제거 (qwen3 등 COT 모델)
+function stripThinkBlocks(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/\[THINK\][\s\S]*?\[\/THINK\]/gi, '')
+    .replace(/^Thinking:[\s\S]*?\n\n/m, '')
+    .trim();
+}
+
+// 이스케이프된 따옴표 복원 (AI가 JSON 형식으로 출력할 때)
+function unescapeQuotes(text: string): string {
+  return text
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'");
+}
+
 // CJK 한자·일본어 가나·키릴 등 외국어 제거 (한글·라틴·숫자·일반기호 보존)
 function stripForeignChars(text: string): string {
   return text
@@ -83,6 +99,29 @@ const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
   [/\bversatile\b/gi, '다재다능한'],
   [/\bIsrael\b/g, '이스라엘'],
   [/\bPalestinian(s)?\b/gi, '팔레스타인'],
+  [/\bgovernance\b/gi, '거버넌스'],
+  [/\bopcon\b/gi, '전작권'],
+  [/\bconsensus\b/gi, '합의'],
+  [/\bsanction(s)?\b/gi, '제재'],
+  [/\bsummit\b/gi, '정상회담'],
+  [/\bdiplomacy\b/gi, '외교'],
+  [/\bsovereignty\b/gi, '주권'],
+  [/\balliance\b/gi, '동맹'],
+  [/\bdetente\b/gi, '데탕트'],
+  [/\bproposal\b/gi, '제안'],
+  [/\bframework\b/gi, '프레임워크'],
+  [/\binitiative\b/gi, '이니셔티브'],
+  [/\bbilateral\b/gi, '양자'],
+  [/\bmultilateral\b/gi, '다자'],
+  [/\binfrastructure\b/gi, '인프라'],
+  [/\btransparency\b/gi, '투명성'],
+  [/\baccountability\b/gi, '책임성'],
+  [/\bsustainable\b/gi, '지속가능한'],
+  [/\binnovation\b/gi, '혁신'],
+  [/\bstartup(s)?\b/gi, '스타트업'],
+  [/\bcontent(s)?\b/gi, '콘텐츠'],
+  [/\bportfolio\b/gi, '포트폴리오'],
+  [/\bwebsite\b/gi, '웹사이트'],
 ];
 
 function replaceInText(text: string): string {
@@ -371,8 +410,9 @@ export async function generateText(
     catch (e) { errors.push(`Claude: ${e}`); return false; }
   };
 
-  // ── 결과에서 외국어 문자 제거 + 영어 단어 한국어 치환 ──────────
-  const clean = (r: string | false) => r ? replaceEnglishWords(stripForeignChars(r)) : false;
+  // ── 결과 정제: think 블록 → 이스케이프 복원 → 외국어 제거 → 영어 치환 ──
+  const clean = (r: string | false) =>
+    r ? replaceEnglishWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))) : false;
 
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
   let result: string | false = false;
