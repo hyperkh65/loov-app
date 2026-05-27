@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 
 export const maxDuration = 600;
 
@@ -256,9 +257,34 @@ export async function POST(req: NextRequest) {
       const blogLinkText = blogUrls.length > 0 ? '\n\n🔗 ' + blogUrls.join('\n🔗 ') : '';
 
       const threadsIncluded = sns_platforms.includes('threads');
-      const otherPlatforms = sns_platforms.filter((p: string) => p !== 'threads');
+      const instagramIncluded = sns_platforms.includes('instagram');
+      const otherPlatforms = sns_platforms.filter((p: string) => p !== 'threads' && p !== 'instagram');
+      const defaultMediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
 
-      // Threads 외 플랫폼: 블로그 URL 포함하여 발행
+      // Instagram: 뉴스카드 자동 생성 후 발행
+      if (instagramIncluded) {
+        const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
+        let instagramMedia = defaultMediaUrls;
+        try {
+          const newsCardUrl = await generateAndUploadThumbnail(
+            article.title, article.keyword || article.title.slice(0, 20), 'blue'
+          );
+          instagramMedia = [newsCardUrl];
+        } catch { /* 생성 실패 시 기존 이미지 사용 */ }
+        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+          body: JSON.stringify({ content: snsContent, platforms: ['instagram'], media_urls: instagramMedia }),
+        });
+        const data = await res.json();
+        if (data.results) {
+          for (const r of data.results) {
+            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+          }
+        }
+      }
+
+      // Threads 외 나머지 플랫폼: 블로그 URL 포함하여 발행
       if (otherPlatforms.length > 0) {
         const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
         const res = await fetch(`${baseUrl}/api/sns/post-now`, {
@@ -267,7 +293,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             content: snsContent,
             platforms: otherPlatforms,
-            media_urls: (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })(),
+            media_urls: defaultMediaUrls,
           }),
         });
         const data = await res.json();
