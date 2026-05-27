@@ -744,9 +744,8 @@ export default function AutoServicePage() {
   const doPublish = async () => {
     if (!publishArticle) return;
     setPublishing(true);
+    setPublishResult({});
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 90_000); // 90초 타임아웃
       const res = await fetch('/api/auto-service/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -756,15 +755,13 @@ export default function AutoServicePage() {
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
         }),
-        signal: controller.signal,
       });
-      clearTimeout(timeout);
       const data = await res.json();
       setPublishResult(data.results || {});
+      if (data.error) alert(`발행 오류: ${data.error}`);
       await loadArticles();
     } catch (err) {
-      const msg = err instanceof Error && err.name === 'AbortError' ? '발행 시간 초과 (90초). 다시 시도해주세요.' : String(err);
-      alert(`발행 실패: ${msg}`);
+      alert(`발행 실패: ${String(err)}`);
     } finally {
       setPublishing(false);
     }
@@ -1778,6 +1775,15 @@ export default function AutoServicePage() {
                     {publishing ? '발행 중...' : '🚀 발행하기'}
                   </button>
                 </div>
+                {publishing && (
+                  <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 space-y-1">
+                    <p className="font-medium text-gray-700">⏳ 발행 처리 중...</p>
+                    {selSns.includes('instagram') && <p>📸 Instagram: 뉴스카드 생성 중 (~25초)</p>}
+                    {selSns.includes('threads') && <p>🧵 Threads: 발행 후 링크 댓글 추가 (~30-60초)</p>}
+                    {selBlog.includes('naver') && <p>🟢 네이버 블로그: 발행 중</p>}
+                    <p className="text-gray-400 mt-1">창을 닫지 마세요 — 서버에서 처리 중입니다</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-4 space-y-3">
@@ -1786,12 +1792,15 @@ export default function AutoServicePage() {
                   <div key={platform} className={`flex items-center justify-between p-3 rounded-lg ${result.success ? 'bg-green-50' : 'bg-red-50'}`}>
                     <span className="text-sm font-medium">{platform}</span>
                     {result.success ? (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span className="text-green-600 text-sm">✅ 성공</span>
                         {result.url && <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">보기</a>}
+                        {result.error && <span className="text-orange-500 text-xs w-full text-right">⚠️ {result.error}</span>}
                       </div>
                     ) : (
-                      <span className="text-red-600 text-xs">{result.error || '실패'}</span>
+                      <div className="text-right">
+                        <span className="text-red-600 text-xs">❌ {result.error || '실패'}</span>
+                      </div>
                     )}
                   </div>
                 ))}
