@@ -397,6 +397,21 @@ export async function postToFacebookWithMedia(
   }
 }
 
+function parseInstagramError(body: string): string {
+  try {
+    const j = JSON.parse(body);
+    const e = j.error || j;
+    const code = e.code;
+    const sub = e.error_subcode;
+    const userMsg = e.error_user_msg || e.error_user_title;
+    if (code === 9 && sub === 2207069) return `[INSTAGRAM_DAILY_LIMIT] 하루 게시물 한도 초과 (25개/일). 내일 다시 시도하세요.`;
+    if (code === 9) return `[INSTAGRAM_LIMIT] 게시 한도 초과. ${userMsg || '잠시 후 다시 시도하세요.'}`;
+    if (code === 190) return `[INSTAGRAM_TOKEN] 액세스 토큰 만료. SNS 연결 페이지에서 재연결하세요.`;
+    if (code === 10 || code === 200) return `[INSTAGRAM_PERMISSION] 권한 부족. 앱 권한을 확인하세요.`;
+    return userMsg || e.message || body;
+  } catch { return body; }
+}
+
 export async function postToInstagramWithMedia(
   accessToken: string,
   content: string,
@@ -434,7 +449,7 @@ export async function postToInstagramWithMedia(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!containerRes.ok) throw new Error(`Instagram 미디어 컨테이너 생성 실패: ${await containerRes.text()}`);
+    if (!containerRes.ok) throw new Error(parseInstagramError(await containerRes.text()));
     const { id: containerId } = await containerRes.json();
 
     // 영상은 처리 완료까지 대기
@@ -445,7 +460,7 @@ export async function postToInstagramWithMedia(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ creation_id: containerId, access_token: accessToken }),
     });
-    if (!pubRes.ok) throw new Error(`Instagram 게시 실패: ${await pubRes.text()}`);
+    if (!pubRes.ok) throw new Error(parseInstagramError(await pubRes.text()));
     return { id: (await pubRes.json()).id };
 
   } else {
@@ -474,7 +489,7 @@ export async function postToInstagramWithMedia(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ media_type: 'CAROUSEL', children: childIds.join(','), caption: content.substring(0, 2200), access_token: accessToken }),
     });
-    if (!carRes.ok) throw new Error(`Instagram 캐러셀 컨테이너 생성 실패: ${await carRes.text()}`);
+    if (!carRes.ok) throw new Error(parseInstagramError(await carRes.text()));
     const { id: carouselId } = await carRes.json();
 
     // 캐러셀 컨테이너도 FINISHED 대기 (최대 60초)
@@ -486,7 +501,7 @@ export async function postToInstagramWithMedia(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ creation_id: carouselId, access_token: accessToken }),
     });
-    if (!pubRes.ok) throw new Error(`Instagram 캐러셀 게시 실패: ${await pubRes.text()}`);
+    if (!pubRes.ok) throw new Error(parseInstagramError(await pubRes.text()));
     return { id: (await pubRes.json()).id };
   }
 }

@@ -25,6 +25,12 @@ function isRateLimitError(msg: string): boolean {
     /OAuthException.*(?:4|17|32|613)/i.test(msg);
 }
 
+function isInstagramDailyLimit(msg: string): boolean {
+  return /INSTAGRAM_DAILY_LIMIT/.test(msg) ||
+    /code["\s:]+9\b.*2207069|2207069.*code["\s:]+9/i.test(msg) ||
+    /미디어 생성 한도|게시물 한도 초과/.test(msg);
+}
+
 async function translateMessage(text: string, targetLang: string): Promise<string> {
   if (targetLang === 'ko') return text;
   const langName = targetLang === 'ja' ? '일본어' : '영어';
@@ -241,13 +247,25 @@ async function processJob(
   const hook = message.replace(post.link || '', '').replace(/🔗\s*/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
   // connection configs 없으면 기존 방식(플랫폼명 기반) 폴백
-  type ConnCfg = { platform: string; platform_user_id: string; language: string; use_news_card?: boolean };
+  type ConnCfg = { platform: string; platform_user_id: string; language: string; use_news_card?: boolean; cooldown_until?: string };
   const connConfigs: ConnCfg[] = Array.isArray(sns_connection_configs) && sns_connection_configs.length
     ? sns_connection_configs
     : platforms.map(p => ({ platform: p, platform_user_id: '', language: 'ko' }));
 
-  const threadsConfigs = connConfigs.filter(c => c.platform === 'threads');
-  const otherConfigs = connConfigs.filter(c => c.platform !== 'threads');
+  // 쿨다운 중인 계정 스킵 처리
+  const now = new Date();
+  let updatedConnConfigs = connConfigs.map(c => ({ ...c }));
+  const activeCfgs = connConfigs.filter(c => !c.cooldown_until || new Date(c.cooldown_until) <= now);
+
+  // 쿨다운 중 계정 로그 기록
+  const coolingCfgs = connConfigs.filter(c => c.cooldown_until && new Date(c.cooldown_until) > now);
+  for (const c of coolingCfgs) {
+    const until = new Date(c.cooldown_until!).toLocaleString('ko-KR');
+    publishResults.push({ platform: c.platform, label: c.platform, success: false, error: `일일 한도 쿨다운 중 (${until}까지)` });
+  }
+
+  const threadsConfigs = activeCfgs.filter(c => c.platform === 'threads');
+  const otherConfigs = activeCfgs.filter(c => c.platform !== 'threads');
   let newThreadsNextRunAt: string | null = null;
 
   // Threads 발행 (별도 간격 체크, 다중 계정 지원)
@@ -329,7 +347,17 @@ async function processJob(
       );
       publishResults.push({ platform: cfg.platform, label, success: true });
     } catch (e) {
-      publishResults.push({ platform: cfg.platform, label, success: false, error: e instanceof Error ? e.message : String(e) });
+      const errMsg = e instanceof Error ? e.message : String(e);
+      publishResults.push({ platform: cfg.platform, label, success: false, error: errMsg });
+      // Instagram 일일 한도 초과 → 24시간 쿨다운을 sns_connection_configs에 저장
+      if (cfg.platform === 'instagram' && isInstagramDailyLimit(errMsg)) {
+        const cooldownUntil = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+        updatedConnConfigs = updatedConnConfigs.map(c =>
+          c.platform === 'instagram' && c.platform_user_id === cfg.platform_user_id
+            ? { ...c, cooldown_until: cooldownUntil }
+            : c
+        );
+      }
     }
   }
 
@@ -369,6 +397,10 @@ async function processJob(
     updated_at: new Date().toISOString(),
   };
   if (newThreadsNextRunAt) updatePayload.threads_next_run_at = newThreadsNextRunAt;
+  // Instagram 쿨다운 등 연결 설정 변경이 있으면 반영
+  if (JSON.stringify(updatedConnConfigs) !== JSON.stringify(connConfigs)) {
+    updatePayload.sns_connection_configs = updatedConnConfigs;
+  }
 
   await admin.from('bossai_sns_auto_jobs').update(updatePayload).eq('id', jobId);
 
