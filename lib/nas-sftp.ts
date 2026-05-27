@@ -73,3 +73,15 @@ export async function writeFileFromBase64(path: string, base64Data: string): Pro
   const result = await nasExec(`echo "${data}" | base64 -d > "${path}"`);
   if (result.code !== 0) throw new Error(result.stderr || '파일 쓰기 실패');
 }
+
+// base64 → Buffer 변환 헬퍼
+export async function readFileAsBuffer(path: string): Promise<Buffer> {
+  const b64 = await readFileAsBase64(path);
+  return Buffer.from(b64.replace(/\s+/g, ''), 'base64');
+}
+
+// 파일 크기 (bytes) 조회
+export async function getFileSize(path: string): Promise<number> {
+  const r = await nasExec(`stat -c%s "${path}" 2>/dev/null || echo 0`);
+  return parseInt(r.stdout.trim()) || 0;
+}

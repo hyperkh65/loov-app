@@ -448,6 +448,73 @@ function ExportPanel({ scenes, title, description, hook, platform }: {
   scenes: Scene[]; title: string; description: string; hook: string; platform: Platform;
 }) {
   const [copied, setCopied] = useState('');
+  // 자동 렌더링 상태
+  const [renderState, setRenderState] = useState<'idle'|'rendering'|'done'|'error'>('idle');
+  const [renderProgress, setRenderProgress] = useState('');
+  const [renderStep, setRenderStep] = useState(0);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [ytState, setYtState] = useState<'idle'|'uploading'|'done'|'error'>('idle');
+  const [ytUrl, setYtUrl] = useState('');
+  const [selectedVoice, setSelectedVoice] = useState('ko-KR-SunHiNeural');
+  const [ttsRate, setTtsRate] = useState(10);
+
+  const renderVideo = async () => {
+    setRenderState('rendering');
+    setRenderProgress('시작 중...');
+    setRenderStep(0);
+    setVideoUrl('');
+    try {
+      const res = await fetch('/api/shorts/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes, voice: selectedVoice, rate: ttsRate, title, addSubtitles: true }),
+      });
+      if (!res.body) throw new Error('스트림 없음');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const d = JSON.parse(line.slice(5).trim());
+            if (d.type === 'progress') { setRenderProgress(d.message); setRenderStep(d.step || 0); }
+            if (d.type === 'done') { setVideoUrl(d.url); setRenderState('done'); }
+            if (d.type === 'error') { setRenderProgress(d.message); setRenderState('error'); }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      setRenderProgress(String(e));
+      setRenderState('error');
+    }
+  };
+
+  const uploadToYouTube = async () => {
+    if (!videoUrl) return;
+    setYtState('uploading');
+    try {
+      const videoRes = await fetch(videoUrl);
+      const blob = await videoRes.blob();
+      const form = new FormData();
+      form.append('video', blob, 'shorts.mp4');
+      form.append('title', title.slice(0, 100));
+      form.append('description', `${description}\n\n#Shorts #쇼츠`);
+      form.append('tags', `Shorts,쇼츠,${hook}`);
+      const res = await fetch('/api/youtube/upload', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.url) { setYtUrl(data.url); setYtState('done'); }
+      else { setYtState('error'); alert('YouTube 업로드 실패: ' + (data.error || '알 수 없는 오류')); }
+    } catch (e) {
+      setYtState('error');
+      alert('업로드 오류: ' + String(e));
+    }
+  };
 
   const copy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -480,8 +547,101 @@ function ExportPanel({ scenes, title, description, hook, platform }: {
 
   const guide = PLATFORM_GUIDE[platform];
 
+  const VOICES = [
+    { id: 'ko-KR-SunHiNeural', name: '선희 (여성·밝고 활기찬)' },
+    { id: 'ko-KR-InJoonNeural', name: '인준 (남성·따뜻하고 친근)' },
+    { id: 'ko-KR-BongJinNeural', name: '봉진 (남성·차분·전문적)' },
+    { id: 'ko-KR-GookMinNeural', name: '국민 (남성·젊고 활기찬)' },
+    { id: 'ko-KR-HyunsuNeural', name: '현수 (남성·내레이션)' },
+    { id: 'ko-KR-YuJinNeural', name: '유진 (여성·감성적)' },
+  ];
+
   return (
     <div className="space-y-4">
+
+      {/* ── 자동 영상 생성 + YouTube 업로드 ── */}
+      <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-2xl border border-red-100 p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🎬</span>
+          <h3 className="font-bold text-gray-900 text-sm">자동 영상 생성 + YouTube Shorts 업로드</h3>
+        </div>
+
+        {/* 음성 선택 */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">음성</label>
+            <select value={selectedVoice} onChange={e => setSelectedVoice(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white">
+              {VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">말하기 속도 ({ttsRate > 0 ? '+' : ''}{ttsRate}%)</label>
+            <input type="range" min="-20" max="40" step="5" value={ttsRate}
+              onChange={e => setTtsRate(Number(e.target.value))}
+              className="w-full h-2 accent-red-500" />
+          </div>
+        </div>
+
+        {/* 렌더링 진행 */}
+        {renderState !== 'idle' && (
+          <div className={`rounded-xl p-3 text-xs space-y-1 ${renderState === 'error' ? 'bg-red-100 text-red-700' : 'bg-white/80 text-gray-700'}`}>
+            <div className="flex items-center gap-2">
+              {renderState === 'rendering' && <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />}
+              {renderState === 'done' && <span className="text-green-600">✅</span>}
+              {renderState === 'error' && <span>❌</span>}
+              <span>{renderProgress}</span>
+            </div>
+            {renderState === 'rendering' && renderStep > 0 && (
+              <div className="flex gap-1 mt-1">
+                {[1,2,3,4,5].map(s => (
+                  <div key={s} className={`flex-1 h-1.5 rounded-full ${s <= renderStep ? 'bg-red-400' : 'bg-gray-200'}`} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 완성된 영상 미리보기 */}
+        {renderState === 'done' && videoUrl && (
+          <div className="space-y-2">
+            <video src={videoUrl} controls className="w-full max-w-xs mx-auto rounded-xl border border-gray-200 block" style={{ maxHeight: 300 }} />
+            <div className="flex gap-2">
+              <a href={videoUrl} download="shorts.mp4"
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded-xl text-center font-medium">
+                ⬇️ 다운로드
+              </a>
+              <button onClick={uploadToYouTube} disabled={ytState === 'uploading'}
+                className={`flex-1 py-2 text-white text-xs rounded-xl font-bold transition ${ytState === 'uploading' ? 'bg-gray-400' : ytState === 'done' ? 'bg-green-600' : 'bg-red-600 hover:bg-red-700'}`}>
+                {ytState === 'uploading' ? '⬆️ 업로드 중...' : ytState === 'done' ? '✅ 업로드 완료!' : '▶️ YouTube Shorts 업로드'}
+              </button>
+            </div>
+            {ytState === 'done' && ytUrl && (
+              <a href={ytUrl} target="_blank" rel="noopener noreferrer"
+                className="block text-center text-xs text-red-600 underline">
+                🔗 {ytUrl}
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* 생성 버튼 */}
+        {(renderState === 'idle' || renderState === 'error') && (
+          <button onClick={renderVideo} disabled={!scenes.some(s => s.narration)}
+            className="w-full py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition">
+            🎬 영상 자동 생성 (TTS + FFmpeg + R2)
+          </button>
+        )}
+        {renderState === 'rendering' && (
+          <button disabled className="w-full py-3 bg-gray-300 text-gray-500 rounded-xl text-sm font-bold cursor-not-allowed">
+            렌더링 중... (2-5분 소요)
+          </button>
+        )}
+        <p className="text-[10px] text-gray-400 text-center">
+          NAS FFmpeg로 1080×1920 MP4 생성 → Cloudflare R2 저장 → YouTube 자동 업로드
+        </p>
+      </div>
+
       {/* 스크립트 내보내기 */}
       <div className="bg-white rounded-2xl border border-gray-100 p-5">
         <div className="flex items-center justify-between mb-3">
