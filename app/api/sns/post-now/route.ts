@@ -68,8 +68,8 @@ export async function POST(req: NextRequest) {
 
       // 스레드/댓글 형식 추가 게시
       if (thread_items?.length && platformPostId) {
-        // Threads: 게시물이 완전히 인덱싱될 때까지 대기 (Meta 권장 15초 이상)
-        if (platform === 'threads') await new Promise(r => setTimeout(r, 15000));
+        // Threads: 게시물 인덱싱 대기 — 15s 부족할 때 있어서 30s로 증가
+        if (platform === 'threads') await new Promise(r => setTimeout(r, 30000));
 
         let prevId = platformPostId;
         let commentSuccess = true;

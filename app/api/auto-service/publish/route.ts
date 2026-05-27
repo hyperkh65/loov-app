@@ -245,6 +245,32 @@ export async function POST(req: NextRequest) {
   // SNS 발행
   if (sns_platforms.length > 0) {
     try {
+      // ── Preflight: SNS 연결 상태 사전 확인 ──────────────────
+      if (userId) {
+        const { data: conns } = await supabase
+          .from('sns_connections')
+          .select('platform, is_active, access_token')
+          .eq('user_id', userId)
+          .in('platform', sns_platforms);
+
+        for (const p of sns_platforms as string[]) {
+          const conn = conns?.find(c => c.platform === p);
+          if (!conn) {
+            results[`sns_${p}`] = { success: false, error: '연결되지 않은 플랫폼 — SNS 연결 페이지에서 연결하세요' };
+          } else if (!conn.is_active || !conn.access_token) {
+            results[`sns_${p}`] = { success: false, error: '토큰 만료 또는 비활성 — SNS 연결 페이지에서 재연결하세요' };
+          }
+        }
+        // 이미 실패로 마킹된 플랫폼은 발행에서 제외
+        const validPlatforms = sns_platforms.filter((p: string) => !results[`sns_${p}`]);
+        if (validPlatforms.length === 0) {
+          return NextResponse.json({ results });
+        }
+        // 유효한 플랫폼만으로 계속 진행
+        sns_platforms.length = 0;
+        sns_platforms.push(...validPlatforms);
+      }
+
       // 블로그 URL 수집: 현재 요청 결과 + 이미 DB에 저장된 기존 발행 URL 합산
       const existingBlogUrls = Object.entries(article.published_urls || {})
         .filter(([k]) => !k.startsWith('sns_'))
