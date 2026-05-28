@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
-import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import type { Platform } from '@/lib/sns/platforms';
@@ -287,16 +287,40 @@ async function processJob(
         }
         try {
           const translatedHook = await translateMessage(hook, cfg.language);
+          const connToken = (conn as {access_token:string}).access_token;
+          const connUserId = (conn as {platform_user_id:string}).platform_user_id || '';
           const { id: postId } = await postToPlatformWithMedia(
-            'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
-            translatedHook, mediaUrls
+            'threads' as Platform, connToken, connUserId, translatedHook, mediaUrls
           );
-          await new Promise(r => setTimeout(r, 15000));
-          await postCommentOnOwnPost(
-            'threads' as Platform, (conn as {access_token:string}).access_token, (conn as {platform_user_id:string}).platform_user_id || '',
-            postId, `🔗 ${post.link}`, undefined
-          );
-          publishResults.push({ platform: 'threads', label, success: true });
+
+          // 게시물 인덱싱 완료 대기 (고정 15s → API 폴링으로 최대 60s)
+          await waitThreadsPostAccessible(postId, connToken);
+
+          // 링크 댓글: 3회 재시도, 10s→20s 백오프
+          let commentOk = false;
+          let commentErr = '';
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              await postCommentOnOwnPost(
+                'threads' as Platform, connToken, connUserId,
+                postId, `🔗 ${post.link}`, undefined
+              );
+              commentOk = true;
+              break;
+            } catch (e) {
+              if (attempt < 2) {
+                await new Promise(r => setTimeout(r, (attempt + 1) * 10000));
+              } else {
+                commentErr = e instanceof Error ? e.message : String(e);
+                console.warn(`[threads] 링크 댓글 최종 실패 (3회 시도):`, e);
+              }
+            }
+          }
+          // 메인 포스트 성공은 댓글 실패와 별개로 기록
+          publishResults.push({
+            platform: 'threads', label, success: true,
+            error: commentOk ? undefined : `링크 댓글 실패: ${commentErr}`,
+          });
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
           publishResults.push({ platform: 'threads', label, success: false, error: errMsg });

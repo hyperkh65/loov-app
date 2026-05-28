@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import type { Platform } from '@/lib/sns/platforms';
 
 // Threads 댓글 대기(15s) + 재시도(최대 30s) + 영상처리(30s) → 여유있게 설정
@@ -68,17 +68,22 @@ export async function POST(req: NextRequest) {
 
       // 스레드/댓글 형식 추가 게시
       if (thread_items?.length && platformPostId) {
-        // Threads: 게시물 인덱싱 대기 — 15s 부족할 때 있어서 30s로 증가
-        if (platform === 'threads') await new Promise(r => setTimeout(r, 30000));
+        // Threads: 게시물 인덱싱 완료될 때까지 폴링 (최대 60초)
+        // 고정 대기 대신 API로 직접 접근 가능 여부를 확인
+        if (platform === 'threads') await waitThreadsPostAccessible(platformPostId, conn.access_token);
 
         let prevId = platformPostId;
         let commentSuccess = true;
         let commentError = '';
-        for (const item of thread_items as ThreadItem[]) {
+        const backoffMs = [5000, 10000, 20000, 30000]; // 5회 재시도 백오프
+        for (let itemIdx = 0; itemIdx < (thread_items as ThreadItem[]).length; itemIdx++) {
+          const item = (thread_items as ThreadItem[])[itemIdx];
           if (!item.content?.trim()) continue;
-          // 3회 재시도, 지수 백오프: 10s → 20s → 30s
+          // 두 번째 이상 아이템은 3초 대기 (이전 댓글 인덱싱 시간)
+          if (itemIdx > 0) await new Promise(r => setTimeout(r, 3000));
+          // 5회 재시도, 점진적 백오프: 5s → 10s → 20s → 30s
           let posted = false;
-          for (let attempt = 0; attempt < 3; attempt++) {
+          for (let attempt = 0; attempt < 5; attempt++) {
             try {
               const targetId = platform === 'twitter' ? prevId : platformPostId;
               const { id: commentId } = await postCommentOnOwnPost(
@@ -89,12 +94,12 @@ export async function POST(req: NextRequest) {
               posted = true;
               break;
             } catch (e) {
-              if (attempt < 2) {
-                await new Promise(r => setTimeout(r, (attempt + 1) * 10000)); // 10s, 20s
+              if (attempt < 4) {
+                await new Promise(r => setTimeout(r, backoffMs[attempt] ?? 30000));
               } else {
                 commentSuccess = false;
                 commentError = e instanceof Error ? e.message : String(e);
-                console.warn(`[${platform}] 댓글 게시 실패 (3회 시도):`, e);
+                console.warn(`[${platform}] 댓글 게시 최종 실패 (5회 시도):`, e);
               }
             }
           }
