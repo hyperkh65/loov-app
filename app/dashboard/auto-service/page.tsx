@@ -155,6 +155,10 @@ export default function AutoServicePage() {
   const [selSns, setSelSns] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
+  // YouTube Shorts 자동 생성
+  const [autoShorts, setAutoShorts] = useState(false);
+  const [shortsJobs, setShortsJobs] = useState<{ id: string; title: string; status: string; progress: string; video_url?: string; yt_url?: string }[]>([]);
+  const [shortsPolling, setShortsPolling] = useState(false);
   // WordPress 사이트 목록
   const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
@@ -760,11 +764,45 @@ export default function AutoServicePage() {
       setPublishResult(data.results || {});
       if (data.error) alert(`발행 오류: ${data.error}`);
       await loadArticles();
+
+      // YouTube Shorts 자동 생성 (백그라운드)
+      if (autoShorts) {
+        const r = await fetch('/api/shorts/auto-generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            article_id: publishArticle.id,
+            title: publishArticle.title,
+            keyword: publishArticle.keyword || '',
+            description: publishArticle.meta_description || '',
+          }),
+        });
+        const d = await r.json();
+        if (d.job_id) {
+          setShortsJobs(prev => [{ id: d.job_id, title: publishArticle.title, status: 'pending', progress: '대기 중...' }, ...prev]);
+          if (!shortsPolling) startShortsPolling();
+        }
+      }
     } catch (err) {
       alert(`발행 실패: ${String(err)}`);
     } finally {
       setPublishing(false);
     }
+  };
+
+  const startShortsPolling = () => {
+    setShortsPolling(true);
+    const poll = async () => {
+      const res = await fetch('/api/shorts/queue');
+      const data = await res.json();
+      if (data.jobs) {
+        setShortsJobs(data.jobs);
+        const hasActive = data.jobs.some((j: { status: string }) => j.status === 'pending' || j.status === 'running');
+        if (hasActive) setTimeout(poll, 8000);
+        else setShortsPolling(false);
+      } else { setShortsPolling(false); }
+    };
+    setTimeout(poll, 3000);
   };
 
   const togglePlatform = (arr: string[], setArr: (v: string[]) => void, id: string) => {
@@ -785,6 +823,36 @@ export default function AutoServicePage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
+
+      {/* YouTube Shorts 진행 상태 배너 */}
+      {shortsJobs.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {shortsJobs.filter(j => j.status !== 'done' || j.yt_url).slice(0, 3).map(j => (
+            <div key={j.id} className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm border ${
+              j.status === 'done' ? 'bg-green-50 border-green-200' :
+              j.status === 'error' ? 'bg-red-50 border-red-200' :
+              'bg-red-50 border-red-100'
+            }`}>
+              <div className="flex items-center gap-2 min-w-0">
+                {j.status === 'done' ? <span>✅</span> : j.status === 'error' ? <span>❌</span> :
+                  <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-800 truncate text-xs">📺 {j.title}</p>
+                  <p className="text-xs text-gray-500">{j.progress}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                {j.yt_url && <a href={j.yt_url} target="_blank" rel="noopener noreferrer" className="text-xs text-red-600 underline">YouTube →</a>}
+                {j.video_url && !j.yt_url && <a href={j.video_url} download className="text-xs text-blue-600 underline">영상 다운로드</a>}
+                {(j.status === 'done' || j.status === 'error') && (
+                  <button onClick={() => setShortsJobs(prev => prev.filter(x => x.id !== j.id))} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">🤖 자동화서비스 — 블로그 자동화</h1>
         <p className="text-sm text-gray-500 mt-1">트렌딩 키워드 자동 감지 → AI 3000자+ SEO 글 생성 → 대표이미지 자동 제작 → 승인만 하면 발행</p>
@@ -1768,9 +1836,24 @@ export default function AutoServicePage() {
                     ))}
                   </div>
                 </div>
+
+                {/* YouTube Shorts 자동 생성 토글 */}
+                <div className={`rounded-xl border p-3 transition-colors ${autoShorts ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <button type="button" onClick={() => setAutoShorts(!autoShorts)}
+                      className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${autoShorts ? 'bg-red-500' : 'bg-gray-300'}`}>
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${autoShorts ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">📺 YouTube Shorts 자동 생성</p>
+                      <p className="text-xs text-gray-400">발행 후 백그라운드에서 AI 스크립트→TTS→영상→YouTube 자동 업로드</p>
+                    </div>
+                  </label>
+                </div>
+
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setPublishArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
-                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0)}
+                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts)}
                     className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                     {publishing ? '발행 중...' : '🚀 발행하기'}
                   </button>
