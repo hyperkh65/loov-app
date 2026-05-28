@@ -35,6 +35,29 @@ async function waitInstagramVideoReady(containerId: string, accessToken: string,
   // 이미지 컨테이너는 타임아웃해도 대부분 게시 가능 — throw 대신 그냥 반환
 }
 
+/**
+ * Threads 게시물이 API에서 실제로 조회 가능할 때까지 폴링 (최대 60초)
+ * 게시 직후엔 인덱싱 지연이 있어 reply_to_id 오류가 발생할 수 있음
+ */
+export async function waitThreadsPostAccessible(postId: string, accessToken: string): Promise<void> {
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 4000));
+    try {
+      const res = await fetch(
+        `https://graph.threads.net/v1.0/${postId}?fields=id&access_token=${accessToken}`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.id === postId) return;
+      }
+    } catch { /* 계속 폴링 */ }
+  }
+  // 타임아웃 후에도 5초 추가 대기
+  await new Promise(r => setTimeout(r, 5000));
+}
+
 /** Threads child 컨테이너가 FINISHED 될 때까지 폴링 (최대 30초) */
 async function waitThreadsContainerFinished(containerId: string, accessToken: string): Promise<boolean> {
   for (let i = 0; i < 40; i++) {
@@ -638,13 +661,13 @@ export async function postCommentOnOwnPost(
       return replyToFacebookComment(accessToken, postId, content);
 
     case 'instagram': {
-      // 인스타그램: 게시물에 직접 댓글
-      const res = await fetch(`https://graph.facebook.com/v18.0/${postId}/comments`, {
+      // Standalone Instagram API로 댓글 (graph.instagram.com, message 필드)
+      const res = await fetch(`https://graph.instagram.com/v21.0/${postId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: content.substring(0, 2200), access_token: accessToken }),
+        body: JSON.stringify({ message: content.substring(0, 2200), access_token: accessToken }),
       });
-      if (!res.ok) throw new Error(`Instagram 댓글 실패: ${await res.text()}`);
+      if (!res.ok) throw new Error(parseInstagramError(await res.text()));
       return { id: (await res.json()).id };
     }
 
