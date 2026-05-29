@@ -506,6 +506,10 @@ export default function AutoServicePage() {
     if (!previewArticle) return;
     setThumbGenerating(true);
     try {
+      // 기사 본문에서 첫 번째 이미지를 배경으로 추출 (뉴스카드 디자인용)
+      const bgMatch = previewArticle.content?.match(/<img[^>]+src="([^"]+)"/i);
+      const bgImageUrl = bgMatch?.[1] || undefined;
+
       const res = await fetch('/api/auto-service/thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -515,6 +519,7 @@ export default function AutoServicePage() {
           keyword: previewArticle.keyword || '',
           color_scheme: thumbColor,
           sub: thumbSubTitle || undefined,
+          bg_image_url: bgImageUrl,
         }),
       });
       const data = await res.json();

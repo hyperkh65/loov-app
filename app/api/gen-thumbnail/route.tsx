@@ -72,6 +72,138 @@ export async function GET(req: NextRequest) {
   const len = title.length;
   const fontSize = len <= 8 ? 108 : len <= 14 ? 90 : len <= 20 ? 78 : len <= 28 ? 66 : len <= 36 ? 56 : 48;
 
+  const fontOpts = {
+    width: 1080, height: 1080,
+    fonts: fontData ? [{ name: 'NotoSansKR', data: fontData, weight: 700 as const, style: 'normal' as const }] : [],
+  };
+
+  // ── 뉴스카드 디자인 (배경 이미지 있을 때) ─────────────────────────────
+  if (bgUrl) {
+    return new ImageResponse(
+      (
+        <div
+          style={{
+            width: 1080, height: 1080,
+            display: 'flex',
+            position: 'relative', overflow: 'hidden',
+            background: '#111',
+            fontFamily: fontData ? 'NotoSansKR' : 'sans-serif',
+          }}
+        >
+          {/* 전체 배경 사진 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={bgUrl}
+            alt=""
+            style={{
+              position: 'absolute', inset: 0,
+              width: 1080, height: 1080,
+              objectFit: 'cover', objectPosition: 'center top',
+            }}
+          />
+
+          {/* 하단으로 갈수록 어두워지는 그라디언트 (상단 사진 선명 유지) */}
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex',
+            background:
+              'linear-gradient(to bottom,' +
+              'rgba(0,0,0,0.0) 0%,' +
+              'rgba(0,0,0,0.05) 20%,' +
+              'rgba(0,0,0,0.25) 42%,' +
+              'rgba(0,0,0,0.65) 58%,' +
+              'rgba(0,0,0,0.88) 72%,' +
+              'rgba(0,0,0,0.97) 85%,' +
+              'rgba(0,0,0,1.0) 100%)',
+          }} />
+
+          {/* 키워드 뱃지 (상단 좌측) */}
+          {keyword && (
+            <div style={{
+              position: 'absolute', top: 52, left: 52, display: 'flex',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'center',
+                background: t.accent,
+                borderRadius: 8, padding: '10px 28px',
+              }}>
+                <div style={{
+                  fontSize: 28, fontWeight: 900,
+                  color: '#000', letterSpacing: '0.02em', display: 'flex',
+                }}>
+                  {keyword}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 하단 텍스트 영역 */}
+          <div style={{
+            position: 'absolute',
+            bottom: 100, left: 64, right: 64,
+            display: 'flex', flexDirection: 'column', gap: 20,
+          }}>
+            {/* 제목 */}
+            <div style={{
+              fontSize, fontWeight: 900,
+              color: 'white', lineHeight: 1.3,
+              wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap',
+              letterSpacing: '-0.025em',
+            }}>
+              {title}
+            </div>
+
+            {/* 서브타이틀 */}
+            {sub && (
+              <div style={{
+                fontSize: 34, fontWeight: 700,
+                color: t.accent, letterSpacing: '-0.01em',
+                display: 'flex', flexWrap: 'wrap',
+                wordBreak: 'keep-all',
+                textShadow: `0 0 24px ${t.accent}80`,
+              }}>
+                {sub}
+              </div>
+            )}
+          </div>
+
+          {/* 하단 바 */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0 64px', height: 86,
+            background: 'rgba(0,0,0,0.65)',
+            borderTop: `1px solid rgba(255,255,255,0.09)`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 9, height: 9, borderRadius: '50%',
+                background: t.accent, display: 'flex',
+                boxShadow: `0 0 14px ${t.accent}, 0 0 28px ${t.accent}80`,
+              }} />
+              <div style={{
+                fontSize: 26, fontWeight: 700,
+                color: `${t.accent}ee`, letterSpacing: '0.08em', display: 'flex',
+              }}>
+                {site || 'BLOG'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {[44, 26, 14, 7].map((w, i) => (
+                <div key={i} style={{
+                  width: w, height: 3, borderRadius: 2,
+                  background: `linear-gradient(90deg, ${t.accent}, ${t.accent2})`,
+                  opacity: 1 - i * 0.22, display: 'flex',
+                }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ),
+      fontOpts,
+    );
+  }
+
+  // ── 그라디언트 디자인 (배경 이미지 없을 때) ──────────────────────────
   return new ImageResponse(
     (
       <div
@@ -83,18 +215,6 @@ export async function GET(req: NextRequest) {
           fontFamily: fontData ? 'NotoSansKR' : 'sans-serif',
         }}
       >
-        {/* 배경 이미지 */}
-        {bgUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={bgUrl} alt="" style={{ position: 'absolute', inset: 0, width: 1080, height: 1080, objectFit: 'cover' }} />
-        )}
-        {bgUrl && (
-          <div style={{
-            position: 'absolute', inset: 0, display: 'flex',
-            background: `linear-gradient(148deg, ${t.g1}f0 0%, ${t.g2}d0 50%, ${t.g3}c0 100%)`,
-          }} />
-        )}
-
         {/* ── 배경 장식 ── */}
 
         {/* 우상단 큰 원 아웃라인 */}
@@ -128,13 +248,6 @@ export async function GET(req: NextRequest) {
           position: 'absolute', bottom: -60, left: -60,
           width: 340, height: 340, borderRadius: '50%', display: 'flex',
           background: `radial-gradient(circle, ${t.dim} 0%, transparent 68%)`,
-        }} />
-
-        {/* 글로우 블롭 - 중앙 우측 (깊이감) */}
-        <div style={{
-          position: 'absolute', top: 380, right: -80,
-          width: 260, height: 260, borderRadius: '50%', display: 'flex',
-          background: `radial-gradient(circle, ${t.accent}0f 0%, transparent 70%)`,
         }} />
 
         {/* ── 상단 액센트 스트립 ── */}
@@ -283,9 +396,6 @@ export async function GET(req: NextRequest) {
         </div>
       </div>
     ),
-    {
-      width: 1080, height: 1080,
-      fonts: fontData ? [{ name: 'NotoSansKR', data: fontData, weight: 700, style: 'normal' }] : [],
-    },
+    fontOpts,
   );
 }
