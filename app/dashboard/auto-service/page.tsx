@@ -853,26 +853,54 @@ export default function AutoServicePage() {
       {/* YouTube Shorts 진행 상태 배너 */}
       {shortsJobs.length > 0 && (
         <div className="mb-4 space-y-2">
-          {shortsJobs.filter(j => j.status !== 'done' || j.yt_url).slice(0, 3).map(j => (
+          {/* 전체 지우기 버튼 */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">📺 YouTube Shorts 작업 ({shortsJobs.length})</span>
+            <button
+              onClick={async () => {
+                await fetch('/api/shorts/queue', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: true }) });
+                setShortsJobs([]);
+                setShortsPolling(false);
+              }}
+              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              전체 삭제
+            </button>
+          </div>
+
+          {shortsJobs.slice(0, 5).map(j => (
             <div key={j.id} className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm border ${
               j.status === 'done' ? 'bg-green-50 border-green-200' :
               j.status === 'error' ? 'bg-red-50 border-red-200' :
-              'bg-red-50 border-red-100'
+              'bg-gray-50 border-gray-200'
             }`}>
               <div className="flex items-center gap-2 min-w-0">
                 {j.status === 'done' ? <span>✅</span> : j.status === 'error' ? <span>❌</span> :
-                  <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                  <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
                 <div className="min-w-0">
                   <p className="font-medium text-gray-800 truncate text-xs">📺 {j.title}</p>
-                  <p className="text-xs text-gray-500">{j.progress}</p>
+                  <p className="text-xs text-gray-500">
+                    {j.progress}
+                    {(j.status === 'pending' || j.status === 'running') && (
+                      <span className="text-orange-500 ml-1">— NAS 처리 서버 확인 필요</span>
+                    )}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                 {j.yt_url && <a href={j.yt_url} target="_blank" rel="noopener noreferrer" className="text-xs text-red-600 underline">YouTube →</a>}
                 {j.video_url && !j.yt_url && <a href={j.video_url} download className="text-xs text-blue-600 underline">영상 다운로드</a>}
-                {(j.status === 'done' || j.status === 'error') && (
-                  <button onClick={() => setShortsJobs(prev => prev.filter(x => x.id !== j.id))} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
-                )}
+                {/* 모든 상태에서 삭제 가능 */}
+                <button
+                  onClick={async () => {
+                    await fetch('/api/shorts/queue', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: j.id }) });
+                    setShortsJobs(prev => prev.filter(x => x.id !== j.id));
+                  }}
+                  className="text-gray-400 hover:text-red-500 text-xs transition-colors"
+                  title="삭제"
+                >
+                  ✕
+                </button>
               </div>
             </div>
           ))}
