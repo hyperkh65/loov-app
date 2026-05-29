@@ -146,6 +146,7 @@ export default function AutoServicePage() {
   const [thumbBgLoading, setThumbBgLoading] = useState(false);
   const [thumbSelectedBg, setThumbSelectedBg] = useState('');
   const [thumbPreviewUrl, setThumbPreviewUrl] = useState('');
+  const [thumbPreviewSaved, setThumbPreviewSaved] = useState(false);
   const thumbCanvasRef = useRef<HTMLCanvasElement>(null);
   const thumbFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -395,7 +396,8 @@ export default function AutoServicePage() {
     setThumbBgQuery(article.keyword || '');
     setThumbBgImages([]);
     setThumbSelectedBg('');
-    setThumbPreviewUrl('');
+    setThumbPreviewUrl(article.representative_image_url || '');
+    setThumbPreviewSaved(true);
   };
 
   // ── 캔버스 썸네일 함수들 ──
@@ -494,6 +496,7 @@ export default function AutoServicePage() {
 
       ctx.fillStyle = '#f0b429'; ctx.fillRect(0, 1070, 1080, 10);
       setThumbPreviewUrl(canvas.toDataURL('image/png'));
+      setThumbPreviewSaved(false);  // 새 캔버스 생성 → 아직 저장 안됨
     } catch (e) {
       alert('썸네일 생성 오류: ' + String(e));
     } finally {
@@ -525,6 +528,8 @@ export default function AutoServicePage() {
       const data = await res.json();
       if (data.url) {
         setThumbRepUrl(data.url);
+        setThumbPreviewUrl(data.url);   // 미리보기에 즉시 반영
+        setThumbPreviewSaved(true);     // 이미 저장됨 표시
         setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
         await loadArticles();
       } else {
@@ -551,9 +556,10 @@ export default function AutoServicePage() {
       const data = await uploadRes.json();
       if (data.url) {
         setThumbRepUrl(data.url);
+        setThumbPreviewUrl(data.url);
+        setThumbPreviewSaved(true);
         setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
         await loadArticles();
-        alert('✅ 대표이미지가 저장됐습니다.');
       } else {
         alert('업로드 실패: ' + (data.error || '알 수 없는 오류'));
       }
@@ -1556,6 +1562,8 @@ export default function AutoServicePage() {
                         const data = await res.json();
                         if (data.url) {
                           setThumbRepUrl(data.url);
+                          setThumbPreviewUrl(data.url);
+                          setThumbPreviewSaved(true);
                           setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
                           await loadArticles();
                         }
@@ -1575,10 +1583,16 @@ export default function AutoServicePage() {
                           className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg text-center">
                           ⬇️ 다운로드
                         </a>
-                        <button onClick={uploadCanvasThumbnail} disabled={thumbGenerating}
-                          className="flex-1 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium">
-                          {thumbGenerating ? '저장 중...' : '💾 대표이미지로 저장'}
-                        </button>
+                        {thumbPreviewSaved ? (
+                          <div className="flex-1 py-2 bg-green-50 border border-green-300 text-green-700 text-sm rounded-lg text-center font-medium">
+                            ✅ 대표이미지 적용됨
+                          </div>
+                        ) : (
+                          <button onClick={uploadCanvasThumbnail} disabled={thumbGenerating}
+                            className="flex-1 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium">
+                            {thumbGenerating ? '저장 중...' : '💾 대표이미지로 저장'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
