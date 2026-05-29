@@ -118,6 +118,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/x-collect',  icon: '🐦', label: 'X 수집 / SNS 발행' },
       { href: '/dashboard/automation', icon: '🤖', label: 'n8n 자동화 관리' },
       { href: '/dashboard/nas',        icon: '🖥️', label: '시놀로지 NAS' },
+      { href: '/dashboard/videos',     icon: '🎬', label: '동영상 보관함' },
       { href: '/dashboard/cctv',       icon: '📷', label: 'CCTV 뷰어' },
       { href: '/dashboard/wp-auto',    icon: '🌐', label: 'WordPress 자동세팅' },
       { href: '/dashboard/deploy',     icon: '🚀', label: '배포 현황' },
