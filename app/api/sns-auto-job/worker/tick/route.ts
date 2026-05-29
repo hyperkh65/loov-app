@@ -358,7 +358,7 @@ async function processJob(
       let postMediaUrls = mediaUrls;
       if (cfg.platform === 'instagram' && cfg.use_news_card) {
         try {
-          const newsCardUrl = await generateAndUploadThumbnail(post.title, post.title.slice(0, 20), 'blue');
+          const newsCardUrl = await generateAndUploadThumbnail(post.title, post.title.slice(0, 20), 'blue', undefined, undefined, undefined, 'square');
           postMediaUrls = [newsCardUrl];
         } catch {
           // 뉴스카드 생성 실패 시 원본 이미지 사용

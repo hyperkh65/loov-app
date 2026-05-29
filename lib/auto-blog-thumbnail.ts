@@ -1,6 +1,7 @@
 import { uploadToR2 } from './r2-storage'
 
 // /api/gen-thumbnail 호출 → PNG 반환 → R2 업로드
+// size: 'blog' = 1200×628 (OGP 표준, 기본값), 'square' = 1080×1080 (인스타그램)
 export async function generateAndUploadThumbnail(
   title: string,
   keyword: string,
@@ -8,10 +9,11 @@ export async function generateAndUploadThumbnail(
   bgImageUrl?: string,
   site?: string,
   sub?: string,
+  size: 'blog' | 'square' = 'blog',
 ): Promise<string> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr'
 
-  const params = new URLSearchParams({ title, keyword, color: colorScheme })
+  const params = new URLSearchParams({ title, keyword, color: colorScheme, size })
   if (bgImageUrl) params.set('bg', bgImageUrl)
   if (site) params.set('site', site)
   if (sub) params.set('sub', sub)
