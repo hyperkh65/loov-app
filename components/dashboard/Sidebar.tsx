@@ -33,6 +33,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/erp/quotes',          icon: '📋', label: '견적 관리' },
       { href: '/dashboard/erp/purchase-orders', icon: '🛒', label: '발주 관리' },
       { href: '/dashboard/erp/imports',         icon: '🚢', label: '수입 관리' },
+      { href: '/dashboard/container-sim',       icon: '🏗️', label: '컨테이너 적재 시뮬레이터' },
       { href: '/dashboard/erp/clients',         icon: '🤝', label: '거래처 관리' },
       { href: '/dashboard/erp/crm',             icon: '📊', label: 'CRM 영업관리' },
       { href: '/dashboard/erp/products',        icon: '📦', label: '제품 DB' },
