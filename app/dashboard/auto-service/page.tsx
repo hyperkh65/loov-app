@@ -107,6 +107,9 @@ export default function AutoServicePage() {
   const [manualKeyword, setManualKeyword] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generatingKw, setGeneratingKw] = useState('');
+  const [trendingKeywords, setTrendingKeywords] = useState<{ keyword: string; score: number; monthlyTotal: number }[]>([]);
+  const [trendingLoading, setTrendingLoading] = useState(false);
+  const [trendingOpen, setTrendingOpen] = useState(false);
 
   // 초안/히스토리
   const [articles, setArticles] = useState<Article[]>([]);
@@ -347,6 +350,19 @@ export default function AutoServicePage() {
     }
   };
 
+  // 트렌딩 키워드 로드
+  const loadTrendingKeywords = async () => {
+    setTrendingLoading(true);
+    try {
+      const res = await fetch('/api/keyword/advanced?action=trending');
+      if (res.ok) {
+        const data = await res.json() as { results?: { keyword: string; score: number; monthlyTotal: number }[] };
+        setTrendingKeywords((data.results || []).slice(0, 20));
+      }
+    } catch { /* ignore */ }
+    setTrendingLoading(false);
+  };
+
   // 수동 글 생성
   const generateManual = async (keyword: string) => {
     if (!keyword.trim()) return;
@@ -509,9 +525,8 @@ export default function AutoServicePage() {
     if (!previewArticle) return;
     setThumbGenerating(true);
     try {
-      // 기사 본문에서 첫 번째 이미지를 배경으로 추출 (뉴스카드 디자인용)
-      const bgMatch = previewArticle.content?.match(/<img[^>]+src="([^"]+)"/i);
-      const bgImageUrl = bgMatch?.[1] || undefined;
+      // sources에서 수집된 이미지 추출 (본문 HTML 첫 img는 대표이미지 자신일 수 있음)
+      const bgImageUrl = previewArticle.sources?.find(s => s.type === 'collected_image')?.link || undefined;
 
       const res = await fetch('/api/auto-service/thumbnail', {
         method: 'POST',
@@ -1076,18 +1091,69 @@ export default function AutoServicePage() {
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" />
               <button onClick={() => generateManual(manualKeyword)} disabled={generating || !manualKeyword.trim()}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                {generating ? '⏳' : '✨ 생성'}
+                {generating ? '⏳' : '✨ 생성 시작'}
               </button>
             </div>
             {generating && (
               <div className="mt-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-700 flex items-center gap-2">
                 <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full" />
                 <div>
-                  <div>"{generatingKw}" 3000자+ SEO 글 생성 중...</div>
+                  <div>&quot;{generatingKw}&quot; 3000자+ SEO 글 생성 중...</div>
                   <div className="text-xs text-blue-400 mt-0.5">뉴스/블로그 수집 → AI 작성 → 대표이미지 제작</div>
                 </div>
               </div>
             )}
+
+            {/* 트렌딩 키워드 패널 */}
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <button
+                onClick={() => {
+                  if (!trendingOpen && trendingKeywords.length === 0) loadTrendingKeywords();
+                  setTrendingOpen(o => !o);
+                }}
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 font-medium transition-colors w-full"
+              >
+                <span className="text-base">📈</span>
+                <span>트렌딩 키워드로 바로 생성</span>
+                <span className="ml-auto text-gray-400">{trendingOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {trendingOpen && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-gray-400">클릭하면 키워드가 입력됩니다</p>
+                    <button onClick={loadTrendingKeywords} disabled={trendingLoading}
+                      className="text-xs text-blue-500 hover:underline disabled:opacity-50">
+                      {trendingLoading ? '수집 중...' : '↺ 새로고침'}
+                    </button>
+                  </div>
+                  {trendingLoading && trendingKeywords.length === 0 ? (
+                    <div className="flex items-center gap-2 py-4 text-sm text-gray-400">
+                      <div className="animate-spin w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full" />
+                      <span>트렌딩 키워드 수집 중 (Google · Naver · Daum)</span>
+                    </div>
+                  ) : trendingKeywords.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {trendingKeywords.map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={() => { setManualKeyword(item.keyword); setTrendingOpen(false); }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-blue-50 hover:text-blue-700 border border-gray-200 hover:border-blue-300 rounded-full text-sm transition-all"
+                        >
+                          <span className="text-gray-400 text-xs font-mono">{i + 1}</span>
+                          <span className="font-medium">{item.keyword}</span>
+                          {item.monthlyTotal > 0 && (
+                            <span className="text-xs text-gray-400">{item.monthlyTotal >= 10000 ? `${(item.monthlyTotal / 10000).toFixed(1)}만` : item.monthlyTotal.toLocaleString()}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 py-2">키워드를 불러오려면 새로고침을 눌러주세요</p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 작동 방식 안내 */}
@@ -1097,7 +1163,7 @@ export default function AutoServicePage() {
               {[
                 { icon: '📡', title: '트렌딩 감지', desc: '6시간마다 네이버/구글 트렌딩 키워드 자동 수집' },
                 { icon: '🤖', title: 'AI 글 작성', desc: '뉴스·블로그 참고 → 3000자+ SEO 최적화 HTML 자동 생성' },
-                { icon: '🖼️', title: '대표이미지 제작', desc: 'Blogger 스타일 그라디언트 썸네일 자동 생성 (1080×1080)' },
+                { icon: '🖼️', title: '대표이미지 제작', desc: 'OGP 표준 블로그 썸네일 자동 생성 (1200×628)' },
                 { icon: '✅', title: '승인 & 발행', desc: '초안 확인 후 클릭 한 번으로 네이버/블로거/WordPress + SNS 발행' },
               ].map((step, i) => (
                 <div key={i} className="bg-white rounded-xl p-3 border border-gray-200">

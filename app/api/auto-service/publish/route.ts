@@ -293,7 +293,8 @@ export async function POST(req: NextRequest) {
         let instagramMedia = defaultMediaUrls;
         try {
           const newsCardUrl = await generateAndUploadThumbnail(
-            article.title, article.keyword || article.title.slice(0, 20), 'blue'
+            article.title, article.keyword || article.title.slice(0, 20), 'blue',
+            undefined, undefined, undefined, 'square'
           );
           instagramMedia = [newsCardUrl];
         } catch { /* 생성 실패 시 기존 이미지 사용 */ }
