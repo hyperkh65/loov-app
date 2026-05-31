@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { uploadToR2 } from '@/lib/r2-storage';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 import { readFileAsBuffer } from '@/lib/nas-sftp';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
-export const maxDuration = 10; // 즉시 응답, 백그라운드 처리
+export const maxDuration = 300; // 5분 — SSE 스트리밍으로 전체 처리
 
 // ── FFmpeg 경로 탐색 ────────────────────────────────────────────────────────
 async function findFfmpeg(): Promise<string> {
@@ -42,7 +42,7 @@ async function findFont(): Promise<string | null> {
   return r.stdout.trim() || null;
 }
 
-// ── YouTube 업로드 (토큰 직접 사용) ─────────────────────────────────────────
+// ── YouTube 업로드 ────────────────────────────────────────────────────────────
 async function ytUpload(userId: string, videoBuffer: ArrayBuffer, title: string, description: string, keyword: string) {
   const admin = createAdminClient();
   const { data: conn } = await admin.from('sns_connections')
@@ -64,124 +64,54 @@ async function ytUpload(userId: string, videoBuffer: ArrayBuffer, title: string,
     }
   }
 
-  const tags = ['Shorts','쇼츠', ...(keyword ? [keyword] : [])].slice(0, 30);
+  const tags = ['Shorts', '쇼츠', ...(keyword ? [keyword] : [])].slice(0, 30);
+  const ytTitle = `${title} #Shorts`.slice(0, 100);
+  const ytDesc = `${description}\n\n#Shorts #쇼츠${keyword ? ` #${keyword}` : ''}`.slice(0, 5000);
+
   const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'X-Upload-Content-Type': 'video/mp4', 'X-Upload-Content-Length': String(videoBuffer.byteLength) },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'X-Upload-Content-Type': 'video/mp4',
+      'X-Upload-Content-Length': String(videoBuffer.byteLength),
+    },
     body: JSON.stringify({
-      snippet: { title: title.slice(0, 100), description: `${description}\n\n#Shorts #쇼츠 #${keyword || ''}`.slice(0, 5000), tags, categoryId: '22' },
+      snippet: { title: ytTitle, description: ytDesc, tags, categoryId: '22' },
       status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
     }),
   });
-  if (!initRes.ok) return null;
+  if (!initRes.ok) {
+    const errText = await initRes.text().catch(() => '');
+    console.error('[ytUpload] 초기화 실패:', initRes.status, errText.slice(0, 300));
+    return null;
+  }
   const uploadUrl = initRes.headers.get('Location');
-  if (!uploadUrl) return null;
-  const upRes = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(videoBuffer.byteLength) }, body: videoBuffer });
-  if (!upRes.ok) return null;
+  if (!uploadUrl) { console.error('[ytUpload] upload URL 없음'); return null; }
+
+  // Content-Length는 fetch가 자동 계산 — 수동 설정 시 Node.js undici에서 오류 발생
+  const upRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'video/mp4' },
+    body: videoBuffer,
+  });
+  if (!upRes.ok) {
+    const errText = await upRes.text().catch(() => '');
+    console.error('[ytUpload] 업로드 실패:', upRes.status, errText.slice(0, 300));
+    return null;
+  }
   const d = await upRes.json();
   return d.id ? `https://www.youtube.com/shorts/${d.id}` : null;
 }
 
-// ── 백그라운드 파이프라인 ────────────────────────────────────────────────────
-async function processJob(jobId: string, userId: string, title: string, keyword: string, description: string, content: string, cookieHeader: string) {
-  const admin = createAdminClient();
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
-  const upd = (progress: string, extra?: Record<string, unknown>) =>
-    admin.from('bossai_shorts_queue').update({ progress, updated_at: new Date().toISOString(), ...extra }).eq('id', jobId);
-
-  try {
-    // 1. AI 스크립트 생성
-    await upd('AI 스크립트 생성 중...');
-    const topic = `${title}\n\n${description || content?.slice(0, 500) || ''}`;
-    const genRes = await fetch(`${baseUrl}/api/shorts/generate`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-      body: JSON.stringify({ topic, duration: 60, tone: 'info', platform: 'youtube', provider: 'gemini' }),
-    });
-    const genData = await genRes.json();
-    if (!genData.scenes?.length) throw new Error('스크립트 생성 실패: ' + (genData.error || JSON.stringify(genData).slice(0, 100)));
-
-    // 2. 이미지 검색
-    await upd('이미지 검색 중...');
-    const scenes: { id: number; narration: string; subtitle: string; duration: number; image_url: string; image_query: string }[] = genData.scenes;
-    for (const s of scenes) {
-      if (!s.image_query) continue;
-      try {
-        const imgRes = await fetch(`${baseUrl}/api/shorts/images?q=${encodeURIComponent(s.image_query)}&source=pixabay&per_page=3`, { headers: { Cookie: cookieHeader } });
-        const imgData = await imgRes.json();
-        if (imgData.images?.[0]?.url) s.image_url = imgData.images[0].url;
-      } catch { /* 이미지 없으면 검은 배경 */ }
-    }
-
-    // 3. NAS FFmpeg 렌더
-    await upd('TTS + 영상 생성 중... (~3분)');
-    const ffmpeg = await findFfmpeg();
-    const fontPath = await findFont();
-    const jobDir = `/tmp/shorts_auto_${jobId.replace(/-/g, '').slice(0, 12)}`;
-    await nasExec(`mkdir -p ${jobDir}`);
-
-    // TTS 생성
-    const voice = 'ko-KR-SunHiNeural';
-    const ttsUrls: string[] = [];
-    for (let i = 0; i < scenes.length; i++) {
-      await upd(`TTS ${i + 1}/${scenes.length} 생성 중...`);
-      ttsUrls.push(await genTtsUrl(scenes[i].narration, voice));
-    }
-
-    // 렌더 스크립트 빌드
-    const escDt = (s: string) => s.replace(/[\\':]/g, '\\$&').replace(/\n/g, ' ').slice(0, 60);
-    const renderLines = [
-      '#!/bin/bash', 'set -e', `DIR="${jobDir}"`,
-      ...scenes.flatMap((s, i) => [
-        s.image_url ? `curl -sL --max-time 30 "${s.image_url}" -o "$DIR/img_${i}.jpg" 2>/dev/null || true` : '',
-        `curl -sL --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3"`,
-        `[ -s "$DIR/img_${i}.jpg" ] || ${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>/dev/null`,
-        `IMG_${i}="$DIR/img_${i}.jpg"`,
-      ].filter(Boolean)),
-      ...scenes.map((s, i) => {
-        const sub = escDt(s.subtitle || '');
-        const vf = [`scale=1080:1920:force_original_aspect_ratio=increase`, `crop=1080:1920`,
-          sub ? (fontPath ? `drawtext=fontfile='${fontPath}':text='${sub}':fontsize=52:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.8:shadowx=3:shadowy=3:box=1:boxcolor=black@0.55:boxborderw=18`
-            : `drawtext=text='${sub}':fontsize=46:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.9:shadowx=3:shadowy=3`) : ''
-          ].filter(Boolean).join(',');
-        return `${ffmpeg} -loop 1 -t ${Math.max(1, s.duration)} -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" -vf "${vf}" -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>/dev/null`;
-      }),
-      `printf '${scenes.map((_,i) => `file '${jobDir}/scene_${i}.mp4'`).join('\\n')}\\n' > "$DIR/filelist.txt"`,
-      `${ffmpeg} -f concat -safe 0 -i "$DIR/filelist.txt" -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4" 2>/dev/null`,
-      `echo "RENDER_DONE"`,
-    ];
-
-    await nasExecWithStdin(`cat > ${jobDir}/render.sh`, renderLines.join('\n'));
-    const renderResult = await nasExec(`bash ${jobDir}/render.sh`);
-    if (!renderResult.stdout.includes('RENDER_DONE')) throw new Error('렌더 실패: ' + renderResult.stderr.slice(0, 200));
-
-    // 4. R2 업로드
-    await upd('R2 업로드 중...');
-    const mp4 = await readFileAsBuffer(`${jobDir}/final.mp4`);
-    if (!mp4 || mp4.length < 1000) throw new Error('렌더된 파일이 비어있음');
-    const safe = title.replace(/[^a-zA-Z0-9가-힣]/g, '_').slice(0, 30);
-    const videoUrl = await uploadToR2(`shorts-auto/${Date.now()}_${safe}.mp4`, mp4, 'video/mp4');
-    await nasExec(`rm -rf ${jobDir}`).catch(() => {});
-
-    await upd('YouTube 업로드 중...', { video_url: videoUrl });
-
-    // 5. YouTube 업로드
-    const ytUrl = await ytUpload(userId, mp4.buffer as ArrayBuffer, genData.title || title, description || title, keyword);
-    await upd('완료!', { status: 'done', yt_url: ytUrl || null });
-
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await upd(msg, { status: 'error', error_message: msg });
-  }
-}
-
-// ── 라우트 핸들러 ────────────────────────────────────────────────────────────
+// ── SSE 라우트 핸들러 ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+  if (!user) return new Response('Unauthorized', { status: 401 });
 
   const { article_id, title, keyword = '', description = '', content = '' } = await req.json();
-  if (!title) return NextResponse.json({ error: 'title 필요' }, { status: 400 });
+  if (!title) return new Response('title 필요', { status: 400 });
 
   const admin = createAdminClient();
   const { data: job } = await admin.from('bossai_shorts_queue').insert({
@@ -190,14 +120,155 @@ export async function POST(req: NextRequest) {
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }).select('id').single();
 
-  if (!job) return NextResponse.json({ error: 'DB 저장 실패' }, { status: 500 });
+  if (!job) return new Response('DB 저장 실패', { status: 500 });
 
+  const jobId = job.id;
+  const userId = user.id;
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
   const cookieHeader = req.headers.get('cookie') || '';
 
-  // 백그라운드 실행 (응답 후 계속 실행)
-  setImmediate(() => {
-    processJob(job.id, user.id, title, keyword, description, content, cookieHeader).catch(console.error);
+  const encoder = new TextEncoder();
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* disconnected */ }
+      };
+
+      // 연결 유지용 heartbeat (NAS 렌더 중 연결 끊김 방지)
+      heartbeat = setInterval(() => {
+        try { controller.enqueue(encoder.encode(': ping\n\n')); } catch { /* disconnected */ }
+      }, 20000);
+
+      const upd = async (progress: string, extra?: Record<string, unknown>) => {
+        send({ type: 'progress', msg: progress, pct: extra?.pct, ...extra });
+        await admin.from('bossai_shorts_queue')
+          .update({ progress, status: 'running', updated_at: new Date().toISOString(), ...extra })
+          .eq('id', jobId);
+      };
+
+      try {
+        // ── 1. AI 스크립트 생성 ───────────────────────────────────────
+        await upd('AI 스크립트 생성 중...', { pct: 5 });
+        const topic = `${title}\n\n${description || content?.slice(0, 500) || ''}`;
+        const genRes = await fetch(`${baseUrl}/api/shorts/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+          body: JSON.stringify({ topic, duration: 60, tone: 'info', platform: 'youtube', provider: 'gemini' }),
+        });
+        const genData = await genRes.json();
+        if (!genData.scenes?.length) throw new Error('스크립트 생성 실패: ' + (genData.error || JSON.stringify(genData).slice(0, 100)));
+
+        type Scene = { id: number; narration: string; subtitle: string; duration: number; image_url: string; image_query: string };
+        const scenes: Scene[] = genData.scenes;
+        send({ type: 'progress', msg: `스크립트 완성 (${scenes.length}개 장면)`, pct: 15 });
+
+        // ── 2. 이미지 검색 ────────────────────────────────────────────
+        await upd(`이미지 검색 중...`, { pct: 20 });
+        for (let i = 0; i < scenes.length; i++) {
+          if (!scenes[i].image_query) continue;
+          try {
+            const imgRes = await fetch(`${baseUrl}/api/shorts/images?q=${encodeURIComponent(scenes[i].image_query)}&source=pixabay&per_page=3`, { headers: { Cookie: cookieHeader } });
+            const imgData = await imgRes.json();
+            if (imgData.images?.[0]?.url) scenes[i].image_url = imgData.images[0].url;
+          } catch { /* 검은 배경 사용 */ }
+          send({ type: 'progress', msg: `이미지 검색 중... (${i + 1}/${scenes.length})`, pct: 20 + Math.round((i / scenes.length) * 10) });
+        }
+
+        // ── 3. NAS FFmpeg 렌더 ────────────────────────────────────────
+        await upd('NAS 환경 준비 중...', { pct: 32 });
+        const ffmpeg = await findFfmpeg();
+        const fontPath = await findFont();
+        const jobDir = `/tmp/shorts_sse_${jobId.replace(/-/g, '').slice(0, 12)}`;
+        await nasExec(`mkdir -p ${jobDir}`);
+
+        // TTS 생성 (장면별 진행)
+        const voice = 'ko-KR-SunHiNeural';
+        const ttsUrls: string[] = [];
+        for (let i = 0; i < scenes.length; i++) {
+          send({ type: 'progress', msg: `TTS 음성 생성 중... (${i + 1}/${scenes.length})`, pct: 33 + Math.round((i / scenes.length) * 15) });
+          ttsUrls.push(await genTtsUrl(scenes[i].narration, voice));
+        }
+
+        // 렌더 스크립트 빌드
+        await upd(`NAS FFmpeg 렌더링 중... (~2분)`, { pct: 50 });
+        const escDt = (s: string) => s.replace(/[\\':]/g, '\\$&').replace(/\n/g, ' ').slice(0, 60);
+        const renderLines = [
+          '#!/bin/bash', 'set -e', `DIR="${jobDir}"`,
+          ...scenes.flatMap((s, i) => [
+            s.image_url ? `curl -sL --max-time 30 "${s.image_url}" -o "$DIR/img_${i}.jpg" 2>/dev/null || true` : '',
+            `curl -sL --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3"`,
+            `[ -s "$DIR/img_${i}.jpg" ] || ${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>/dev/null`,
+            `IMG_${i}="$DIR/img_${i}.jpg"`,
+          ].filter(Boolean)),
+          ...scenes.map((s, i) => {
+            const sub = escDt(s.subtitle || '');
+            const vf = [`scale=1080:1920:force_original_aspect_ratio=increase`, `crop=1080:1920`,
+              sub ? (fontPath
+                ? `drawtext=fontfile='${fontPath}':text='${sub}':fontsize=52:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.8:shadowx=3:shadowy=3:box=1:boxcolor=black@0.55:boxborderw=18`
+                : `drawtext=text='${sub}':fontsize=46:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.9:shadowx=3:shadowy=3`) : ''
+            ].filter(Boolean).join(',');
+            return `${ffmpeg} -loop 1 -t ${Math.max(1, s.duration)} -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" -vf "${vf}" -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>/dev/null`;
+          }),
+          `printf '${scenes.map((_,i) => `file '${jobDir}/scene_${i}.mp4'`).join('\\n')}\\n' > "$DIR/filelist.txt"`,
+          `${ffmpeg} -f concat -safe 0 -i "$DIR/filelist.txt" -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4" 2>/dev/null`,
+          `echo "RENDER_DONE"`,
+        ];
+
+        await nasExecWithStdin(`cat > ${jobDir}/render.sh`, renderLines.join('\n'));
+        const renderResult = await nasExec(`bash ${jobDir}/render.sh`);
+        if (!renderResult.stdout.includes('RENDER_DONE')) {
+          throw new Error('렌더 실패: ' + renderResult.stderr.slice(0, 300));
+        }
+
+        // ── 4. R2 업로드 ─────────────────────────────────────────────
+        await upd('영상 파일 업로드 중...', { pct: 80 });
+        const mp4 = await readFileAsBuffer(`${jobDir}/final.mp4`);
+        if (!mp4 || mp4.length < 1000) throw new Error('렌더된 파일이 비어있음');
+        const safe = title.replace(/[^a-zA-Z0-9가-힣]/g, '_').slice(0, 30);
+        const videoUrl = await uploadToR2(`shorts-auto/${Date.now()}_${safe}.mp4`, mp4, 'video/mp4');
+        await nasExec(`rm -rf ${jobDir}`).catch(() => {});
+
+        // ── 5. YouTube 업로드 ─────────────────────────────────────────
+        await upd('YouTube 업로드 중...', { pct: 90, video_url: videoUrl });
+        // Buffer → 정확한 범위의 ArrayBuffer로 변환 (공유 버퍼 오프셋 문제 방지)
+        const videoAB = mp4.buffer.slice(mp4.byteOffset, mp4.byteOffset + mp4.byteLength) as ArrayBuffer;
+        const ytUrl = await ytUpload(userId, videoAB, genData.title || title, description || title, keyword);
+
+        // ── 완료 ─────────────────────────────────────────────────────
+        await admin.from('bossai_shorts_queue').update({
+          status: 'done', progress: '완료!', pct: 100,
+          video_url: videoUrl, yt_url: ytUrl || null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', jobId);
+
+        send({ type: 'done', job_id: jobId, video_url: videoUrl, yt_url: ytUrl || null, msg: '완료!' });
+
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await admin.from('bossai_shorts_queue').update({
+          status: 'error', progress: msg, error_message: msg,
+          updated_at: new Date().toISOString(),
+        }).eq('id', jobId);
+        send({ type: 'error', job_id: jobId, msg });
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
+        try { controller.close(); } catch { /* already closed */ }
+      }
+    },
+    cancel() {
+      if (heartbeat) clearInterval(heartbeat);
+    },
   });
 
-  return NextResponse.json({ job_id: job.id, status: 'pending' });
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'X-Job-ID': jobId,
+    },
+  });
 }

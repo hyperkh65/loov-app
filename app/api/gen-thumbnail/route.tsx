@@ -76,10 +76,10 @@ export async function GET(req: NextRequest) {
   }
 
   const len = title.length;
-  // 1200×628: 제목 폰트 크기 (가로가 넓어 글자 수용 가능하지만 세로가 낮음)
-  const fontSizeBlog = len <= 8 ? 74 : len <= 14 ? 64 : len <= 20 ? 54 : len <= 28 ? 46 : len <= 36 ? 39 : 34;
-  // 1080×1080: 기존 크기
-  const fontSizeSquare = len <= 8 ? 108 : len <= 14 ? 90 : len <= 20 ? 78 : len <= 28 ? 66 : len <= 36 ? 56 : 48;
+  // 1200×628: 제목 폰트 크기 — 최소 42px 보장
+  const fontSizeBlog = len <= 8 ? 78 : len <= 14 ? 68 : len <= 20 ? 58 : len <= 28 ? 50 : len <= 36 ? 44 : 42;
+  // 1080×1080: 최소 56px 보장
+  const fontSizeSquare = len <= 8 ? 112 : len <= 14 ? 96 : len <= 20 ? 82 : len <= 28 ? 70 : len <= 36 ? 62 : 56;
   const fontSize = isBlog ? fontSizeBlog : fontSizeSquare;
 
   const fontOpts = {
@@ -105,16 +105,21 @@ export async function GET(req: NextRequest) {
               width: 1200, height: 628,
               objectFit: 'cover', objectPosition: 'center top',
             }} />
+            {/* 전체 어두운 오버레이 — 밝은 배경에서도 글씨 보이도록 */}
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex',
+              background: 'rgba(0,0,0,0.38)',
+            }} />
+            {/* 하단 강한 그라디언트 */}
             <div style={{
               position: 'absolute', inset: 0, display: 'flex',
               background:
                 'linear-gradient(to bottom,' +
                 'rgba(0,0,0,0.0) 0%,' +
-                'rgba(0,0,0,0.05) 20%,' +
-                'rgba(0,0,0,0.30) 42%,' +
-                'rgba(0,0,0,0.68) 58%,' +
-                'rgba(0,0,0,0.88) 72%,' +
-                'rgba(0,0,0,0.96) 85%,' +
+                'rgba(0,0,0,0.10) 25%,' +
+                'rgba(0,0,0,0.50) 48%,' +
+                'rgba(0,0,0,0.82) 62%,' +
+                'rgba(0,0,0,0.95) 78%,' +
                 'rgba(0,0,0,1.0) 100%)',
             }} />
             {keyword && (
@@ -132,14 +137,17 @@ export async function GET(req: NextRequest) {
             )}
             <div style={{
               position: 'absolute',
-              bottom: 68, left: 52, right: 52,
-              display: 'flex', flexDirection: 'column', gap: 14,
+              bottom: 68, left: 0, right: 0,
+              display: 'flex', flexDirection: 'column', gap: 12,
+              padding: '20px 52px 16px',
+              background: 'rgba(0,0,0,0.55)',
             }}>
               <div style={{
                 fontSize, fontWeight: 900,
                 color: 'white', lineHeight: 1.3,
                 wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap',
                 letterSpacing: '-0.025em',
+                textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 30px rgba(0,0,0,0.7)',
               }}>
                 {title}
               </div>
@@ -159,8 +167,8 @@ export async function GET(req: NextRequest) {
               position: 'absolute', bottom: 0, left: 0, right: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '0 52px', height: 60,
-              background: 'rgba(0,0,0,0.65)',
-              borderTop: `1px solid rgba(255,255,255,0.09)`,
+              background: 'rgba(0,0,0,0.80)',
+              borderTop: `1px solid rgba(255,255,255,0.12)`,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{
@@ -188,7 +196,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1080×1080 뉴스카드 (기존 디자인)
+    // 1080×1080 뉴스카드 (인스타그램)
     return new ImageResponse(
       (
         <div style={{
@@ -203,16 +211,21 @@ export async function GET(req: NextRequest) {
             width: 1080, height: 1080,
             objectFit: 'cover', objectPosition: 'center top',
           }} />
+          {/* 전체 어두운 오버레이 */}
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex',
+            background: 'rgba(0,0,0,0.40)',
+          }} />
+          {/* 하단 강한 그라디언트 */}
           <div style={{
             position: 'absolute', inset: 0, display: 'flex',
             background:
               'linear-gradient(to bottom,' +
               'rgba(0,0,0,0.0) 0%,' +
-              'rgba(0,0,0,0.05) 20%,' +
-              'rgba(0,0,0,0.25) 42%,' +
-              'rgba(0,0,0,0.65) 58%,' +
-              'rgba(0,0,0,0.88) 72%,' +
-              'rgba(0,0,0,0.97) 85%,' +
+              'rgba(0,0,0,0.10) 25%,' +
+              'rgba(0,0,0,0.55) 50%,' +
+              'rgba(0,0,0,0.85) 65%,' +
+              'rgba(0,0,0,0.97) 80%,' +
               'rgba(0,0,0,1.0) 100%)',
           }} />
           {keyword && (
@@ -228,14 +241,17 @@ export async function GET(req: NextRequest) {
             </div>
           )}
           <div style={{
-            position: 'absolute', bottom: 100, left: 64, right: 64,
-            display: 'flex', flexDirection: 'column', gap: 20,
+            position: 'absolute', bottom: 86, left: 0, right: 0,
+            display: 'flex', flexDirection: 'column', gap: 18,
+            padding: '24px 64px 20px',
+            background: 'rgba(0,0,0,0.55)',
           }}>
             <div style={{
               fontSize, fontWeight: 900,
               color: 'white', lineHeight: 1.3,
               wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap',
               letterSpacing: '-0.025em',
+              textShadow: '0 2px 8px rgba(0,0,0,0.9), 0 0 40px rgba(0,0,0,0.7)',
             }}>
               {title}
             </div>
@@ -255,8 +271,8 @@ export async function GET(req: NextRequest) {
             position: 'absolute', bottom: 0, left: 0, right: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '0 64px', height: 86,
-            background: 'rgba(0,0,0,0.65)',
-            borderTop: `1px solid rgba(255,255,255,0.09)`,
+            background: 'rgba(0,0,0,0.82)',
+            borderTop: `1px solid rgba(255,255,255,0.12)`,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{
