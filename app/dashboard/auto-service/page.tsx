@@ -448,70 +448,21 @@ export default function AutoServicePage() {
     if (!thumbSelectedBg || !thumbTitle) { alert('배경 이미지와 메인 제목을 입력해주세요.'); return; }
     setThumbGenerating(true);
     try {
-      const canvas = thumbCanvasRef.current!;
-      canvas.width = 1080; canvas.height = 1080;
-      const ctx = canvas.getContext('2d')!;
-
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      const proxyUrl = thumbSelectedBg.startsWith('http') ? `/api/proxy-image?url=${encodeURIComponent(thumbSelectedBg)}` : thumbSelectedBg;
-      await new Promise<void>((res, rej) => {
-        const t = setTimeout(() => rej(new Error('이미지 로드 타임아웃')), 15000);
-        img.onload = () => { clearTimeout(t); res(); };
-        img.onerror = () => { clearTimeout(t); rej(new Error('이미지 로드 실패 - 다른 이미지를 선택해주세요')); };
-        img.src = proxyUrl;
+      // gen-thumbnail API (satori 서버사이드 매거진 카드 디자인)
+      const params = new URLSearchParams({
+        title: thumbTitle,
+        keyword: previewArticle?.keyword || previewArticle?.focus_keyword || '',
+        color: thumbColor,
+        bg: thumbSelectedBg,
+        size: 'square',
       });
-
-      const scale = Math.max(1080 / img.naturalWidth, 1080 / img.naturalHeight);
-      const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
-      ctx.drawImage(img, (1080 - w) / 2, (1080 - h) / 2, w, h);
-
-      const grad = ctx.createLinearGradient(0, 0, 0, 1080);
-      if (thumbColor === 'blue') {
-        grad.addColorStop(0, 'rgba(0,10,40,0.50)'); grad.addColorStop(0.5, 'rgba(0,15,50,0.65)'); grad.addColorStop(1, 'rgba(0,10,40,0.55)');
-      } else if (thumbColor === 'green') {
-        grad.addColorStop(0, 'rgba(0,20,10,0.50)'); grad.addColorStop(0.5, 'rgba(0,25,15,0.65)'); grad.addColorStop(1, 'rgba(0,20,10,0.55)');
-      } else {
-        grad.addColorStop(0, 'rgba(0,0,0,0.48)'); grad.addColorStop(0.5, 'rgba(0,0,0,0.62)'); grad.addColorStop(1, 'rgba(0,0,0,0.52)');
-      }
-      ctx.fillStyle = grad; ctx.fillRect(0, 0, 1080, 1080);
-      const vignette = ctx.createRadialGradient(540, 540, 300, 540, 540, 760);
-      vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,0.45)');
-      ctx.fillStyle = vignette; ctx.fillRect(0, 0, 1080, 1080);
-      ctx.fillStyle = '#f0b429'; ctx.fillRect(0, 0, 1080, 10);
-
-      const fontSize = thumbTitle.length <= 8 ? 120 : thumbTitle.length <= 14 ? 100 : thumbTitle.length <= 20 ? 86 : 72;
-      ctx.font = `bold ${fontSize}px "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const lines = wrapTextOnCanvas(ctx, thumbTitle, 960);
-      const lineHeight = fontSize * 1.3;
-      const totalTextH = lines.length * lineHeight;
-      const subH = thumbSubTitle ? 80 : 0;
-      const startY = (1080 - totalTextH - subH - (thumbSubTitle ? 30 : 0)) / 2;
-
-      lines.forEach((line, i) => {
-        const y = startY + i * lineHeight + lineHeight / 2;
-        ctx.font = `bold ${fontSize}px "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif`;
-        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = 45; ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        for (let k = 0; k < 6; k++) ctx.fillText(line, 540, y); ctx.restore();
-        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,1)'; ctx.shadowBlur = 18; ctx.fillStyle = 'rgba(20,20,20,0.8)';
-        for (let k = 0; k < 3; k++) ctx.fillText(line, 540, y); ctx.restore();
-        ctx.save(); ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.fillText(line, 540, y); ctx.restore();
-      });
-
-      if (thumbSubTitle) {
-        const subFontSize = 54; const subY = startY + totalTextH + 45;
-        ctx.font = `bold ${subFontSize}px "Apple SD Gothic Neo","Malgun Gothic",sans-serif`;
-        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.95)'; ctx.shadowBlur = 30; ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        for (let k = 0; k < 5; k++) ctx.fillText(thumbSubTitle, 540, subY); ctx.restore();
-        ctx.save(); ctx.shadowBlur = 0;
-        ctx.fillStyle = thumbColor === 'green' ? '#86efac' : thumbColor === 'blue' ? '#93c5fd' : '#e2e8f0';
-        ctx.fillText(thumbSubTitle, 540, subY); ctx.restore();
-      }
-
-      ctx.fillStyle = '#f0b429'; ctx.fillRect(0, 1070, 1080, 10);
-      setThumbPreviewUrl(canvas.toDataURL('image/png'));
-      setThumbPreviewSaved(false);  // 새 캔버스 생성 → 아직 저장 안됨
+      if (thumbSubTitle) params.set('sub', thumbSubTitle);
+      const res = await fetch(`/api/gen-thumbnail?${params.toString()}`);
+      if (!res.ok) throw new Error('썸네일 생성 실패');
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      setThumbPreviewUrl(objectUrl);
+      setThumbPreviewSaved(false);
     } catch (e) {
       alert('썸네일 생성 오류: ' + String(e));
     } finally {
