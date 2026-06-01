@@ -97,11 +97,24 @@ ${ANTI_WATERMARK_PROMPT}
 - "여러분" / "함께 알아봐요" / "결론적으로" / "궁금하셨나요" / "핵심은 바로"
 - "~라고 할 수 있습니다" / "~라고 볼 수 있습니다" (우회적 AI 표현)
 - "이 글에서는" / "본 포스팅에서는" / "오늘은 ~에 대해"
+- "이번 글에서는" / "지금부터" / "간단히 말씀드리면" / "정리해 보겠습니다"
+- "많은 분들이 궁금해하시는" / "쉽게 설명하자면" / "알아보도록 하겠습니다"
 - H2 소제목 6개 중 4개 이상이 "X의 Y" 패턴이면 금지 (예: "제품의 특징", "사건의 배경")
+- 소제목이 "~하는 방법", "~의 모든 것", "~완벽 가이드", "~총정리" 패턴으로 반복 금지
+- 숫자 없이 "여러" / "다양한" / "많은" 표현 남발 금지 — 구체적 수치로 대체할 것
 
 【두괄식 원칙】
 - 모든 단락의 첫 문장에 핵심 결론/사실을 먼저 쓸 것
 - 독자가 첫 문장만 읽어도 그 단락의 핵심을 파악할 수 있어야 함
+
+【경험담/1인칭 원칙 — 필수】
+- 본문 전체에 걸쳐 1인칭 경험담 표현을 최소 5회 이상 자연스럽게 삽입
+- 사용 가능한 경험담 표현: "저도 처음에는~" / "실제로 해보니~" / "직접 경험해보니~"
+- "몇 달 동안 지켜보면서 느낀 점이~" / "생각보다 많은 분들이 놓치는 부분입니다"
+- "광고에서는 잘 이야기하지 않는 부분입니다" / "나중에 알게 된 사실인데~"
+- "저 역시 처음에는 헷갈렸습니다" / "처음에는 별 차이 없을 줄 알았는데 달랐습니다"
+- 경험담 없이 사실만 나열하는 백과사전식 서술 절대 금지
+- 블로그 운영자가 독자에게 이야기하듯 자연스럽고 친근한 구어체 혼용 필수
 
 【소제목 원칙】
 - 소제목은 키워드의 실제 맥락과 성격에 맞게 직접 결정할 것
@@ -129,6 +142,21 @@ ${ANTI_WATERMARK_PROMPT}
 - 친근하고 읽기 쉬운 구어체 혼용, 딱딱한 공문체 금지
 - 독자가 "오, 이거 몰랐네!" 하고 무릎 칠 만한 사실 포함
 - 공감 유발 표현, 구체적 사례, 생생한 묘사 활용
+- 섹션 간 자연스러운 연결: 이전 섹션의 문제를 다음 섹션에서 답하는 구조 권장
+- "다음으로~", "이어서~" 같은 기계적 연결어 금지 — 내용으로 자연스럽게 이어질 것
+
+【CTA 버튼 원칙 — 필수 3개】
+- 도입부 아래, 섹션3 직후, FAQ 직전에 각 1개씩 총 3개 외부링크 버튼 반드시 삽입
+- 키워드 주제에 맞는 외부 권위 사이트 사용 (정부·공공기관·공인기관 우선)
+  건강/의료: nhis.or.kr / mfds.go.kr / kdca.go.kr
+  금융/경제: fss.or.kr / moef.go.kr / kofia.or.kr
+  법률/정책: korea.kr / moleg.go.kr / law.go.kr
+  교육: moe.go.kr / nile.or.kr / kice.re.kr
+  환경/날씨: kma.go.kr / me.go.kr
+  부동산: molit.go.kr / rr.seoul.go.kr
+  기타: naver.com / google.com
+- 버튼 텍스트는 행동을 유도하는 문구로 (예: "공식 정보 확인하기", "자세히 알아보기")
+- 3개 버튼 배경색: 첫 번째 #1a73e8, 두 번째 #6a1b9a, 세 번째 #10b981
 
 【분량 원칙】
 - 순수 텍스트(HTML 태그 제외) 최소 4000자 이상 필수
@@ -175,6 +203,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 </ol>
 </div>
 <h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
+<div style="text-align:center;margin:30px 0;"><a href="[CTA1: 키워드 주제에 맞는 외부 권위 사이트 URL - 정부/공공기관 우선]" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA1: 공식 정보 확인하기 등 행동 유도 문구]</a></div>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 기반 소제목 — 핵심 현황/팩트]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장에 핵심 사실. 7-8문장. 구체적 수치/날짜/사례 포함. E-E-A-T: 직접 분석한 것처럼 서술]</p>
@@ -193,6 +222,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <p style="margin-bottom:15px;" data-ke-size="size16">[실용적 분석 5-6문장. 단계별이나 사례 중심 서술]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 5문장]</p>
 <div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<div style="text-align:center;margin:30px 0;"><a href="[CTA2: 키워드 주제에 맞는 외부 권위 사이트 URL]" target="_blank" style="display:inline-block;background:#6a1b9a;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA2: 자세히 알아보기 등 행동 유도 문구]</a></div>
 
 <h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 기반 소제목 — 비교/차이/선택 기준]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 7-8문장. 비교 대상이나 선택 기준 명확히 제시]</p>
@@ -222,6 +252,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 </div>
 <div class="card-footer" style="font-size:14px;color:#777;border-top:1px dashed #ddd;padding-top:10px;margin-top:10px;text-align:center;">[마무리: 독자에게 전하는 한 문장]</div>
 </div>
+<div style="text-align:center;margin:30px 0;"><a href="[CTA3: 키워드 주제에 맞는 외부 권위 사이트 URL]" target="_blank" style="display:inline-block;background:#10b981;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA3: 관련 서비스 이용하기 등 행동 유도 문구]</a></div>
 
 <h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
 <div style="margin:22px 0 0;">
