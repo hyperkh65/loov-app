@@ -376,7 +376,14 @@ export default function AutoService2Page() {
       const rawText = await res.text();
       let data: { error?: string; thumbnail_error?: string };
       try { data = JSON.parse(rawText); } catch {
-        throw new Error(`서버 응답 오류 (${res.status}) — AI 생성이 너무 오래 걸렸거나 서버 에러입니다. 잠시 후 다시 시도해주세요.`);
+        const modelName = autoSettings.ai_model;
+        if (res.status === 504 || res.status === 524) {
+          throw new Error(
+            `타임아웃 (${res.status}) — 모델 "${modelName}"이 응답하지 않았습니다.\n` +
+            `대형 모델(70B+)은 300초 제한을 초과할 수 있습니다. llama3.2, mistral, gemma3 등 소형 모델을 사용해보세요.`
+          );
+        }
+        throw new Error(`서버 응답 오류 (${res.status}) — 잠시 후 다시 시도해주세요.`);
       }
       if (!res.ok) throw new Error(data.error || '생성 실패');
       setManualKeyword('');
