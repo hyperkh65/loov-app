@@ -379,10 +379,10 @@ function injectTitleIntoH3(content: string, title: string): string {
 // 대표이미지를 첫 번째 h3 바로 다음에 삽입
 function insertRepresentativeImageIntoContent(content: string, imageUrl: string, title: string): string {
   const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const repImg = `\n<figure style="text-align:center;margin:20px auto;display:block;width:100%;">`
-    + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
-    + `style="width:100%;max-width:100%;height:auto;display:block;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
-    + `</figure>\n`;
+  const repImg = `\n<p style="text-align:center;margin:20px 0;width:100%;">`
+    + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" width="100%" `
+    + `style="width:100%;max-width:100%;height:auto;display:block;margin:0 auto;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
+    + `</p>\n`;
   return content.replace(/(<\/h3>)/, `$1${repImg}`);
 }
 
@@ -390,12 +390,12 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
   if (imageUrls.length === 0) return content;
   const imgHtml = (url: string, sectionTitle: string) => {
     const alt = sectionTitle || keyword;
-    return `\n<figure style="text-align:center;margin:25px 0;display:block;width:100%;">` +
-      `<img src="${url}" alt="${alt}" title="${alt}" ` +
-      `style="width:100%;max-width:100%;height:auto;display:block;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
+    return `\n<p style="text-align:center;margin:25px 0;width:100%;">` +
+      `<img src="${url}" alt="${alt}" title="${alt}" width="100%" ` +
+      `style="width:100%;max-width:100%;height:auto;display:block;margin:0 auto;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
       `loading="lazy"/>` +
-      `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption>` +
-      `</figure>\n`;
+      `<span style="display:block;font-size:12px;color:#888;margin-top:6px;text-align:center;">${alt}</span>` +
+      `</p>\n`;
   };
 
   // 모든 H2 섹션 후에 이미지 삽입 (홀수 번째), H2 제목 텍스트 캡처
