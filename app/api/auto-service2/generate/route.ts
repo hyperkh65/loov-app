@@ -89,6 +89,7 @@ ${ANTI_WATERMARK_PROMPT}
 - 뉴스 헤드라인처럼 자연스럽게 이어지는 하나의 문장 또는 어구로 작성
 - 포커스 키워드를 앞부분에 자연스럽게 녹여낼 것 (억지로 끼워 넣기 금지)
 - 예시(금지): "스마트폰: 최신 기능과 구입 방법" / 예시(허용): "스마트폰 최신 기능 총정리와 구입 시 꼭 확인할 점"
+- 제목에 숫자 포함 필수: "5가지", "3단계", "TOP 7", "2025년" 등 자연스러운 숫자를 반드시 넣을 것
 
 【금지 표현 - AI 냄새 나는 표현 일체 금지】
 - "~에 대해 알아보겠습니다" / "~를 살펴보겠습니다" / "~에 대해 살펴볼게요"
@@ -134,6 +135,11 @@ ${ANTI_WATERMARK_PROMPT}
 - H2 섹션 6개, 각 섹션 단락 3개 이상
 - 각 단락은 반드시 5문장 이상, 각 H2 첫 단락은 7-8문장
 
+【키워드 밀도 원칙】
+- 포커스 키워드 "${keyword}"를 본문 전체에 10~15회 자연스럽게 분산 배치 (최소 키워드 밀도 1% 이상)
+- H2 소제목 6개 중 최소 2개에 포커스 키워드를 자연스럽게 포함
+- 같은 문장 안에 키워드 2번 이상 반복 금지 — 유의어·변형어 혼용으로 자연스럽게
+
 포커스 키워드: "${keyword}"
 오늘 날짜: ${today}
 
@@ -150,12 +156,24 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 ===TITLE===
 [자연스러운 뉴스 헤드라인 스타일. 콜론(:)·대시(-)·세미콜론(;) 절대 금지. 포커스 키워드를 앞에 녹여낸 40-60자 제목]
 ===META===
-[포커스 키워드 포함, 독자 클릭 유발하는 메타 설명 130-160자. "~에 대해 알아봐요" 같은 표현 금지]
+[포커스 키워드 "${keyword}"를 반드시 포함 (없으면 오류). 독자 클릭 유발하는 메타 설명 130-160자. "~에 대해 알아봐요" 같은 표현 금지]
 ===CONTENT===
 <p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[두괄식 도입: 이 글의 핵심 결론/사실을 첫 문장에 직접 명시. 참고자료의 가장 핵심적인 내용을 바탕으로 독자를 바로 끌어당기는 2-3문장. "~에 대해 알아보겠습니다" 금지]</span></p>
 <p data-ke-size="size16">[참고자료에서 파악한 배경과 맥락 3-4문장. 구체적 수치나 날짜 포함]</p>
 <p data-ke-size="size16">[이 글에서 독자가 얻을 수 있는 실질적 가치 2-3가지를 구체적으로 예고]</p>
 <div style="background-color:#f5f5f5;padding:15px;border-radius:8px;font-style:italic;margin-bottom:25px;font-size:15px;"><b>[핵심 한줄 요약]</b> [참고자료 기반 2-3문장 요약]</div>
+<div style="background-color:#f8f9fa;border:1px solid #e0e0e0;border-radius:10px;padding:20px 25px;margin:25px 0;">
+<p style="font-size:17px;font-weight:bold;margin:0 0 12px;color:#1a73e8;">📋 목차</p>
+<ol style="margin:0;padding-left:22px;line-height:2.2;">
+<li><a href="#section1" style="color:#333;text-decoration:none;">[아래 1번 H2 소제목과 동일한 텍스트]</a></li>
+<li><a href="#section2" style="color:#333;text-decoration:none;">[아래 2번 H2 소제목과 동일한 텍스트]</a></li>
+<li><a href="#section3" style="color:#333;text-decoration:none;">[아래 3번 H2 소제목과 동일한 텍스트]</a></li>
+<li><a href="#section4" style="color:#333;text-decoration:none;">[아래 4번 H2 소제목과 동일한 텍스트]</a></li>
+<li><a href="#section5" style="color:#333;text-decoration:none;">[아래 5번 H2 소제목과 동일한 텍스트]</a></li>
+<li><a href="#section6" style="color:#333;text-decoration:none;">[아래 6번 H2 소제목과 동일한 텍스트]</a></li>
+<li><a href="#faq" style="color:#333;text-decoration:none;">자주 묻는 질문</a></li>
+</ol>
+</div>
 <h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 기반 소제목 — 핵심 현황/팩트]</b></h2>
@@ -235,6 +253,8 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 
 ===KEYWORDS===
 [10개 키워드 — 서로 다른 관점으로 선택: ①포커스 키워드 변형 2개 ②관련 개념어 2개 ③방법/실용 검색어 2개 ④비교/선택 검색어 2개 ⑤롱테일 구체 검색어 2개. 비슷한 단어 반복 절대 금지. 쉼표 구분]
+===SLUG===
+[포커스 키워드를 WordPress URL slug로 변환. 한국어는 그대로, 영문은 소문자+하이픈. 공백→하이픈, 특수문자 제거. 예: "강아지 사료 추천" → "강아지-사료-추천"]
 
 ⚠️ 최종 주의사항:
 - 모든 [] 대괄호 지시문은 실제 내용으로 반드시 교체 (대괄호 자체도 제거)
@@ -390,7 +410,10 @@ function parseAiOutput(raw: string) {
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
 
-  return { title, meta_description, content, keywords };
+  const slugRaw = (extract('SLUG').split('\n').find(l => l.trim()) || '').trim();
+  const slug = slugRaw || '';
+
+  return { title, meta_description, content, keywords, slug };
 }
 
 export async function POST(req: NextRequest) {
@@ -436,7 +459,7 @@ export async function POST(req: NextRequest) {
   // 워터마크 자동 제거
   rawOutput = cleanWatermarks(rawOutput);
 
-  const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
+  const { title, meta_description, content: rawContent, keywords, slug } = parseAiOutput(rawOutput);
   if (!title || !rawContent) {
     return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
   }
@@ -486,5 +509,5 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ item: data, keywords, word_count: wordCount, thumbnail_error: thumbnailError });
+  return NextResponse.json({ item: data, keywords, slug, word_count: wordCount, thumbnail_error: thumbnailError });
 }
