@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
@@ -159,6 +159,9 @@ const NAV_GROUPS = [
   },
 ];
 
+// 전체 메뉴 아이템 플랫 목록 (즐겨찾기 조회용)
+const ALL_ITEMS = NAV_GROUPS.flatMap(g => g.items);
+
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
@@ -172,6 +175,7 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
   const { employees, companySettings, directives } = useStore();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isOwnerUser, setIsOwnerUser] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -180,6 +184,25 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
       const ownerEmail = process.env.NEXT_PUBLIC_OWNER_EMAIL || '2days.kr@gmail.com';
       const ownerId = process.env.NEXT_PUBLIC_OWNER_USER_ID || '0a7e3d43-0159-411e-b171-0aebb70a4893';
       setIsOwnerUser(email === ownerEmail || session?.user.id === ownerId);
+    });
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('loov_sidebar_favorites');
+      if (saved) setFavorites(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  const toggleFavorite = useCallback((href: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFavorites(prev => {
+      const next = prev.includes(href)
+        ? prev.filter(h => h !== href)
+        : [...prev, href];
+      localStorage.setItem('loov_sidebar_favorites', JSON.stringify(next));
+      return next;
     });
   }, []);
 
@@ -200,6 +223,82 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
     if (isMobile && onMobileClose) {
       onMobileClose();
     }
+  };
+
+  // 즐겨찾기 순서 유지하여 아이템 목록 구성
+  const favoriteItems = favorites
+    .map(href => ALL_ITEMS.find(item => item.href === href))
+    .filter((item): item is typeof ALL_ITEMS[0] => !!item);
+
+  // 네비게이션 아이템 렌더링 헬퍼
+  const renderNavItem = (item: typeof ALL_ITEMS[0], isFavSection = false) => {
+    const isActive = item.href === '/dashboard'
+      ? pathname === '/dashboard'
+      : pathname.startsWith(item.href);
+    const badge = getBadge(item.href);
+    const isFav = favorites.includes(item.href);
+
+    const navClassName = `relative flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm font-medium transition-all group ${
+      isActive
+        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+        : isFavSection
+          ? 'text-yellow-300/80 hover:text-white hover:bg-slate-700/50'
+          : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+    }`;
+
+    const navContent = (
+      <>
+        <span className={`text-base flex-shrink-0 ${collapsed && !isMobile ? 'mx-auto' : ''}`}>
+          {item.icon}
+        </span>
+        {(!collapsed || isMobile) && (
+          <span className="flex-1 truncate min-w-0">{item.label}</span>
+        )}
+        {(!collapsed || isMobile) && badge !== null && badge > 0 && (
+          <span className={`flex-shrink-0 text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+            isActive ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
+          }`}>
+            {badge}
+          </span>
+        )}
+        {(!collapsed || isMobile) && (
+          <button
+            onClick={(e) => toggleFavorite(item.href, e)}
+            className={`flex-shrink-0 text-sm leading-none transition-all rounded px-0.5 hover:scale-110 ${
+              isFav
+                ? 'text-yellow-400 hover:text-yellow-300'
+                : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-yellow-400'
+            }`}
+            title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+          >
+            {isFav ? '★' : '☆'}
+          </button>
+        )}
+      </>
+    );
+
+    return 'external' in item && item.external ? (
+      <a
+        key={`${isFavSection ? 'fav-' : ''}${item.href}`}
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={collapsed && !isMobile ? item.label : undefined}
+        className={navClassName}
+      >
+        {navContent}
+      </a>
+    ) : (
+      <Link
+        key={`${isFavSection ? 'fav-' : ''}${item.href}`}
+        href={item.href}
+        onClick={handleNavClick}
+        title={collapsed && !isMobile ? item.label : undefined}
+        className={navClassName}
+      >
+        {navContent}
+      </Link>
+    );
   };
 
   return (
@@ -287,6 +386,30 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
 
       {/* 네비게이션 */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-4">
+
+        {/* ── 즐겨찾기 섹션 ── */}
+        {favoriteItems.length > 0 && (
+          <div>
+            {(!collapsed || isMobile) && (
+              <div className="px-2 mb-1 flex items-center gap-1">
+                <span className="text-yellow-400 text-[11px]">★</span>
+                <span className="text-[10px] font-semibold text-yellow-500 uppercase tracking-widest">즐겨찾기</span>
+              </div>
+            )}
+            {collapsed && !isMobile && (
+              <div className="px-2 mb-1 flex justify-center">
+                <span className="text-yellow-400 text-[11px]">★</span>
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {favoriteItems.map(item => renderNavItem(item, true))}
+            </div>
+            {/* 구분선 */}
+            <div className="mt-3 mx-2 border-t border-slate-700/50" />
+          </div>
+        )}
+
+        {/* ── 전체 메뉴 ── */}
         {NAV_GROUPS.map((group) => (
           <div key={group.label}>
             {(!collapsed || isMobile) && (
@@ -295,54 +418,7 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
               </div>
             )}
             <div className="space-y-0.5">
-              {group.items.map((item) => {
-                const isActive = item.href === '/dashboard'
-                  ? pathname === '/dashboard'
-                  : pathname.startsWith(item.href);
-                const badge = getBadge(item.href);
-
-                const navClassName = `relative flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm font-medium transition-all group ${
-                  isActive
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                }`;
-                const navContent = (
-                  <>
-                    <span className={`text-base flex-shrink-0 ${collapsed && !isMobile ? 'mx-auto' : ''}`}>{item.icon}</span>
-                    {(!collapsed || isMobile) && <span className="truncate">{item.label}</span>}
-                    {badge !== null && badge > 0 && (
-                      <span className={`ml-auto flex-shrink-0 text-[10px] font-black px-1.5 py-0.5 rounded-full ${
-                        isActive ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
-                      }`}>
-                        {badge}
-                      </span>
-                    )}
-                  </>
-                );
-
-                return 'external' in item && item.external ? (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={collapsed && !isMobile ? item.label : undefined}
-                    className={navClassName}
-                  >
-                    {navContent}
-                  </a>
-                ) : (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={handleNavClick}
-                    title={collapsed && !isMobile ? item.label : undefined}
-                    className={navClassName}
-                  >
-                    {navContent}
-                  </Link>
-                );
-              })}
+              {group.items.map((item) => renderNavItem(item, false))}
             </div>
           </div>
         ))}
