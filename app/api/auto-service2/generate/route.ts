@@ -89,7 +89,9 @@ ${ANTI_WATERMARK_PROMPT}
 - 뉴스 헤드라인처럼 자연스럽게 이어지는 하나의 문장 또는 어구로 작성
 - 포커스 키워드를 앞부분에 자연스럽게 녹여낼 것 (억지로 끼워 넣기 금지)
 - 예시(금지): "스마트폰: 최신 기능과 구입 방법" / 예시(허용): "스마트폰 최신 기능 총정리와 구입 시 꼭 확인할 점"
-- 제목에 숫자 포함 필수: "5가지", "3단계", "TOP 7", "2025년" 등 자연스러운 숫자를 반드시 넣을 것
+- 제목에 숫자 포함 필수: "5가지", "3단계", "TOP 7" 등 자연스러운 카운팅 숫자를 반드시 넣을 것
+- 제목에 연도·월·일 형태의 날짜 절대 금지: "2025년", "2026년 6월", "2025.05", "최신" 등 연도/날짜 표현 금지
+- 날짜는 본문 내용 설명에는 사용 가능하지만 제목에는 절대 불가
 
 【금지 표현 - AI 냄새 나는 표현 일체 금지】
 - "~에 대해 알아보겠습니다" / "~를 살펴보겠습니다" / "~에 대해 살펴볼게요"
@@ -147,16 +149,12 @@ ${ANTI_WATERMARK_PROMPT}
 
 【CTA 버튼 원칙 — 필수 3개】
 - 도입부 아래, 섹션3 직후, FAQ 직전에 각 1개씩 총 3개 외부링크 버튼 반드시 삽입
-- 키워드 주제에 맞는 외부 권위 사이트 사용 (정부·공공기관·공인기관 우선)
-  건강/의료: nhis.or.kr / mfds.go.kr / kdca.go.kr
-  금융/경제: fss.or.kr / moef.go.kr / kofia.or.kr
-  법률/정책: korea.kr / moleg.go.kr / law.go.kr
-  교육: moe.go.kr / nile.or.kr / kice.re.kr
-  환경/날씨: kma.go.kr / me.go.kr
-  부동산: molit.go.kr / rr.seoul.go.kr
-  기타: naver.com / google.com
-- 버튼 텍스트는 행동을 유도하는 문구로 (예: "공식 정보 확인하기", "자세히 알아보기")
+- 글의 주제와 키워드에 가장 관련성 높은 외부 권위 사이트를 AI가 직접 판단해 선택
+- 정부·공공기관·공인기관·주요 언론사·학술기관 등 독자가 신뢰할 수 있는 실제 존재하는 사이트를 사용
+- 버튼마다 서로 다른 사이트 사용 (같은 사이트 반복 금지)
+- 각 버튼 텍스트는 해당 링크 내용에 맞는 구체적 행동 유도 문구로 작성
 - 3개 버튼 배경색: 첫 번째 #1a73e8, 두 번째 #6a1b9a, 세 번째 #10b981
+- 존재하지 않거나 확실하지 않은 URL 사용 금지 — 실제 운영 중인 사이트만 사용
 
 【분량 원칙】
 - 순수 텍스트(HTML 태그 제외) 최소 4000자 이상 필수
@@ -203,7 +201,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 </ol>
 </div>
 <h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
-<div style="text-align:center;margin:30px 0;"><a href="[CTA1: 키워드 주제에 맞는 외부 권위 사이트 URL - 정부/공공기관 우선]" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA1: 공식 정보 확인하기 등 행동 유도 문구]</a></div>
+<div style="text-align:center;margin:30px 0;"><a href="[CTA1: 글 주제/키워드와 직접 관련된 외부 권위 사이트 URL — AI가 판단해 선택]" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA1: 해당 사이트 내용에 맞는 구체적 버튼 텍스트]</a></div>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 기반 소제목 — 핵심 현황/팩트]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장에 핵심 사실. 7-8문장. 구체적 수치/날짜/사례 포함. E-E-A-T: 직접 분석한 것처럼 서술]</p>
@@ -222,7 +220,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <p style="margin-bottom:15px;" data-ke-size="size16">[실용적 분석 5-6문장. 단계별이나 사례 중심 서술]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 5문장]</p>
 <div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
-<div style="text-align:center;margin:30px 0;"><a href="[CTA2: 키워드 주제에 맞는 외부 권위 사이트 URL]" target="_blank" style="display:inline-block;background:#6a1b9a;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA2: 자세히 알아보기 등 행동 유도 문구]</a></div>
+<div style="text-align:center;margin:30px 0;"><a href="[CTA2: CTA1과 다른 외부 권위 사이트 URL — 글 내용의 이 시점에서 독자에게 가장 유용한 사이트]" target="_blank" style="display:inline-block;background:#6a1b9a;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA2: 해당 사이트 내용에 맞는 구체적 버튼 텍스트]</a></div>
 
 <h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 기반 소제목 — 비교/차이/선택 기준]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 7-8문장. 비교 대상이나 선택 기준 명확히 제시]</p>
@@ -252,7 +250,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 </div>
 <div class="card-footer" style="font-size:14px;color:#777;border-top:1px dashed #ddd;padding-top:10px;margin-top:10px;text-align:center;">[마무리: 독자에게 전하는 한 문장]</div>
 </div>
-<div style="text-align:center;margin:30px 0;"><a href="[CTA3: 키워드 주제에 맞는 외부 권위 사이트 URL]" target="_blank" style="display:inline-block;background:#10b981;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA3: 관련 서비스 이용하기 등 행동 유도 문구]</a></div>
+<div style="text-align:center;margin:30px 0;"><a href="[CTA3: CTA1·CTA2와 다른 외부 권위 사이트 URL — 마무리 시점에서 독자의 다음 행동을 유도하는 사이트]" target="_blank" style="display:inline-block;background:#10b981;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA3: 해당 사이트 내용에 맞는 구체적 버튼 텍스트]</a></div>
 
 <h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
 <div style="margin:22px 0 0;">
