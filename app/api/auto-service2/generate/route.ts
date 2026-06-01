@@ -180,13 +180,17 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 ══════════════════════════════
 
 ===TITLE===
-[자연스러운 뉴스 헤드라인 스타일. 콜론(:)·대시(-)·세미콜론(;) 절대 금지. 포커스 키워드를 앞에 녹여낸 40-60자 제목]
+[독자를 즉시 끌어당기는 후킹 제목. 아래 스타일 중 내용에 가장 잘 맞는 것 선택:
+ ① 경험·반응형: "~알고 나니 놀라웠습니다" / "직접 찾아봤더니 예상과 달랐습니다" / "처음엔 몰랐는데 알고 보니 달랐습니다"
+ ② 궁금증 유발형: "~이유가 따로 있었습니다" / "~진짜 이유 3가지" / "~몰랐던 사실"
+ ③ 사실 강조형: 핵심 수치나 팩트로 시작하는 임팩트 있는 헤드라인
+콜론(:)·대시(-)·세미콜론(;) 절대 금지. 포커스 키워드 자연스럽게 포함. 숫자 반드시 포함. 40-60자]
 ===META===
 [포커스 키워드 "${keyword}"를 반드시 포함 (없으면 오류). 독자 클릭 유발하는 메타 설명 130-160자. "~에 대해 알아봐요" 같은 표현 금지]
 ===CONTENT===
-<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[두괄식 도입: 이 글의 핵심 결론/사실을 첫 문장에 직접 명시. 참고자료의 가장 핵심적인 내용을 바탕으로 독자를 바로 끌어당기는 2-3문장. "~에 대해 알아보겠습니다" 금지]</span></p>
-<p data-ke-size="size16">[참고자료에서 파악한 배경과 맥락 3-4문장. 구체적 수치나 날짜 포함]</p>
-<p data-ke-size="size16">[이 글에서 독자가 얻을 수 있는 실질적 가치 2-3가지를 구체적으로 예고]</p>
+<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[후킹 도입 — 필수 규칙: 첫 문장은 반드시 1인칭 감정·경험·반응으로 시작. 사용 예시: "솔직히 처음 이 소식을 접했을 때 그냥 넘길 뻔했습니다." / "주변에서 먼저 이야기해줘서 찾아봤는데 생각보다 훨씬 큰 이야기였습니다." / "처음엔 그냥 뉴스 하나인 줄 알았는데 알고 보니 달랐습니다." / "이 내용을 처음 접했을 때 눈을 의심했습니다." — 두 번째 문장부터 핵심 사실(수치·날짜 포함)과 포커스 키워드를 자연스럽게 연결. 총 3문장. "~에 대해 알아보겠습니다" 절대 금지]</span></p>
+<p data-ke-size="size16">[참고자료의 핵심 배경과 맥락 3-4문장. 구체적 수치·날짜 포함. 1인칭 시각 유지 ("저는~", "제가~" 등)]</p>
+<p data-ke-size="size16">[이 글을 읽으면 독자가 얻을 수 있는 실질적 정보 2-3가지를 구체적으로 예고. 경험담 표현으로 마무리 ("직접 정리해봤습니다" / "찾아보니 이런 사실이 있었습니다" 등)]</p>
 <div style="background-color:#f5f5f5;padding:15px;border-radius:8px;font-style:italic;margin-bottom:25px;font-size:15px;"><b>[핵심 한줄 요약]</b> [참고자료 기반 2-3문장 요약]</div>
 <div style="background-color:#f8f9fa;border:1px solid #e0e0e0;border-radius:10px;padding:20px 25px;margin:25px 0;">
 <p style="font-size:17px;font-weight:bold;margin:0 0 12px;color:#1a73e8;">📋 목차</p>
@@ -200,7 +204,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <li><a href="#faq" style="color:#333;text-decoration:none;">자주 묻는 질문</a></li>
 </ol>
 </div>
-<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
+<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[이 글의 핵심 주제를 담은 한 문장 — 위 도입부와 자연스럽게 이어지는 부제목. 포커스 키워드 포함. 독자가 계속 읽고 싶게 만드는 구체적 문장]</span></b></h3>
 <div style="text-align:center;margin:30px 0;"><a href="[CTA1: 글 주제/키워드와 직접 관련된 외부 권위 사이트 URL — AI가 판단해 선택]" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA1: 해당 사이트 내용에 맞는 구체적 버튼 텍스트]</a></div>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 기반 소제목 — 핵심 현황/팩트]</b></h2>
@@ -496,8 +500,7 @@ export async function POST(req: NextRequest) {
   // 3. 이미지 검색 + 본문 삽입
   const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
   let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
-  // h3 부제목을 실제 기사 제목으로 교체
-  content = injectTitleIntoH3(content, title);
+  // h3 부제목은 AI가 작성한 후킹 문장 그대로 유지 (injectTitleIntoH3 제거)
 
   // 4. SVG 썸네일 생성
   let imageUrl: string | null = null;
