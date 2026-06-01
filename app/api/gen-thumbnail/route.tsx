@@ -54,7 +54,6 @@ export async function GET(req: NextRequest) {
   const sub     = searchParams.get('sub')     || '';
   const size    = searchParams.get('size')    || 'blog';
 
-  // 'blog' = 1200×628 (OGP 표준), 'square' = 1080×1080 (인스타그램)
   const W = size === 'square' ? 1080 : 1200;
   const H = size === 'square' ? 1080 : 628;
   const isBlog = size !== 'square';
@@ -76,148 +75,137 @@ export async function GET(req: NextRequest) {
   }
 
   const len = title.length;
-  // 1200×628: 제목 폰트 크기 — 최소 42px 보장
-  const fontSizeBlog = len <= 8 ? 78 : len <= 14 ? 68 : len <= 20 ? 58 : len <= 28 ? 50 : len <= 36 ? 44 : 42;
-  // 1080×1080: 최소 56px 보장
-  const fontSizeSquare = len <= 8 ? 112 : len <= 14 ? 96 : len <= 20 ? 82 : len <= 28 ? 70 : len <= 36 ? 62 : 56;
-  const fontSize = isBlog ? fontSizeBlog : fontSizeSquare;
 
   const fontOpts = {
     width: W, height: H,
     fonts: fontData ? [{ name: 'NotoSansKR', data: fontData, weight: 700 as const, style: 'normal' as const }] : [],
   };
 
-  // ── 매거진 카드 디자인 (배경 이미지 있을 때) ─────────────────────────
-  // 상단: 이미지 패널 / 하단: 다크 텍스트 패널 → 항상 선명하고 디자인적으로 보임
+  // ── 풀블리드 매거진 디자인 (배경 이미지 있을 때) ────────────────────────
   if (bgUrl) {
-    // 매거진 레이아웃 전용 폰트 크기 (텍스트 패널 높이에 맞춤)
-    const fontSizeMag  = len <= 8 ? 66 : len <= 14 ? 58 : len <= 20 ? 50 : len <= 28 ? 45 : len <= 36 ? 41 : 37;
-    const fontSizeMagSq = len <= 8 ? 96 : len <= 14 ? 84 : len <= 20 ? 74 : len <= 28 ? 65 : len <= 36 ? 58 : 52;
-
     if (isBlog) {
-      // 1200×628 매거진 카드 (이미지 295 + 텍스트 275 + 푸터 58)
+      // 1200×628 풀블리드
+      const fs = len <= 10 ? 72 : len <= 16 ? 62 : len <= 22 ? 54 : len <= 30 ? 47 : len <= 40 ? 42 : 38;
+
       return new ImageResponse(
         (
           <div style={{
             width: 1200, height: 628,
-            display: 'flex', flexDirection: 'column',
-            background: t.g1, overflow: 'hidden',
+            display: 'flex',
+            position: 'relative', overflow: 'hidden',
             fontFamily: fontData ? 'NotoSansKR' : 'sans-serif',
           }}>
-            {/* ① 이미지 패널 */}
+            {/* 풀블리드 배경 이미지 */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={bgUrl} alt="" style={{
+              position: 'absolute', inset: 0,
+              width: 1200, height: 628,
+              objectFit: 'cover', objectPosition: 'center 30%',
+            }} />
+
+            {/* 그라디언트 오버레이 — 상단 밝고 하단 어둡게 */}
             <div style={{
-              position: 'relative', width: 1200, height: 295,
-              display: 'flex', overflow: 'hidden', flexShrink: 0,
-            }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={bgUrl} alt="" style={{
-                position: 'absolute', inset: 0,
-                width: 1200, height: 295,
-                objectFit: 'cover', objectPosition: 'center 30%',
-              }} />
-              {/* 테마 컬러 틴트 — 사진이 디자인된 것처럼 보이게 */}
-              <div style={{
-                position: 'absolute', inset: 0, display: 'flex',
-                background: `${t.accent}22`,
-              }} />
-              {/* 하단 페이드 → 텍스트 패널과 자연스럽게 연결 */}
-              <div style={{
-                position: 'absolute', inset: 0, display: 'flex',
-                background: 'linear-gradient(to bottom,transparent 20%,rgba(0,0,0,0.45) 68%,rgba(0,0,0,0.97) 100%)',
-              }} />
-              {/* 상단 액센트 라인 */}
-              <div style={{
-                position: 'absolute', top: 0, left: 0, right: 0,
-                height: 10, display: 'flex',
-                background: `linear-gradient(90deg,${t.accent} 0%,${t.accent2} 55%,${t.accent}60 100%)`,
-              }} />
-              {/* 좌상 코너 브래킷 */}
-              <div style={{
-                position: 'absolute', top: 24, left: 36,
-                width: 28, height: 28, display: 'flex',
-                borderTop: `3px solid ${t.accent}`,
-                borderLeft: `3px solid ${t.accent}`,
-              }} />
-              {/* 우상 코너 브래킷 */}
-              <div style={{
-                position: 'absolute', top: 24, right: 36,
-                width: 28, height: 28, display: 'flex',
-                borderTop: `3px solid ${t.accent}80`,
-                borderRight: `3px solid ${t.accent}80`,
-              }} />
-              {keyword && (
-                <div style={{ position: 'absolute', top: 22, left: 36, display: 'flex' }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center',
-                    background: t.accent, borderRadius: 6, padding: '7px 20px',
-                  }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: '#000', letterSpacing: '0.02em', display: 'flex' }}>
-                      {keyword}
-                    </div>
+              position: 'absolute', inset: 0, display: 'flex',
+              background: 'linear-gradient(to bottom, rgba(0,0,0,0.0) 0%, rgba(0,0,0,0.08) 20%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.88) 75%, rgba(0,0,0,0.97) 100%)',
+            }} />
+
+            {/* 액센트 컬러 틴트 */}
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex',
+              background: `linear-gradient(135deg, ${t.accent}18 0%, transparent 55%)`,
+            }} />
+
+            {/* 상단 액센트 바 */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: 10, display: 'flex',
+              background: `linear-gradient(90deg, ${t.accent} 0%, ${t.accent2} 55%, ${t.accent}60 100%)`,
+            }} />
+
+            {/* 좌상 코너 브래킷 */}
+            <div style={{
+              position: 'absolute', top: 28, left: 40,
+              width: 32, height: 32, display: 'flex',
+              borderTop: `3px solid ${t.accent}`, borderLeft: `3px solid ${t.accent}`,
+            }} />
+            {/* 우상 코너 브래킷 */}
+            <div style={{
+              position: 'absolute', top: 28, right: 40,
+              width: 32, height: 32, display: 'flex',
+              borderTop: `3px solid ${t.accent}70`, borderRight: `3px solid ${t.accent}70`,
+            }} />
+
+            {/* 키워드 배지 */}
+            {keyword && (
+              <div style={{ position: 'absolute', top: 26, left: 40, display: 'flex' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center',
+                  background: t.accent, borderRadius: 6, padding: '8px 22px',
+                  boxShadow: `0 4px 16px rgba(0,0,0,0.6)`,
+                }}>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: '#000', letterSpacing: '0.02em', display: 'flex' }}>
+                    {keyword}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* ② 텍스트 패널 */}
+            {/* 하단 텍스트 영역 */}
             <div style={{
-              flex: 1, display: 'flex', flexDirection: 'column',
-              justifyContent: 'center',
-              padding: '16px 52px 8px',
-              background: `linear-gradient(150deg,${t.g1} 0%,${t.g2} 80%,${t.g3} 100%)`,
-              gap: 10,
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              display: 'flex', flexDirection: 'column',
+              padding: '0 52px 36px',
+              gap: 14,
             }}>
               {/* 구분 바 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 52, height: 4, background: t.accent, borderRadius: 2, display: 'flex' }} />
+                <div style={{ width: 56, height: 4, background: t.accent, borderRadius: 2, display: 'flex' }} />
                 <div style={{ width: 18, height: 4, background: `${t.accent}70`, borderRadius: 2, display: 'flex' }} />
                 <div style={{ width: 8, height: 4, background: `${t.accent}38`, borderRadius: 2, display: 'flex' }} />
               </div>
+
               {/* 제목 */}
               <div style={{
-                fontSize: fontSizeMag, fontWeight: 900,
-                color: 'white', lineHeight: 1.26,
+                fontSize: fs, fontWeight: 900,
+                color: 'white', lineHeight: 1.28,
                 wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap', width: '100%',
+                textShadow: '0 2px 8px rgba(0,0,0,1), 0 4px 24px rgba(0,0,0,0.9), 2px 2px 0 rgba(0,0,0,0.8)',
                 letterSpacing: '-0.025em',
               }}>
                 {title}
               </div>
+
               {sub && (
                 <div style={{
-                  fontSize: 24, fontWeight: 700,
+                  fontSize: 26, fontWeight: 700,
                   color: t.accent, letterSpacing: '-0.01em',
                   display: 'flex', flexWrap: 'wrap', wordBreak: 'keep-all',
+                  textShadow: '0 2px 8px rgba(0,0,0,0.9)',
                 }}>
                   {sub}
                 </div>
               )}
-            </div>
 
-            {/* ③ 푸터 */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '0 52px', height: 58, flexShrink: 0,
-              background: 'rgba(0,0,0,0.72)',
-              borderTop: `2px solid ${t.accent}60`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{
-                  width: 7, height: 7, borderRadius: '50%',
-                  background: t.accent, display: 'flex',
-                  boxShadow: `0 0 12px ${t.accent},0 0 22px ${t.accent}80`,
-                }} />
-                <div style={{ fontSize: 20, fontWeight: 700, color: `${t.accent}ee`, letterSpacing: '0.08em', display: 'flex' }}>
-                  {site || 'BLOG'}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                {[34, 20, 11, 5].map((w, i) => (
-                  <div key={i} style={{
-                    width: w, height: 3, borderRadius: 2,
-                    background: `linear-gradient(90deg,${t.accent},${t.accent2})`,
-                    opacity: 1 - i * 0.22, display: 'flex',
+              {/* 푸터 라인 */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: t.accent, display: 'flex',
+                    boxShadow: `0 0 10px ${t.accent}, 0 0 20px ${t.accent}80`,
                   }} />
-                ))}
+                  <div style={{ fontSize: 18, fontWeight: 700, color: `${t.accent}ee`, letterSpacing: '0.1em', display: 'flex' }}>
+                    {site || 'BLOG'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {[36, 22, 12, 6].map((w, i) => (
+                    <div key={i} style={{
+                      width: w, height: 3, borderRadius: 2,
+                      background: `linear-gradient(90deg,${t.accent},${t.accent2})`,
+                      opacity: 1 - i * 0.22, display: 'flex',
+                    }} />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -226,122 +214,127 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1080×1080 매거진 카드 (이미지 500 + 텍스트 490 + 푸터 90)
+    // 1080×1080 풀블리드 매거진
+    const fsSq = len <= 8 ? 110 : len <= 14 ? 94 : len <= 20 ? 82 : len <= 28 ? 72 : len <= 36 ? 64 : 56;
+
     return new ImageResponse(
       (
         <div style={{
           width: 1080, height: 1080,
-          display: 'flex', flexDirection: 'column',
-          background: t.g1, overflow: 'hidden',
+          display: 'flex',
+          position: 'relative', overflow: 'hidden',
           fontFamily: fontData ? 'NotoSansKR' : 'sans-serif',
         }}>
-          {/* ① 이미지 패널 */}
+          {/* 풀블리드 배경 이미지 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={bgUrl} alt="" style={{
+            position: 'absolute', inset: 0,
+            width: 1080, height: 1080,
+            objectFit: 'cover', objectPosition: 'center 25%',
+          }} />
+
+          {/* 그라디언트 오버레이 */}
           <div style={{
-            position: 'relative', width: 1080, height: 500,
-            display: 'flex', overflow: 'hidden', flexShrink: 0,
-          }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={bgUrl} alt="" style={{
-              position: 'absolute', inset: 0,
-              width: 1080, height: 500,
-              objectFit: 'cover', objectPosition: 'center 30%',
-            }} />
-            <div style={{
-              position: 'absolute', inset: 0, display: 'flex',
-              background: `${t.accent}22`,
-            }} />
-            <div style={{
-              position: 'absolute', inset: 0, display: 'flex',
-              background: 'linear-gradient(to bottom,transparent 20%,rgba(0,0,0,0.45) 68%,rgba(0,0,0,0.97) 100%)',
-            }} />
-            <div style={{
-              position: 'absolute', top: 0, left: 0, right: 0,
-              height: 14, display: 'flex',
-              background: `linear-gradient(90deg,${t.accent} 0%,${t.accent2} 55%,${t.accent}60 100%)`,
-            }} />
-            <div style={{
-              position: 'absolute', top: 28, left: 48,
-              width: 36, height: 36, display: 'flex',
-              borderTop: `4px solid ${t.accent}`,
-              borderLeft: `4px solid ${t.accent}`,
-            }} />
-            <div style={{
-              position: 'absolute', top: 28, right: 48,
-              width: 36, height: 36, display: 'flex',
-              borderTop: `4px solid ${t.accent}80`,
-              borderRight: `4px solid ${t.accent}80`,
-            }} />
-            {keyword && (
-              <div style={{ position: 'absolute', top: 28, left: 52, display: 'flex' }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center',
-                  background: t.accent, borderRadius: 8, padding: '10px 28px',
-                }}>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: '#000', letterSpacing: '0.02em', display: 'flex' }}>
-                    {keyword}
-                  </div>
+            position: 'absolute', inset: 0, display: 'flex',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.0) 0%, rgba(0,0,0,0.05) 20%, rgba(0,0,0,0.5) 45%, rgba(0,0,0,0.85) 68%, rgba(0,0,0,0.97) 100%)',
+          }} />
+
+          {/* 액센트 틴트 */}
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex',
+            background: `linear-gradient(135deg, ${t.accent}20 0%, transparent 50%)`,
+          }} />
+
+          {/* 상단 액센트 바 */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 14, display: 'flex',
+            background: `linear-gradient(90deg, ${t.accent} 0%, ${t.accent2} 55%, ${t.accent}60 100%)`,
+          }} />
+
+          {/* 코너 브래킷 */}
+          <div style={{
+            position: 'absolute', top: 36, left: 52,
+            width: 44, height: 44, display: 'flex',
+            borderTop: `4px solid ${t.accent}`, borderLeft: `4px solid ${t.accent}`,
+          }} />
+          <div style={{
+            position: 'absolute', top: 36, right: 52,
+            width: 44, height: 44, display: 'flex',
+            borderTop: `4px solid ${t.accent}70`, borderRight: `4px solid ${t.accent}70`,
+          }} />
+
+          {/* 키워드 배지 */}
+          {keyword && (
+            <div style={{ position: 'absolute', top: 38, left: 52, display: 'flex' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center',
+                background: t.accent, borderRadius: 8, padding: '14px 32px',
+                boxShadow: `0 4px 24px rgba(0,0,0,0.7)`,
+              }}>
+                <div style={{ fontSize: 32, fontWeight: 900, color: '#000', letterSpacing: '0.02em', display: 'flex' }}>
+                  {keyword}
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* ② 텍스트 패널 */}
-          <div style={{
-            flex: 1, display: 'flex', flexDirection: 'column',
-            justifyContent: 'center',
-            padding: '28px 64px 16px',
-            background: `linear-gradient(150deg,${t.g1} 0%,${t.g2} 80%,${t.g3} 100%)`,
-            gap: 18,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 72, height: 5, background: t.accent, borderRadius: 3, display: 'flex' }} />
-              <div style={{ width: 24, height: 5, background: `${t.accent}70`, borderRadius: 3, display: 'flex' }} />
-              <div style={{ width: 10, height: 5, background: `${t.accent}38`, borderRadius: 3, display: 'flex' }} />
             </div>
+          )}
+
+          {/* 하단 텍스트 영역 */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            display: 'flex', flexDirection: 'column',
+            padding: '0 64px 64px',
+            gap: 20,
+          }}>
+            {/* 구분 바 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 80, height: 6, background: t.accent, borderRadius: 3, display: 'flex' }} />
+              <div style={{ width: 26, height: 6, background: `${t.accent}70`, borderRadius: 3, display: 'flex' }} />
+              <div style={{ width: 12, height: 6, background: `${t.accent}38`, borderRadius: 3, display: 'flex' }} />
+            </div>
+
+            {/* 제목 */}
             <div style={{
-              fontSize: fontSizeMagSq, fontWeight: 900,
-              color: 'white', lineHeight: 1.26,
+              fontSize: fsSq, fontWeight: 900,
+              color: 'white', lineHeight: 1.3,
               wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap', width: '100%',
-              letterSpacing: '-0.025em',
+              textShadow: '0 2px 8px rgba(0,0,0,1), 0 4px 32px rgba(0,0,0,0.9), 3px 3px 0 rgba(0,0,0,0.7)',
+              letterSpacing: '-0.03em',
             }}>
               {title}
             </div>
+
             {sub && (
               <div style={{
-                fontSize: 34, fontWeight: 700,
+                fontSize: 38, fontWeight: 700,
                 color: t.accent, letterSpacing: '-0.01em',
                 display: 'flex', flexWrap: 'wrap', wordBreak: 'keep-all',
+                textShadow: '0 2px 8px rgba(0,0,0,0.9)',
               }}>
                 {sub}
               </div>
             )}
-          </div>
 
-          {/* ③ 푸터 */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '0 64px', height: 90, flexShrink: 0,
-            background: 'rgba(0,0,0,0.72)',
-            borderTop: `2px solid ${t.accent}60`,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{
-                width: 9, height: 9, borderRadius: '50%',
-                background: t.accent, display: 'flex',
-                boxShadow: `0 0 14px ${t.accent},0 0 28px ${t.accent}80`,
-              }} />
-              <div style={{ fontSize: 26, fontWeight: 700, color: `${t.accent}ee`, letterSpacing: '0.08em', display: 'flex' }}>
-                {site || 'BLOG'}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {[44, 26, 14, 7].map((w, i) => (
-                <div key={i} style={{
-                  width: w, height: 3, borderRadius: 2,
-                  background: `linear-gradient(90deg,${t.accent},${t.accent2})`,
-                  opacity: 1 - i * 0.22, display: 'flex',
+            {/* 푸터 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: t.accent, display: 'flex',
+                  boxShadow: `0 0 14px ${t.accent}, 0 0 28px ${t.accent}80`,
                 }} />
-              ))}
+                <div style={{ fontSize: 26, fontWeight: 700, color: `${t.accent}ee`, letterSpacing: '0.1em', display: 'flex' }}>
+                  {site || 'BLOG'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                {[48, 30, 16, 8].map((w, i) => (
+                  <div key={i} style={{
+                    width: w, height: 4, borderRadius: 2,
+                    background: `linear-gradient(90deg, ${t.accent}, ${t.accent2})`,
+                    opacity: 1 - i * 0.22, display: 'flex',
+                  }} />
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -351,8 +344,11 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 그라디언트 디자인 (배경 이미지 없을 때) ──────────────────────────
+  const fontSize = isBlog
+    ? (len <= 8 ? 78 : len <= 14 ? 68 : len <= 20 ? 58 : len <= 28 ? 50 : len <= 36 ? 44 : 42)
+    : (len <= 8 ? 112 : len <= 14 ? 96 : len <= 20 ? 82 : len <= 28 ? 70 : len <= 36 ? 62 : 56);
+
   if (isBlog) {
-    // 1200×628 그라디언트
     return new ImageResponse(
       (
         <div style={{
@@ -362,7 +358,6 @@ export async function GET(req: NextRequest) {
           position: 'relative', overflow: 'hidden',
           fontFamily: fontData ? 'NotoSansKR' : 'sans-serif',
         }}>
-          {/* 배경 장식 */}
           <div style={{
             position: 'absolute', top: -160, right: -160,
             width: 520, height: 520, borderRadius: '50%',
@@ -388,29 +383,20 @@ export async function GET(req: NextRequest) {
             width: 220, height: 220, borderRadius: '50%', display: 'flex',
             background: `radial-gradient(circle, ${t.dim} 0%, transparent 68%)`,
           }} />
-
-          {/* 상단 액센트 스트립 */}
           <div style={{
             width: '100%', height: 12, flexShrink: 0, display: 'flex',
             background: `linear-gradient(90deg, ${t.accent} 0%, ${t.accent2} 55%, ${t.accent}30 100%)`,
           }} />
-
-          {/* 코너 브래킷 - 좌상 */}
           <div style={{
             position: 'absolute', top: 40, left: 40,
             width: 38, height: 38, display: 'flex',
-            borderTop: `3px solid ${t.accent}65`,
-            borderLeft: `3px solid ${t.accent}65`,
+            borderTop: `3px solid ${t.accent}65`, borderLeft: `3px solid ${t.accent}65`,
           }} />
-          {/* 코너 브래킷 - 우하 */}
           <div style={{
             position: 'absolute', bottom: 74, right: 40,
             width: 38, height: 38, display: 'flex',
-            borderBottom: `3px solid ${t.accent}65`,
-            borderRight: `3px solid ${t.accent}65`,
+            borderBottom: `3px solid ${t.accent}65`, borderRight: `3px solid ${t.accent}65`,
           }} />
-
-          {/* 우측 수직 도트 */}
           <div style={{
             position: 'absolute', right: 52, top: '50%',
             display: 'flex', flexDirection: 'column', gap: 12,
@@ -423,8 +409,6 @@ export async function GET(req: NextRequest) {
               }} />
             ))}
           </div>
-
-          {/* 메인 콘텐츠 */}
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column',
             justifyContent: 'center',
@@ -451,15 +435,11 @@ export async function GET(req: NextRequest) {
                 </div>
               </div>
             )}
-
-            {/* 구분선 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 54, height: 4, background: t.accent, borderRadius: 2, display: 'flex' }} />
               <div style={{ width: 16, height: 4, background: `${t.accent}70`, borderRadius: 2, display: 'flex' }} />
               <div style={{ width: 8, height: 4, background: `${t.accent}38`, borderRadius: 2, display: 'flex' }} />
             </div>
-
-            {/* 제목 */}
             <div style={{
               fontSize, fontWeight: 900,
               color: 'white', lineHeight: 1.28,
@@ -469,7 +449,6 @@ export async function GET(req: NextRequest) {
             }}>
               {title}
             </div>
-
             {sub && (
               <div style={{
                 fontSize: 24, color: 'rgba(255,255,255,0.58)',
@@ -480,8 +459,6 @@ export async function GET(req: NextRequest) {
               </div>
             )}
           </div>
-
-          {/* 하단 바 */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '0 68px', height: 66, flexShrink: 0,
@@ -514,7 +491,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 1080×1080 그라디언트 (기존 디자인)
+  // 1080×1080 그라디언트
   return new ImageResponse(
     (
       <div style={{
@@ -554,26 +531,14 @@ export async function GET(req: NextRequest) {
           background: `linear-gradient(90deg, ${t.accent} 0%, ${t.accent2} 55%, ${t.accent}30 100%)`,
         }} />
         <div style={{
-          position: 'absolute', top: 28, left: 80,
-          width: 280, height: 2, display: 'flex',
-          background: `linear-gradient(90deg, ${t.accent}55, transparent)`,
-        }} />
-        <div style={{
-          position: 'absolute', top: 38, left: 80,
-          width: 160, height: 1, display: 'flex',
-          background: `linear-gradient(90deg, ${t.accent}30, transparent)`,
-        }} />
-        <div style={{
           position: 'absolute', top: 56, left: 56,
           width: 52, height: 52, display: 'flex',
-          borderTop: `3px solid ${t.accent}65`,
-          borderLeft: `3px solid ${t.accent}65`,
+          borderTop: `3px solid ${t.accent}65`, borderLeft: `3px solid ${t.accent}65`,
         }} />
         <div style={{
           position: 'absolute', bottom: 108, right: 56,
           width: 52, height: 52, display: 'flex',
-          borderBottom: `3px solid ${t.accent}65`,
-          borderRight: `3px solid ${t.accent}65`,
+          borderBottom: `3px solid ${t.accent}65`, borderRight: `3px solid ${t.accent}65`,
         }} />
         <div style={{
           position: 'absolute', right: 72, top: '50%',
@@ -600,7 +565,7 @@ export async function GET(req: NextRequest) {
                 background: `linear-gradient(135deg, ${t.accent}22, ${t.accent}0a)`,
                 border: `1.5px solid ${t.accent}70`,
                 borderRadius: 100, padding: '13px 36px',
-                boxShadow: `0 0 32px ${t.accent}28, 0 0 64px ${t.accent}10, inset 0 1px 0 rgba(255,255,255,0.08)`,
+                boxShadow: `0 0 32px ${t.accent}28, inset 0 1px 0 rgba(255,255,255,0.08)`,
               }}>
                 <div style={{
                   width: 10, height: 10, borderRadius: '50%',
