@@ -64,6 +64,7 @@ export default function XCollectPage() {
   // ── Tab 1: X 수집 ──────────────────────────────────────────
   const [username, setUsername] = useState('');
   const [count, setCount] = useState(0);
+  const [forceRecollect, setForceRecollect] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -181,10 +182,18 @@ export default function XCollectPage() {
     setCollecting(true);
     setActiveJob(null);
     try {
+      // 강제 재수집: 기존 DB 레코드 먼저 삭제
+      if (forceRecollect) {
+        await fetch('/api/x-collect', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username.trim() }),
+        });
+      }
       const res = await fetch('/api/x-collect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), count }),
+        body: JSON.stringify({ username: username.trim(), count, force: forceRecollect }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '수집 시작 실패');
@@ -462,10 +471,23 @@ export default function XCollectPage() {
                     ))}
                   </div>
                 </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={forceRecollect}
+                    onChange={e => setForceRecollect(e.target.checked)}
+                    className="w-4 h-4 accent-orange-500"
+                  />
+                  <span className="text-xs text-orange-400 font-semibold">
+                    강제 재수집 (기존 데이터 삭제 후 처음부터 다시 수집)
+                  </span>
+                </label>
                 <button onClick={startCollect} disabled={collecting || !username.trim()}
-                  className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold transition-all"
+                  className={`w-full py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold transition-all ${
+                    forceRecollect ? 'bg-orange-600 hover:bg-orange-500' : 'bg-indigo-600 hover:bg-indigo-500'
+                  }`}
                 >
-                  {collecting ? '수집 중...' : '수집 시작'}
+                  {collecting ? '수집 중...' : forceRecollect ? '⚠️ 강제 재수집 시작' : '수집 시작'}
                 </button>
               </div>
             </div>
