@@ -162,7 +162,6 @@ export default function AutoServicePage() {
   // YouTube Shorts 자동 생성
   const [autoShorts, setAutoShorts] = useState(false);
   const [shortsJobs, setShortsJobs] = useState<{ id: string; title: string; status: string; progress: string; video_url?: string; yt_url?: string }[]>([]);
-  const [shortsPolling, setShortsPolling] = useState(false);
   // WordPress 사이트 목록
   const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
@@ -771,6 +770,63 @@ export default function AutoServicePage() {
     await loadArticles();
   };
 
+  const startShortsStream = (payload: { article_id: string; title: string; keyword: string; description: string }) => {
+    const tempId = `tmp_${Date.now()}`;
+    setShortsJobs(prev => [{ id: tempId, title: payload.title, status: 'running', progress: '연결 중...' }, ...prev]);
+
+    (async () => {
+      let jobId = tempId;
+      try {
+        const res = await fetch('/api/shorts/auto-generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const headerJobId = res.headers.get('X-Job-ID');
+        if (headerJobId) {
+          jobId = headerJobId;
+          setShortsJobs(prev => prev.map(j => j.id === tempId ? { ...j, id: jobId } : j));
+        }
+
+        if (!res.body) throw new Error('스트림 없음');
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === 'progress') {
+                setShortsJobs(prev => prev.map(j => j.id === jobId
+                  ? { ...j, status: 'running', progress: evt.msg }
+                  : j));
+              } else if (evt.type === 'done') {
+                setShortsJobs(prev => prev.map(j => j.id === jobId
+                  ? { ...j, status: 'done', progress: '완료!', video_url: evt.video_url, yt_url: evt.yt_url }
+                  : j));
+              } else if (evt.type === 'error') {
+                setShortsJobs(prev => prev.map(j => j.id === jobId
+                  ? { ...j, status: 'error', progress: evt.msg }
+                  : j));
+              }
+            } catch { /* JSON parse 실패 무시 */ }
+          }
+        }
+      } catch (err) {
+        setShortsJobs(prev => prev.map(j => j.id === jobId
+          ? { ...j, status: 'error', progress: String(err) }
+          : j));
+      }
+    })();
+  };
+
   const doPublish = async () => {
     if (!publishArticle) return;
     setPublishing(true);
@@ -791,44 +847,20 @@ export default function AutoServicePage() {
       if (data.error) alert(`발행 오류: ${data.error}`);
       await loadArticles();
 
-      // YouTube Shorts 자동 생성 (백그라운드)
+      // YouTube Shorts 자동 생성 (SSE 스트리밍)
       if (autoShorts) {
-        const r = await fetch('/api/shorts/auto-generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            article_id: publishArticle.id,
-            title: publishArticle.title,
-            keyword: publishArticle.keyword || '',
-            description: publishArticle.meta_description || '',
-          }),
+        startShortsStream({
+          article_id: publishArticle.id,
+          title: publishArticle.title,
+          keyword: publishArticle.keyword || '',
+          description: publishArticle.meta_description || '',
         });
-        const d = await r.json();
-        if (d.job_id) {
-          setShortsJobs(prev => [{ id: d.job_id, title: publishArticle.title, status: 'pending', progress: '대기 중...' }, ...prev]);
-          if (!shortsPolling) startShortsPolling();
-        }
       }
     } catch (err) {
       alert(`발행 실패: ${String(err)}`);
     } finally {
       setPublishing(false);
     }
-  };
-
-  const startShortsPolling = () => {
-    setShortsPolling(true);
-    const poll = async () => {
-      const res = await fetch('/api/shorts/queue');
-      const data = await res.json();
-      if (data.jobs) {
-        setShortsJobs(data.jobs);
-        const hasActive = data.jobs.some((j: { status: string }) => j.status === 'pending' || j.status === 'running');
-        if (hasActive) setTimeout(poll, 8000);
-        else setShortsPolling(false);
-      } else { setShortsPolling(false); }
-    };
-    setTimeout(poll, 3000);
   };
 
   const togglePlatform = (arr: string[], setArr: (v: string[]) => void, id: string) => {
@@ -860,7 +892,6 @@ export default function AutoServicePage() {
               onClick={async () => {
                 await fetch('/api/shorts/queue', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: true }) });
                 setShortsJobs([]);
-                setShortsPolling(false);
               }}
               className="text-xs text-gray-400 hover:text-red-500 transition-colors"
             >
