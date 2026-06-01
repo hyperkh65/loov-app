@@ -186,7 +186,7 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
  ③ 사실 강조형: 핵심 수치나 팩트로 시작하는 임팩트 있는 헤드라인
 콜론(:)·대시(-)·세미콜론(;) 절대 금지. 포커스 키워드 자연스럽게 포함. 숫자 반드시 포함. 40-60자]
 ===META===
-[포커스 키워드 "${keyword}"를 반드시 포함 (없으면 오류). 독자 클릭 유발하는 메타 설명 130-160자. "~에 대해 알아봐요" 같은 표현 금지]
+[첫 문장은 반드시 1인칭 감정·경험·반응으로 시작 (예: "처음 이 소식을 접했을 때 눈을 의심했습니다." / "주변에서 먼저 이야기해줘서 찾아봤는데 생각보다 큰 이야기였습니다."). 두 번째 문장에 포커스 키워드 "${keyword}" 자연스럽게 포함. "상세 분석입니다" / "~에 대해 알아봐요" / "확인해보세요" 같은 표현 절대 금지. 130-160자]
 ===CONTENT===
 <p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[후킹 도입 — 필수 규칙: 첫 문장은 반드시 1인칭 감정·경험·반응으로 시작. 사용 예시: "솔직히 처음 이 소식을 접했을 때 그냥 넘길 뻔했습니다." / "주변에서 먼저 이야기해줘서 찾아봤는데 생각보다 훨씬 큰 이야기였습니다." / "처음엔 그냥 뉴스 하나인 줄 알았는데 알고 보니 달랐습니다." / "이 내용을 처음 접했을 때 눈을 의심했습니다." — 두 번째 문장부터 핵심 사실(수치·날짜 포함)과 포커스 키워드를 자연스럽게 연결. 총 3문장. "~에 대해 알아보겠습니다" 절대 금지]</span></p>
 <p data-ke-size="size16">[참고자료의 핵심 배경과 맥락 3-4문장. 구체적 수치·날짜 포함. 1인칭 시각 유지 ("저는~", "제가~" 등)]</p>
@@ -379,9 +379,9 @@ function injectTitleIntoH3(content: string, title: string): string {
 // 대표이미지를 첫 번째 h3 바로 다음에 삽입
 function insertRepresentativeImageIntoContent(content: string, imageUrl: string, title: string): string {
   const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const repImg = `\n<figure style="text-align:center;margin:20px auto;">`
+  const repImg = `\n<figure style="text-align:center;margin:20px auto;display:block;width:100%;">`
     + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
-    + `style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
+    + `style="width:100%;max-width:100%;height:auto;display:block;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
     + `</figure>\n`;
   return content.replace(/(<\/h3>)/, `$1${repImg}`);
 }
@@ -390,9 +390,9 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
   if (imageUrls.length === 0) return content;
   const imgHtml = (url: string, sectionTitle: string) => {
     const alt = sectionTitle || keyword;
-    return `\n<figure style="text-align:center;margin:25px 0;">` +
+    return `\n<figure style="text-align:center;margin:25px 0;display:block;width:100%;">` +
       `<img src="${url}" alt="${alt}" title="${alt}" ` +
-      `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
+      `style="width:100%;max-width:100%;height:auto;display:block;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
       `loading="lazy"/>` +
       `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption>` +
       `</figure>\n`;
