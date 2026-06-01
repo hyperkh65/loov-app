@@ -64,6 +64,11 @@ const ALLOWED_KEYS = [
   'NOTION_CAMERA_DB_ID',
   'CAMERA_SECRET_PASSWORD',
   'NAS_WEB_BASE_URL',
+  // Instagram / Facebook OAuth 앱 키
+  'INSTAGRAM_APP_ID',
+  'INSTAGRAM_APP_SECRET',
+  'FACEBOOK_APP_ID',
+  'FACEBOOK_APP_SECRET',
 ] as const;
 
 export async function GET() {
