@@ -448,7 +448,22 @@ export async function postToInstagramWithMedia(
   // Standalone Instagram API (graph.instagram.com/v21.0)
   // 연결 토큰은 api.instagram.com/oauth/authorize를 통해 발급된 standalone 토큰
   const meRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id&access_token=${accessToken}`);
-  if (!meRes.ok) throw new Error(`Instagram 사용자 조회 실패: ${await meRes.text()}`);
+  if (!meRes.ok) {
+    const errText = await meRes.text();
+    let errMsg = `Instagram 사용자 조회 실패: ${errText}`;
+    try {
+      const errJson = JSON.parse(errText);
+      const code = errJson?.error?.code;
+      if (code === 190) {
+        errMsg = 'Instagram 액세스 토큰이 만료됐습니다. [설정 → SNS 연결]에서 Instagram을 재연결하세요.';
+      } else if (code === 4 || code === 17 || code === 613) {
+        errMsg = 'Instagram API 호출 한도 초과. 잠시 후 다시 시도하세요.';
+      } else if (errJson?.error?.message) {
+        errMsg = `Instagram 오류: ${errJson.error.message}`;
+      }
+    } catch { /* JSON 파싱 실패 시 원문 사용 */ }
+    throw new Error(errMsg);
+  }
   const { id: igUserId } = await meRes.json();
   if (!igUserId) throw new Error('Instagram 사용자 ID를 가져올 수 없습니다');
 
