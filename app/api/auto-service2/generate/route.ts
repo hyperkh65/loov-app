@@ -433,8 +433,15 @@ function parseAiOutput(raw: string) {
   const rawTitle = extract('TITLE');
   const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle).trim().slice(0, 60);
 
-  // 메타설명: 첫 줄만
-  const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
+  // 메타설명: 첫 줄만, 문장 경계에서 자름
+  const rawMeta = (extract('META').split('\n').find(l => l.trim()) || '').trim();
+  const meta_description = rawMeta.length <= 160 ? rawMeta : (() => {
+    const cut = rawMeta.slice(0, 160);
+    const lastEnd = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!'), cut.lastIndexOf('?'), cut.lastIndexOf('。'));
+    if (lastEnd > 80) return cut.slice(0, lastEnd + 1);
+    const lastSpace = cut.lastIndexOf(' ');
+    return lastSpace > 80 ? cut.slice(0, lastSpace) : cut;
+  })();
 
   // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
   let content = extract('CONTENT');
