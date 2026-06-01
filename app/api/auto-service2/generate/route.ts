@@ -75,7 +75,7 @@ function buildPrompt(keyword: string, newsItems: {title:string;description:strin
 
   return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
 
-[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 한국어 동의어가 있는 영어 단어 절대 사용 금지: marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, trend→트렌드, review→리뷰, digital→디지털, global→글로벌, online→온라인, channel→채널, quality→품질, experience→경험, customer→고객, solution→솔루션, network→네트워크, traffic→트래픽, algorithm→알고리즘, share→공유. 고유 브랜드명(iPhone, Google, YouTube 등)만 예외. ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 마커는 영문 그대로 유지. 위반 시 응답 무효.
+[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어·일본어·러시아어 등 외국어 문자 절대 금지. 한국어로 대체할 수 있는 영어 단어 사용 금지 — 고유 브랜드명(아이폰, 구글, 유튜브 등)·전문용어·고유명사만 예외. 예시: content→내용, data→자료, update→갱신, trend→흐름/동향, platform→누리집/서비스, brand→상표, digital→전산/디지털, global→세계적, online→온라인, channel→경로/채널, quality→품질, solution→해결책, network→연결망, share→공유. ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 마커는 영문 그대로 유지. 위반 시 응답 무효.
 
 ${ANTI_WATERMARK_PROMPT}
 
@@ -109,43 +109,24 @@ ${ANTI_WATERMARK_PROMPT}
 - 모든 단락의 첫 문장에 핵심 결론/사실을 먼저 쓸 것
 - 독자가 첫 문장만 읽어도 그 단락의 핵심을 파악할 수 있어야 함
 
-【경험담/1인칭 원칙 — 필수】
-- 본문 전체에 걸쳐 1인칭 경험담 표현을 최소 5회 이상 자연스럽게 삽입
-- 사용 가능한 경험담 표현: "저도 처음에는~" / "실제로 해보니~" / "직접 경험해보니~"
-- "몇 달 동안 지켜보면서 느낀 점이~" / "생각보다 많은 분들이 놓치는 부분입니다"
-- "광고에서는 잘 이야기하지 않는 부분입니다" / "나중에 알게 된 사실인데~"
-- "저 역시 처음에는 헷갈렸습니다" / "처음에는 별 차이 없을 줄 알았는데 달랐습니다"
-- 경험담 없이 사실만 나열하는 백과사전식 서술 절대 금지
-- 블로그 운영자가 독자에게 이야기하듯 자연스럽고 친근한 구어체 혼용 필수
-
 【소제목 원칙】
 - 소제목은 키워드의 실제 맥락과 성격에 맞게 직접 결정할 것
 - 고정 템플릿 소제목(예: "X의 핵심 특징과 장점", "X 성공 비결") 절대 사용 금지
 - 수집된 참고자료의 핵심 내용을 기반으로 소제목 구성
-- 6개 H2는 논리적 흐름으로 연결되어야 함 (각 섹션이 이전 내용을 발전시킬 것)
+- H2 섹션들은 논리적 흐름으로 연결되어야 함 (각 섹션이 이전 내용을 발전시킬 것)
 
-【E-E-A-T 원칙 - 구글/네이버 품질 평가 기준】
-- Experience(경험): 직접 경험하거나 분석한 것처럼 1인칭 시각과 구체적 묘사 포함
-- Expertise(전문성): 업계 관련자 시각에서 분석, 단순 사실 나열 금지
-- Authoritativeness(권위): 수치·날짜·출처 기반 사실 포함
-- Trustworthiness(신뢰): 과장 없는 균형 잡힌 시각, 장단점 모두 다룰 것
-- 다른 블로그와 차별화되는 독자적 시각이나 분석을 최소 1개 포함
-
-【유용한 콘텐츠 원칙 (Helpful Content)】
-- 사용자 검색 의도를 정확히 해결하는 내용
-- "이 글을 읽으면 실생활에서 바로 활용할 수 있다"는 실용성
-- 정보 나열만 하거나 뻔한 결론을 내는 글 금지
-
-【참고자료 활용 원칙】
-- 제공된 뉴스/블로그 자료의 구체적 내용(날짜, 인물명, 수치, 사건 경위)을 반드시 반영
-- 자료에 없는 내용을 억지로 지어내지 말 것
+【품질 원칙】
+- 전문성: 단순 사실 나열이 아닌 배경·원인·영향을 구체적으로 분석
+- 권위: 수치·날짜·인물명·출처 기반 사실 포함 — 지어내기 금지
+- 신뢰: 과장 없는 균형 잡힌 시각, 장단점 모두 서술
+- 독자에게 실질적으로 유용한 정보 제공 — 검색 의도를 정확히 충족할 것
+- 참고자료의 구체적 내용(날짜, 인물명, 수치, 사건 경위)을 반드시 반영
 
 【문체 원칙】
-- 친근하고 읽기 쉬운 구어체 혼용, 딱딱한 공문체 금지
-- 독자가 "오, 이거 몰랐네!" 하고 무릎 칠 만한 사실 포함
-- 공감 유발 표현, 구체적 사례, 생생한 묘사 활용
-- 섹션 간 자연스러운 연결: 이전 섹션의 문제를 다음 섹션에서 답하는 구조 권장
-- "다음으로~", "이어서~" 같은 기계적 연결어 금지 — 내용으로 자연스럽게 이어질 것
+- 객관적이고 명확한 문체, 불필요한 감탄이나 과장 표현 금지
+- 읽기 쉽고 간결하게 — 불필요한 문장 늘리기 금지
+- 섹션 간 자연스러운 연결: 내용으로 이어지도록 할 것
+- "다음으로~", "이어서~" 같은 기계적 연결어 금지
 
 【CTA 버튼 원칙 — 필수 3개】
 - 도입부 아래, 섹션3 직후, FAQ 직전에 각 1개씩 총 3개 외부링크 버튼 반드시 삽입
@@ -157,12 +138,12 @@ ${ANTI_WATERMARK_PROMPT}
 - 존재하지 않거나 확실하지 않은 URL 사용 금지 — 실제 운영 중인 사이트만 사용
 
 【분량 원칙】
-- 순수 텍스트(HTML 태그 제외) 최소 4000자 이상 필수
-- H2 섹션 6개, 각 섹션 단락 3개 이상
-- 각 단락은 반드시 5문장 이상, 각 H2 첫 단락은 7-8문장
+- 주제의 깊이에 따라 2500~4500자 내외로 유연하게 조절 (억지로 늘리기 금지)
+- H2 섹션 6개, 각 섹션 최소 2개 단락
+- 내용이 충분히 전달되었으면 짧아도 무방 — 불필요한 반복·중복 문장 금지
 
 【키워드 밀도 원칙】
-- 포커스 키워드 "${keyword}"를 본문 전체에 10~15회 자연스럽게 분산 배치 (최소 키워드 밀도 1% 이상)
+- 포커스 키워드 "${keyword}"를 본문 전체에 8~12회 자연스럽게 분산 배치
 - H2 소제목 6개 중 최소 2개에 포커스 키워드를 자연스럽게 포함
 - 같은 문장 안에 키워드 2번 이상 반복 금지 — 유의어·변형어 혼용으로 자연스럽게
 
@@ -180,17 +161,17 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 ══════════════════════════════
 
 ===TITLE===
-[독자를 즉시 끌어당기는 후킹 제목. 아래 스타일 중 내용에 가장 잘 맞는 것 선택:
- ① 경험·반응형: "~알고 나니 놀라웠습니다" / "직접 찾아봤더니 예상과 달랐습니다" / "처음엔 몰랐는데 알고 보니 달랐습니다"
- ② 궁금증 유발형: "~이유가 따로 있었습니다" / "~진짜 이유 3가지" / "~몰랐던 사실"
- ③ 사실 강조형: 핵심 수치나 팩트로 시작하는 임팩트 있는 헤드라인
+[독자를 즉시 끌어당기는 제목. 아래 스타일 중 내용에 가장 잘 맞는 것 선택:
+ ① 궁금증 유발형: "~이유가 따로 있었습니다" / "~진짜 이유 3가지" / "~몰랐던 사실"
+ ② 사실 강조형: 핵심 수치나 팩트로 시작하는 임팩트 있는 헤드라인
+ ③ 정보 제공형: "~총정리" / "~핵심 N가지" 형식의 명확한 정보성 제목
 콜론(:)·대시(-)·세미콜론(;) 절대 금지. 포커스 키워드 자연스럽게 포함. 숫자 반드시 포함. 40-60자]
 ===META===
-[첫 문장은 반드시 1인칭 감정·경험·반응으로 시작 (예: "처음 이 소식을 접했을 때 눈을 의심했습니다." / "주변에서 먼저 이야기해줘서 찾아봤는데 생각보다 큰 이야기였습니다."). 두 번째 문장에 포커스 키워드 "${keyword}" 자연스럽게 포함. "상세 분석입니다" / "~에 대해 알아봐요" / "확인해보세요" 같은 표현 절대 금지. 130-160자]
+[이 글에서 다루는 핵심 정보를 간결하게 요약. 포커스 키워드 "${keyword}" 자연스럽게 포함 필수. "상세 분석입니다" / "~에 대해 알아봐요" / "확인해보세요" 같은 표현 절대 금지. 독자가 클릭하고 싶게 만드는 구체적 문장. 130-160자]
 ===CONTENT===
-<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[후킹 도입 — 필수 규칙: 첫 문장은 반드시 1인칭 감정·경험·반응으로 시작. 사용 예시: "솔직히 처음 이 소식을 접했을 때 그냥 넘길 뻔했습니다." / "주변에서 먼저 이야기해줘서 찾아봤는데 생각보다 훨씬 큰 이야기였습니다." / "처음엔 그냥 뉴스 하나인 줄 알았는데 알고 보니 달랐습니다." / "이 내용을 처음 접했을 때 눈을 의심했습니다." — 두 번째 문장부터 핵심 사실(수치·날짜 포함)과 포커스 키워드를 자연스럽게 연결. 총 3문장. "~에 대해 알아보겠습니다" 절대 금지]</span></p>
-<p data-ke-size="size16">[참고자료의 핵심 배경과 맥락 3-4문장. 구체적 수치·날짜 포함. 1인칭 시각 유지 ("저는~", "제가~" 등)]</p>
-<p data-ke-size="size16">[이 글을 읽으면 독자가 얻을 수 있는 실질적 정보 2-3가지를 구체적으로 예고. 경험담 표현으로 마무리 ("직접 정리해봤습니다" / "찾아보니 이런 사실이 있었습니다" 등)]</p>
+<p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[도입부 — 핵심 사실이나 수치로 시작하여 독자의 관심을 끌 것. 포커스 키워드와 주요 팩트(날짜·수치 포함)를 자연스럽게 연결. 총 2-3문장. "~에 대해 알아보겠습니다" 절대 금지]</span></p>
+<p data-ke-size="size16">[참고자료의 핵심 배경과 맥락 2-3문장. 구체적 수치·날짜 포함]</p>
+<p data-ke-size="size16">[이 글에서 다루는 핵심 내용 2-3가지 간략 예고]</p>
 <div style="background-color:#f5f5f5;padding:15px;border-radius:8px;font-style:italic;margin-bottom:25px;font-size:15px;"><b>[핵심 한줄 요약]</b> [참고자료 기반 2-3문장 요약]</div>
 <div style="background-color:#f8f9fa;border:1px solid #e0e0e0;border-radius:10px;padding:20px 25px;margin:25px 0;">
 <p style="font-size:17px;font-weight:bold;margin:0 0 12px;color:#1a73e8;">📋 목차</p>
@@ -208,41 +189,35 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <div style="text-align:center;margin:30px 0;"><a href="[CTA1: 글 주제/키워드와 직접 관련된 외부 권위 사이트 URL — AI가 판단해 선택]" target="_blank" style="display:inline-block;background:#1a73e8;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA1: 해당 사이트 내용에 맞는 구체적 버튼 텍스트]</a></div>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 기반 소제목 — 핵심 현황/팩트]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장에 핵심 사실. 7-8문장. 구체적 수치/날짜/사례 포함. E-E-A-T: 직접 분석한 것처럼 서술]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 5-6문장. 전문가 또는 업계 관련자 시각]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 실생활 영향: 이것이 독자에게 미치는 구체적 영향 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장에 핵심 사실. 구체적 수치/날짜/사례 포함. 배경과 원인 분석]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 내용: 독자에게 실질적으로 유용한 정보. 불필요한 문장 늘리기 금지]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
 <h2 id="section2" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. [참고자료 기반 소제목 — 원인/배경/맥락]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장에 핵심 사실. 7-8문장. 왜 이런 상황이 발생했는지 인과관계 설명]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화: 역사적·구조적 배경 5-6문장. 다른 글에서 다루지 않는 독자적 분석 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장에 핵심 사실. 왜 이런 상황이 발생했는지 인과관계 설명]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[역사적·구조적 배경. 독자적 분석 포함]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
 <h2 id="section3" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. [참고자료 기반 소제목 — 구체적 내용/방법/사례]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 7-8문장. 독자가 바로 활용할 수 있는 구체적 내용]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[실용적 분석 5-6문장. 단계별이나 사례 중심 서술]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 독자가 바로 활용할 수 있는 구체적 내용]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[실용적 분석. 단계별이나 사례 중심 서술]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 <div style="text-align:center;margin:30px 0;"><a href="[CTA2: CTA1과 다른 외부 권위 사이트 URL — 글 내용의 이 시점에서 독자에게 가장 유용한 사이트]" target="_blank" style="display:inline-block;background:#6a1b9a;color:#fff;padding:14px 28px;border-radius:8px;font-size:16px;font-weight:bold;text-decoration:none;">[CTA2: 해당 사이트 내용에 맞는 구체적 버튼 텍스트]</a></div>
 
 <h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 기반 소제목 — 비교/차이/선택 기준]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 7-8문장. 비교 대상이나 선택 기준 명확히 제시]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[균형 잡힌 분석 5-6문장. 장단점 모두 서술]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 비교 대상이나 선택 기준 명확히 제시]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[균형 잡힌 분석. 장단점 모두 서술]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
 <h2 id="section5" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. [참고자료 기반 소제목 — 주의사항/문제점/한계]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 7-8문장. 독자가 놓치기 쉬운 리스크나 주의점]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석 5-6문장. 실제 사례 기반]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 독자가 놓치기 쉬운 리스크나 주의점]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[실제 사례 기반 분석]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
 <h2 id="section6" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>6. [참고자료 기반 소제목 — 전망/결론/실천 방향]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 7-8문장. 앞으로의 전망과 독자가 취해야 할 행동]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 전망 5-6문장. 업계 전문가 시각으로 분석]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 실천 방향 5-6문장. 구체적 행동 지침 포함]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식 첫 문장. 앞으로의 전망과 독자에게 필요한 정보]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[구체적 전망 분석. 독자가 실제로 참고할 수 있는 행동 지침]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 1-2문장]</div>
 
 <div class="single-summary-card" style="border:2px solid #ccc;padding:20px;border-radius:8px;max-width:800px;background-color:#ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin:20px auto;">
 <div class="card-header" style="display:flex;align-items:center;border-bottom:2px solid #1a73e8;padding-bottom:10px;margin-bottom:10px;"><span style="font-size:24px;color:#1a73e8;margin-right:10px;">💡</span><h3 style="font-size:20px;color:#1a73e8;margin:0;" data-ke-size="size23">핵심 요약</h3></div>
