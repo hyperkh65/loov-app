@@ -30,8 +30,10 @@ export async function DELETE(req: NextRequest) {
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const { platform, platform_user_id } = await req.json();
-  const query = supabase.from('sns_connections').delete().eq('user_id', user.id).eq('platform', platform);
-  if (platform_user_id) query.eq('platform_user_id', platform_user_id);
+  let query = supabase.from('sns_connections').delete().eq('user_id', user.id).eq('platform', platform);
+  if (platform_user_id) query = query.eq('platform_user_id', platform_user_id);
+  const { error } = await query;
 
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
 }
