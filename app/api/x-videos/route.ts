@@ -8,6 +8,18 @@ export async function GET(req: NextRequest) {
   const username = req.nextUrl.searchParams.get('username') || undefined;
   const offset = parseInt(req.nextUrl.searchParams.get('offset') || '0');
 
+  const tweetId = req.nextUrl.searchParams.get('tweet_id') || undefined;
+
+  // tweet_id 단건 조회 (원문 텍스트 조회용)
+  if (tweetId) {
+    const { data } = await supabase
+      .from('bossai_x_videos')
+      .select('id, username, tweet_text, tweet_url')
+      .or(`tweet_url.ilike.%/status/${tweetId}%,filename.ilike.${tweetId}%`)
+      .limit(1);
+    return NextResponse.json({ items: data || [] });
+  }
+
   let query = supabase
     .from('bossai_x_videos')
     .select('*', { count: 'exact' })

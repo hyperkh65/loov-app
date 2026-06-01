@@ -304,7 +304,36 @@ export default function XCollectPage() {
     setAiLoading(true);
     setEditedText('');
 
-    const prompt = `다음 X(트위터) 영상 파일명을 참고해 SNS 발행용 글을 한국어로 써줘.
+    // 파일명에서 tweet ID 추출 (예: 20425588802009166315_1.mp4 → 20425588802009166315)
+    const tweetIdMatch = selectedVideo.filename.match(/^(\d+)/);
+    const tweetId = tweetIdMatch?.[1] || '';
+
+    // DB에서 원문 트윗 텍스트 조회
+    let originalTweetText = '';
+    if (tweetId) {
+      try {
+        const dbRes = await fetch(`/api/x-videos?tweet_id=${tweetId}`);
+        if (dbRes.ok) {
+          const dbData = await dbRes.json();
+          originalTweetText = dbData.items?.[0]?.tweet_text || '';
+        }
+      } catch { /* 조회 실패 시 무시 */ }
+    }
+
+    const prompt = originalTweetText
+      ? `다음 X(트위터) 원문을 한국어 SNS 발행글로 번역·재작성해줘.
+
+원문 트윗: ${originalTweetText}
+계정: @${selectedVideo.username}
+
+조건:
+- 원문 내용을 정확히 반영해 자연스러운 한국어로
+- 짧고 임팩트있게 (200자 이내)
+- 해시태그 3~5개 (원문 해시태그 번역 포함)
+- 이모지 적극 활용
+- URL 링크 포함하지 마 (영상이 직접 첨부됨)
+- 텍스트만 출력`
+      : `다음 X(트위터) 영상 파일명을 참고해 SNS 발행용 글을 한국어로 써줘.
 
 파일명: ${selectedVideo.filename}
 계정: @${selectedVideo.username}
