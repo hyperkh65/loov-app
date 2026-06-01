@@ -451,7 +451,7 @@ export default function AutoServicePage() {
       // gen-thumbnail API (satori 서버사이드 매거진 카드 디자인)
       const params = new URLSearchParams({
         title: thumbTitle,
-        keyword: previewArticle?.keyword || previewArticle?.focus_keyword || '',
+        keyword: previewArticle?.keyword || '',
         color: thumbColor,
         bg: thumbSelectedBg,
         size: 'square',
