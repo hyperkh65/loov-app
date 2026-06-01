@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
               <div style={{
                 fontSize: fontSizeMag, fontWeight: 900,
                 color: 'white', lineHeight: 1.26,
-                wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap',
+                wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap', width: '100%',
                 letterSpacing: '-0.025em',
               }}>
                 {title}
@@ -301,7 +301,7 @@ export async function GET(req: NextRequest) {
             <div style={{
               fontSize: fontSizeMagSq, fontWeight: 900,
               color: 'white', lineHeight: 1.26,
-              wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap',
+              wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap', width: '100%',
               letterSpacing: '-0.025em',
             }}>
               {title}
@@ -463,7 +463,7 @@ export async function GET(req: NextRequest) {
             <div style={{
               fontSize, fontWeight: 900,
               color: 'white', lineHeight: 1.28,
-              wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap',
+              wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap', width: '100%',
               textShadow: `0 0 60px rgba(0,0,0,0.9), 0 4px 24px rgba(0,0,0,0.75)`,
               letterSpacing: '-0.02em',
             }}>
@@ -621,7 +621,7 @@ export async function GET(req: NextRequest) {
           <div style={{
             fontSize, fontWeight: 900,
             color: 'white', lineHeight: 1.28,
-            wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap',
+            wordBreak: 'keep-all', display: 'flex', flexWrap: 'wrap', width: '100%',
             textShadow: `0 0 60px rgba(0,0,0,0.9), 0 4px 24px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.5)`,
             letterSpacing: '-0.02em',
           }}>
