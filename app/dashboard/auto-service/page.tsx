@@ -572,8 +572,8 @@ export default function AutoServicePage() {
         const doc = parser.parseFromString(prev, 'text/html');
         const imgs = doc.querySelectorAll(`img[src="${CSS.escape(src)}"]`);
         imgs.forEach(img => {
-          const figure = img.closest('figure');
-          if (figure) figure.remove();
+          const wrapper = img.closest('figure') || img.closest('p');
+          if (wrapper) wrapper.remove();
           else img.remove();
         });
         return doc.body.innerHTML;
@@ -617,7 +617,7 @@ export default function AutoServicePage() {
   // 이미지를 본문 H2 소제목 다음 위치에 삽입 (이미지 없는 첫 번째 H2 뒤)
   const insertImageToContent = (imageUrl: string, altText: string) => {
     const alt = altText.replace(/"/g, '');
-    const imgHtml = `\n<figure style="text-align:center;margin:25px 0;"><img src="${imageUrl}" alt="${alt}" title="${alt}" style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/><figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption></figure>\n`;
+    const imgHtml = `\n<p style="text-align:center;margin:25px 0;width:100%;"><img src="${imageUrl}" alt="${alt}" title="${alt}" width="100%" style="width:100%;max-width:100%;height:auto;display:block;margin:0 auto;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/><span style="display:block;font-size:12px;color:#888;margin-top:6px;text-align:center;">${alt}</span></p>\n`;
 
     setEditContent(prev => {
       // H2 태그 목록과 위치 파악
@@ -626,9 +626,9 @@ export default function AutoServicePage() {
 
       for (const match of h2Matches) {
         const h2End = (match.index ?? 0) + match[0].length;
-        // H2 다음 600자 내에 <figure 없으면 이 위치에 삽입
+        // H2 다음 600자 내에 <figure 또는 <p style 없으면 이 위치에 삽입
         const nextChunk = prev.substring(h2End, h2End + 600);
-        if (!/<figure/i.test(nextChunk)) {
+        if (!/<figure/i.test(nextChunk) && !/<p style[^>]*><img/i.test(nextChunk)) {
           return prev.substring(0, h2End) + imgHtml + prev.substring(h2End);
         }
       }
