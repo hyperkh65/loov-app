@@ -490,8 +490,8 @@ export async function postToInstagramWithMedia(
     if (!containerRes.ok) throw new Error(parseInstagramError(await containerRes.text()));
     const { id: containerId } = await containerRes.json();
 
-    // 영상은 처리 완료까지 대기
-    if (isVideo) await waitInstagramVideoReady(containerId, accessToken);
+    // 이미지/영상 모두 FINISHED 될 때까지 대기 (이미지 30초, 영상 90초)
+    await waitInstagramVideoReady(containerId, accessToken, isVideo ? 90000 : 30000);
 
     const pubRes = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media_publish`, {
       method: 'POST',
