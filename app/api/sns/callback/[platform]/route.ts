@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { Platform } from '@/lib/sns/platforms';
+import { getSetting } from '@/lib/get-setting';
 
 export async function GET(
   req: NextRequest,
@@ -112,8 +113,12 @@ export async function GET(
       }
       case 'instagram': {
         // Instagram API (standalone) - 별도 앱 ID/Secret 사용
-        const igAppId = process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID;
-        const igAppSecret = process.env.INSTAGRAM_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+        const [_igId, _igSec, _fbId, _fbSec] = await Promise.all([
+          getSetting('INSTAGRAM_APP_ID'), getSetting('INSTAGRAM_APP_SECRET'),
+          getSetting('FACEBOOK_APP_ID'), getSetting('FACEBOOK_APP_SECRET'),
+        ]);
+        const igAppId = _igId || process.env.INSTAGRAM_APP_ID || _fbId || process.env.FACEBOOK_APP_ID;
+        const igAppSecret = _igSec || process.env.INSTAGRAM_APP_SECRET || _fbSec || process.env.FACEBOOK_APP_SECRET;
         const shortTokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { PLATFORMS, Platform, generateState, generateCodeVerifier, generateCodeChallenge } from '@/lib/sns/platforms';
+import { getSetting } from '@/lib/get-setting';
 
 export async function GET(
   _req: NextRequest,
@@ -18,17 +19,24 @@ export async function GET(
     return NextResponse.json({ error: '지원하지 않는 플랫폼' }, { status: 400 });
   }
 
-  // 환경변수 확인
+  // DB 설정 → 환경변수 순으로 읽기
+  const [igAppId, igAppSecret, fbAppId, fbAppSecret] = await Promise.all([
+    getSetting('INSTAGRAM_APP_ID'),
+    getSetting('INSTAGRAM_APP_SECRET'),
+    getSetting('FACEBOOK_APP_ID'),
+    getSetting('FACEBOOK_APP_SECRET'),
+  ]);
+
   const missingEnv: Record<string, boolean> = {
     twitter:   !process.env.TWITTER_CLIENT_ID   || !process.env.TWITTER_CLIENT_SECRET,
     threads:   !process.env.THREADS_APP_ID      || !process.env.THREADS_APP_SECRET,
-    facebook:  !process.env.FACEBOOK_APP_ID     || !process.env.FACEBOOK_APP_SECRET,
-    instagram: !(process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID),
+    facebook:  !(fbAppId || process.env.FACEBOOK_APP_ID) || !(fbAppSecret || process.env.FACEBOOK_APP_SECRET),
+    instagram: !(igAppId || fbAppId || process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID),
     linkedin:  !process.env.LINKEDIN_CLIENT_ID  || !process.env.LINKEDIN_CLIENT_SECRET,
   };
   if (missingEnv[platform]) {
     return NextResponse.redirect(
-      `${siteUrl}/dashboard/sns?error=${encodeURIComponent('SNS 앱 키가 설정되지 않았습니다. Vercel 환경변수를 등록해 주세요.')}`
+      `${siteUrl}/dashboard/sns?error=${encodeURIComponent('SNS 앱 키가 설정되지 않았습니다. 설정 → API 키에서 Instagram App ID/Secret을 등록하세요.')}`
     );
   }
 
@@ -80,10 +88,9 @@ export async function GET(
       break;
     }
     case 'instagram': {
-      // Instagram API (standalone) - 별도 앱 ID 사용
-      const igAppId = process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID;
+      const resolvedIgAppId = igAppId || process.env.INSTAGRAM_APP_ID || fbAppId || process.env.FACEBOOK_APP_ID;
       authUrl = new URL('https://api.instagram.com/oauth/authorize');
-      authUrl.searchParams.set('client_id', igAppId!);
+      authUrl.searchParams.set('client_id', resolvedIgAppId!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', PLATFORMS.instagram.scopes.join(','));
       authUrl.searchParams.set('response_type', 'code');
