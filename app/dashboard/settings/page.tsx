@@ -48,7 +48,7 @@ export default function SettingsPage() {
   const [naverMsg, setNaverMsg] = useState('');
 
   // API 키 관리 state
-  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', OPENROUTER_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+  const [apiKeys, setApiKeys] = useState({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', OPENROUTER_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', INSTAGRAM_APP_ID: '', INSTAGRAM_APP_SECRET: '', FACEBOOK_APP_ID: '', FACEBOOK_APP_SECRET: '' });
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [apiKeysSaving, setApiKeysSaving] = useState(false);
   const [apiKeysMsg, setApiKeysMsg] = useState('');
@@ -345,7 +345,7 @@ export default function SettingsPage() {
     });
     if (r.ok) {
       setApiKeysMsg('✅ 저장 완료');
-      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', OPENROUTER_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' });
+      setApiKeys({ GEMINI_API_KEY: '', OPENAI_API_KEY: '', CLAUDE_API_KEY: '', OPENROUTER_API_KEY: '', PIXABAY_API_KEY: '', PEXELS_API_KEY: '', GOOGLE_SEARCH_API_KEY: '', GOOGLE_SEARCH_CX: '', EDGE_TTS_SERVER_URL: '', EDGE_TTS_SECRET: '', SUPERTONIC_SERVER_URL: '', SUPERTONIC_SECRET: '', N8N_WEBHOOK_SECRET: '', GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', INSTAGRAM_APP_ID: '', INSTAGRAM_APP_SECRET: '', FACEBOOK_APP_ID: '', FACEBOOK_APP_SECRET: '' });
       const updated: Record<string, boolean> = { ...apiKeyStatus };
       Object.entries(apiKeys).forEach(([k, v]) => { if (v.trim()) updated[k] = true; });
       setApiKeyStatus(updated);
@@ -522,8 +522,12 @@ export default function SettingsPage() {
 
               {([
                 { key: 'N8N_WEBHOOK_SECRET', label: 'n8n Webhook Secret', desc: 'n8n 자동화 연동 시크릿' },
-                { key: 'GOOGLE_CLIENT_ID', label: 'Google Client ID', desc: 'Google Calendar OAuth (Vercel 환경변수로도 설정 가능)' },
+                { key: 'GOOGLE_CLIENT_ID', label: 'Google Client ID', desc: 'Google Calendar OAuth' },
                 { key: 'GOOGLE_CLIENT_SECRET', label: 'Google Client Secret', desc: 'Google Calendar OAuth 시크릿' },
+                { key: 'INSTAGRAM_APP_ID', label: 'Instagram App ID', desc: 'Meta Developer → Instagram 앱 ID (인스타그램 연결용)' },
+                { key: 'INSTAGRAM_APP_SECRET', label: 'Instagram App Secret', desc: 'Meta Developer → Instagram 앱 시크릿' },
+                { key: 'FACEBOOK_APP_ID', label: 'Facebook App ID', desc: 'Meta Developer → Facebook 앱 ID (Instagram 없으면 폴백)' },
+                { key: 'FACEBOOK_APP_SECRET', label: 'Facebook App Secret', desc: 'Meta Developer → Facebook 앱 시크릿' },
               ] as const).map(({ key, label, desc }) => (
                 <div key={key}>
                   <div className="flex items-center justify-between mb-1.5">
