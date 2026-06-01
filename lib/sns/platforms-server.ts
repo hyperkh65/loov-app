@@ -220,10 +220,17 @@ export async function postToTwitterWithMedia(
   return { id: (await res.json()).data.id };
 }
 
+// URL 내 한글 등 비ASCII 문자를 percent-encoding으로 변환 (Meta API 요구사항)
+function encodeNonAsciiUrl(url: string): string {
+  return url.replace(/[^\x00-\x7F]/g, (c) => encodeURIComponent(c));
+}
+
 // R2 URL → litterbox.catbox.moe에 임시 업로드 (72h) 후 URL 반환
 // Meta 서버가 loov.co.kr(한국 ISP IP)에 접근 불가 → 신뢰된 글로벌 CDN 경유
 async function toMetaSafeUrl(url: string): Promise<string> {
   if (!url) return url;
+  // 한글 파일명 등 비ASCII 문자 먼저 인코딩 (Meta URI 요구사항)
+  url = encodeNonAsciiUrl(url);
   const isR2 = url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com');
   if (!isR2) return url;
 
