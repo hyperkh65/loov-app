@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
   let imageUrl: string | null = null;
   try {
-    imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme, bg_image_url || undefined, undefined, sub || undefined);
+    imageUrl = await generateAndUploadThumbnail(title, keyword, color_scheme, bg_image_url || undefined, undefined, sub || undefined, 'square');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });

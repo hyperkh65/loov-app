@@ -9,7 +9,7 @@ export async function generateAndUploadThumbnail(
   bgImageUrl?: string,
   site?: string,
   sub?: string,
-  size: 'blog' | 'square' = 'blog',
+  size: 'blog' | 'square' = 'square',
 ): Promise<string> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr'
 
