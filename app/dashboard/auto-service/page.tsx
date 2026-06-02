@@ -1585,8 +1585,8 @@ export default function AutoServicePage() {
                     {thumbBgImages.length > 0 && (
                       <div className="grid grid-cols-3 gap-1.5">
                         {thumbBgImages.map(img => (
-                          <button key={img.id} onClick={() => setThumbSelectedBg(img.thumb || img.url)}
-                            className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${thumbSelectedBg === (img.thumb || img.url) ? 'border-blue-500 ring-2 ring-blue-400' : 'border-transparent hover:border-gray-400'}`}>
+                          <button key={img.id} onClick={() => setThumbSelectedBg(img.url)}
+                            className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${thumbSelectedBg === img.url ? 'border-blue-500 ring-2 ring-blue-400' : 'border-transparent hover:border-gray-400'}`}>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={img.thumb} alt="" className="w-full h-full object-cover" />
                           </button>
@@ -1827,7 +1827,7 @@ export default function AutoServicePage() {
                           if (replacingImgSrc) {
                             replaceImage(replacingImgSrc, img.url);
                           } else {
-                            setThumbSelectedBg(img.thumb || img.url);
+                            setThumbSelectedBg(img.url);
                             setThumbBgImages([]);
                           }
                         }}
