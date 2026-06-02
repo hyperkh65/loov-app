@@ -267,7 +267,7 @@ export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }
             className={`flex-shrink-0 text-sm leading-none transition-all rounded px-0.5 hover:scale-110 ${
               isFav
                 ? 'text-yellow-400 hover:text-yellow-300'
-                : 'text-slate-600 opacity-0 group-hover:opacity-100 hover:text-yellow-400'
+                : 'text-slate-600 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-yellow-400'
             }`}
             title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
           >
