@@ -69,6 +69,9 @@ const ALLOWED_KEYS = [
   'INSTAGRAM_APP_SECRET',
   'FACEBOOK_APP_ID',
   'FACEBOOK_APP_SECRET',
+  // Twitter/X OAuth 2.0 앱 키
+  'TWITTER_CLIENT_ID',
+  'TWITTER_CLIENT_SECRET',
 ] as const;
 
 export async function GET() {
