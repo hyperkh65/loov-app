@@ -1916,8 +1916,8 @@ export default function AutoServicePage() {
 
       {/* ===== 발행 모달 ===== */}
       {publishArticle && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={e => { if (e.target === e.currentTarget && !publishing) setPublishArticle(null); }}>
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto" onClick={e => { if (e.target === e.currentTarget && !publishing) setPublishArticle(null); }}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl my-auto">
             <div className="p-4 border-b border-gray-200">
               <h2 className="font-semibold text-gray-900">🚀 승인 & 발행</h2>
               <p className="text-sm text-gray-500 mt-0.5 line-clamp-1">{publishArticle.title}</p>
