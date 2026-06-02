@@ -20,16 +20,21 @@ export async function GET(
   }
 
   // DB 설정 → 환경변수 순으로 읽기
-  const [igAppId, igAppSecret, fbAppId, fbAppSecret] = await Promise.all([
+  const [igAppId, igAppSecret, fbAppId, fbAppSecret, twClientId, twClientSecret] = await Promise.all([
     getSetting('INSTAGRAM_APP_ID'),
     getSetting('INSTAGRAM_APP_SECRET'),
     getSetting('FACEBOOK_APP_ID'),
     getSetting('FACEBOOK_APP_SECRET'),
+    getSetting('TWITTER_CLIENT_ID'),
+    getSetting('TWITTER_CLIENT_SECRET'),
   ]);
 
+  const resolvedTwClientId = twClientId || process.env.TWITTER_CLIENT_ID;
+  const resolvedTwClientSecret = twClientSecret || process.env.TWITTER_CLIENT_SECRET;
+
   const missingEnvMsg: Record<string, string | null> = {
-    twitter:   (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET)
-                 ? 'Twitter Client ID/Secret이 없습니다. NAS .env에 TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET을 추가하세요.' : null,
+    twitter:   (!resolvedTwClientId || !resolvedTwClientSecret)
+                 ? 'Twitter Client ID/Secret이 없습니다. 설정 → API 키에서 Twitter Client ID/Secret을 등록하세요.' : null,
     threads:   (!process.env.THREADS_APP_ID || !process.env.THREADS_APP_SECRET)
                  ? 'Threads App ID/Secret이 없습니다.' : null,
     facebook:  (!(fbAppId || process.env.FACEBOOK_APP_ID) || !(fbAppSecret || process.env.FACEBOOK_APP_SECRET))
@@ -68,7 +73,7 @@ export async function GET(
       const challenge = await generateCodeChallenge(codeVerifier!);
       authUrl = new URL('https://twitter.com/i/oauth2/authorize');
       authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('client_id', process.env.TWITTER_CLIENT_ID!);
+      authUrl.searchParams.set('client_id', resolvedTwClientId!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', PLATFORMS.twitter.scopes.join(' '));
       authUrl.searchParams.set('state', state);

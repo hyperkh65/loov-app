@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
+import { getSetting } from '@/lib/get-setting';
 import type { Platform } from '@/lib/sns/platforms';
 
 // Threads 댓글 대기(15s) + 재시도(최대 30s) + 영상처리(30s) → 여유있게 설정
@@ -62,14 +63,17 @@ export async function POST(req: NextRequest) {
       const needsRefresh = expiresAt < Date.now() + 5 * 60 * 1000; // 만료 5분 전부터 갱신
       if (needsRefresh) {
         try {
-          const creds = Buffer.from(`${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`).toString('base64');
+          const [dbTwId, dbTwSecret] = await Promise.all([getSetting('TWITTER_CLIENT_ID'), getSetting('TWITTER_CLIENT_SECRET')]);
+          const twId = dbTwId || process.env.TWITTER_CLIENT_ID || '';
+          const twSecret = dbTwSecret || process.env.TWITTER_CLIENT_SECRET || '';
+          const creds = Buffer.from(`${twId}:${twSecret}`).toString('base64');
           const refreshRes = await fetch('https://api.twitter.com/2/oauth2/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${creds}` },
             body: new URLSearchParams({
               grant_type: 'refresh_token',
               refresh_token: conn.refresh_token,
-              client_id: process.env.TWITTER_CLIENT_ID!,
+              client_id: twId,
             }),
           });
           if (refreshRes.ok) {
