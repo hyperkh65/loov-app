@@ -62,6 +62,23 @@ function stripForeignChars(text: string): string {
     .trim();
 }
 
+// 허용 영어 패턴 (약어·브랜드·단위)
+const ALLOWED_LATIN = /^(AI|SEO|IT|CEO|MOU|GDP|PC|TV|DNA|GPU|CPU|RAM|API|SDK|LED|GPS|SNS|PR|QR|VR|AR|NFT|ETF|IPO|vs|No|Dr|Mr|Mrs|[0-9]+[a-zA-Z]{1,3}|[A-Z]{1,5})$/;
+
+// 한국어 문장 속 비-영어 유럽어 단어 제거 (포르투갈어·폴란드어·스페인어 등)
+function removeEuropeanWords(text: string): string {
+  return text.replace(/(<[^>]*>)|([^<]+)/g, (match, tag, textNode) => {
+    if (tag) return tag;
+    if (!textNode) return match;
+    return (textNode as string).replace(/\b[a-zA-ZÀ-ɏ]{5,}\b/g, (word: string) => {
+      if (ALLOWED_LATIN.test(word)) return word;
+      if (/[À-ɏ]/.test(word)) return ''; // 악센트 문자 → 유럽어
+      if (/[bcdfghjklmnpqrstvwxyz]{4,}/i.test(word)) return ''; // 자음 4연속 → 비영어 패턴
+      return word;
+    });
+  });
+}
+
 // 한국어 동의어가 있는 영어 단어를 강제 치환
 // ※ content/data/post/image/video는 HTML 속성·출력 마커와 충돌하므로 제외
 const ENGLISH_TO_KOREAN_MAP: [RegExp, string][] = [
@@ -411,9 +428,9 @@ export async function generateText(
     catch (e) { errors.push(`Claude: ${e}`); return false; }
   };
 
-  // ── 결과 정제: think 블록 → 이스케이프 복원 → 외국어 제거 → 영어 치환 ──
+  // ── 결과 정제: think 블록 → 이스케이프 복원 → 외국어 제거 → 유럽어 제거 → 영어 치환 ──
   const clean = (r: string | false) =>
-    r ? replaceEnglishWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))) : false;
+    r ? replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r))))) : false;
 
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
   let result: string | false = false;
