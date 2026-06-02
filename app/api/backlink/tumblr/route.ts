@@ -5,6 +5,7 @@ import crypto from 'crypto';
 
 export const maxDuration = 30;
 
+// OAuth 1.0a HMAC-SHA1 (form body params included in signature)
 function buildOAuth1Header(
   method: string,
   url: string,
@@ -12,11 +13,12 @@ function buildOAuth1Header(
   consumerSecret: string,
   token: string,
   tokenSecret: string,
+  bodyParams: Record<string, string> = {},
 ): string {
   const nonce = crypto.randomBytes(16).toString('hex');
   const timestamp = Math.floor(Date.now() / 1000).toString();
 
-  const params: Record<string, string> = {
+  const oauthParams: Record<string, string> = {
     oauth_consumer_key: consumerKey,
     oauth_nonce: nonce,
     oauth_signature_method: 'HMAC-SHA1',
@@ -25,9 +27,11 @@ function buildOAuth1Header(
     oauth_version: '1.0',
   };
 
-  const paramString = Object.keys(params)
+  // Signature base includes OAuth params + body params (for form-encoded requests)
+  const allParams: Record<string, string> = { ...oauthParams, ...bodyParams };
+  const paramString = Object.keys(allParams)
     .sort()
-    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`)
+    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(allParams[k])}`)
     .join('&');
 
   const baseString = [
@@ -39,23 +43,23 @@ function buildOAuth1Header(
   const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(tokenSecret)}`;
   const signature = crypto.createHmac('sha1', signingKey).update(baseString).digest('base64');
 
-  params['oauth_signature'] = signature;
+  oauthParams['oauth_signature'] = signature;
 
-  const headerValue = 'OAuth ' + Object.keys(params)
+  const headerValue = 'OAuth ' + Object.keys(oauthParams)
     .sort()
-    .map(k => `${encodeURIComponent(k)}="${encodeURIComponent(params[k])}"`)
+    .map(k => `${encodeURIComponent(k)}="${encodeURIComponent(oauthParams[k])}"`)
     .join(', ');
 
   return headerValue;
 }
 
-// POST: Tumblr에 링크 포스트 발행
+// POST: Tumblr에 링크 포스트 발행 (레거시 API - form-encoded, OAuth 서명에 body params 포함)
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { title, meta_description, keyword, canonical_url, representative_image_url } = await req.json() as {
+  const { title, meta_description, keyword, canonical_url } = await req.json() as {
     title: string;
     meta_description: string;
     keyword: string;
@@ -84,43 +88,61 @@ export async function POST(req: NextRequest) {
     'news',
   ].filter(Boolean);
 
-  const postUrl = `https://api.tumblr.com/v2/blog/${blogName}/posts`;
+  // 레거시 API endpoint (form-encoded, OAuth 1.0a 호환성 최고)
+  const postUrl = `https://api.tumblr.com/v2/blog/${blogName}/post`;
 
-  const body: Record<string, unknown> = {
-    content: [
-      ...(representative_image_url ? [{
-        type: 'image',
-        media: [{ type: 'image/jpeg', url: representative_image_url }],
-        alt_text: title,
-      }] : []),
-      { type: 'text', text: title, subtype: 'heading1' },
-      { type: 'text', text: meta_description || '' },
-      { type: 'link', url: canonical_url, title, description: meta_description || '' },
-    ],
-    tags,
+  const formParams: Record<string, string> = {
+    type: 'link',
+    url: canonical_url,
+    title: title.slice(0, 250),
+    description: (meta_description || '').slice(0, 500),
+    tags: tags.join(','),
     state: 'published',
   };
 
   try {
-    const authHeader = buildOAuth1Header('POST', postUrl, consumerKey, consumerSecret, accessToken, accessTokenSecret);
+    // form body params를 OAuth 서명에 포함 (레거시 API 필수)
+    const authHeader = buildOAuth1Header(
+      'POST', postUrl,
+      consumerKey, consumerSecret,
+      accessToken, accessTokenSecret,
+      formParams,
+    );
+
+    // body도 동일한 인코딩 사용
+    const bodyStr = Object.entries(formParams)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
 
     const res = await fetch(postUrl, {
       method: 'POST',
       headers: {
         Authorization: authHeader,
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify(body),
+      body: bodyStr,
       signal: AbortSignal.timeout(20_000),
     });
 
+    const responseText = await res.text();
+
     if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: `Tumblr 오류: ${err.slice(0, 200)}` }, { status: 500 });
+      let friendlyError = `Tumblr 오류 (${res.status})`;
+      try {
+        const errJson = JSON.parse(responseText);
+        const code = errJson?.errors?.[0]?.code;
+        const detail = errJson?.errors?.[0]?.detail || errJson?.meta?.msg;
+        if (code === 1008 || detail?.includes('authorize')) {
+          friendlyError = 'Tumblr OAuth 인증 실패 — 설정 페이지에서 Consumer Key/Secret, Access Token/Secret 4개를 다시 확인해주세요';
+        } else if (detail) {
+          friendlyError = `Tumblr 오류: ${detail}`;
+        }
+      } catch { /* ignore */ }
+      return NextResponse.json({ error: friendlyError }, { status: 500 });
     }
 
-    const data = await res.json();
-    const postId = data.response?.id_string || data.response?.id;
+    const data = JSON.parse(responseText);
+    const postId = data.response?.id_string || String(data.response?.id || '');
     const resultUrl = postId ? `https://${blogName}.tumblr.com/post/${postId}` : undefined;
     return NextResponse.json({ success: true, url: resultUrl });
   } catch (err) {
