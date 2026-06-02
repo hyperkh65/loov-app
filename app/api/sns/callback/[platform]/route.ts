@@ -54,13 +54,21 @@ export async function GET(
     let platformDisplayName: string;
     let platformAvatar: string | null = null;
 
+    // DB 설정 → 환경변수 순으로 Twitter 키 읽기
+    const [dbTwClientId, dbTwClientSecret] = await Promise.all([
+      getSetting('TWITTER_CLIENT_ID'),
+      getSetting('TWITTER_CLIENT_SECRET'),
+    ]);
+    const twClientId = dbTwClientId || process.env.TWITTER_CLIENT_ID || '';
+    const twClientSecret = dbTwClientSecret || process.env.TWITTER_CLIENT_SECRET || '';
+
     switch (platform as Platform) {
       case 'twitter': {
-        const creds = Buffer.from(`${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`).toString('base64');
+        const creds = Buffer.from(`${twClientId}:${twClientSecret}`).toString('base64');
         const tokenRes = await fetch('https://api.twitter.com/2/oauth2/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${creds}` },
-          body: new URLSearchParams({ code, grant_type: 'authorization_code', client_id: process.env.TWITTER_CLIENT_ID!, redirect_uri: redirectUri, code_verifier: oauthState.code_verifier! }),
+          body: new URLSearchParams({ code, grant_type: 'authorization_code', client_id: twClientId, redirect_uri: redirectUri, code_verifier: oauthState.code_verifier! }),
         });
         const tokenData = await tokenRes.json();
         if (!tokenRes.ok) throw new Error(JSON.stringify(tokenData));
