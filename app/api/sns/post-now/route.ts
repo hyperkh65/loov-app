@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   for (const platform of platforms as Platform[]) {
     const { data: conn } = await supabase
       .from('sns_connections')
-      .select('access_token, platform_user_id, is_active')
+      .select('access_token, refresh_token, token_expires_at, platform_user_id, is_active')
       .eq('user_id', user.id)
       .eq('platform', platform)
       .eq('is_active', true)
@@ -55,10 +55,54 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    // Twitter OAuth 2.0 토큰 만료 시 자동 갱신
+    let activeToken = conn.access_token;
+    if (platform === 'twitter' && conn.refresh_token) {
+      const expiresAt = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
+      const needsRefresh = expiresAt < Date.now() + 5 * 60 * 1000; // 만료 5분 전부터 갱신
+      if (needsRefresh) {
+        try {
+          const creds = Buffer.from(`${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`).toString('base64');
+          const refreshRes = await fetch('https://api.twitter.com/2/oauth2/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${creds}` },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: conn.refresh_token,
+              client_id: process.env.TWITTER_CLIENT_ID!,
+            }),
+          });
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json() as { access_token: string; refresh_token?: string; expires_in?: number };
+            activeToken = refreshData.access_token;
+            const newExpires = refreshData.expires_in
+              ? new Date(Date.now() + refreshData.expires_in * 1000).toISOString()
+              : null;
+            await supabase.from('sns_connections').update({
+              access_token: activeToken,
+              refresh_token: refreshData.refresh_token || conn.refresh_token,
+              token_expires_at: newExpires,
+              updated_at: new Date().toISOString(),
+            }).eq('user_id', user.id).eq('platform', 'twitter');
+          } else {
+            const errText = await refreshRes.text();
+            results.push({ platform, success: false, error: `Twitter 토큰 갱신 실패 — 재연결 필요: ${errText.slice(0, 100)}` });
+            await supabase.from('sns_connections').update({ is_active: false }).eq('user_id', user.id).eq('platform', 'twitter');
+            await supabase.from('sns_post_logs').insert({
+              user_id: user.id, template_id: templateId, platform, status: 'failed', error_message: 'token_refresh_failed',
+            });
+            continue;
+          }
+        } catch (refreshErr) {
+          results.push({ platform, success: false, error: `Twitter 토큰 갱신 오류: ${String(refreshErr)}` });
+          continue;
+        }
+      }
+    }
 
     try {
       const { id: platformPostId } = await postToPlatformWithMedia(
-        platform, conn.access_token, conn.platform_user_id || '', content, media_urls,
+        platform, activeToken, conn.platform_user_id || '', content, media_urls,
       );
       results.push({ platform, success: true });
       await supabase.from('sns_post_logs').insert({
@@ -70,7 +114,7 @@ export async function POST(req: NextRequest) {
       if (thread_items?.length && platformPostId) {
         // Threads: 게시물 인덱싱 완료될 때까지 폴링 (최대 60초)
         // 고정 대기 대신 API로 직접 접근 가능 여부를 확인
-        if (platform === 'threads') await waitThreadsPostAccessible(platformPostId, conn.access_token);
+        if (platform === 'threads') await waitThreadsPostAccessible(platformPostId, activeToken);
 
         let prevId = platformPostId;
         let commentSuccess = true;
@@ -87,7 +131,7 @@ export async function POST(req: NextRequest) {
             try {
               const targetId = platform === 'twitter' ? prevId : platformPostId;
               const { id: commentId } = await postCommentOnOwnPost(
-                platform, conn.access_token, conn.platform_user_id || '',
+                platform, activeToken, conn.platform_user_id || '',
                 targetId, item.content, item.media_urls,
               );
               if (platform === 'twitter') prevId = commentId;
