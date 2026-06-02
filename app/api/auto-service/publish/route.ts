@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { generateText } from '@/lib/auto-blog-ai';
 
 export const maxDuration = 600;
 
@@ -60,6 +61,41 @@ async function resolveTermId(
     if (create.ok) return (await create.json()).id;
   } catch { /* skip */ }
   return null;
+}
+
+// AI로 SNS 후킹성 반말 캡션 생성
+async function generateSnsCaption(
+  title: string,
+  metaDescription: string,
+  keyword: string,
+  preferModel: string = 'qwen3',
+): Promise<string> {
+  const prompt = `다음 블로그 글에 대한 SNS 게시물 문구를 작성해.
+
+제목: ${title}
+키워드: ${keyword}
+요약: ${metaDescription || title}
+
+[작성 규칙]
+- 반말 사용 (예: ~야, ~잖아, ~했대, ~봐봐, ~래, ~거야)
+- 첫 문장은 독자가 클릭하고 싶게 만드는 후킹 멘트 (놀라운 사실, 궁금증 유발, 핵심 임팩트)
+- 핵심 정보 1~2개를 임팩트 있게 압축
+- 이모지 2~3개 적절히 포함
+- 150자 이내로 컴팩트하게
+- 사실 왜곡·과장 없음
+- 특정 인물/단체 비난·조롱 없음
+- URL, 해시태그, 따옴표 미포함
+
+문구만 출력해.`;
+
+  try {
+    const result = await generateText(prompt, preferModel);
+    const cleaned = result.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
+    if (cleaned.length > 15) return cleaned;
+  } catch { /* fallback */ }
+
+  // fallback: 원본 그대로
+  return `${title}\n${metaDescription || ''}`.trim();
 }
 
 // 본문 HTML에서 첫 번째 이미지 URL 추출
@@ -271,6 +307,13 @@ export async function POST(req: NextRequest) {
         sns_platforms.push(...validPlatforms);
       }
 
+      // ── AI 후킹성 반말 SNS 캡션 생성 ──────────────────────────
+      const aiCaption = await generateSnsCaption(
+        article.title,
+        article.meta_description || '',
+        article.keyword || article.focus_keyword || '',
+      );
+
       // 블로그 URL 수집: 현재 요청 결과 + 이미 DB에 저장된 기존 발행 URL 합산
       const existingBlogUrls = Object.entries(article.published_urls || {})
         .filter(([k]) => !k.startsWith('sns_'))
@@ -289,7 +332,7 @@ export async function POST(req: NextRequest) {
 
       // Instagram: 뉴스카드 자동 생성 후 발행
       if (instagramIncluded) {
-        const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
+        const instagramCaption = `${aiCaption}${blogLinkText}`.trim();
         let instagramMedia = defaultMediaUrls;
         try {
           const newsCardUrl = await generateAndUploadThumbnail(
@@ -301,7 +344,7 @@ export async function POST(req: NextRequest) {
         const res = await fetch(`${baseUrl}/api/sns/post-now`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({ content: snsContent, platforms: ['instagram'], media_urls: instagramMedia }),
+          body: JSON.stringify({ content: instagramCaption, platforms: ['instagram'], media_urls: instagramMedia }),
         });
         const data = await res.json();
         if (data.results) {
@@ -311,9 +354,17 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Threads 외 나머지 플랫폼: 블로그 URL 포함하여 발행
+      // Threads 외 나머지 플랫폼 (Twitter, Facebook 등): AI 캡션 + 블로그 링크
       if (otherPlatforms.length > 0) {
-        const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
+        // Twitter는 280자 제한 (링크 포함 ~23자 소모) → 캡션 240자 이내로 자름
+        const hasTwitter = otherPlatforms.includes('twitter');
+        const twitterCaption = hasTwitter
+          ? aiCaption.slice(0, 200) + (blogLinkText ? blogLinkText : '')
+          : `${aiCaption}${blogLinkText}`.trim();
+        const snsContent = hasTwitter && otherPlatforms.length === 1
+          ? twitterCaption
+          : `${aiCaption}${blogLinkText}`.trim();
+
         const res = await fetch(`${baseUrl}/api/sns/post-now`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
@@ -333,7 +384,6 @@ export async function POST(req: NextRequest) {
 
       // Threads: 본문에 URL 없이 발행 → 블로그 URL은 댓글(reply)로 추가
       if (threadsIncluded) {
-        const threadsContent = `${article.title}\n\n${article.meta_description || ''}`.trim();
         const threadItems = blogUrls.length > 0
           ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
           : [];
@@ -341,7 +391,7 @@ export async function POST(req: NextRequest) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
           body: JSON.stringify({
-            content: threadsContent,
+            content: aiCaption,
             platforms: ['threads'],
             media_urls: (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })(),
             thread_items: threadItems,

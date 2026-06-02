@@ -1283,33 +1283,50 @@ export default function AutoServicePage() {
                     )}
                   </div>
                   <div className="flex flex-col gap-2 flex-shrink-0">
-                    {article.status !== 'generating' && (
-                    <button onClick={() => openPreview(article)}
-                      className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-                      미리보기/편집
-                    </button>
-                    )}
-                    {article.status === 'scheduled' ? (
+                    {article.status === 'generating' ? (
                       <>
-                        <button onClick={() => openSchedule(article)}
-                          className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">
-                          ⏰ 예약 수정
-                        </button>
-                        <button onClick={() => cancelSchedule(article.id)}
-                          className="px-3 py-1.5 text-xs bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300">
-                          취소
+                        {Date.now() - new Date(article.created_at).getTime() > 30 * 60 * 1000 && (
+                          <span className="text-xs text-orange-500 text-center">⚠️ 30분 초과</span>
+                        )}
+                        <button
+                          onClick={async () => {
+                            if (!confirm('생성 중인 글을 삭제하시겠습니까?')) return;
+                            await fetch(`/api/auto-service/articles?id=${article.id}`, { method: 'DELETE' });
+                            setArticles(prev => prev.filter(a => a.id !== article.id));
+                          }}
+                          className="px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 border border-red-200">
+                          삭제
                         </button>
                       </>
                     ) : (
                       <>
-                        <button onClick={() => openPublish(article)}
-                          className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
-                          ✅ 승인 & 발행
+                        <button onClick={() => openPreview(article)}
+                          className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                          미리보기/편집
                         </button>
-                        <button onClick={() => openSchedule(article)}
-                          className="px-3 py-1.5 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-medium">
-                          ⏰ 예약 발행
-                        </button>
+                        {article.status === 'scheduled' ? (
+                          <>
+                            <button onClick={() => openSchedule(article)}
+                              className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">
+                              ⏰ 예약 수정
+                            </button>
+                            <button onClick={() => cancelSchedule(article.id)}
+                              className="px-3 py-1.5 text-xs bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300">
+                              취소
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => openPublish(article)}
+                              className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
+                              ✅ 승인 & 발행
+                            </button>
+                            <button onClick={() => openSchedule(article)}
+                              className="px-3 py-1.5 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-medium">
+                              ⏰ 예약 발행
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -2043,22 +2060,30 @@ export default function AutoServicePage() {
             ) : (
               <div className="p-4 space-y-3">
                 <p className="font-medium text-gray-800">발행 결과</p>
-                {Object.entries(publishResult).map(([platform, result]) => (
-                  <div key={platform} className={`flex items-center justify-between p-3 rounded-lg ${result.success ? 'bg-green-50' : 'bg-red-50'}`}>
-                    <span className="text-sm font-medium">{platform}</span>
+                {Object.entries(publishResult).map(([platform, result]) => {
+                  const errMsg = result.error || '';
+                  const friendlyError = errMsg.includes('CreditsDepeted') || errMsg.includes('credits')
+                    ? 'X(트위터) API 크레딧 부족 — developer.twitter.com에서 Basic 플랜($100/월) 필요'
+                    : errMsg.includes('1008') || (errMsg.includes('Unauthorized') && errMsg.includes('Tumblr'))
+                    ? 'Tumblr 인증 실패 — 설정 페이지에서 OAuth 키 4개 재확인'
+                    : errMsg.length > 100 ? errMsg.slice(0, 100) + '…' : errMsg;
+                  return (
+                  <div key={platform} className={`flex items-start justify-between p-3 rounded-lg ${result.success ? 'bg-green-50' : 'bg-red-50'}`}>
+                    <span className="text-sm font-medium shrink-0 mr-2">{platform}</span>
                     {result.success ? (
                       <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span className="text-green-600 text-sm">✅ 성공</span>
                         {result.url && <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">보기</a>}
-                        {result.error && <span className="text-orange-500 text-xs w-full text-right">⚠️ {result.error}</span>}
+                        {result.error && <span className="text-orange-500 text-xs w-full text-right">⚠️ {friendlyError}</span>}
                       </div>
                     ) : (
                       <div className="text-right">
-                        <span className="text-red-600 text-xs">❌ {result.error || '실패'}</span>
+                        <span className="text-red-600 text-xs">❌ {friendlyError || '실패'}</span>
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 <button onClick={() => setPublishArticle(null)} className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg text-sm mt-2">닫기</button>
               </div>
             )}
