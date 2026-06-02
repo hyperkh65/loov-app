@@ -404,6 +404,7 @@ export async function POST(req: NextRequest) {
     clientGlobalAIKey?: string; clientGlobalAIModel?: string;
     article_id?: string; _job_token?: string;
   };
+  // 기본 모델을 qwen3.5로 변경 (qwen3보다 품질 높음)
 
   // BOT_SECRET 우회 (clawdbot 연동)
   const botSecret = process.env.BOT_SECRET || process.env.CRON_SECRET;
@@ -426,7 +427,7 @@ export async function POST(req: NextRequest) {
   }
   const supabase = (isBot || isInternalJob) ? createAdminClient() : await createClient();
 
-  const { keyword, ai_model = 'qwen3', clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, article_id } = body;
+  const { keyword, ai_model = 'qwen3.5', clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, article_id } = body;
   if (!keyword?.trim()) return NextResponse.json({ error: '키워드를 입력하세요' }, { status: 400 });
 
   // 1. 뉴스/블로그 수집

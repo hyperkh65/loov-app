@@ -341,10 +341,11 @@ export async function generateText(
   // ── Ollama Cloud ────────────────────────────────────────
   const tryOllama = async (mainModel: string) => {
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
+    // 큰 모델(고품질) 우선 — 블로그 장문 생성에 최적화
     const OLLAMA_FALLBACKS = [
-      'qwen3.5', 'qwen3', 'qwen3-coder', 'llama3.3', 'llama3.2',
-      'mistral', 'mistral-small3.1', 'gemma3', 'deepseek-r1',
-      'phi4', 'phi4-mini', 'ministral-3',
+      'llama3.3', 'qwen3.5', 'kimi-k2', 'deepseek-r1',
+      'qwen3', 'qwen3-coder', 'llama3.2',
+      'mistral-small3.1', 'gemma3', 'phi4', 'phi4-mini', 'ministral-3', 'mistral',
     ];
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
@@ -435,7 +436,7 @@ export async function generateText(
   // ── 나머지 provider 순서대로 fallback ─────────────────────
   const fallbacks: Array<() => Promise<string | false>> = [];
 
-  if (!isOllamaPreferred) fallbacks.push(() => tryOllama('qwen3'));
+  if (!isOllamaPreferred) fallbacks.push(() => tryOllama('qwen3.5'));
   if (!preferModel.startsWith('gemini') && preferModel !== 'gemini') fallbacks.push(tryGemini);
   if (!preferModel.startsWith('claude')) fallbacks.push(() => tryClaude());
   if (preferModel !== 'openrouter') fallbacks.push(tryOpenRouter);
