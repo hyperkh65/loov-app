@@ -475,8 +475,8 @@ export default function AutoServicePage() {
     if (!previewArticle) return;
     setThumbGenerating(true);
     try {
-      // sources에서 수집된 이미지 추출 (본문 HTML 첫 img는 대표이미지 자신일 수 있음)
-      const bgImageUrl = previewArticle.sources?.find(s => s.type === 'collected_image')?.link || undefined;
+      // 사용자가 선택한 배경 우선, 없으면 sources 첫 번째 이미지
+      const bgImageUrl = thumbSelectedBg || previewArticle.sources?.find(s => s.type === 'collected_image')?.link || undefined;
 
       const res = await fetch('/api/auto-service/thumbnail', {
         method: 'POST',
@@ -1693,7 +1693,7 @@ export default function AutoServicePage() {
                               className="w-28 h-20 object-cover rounded-lg border border-amber-200"
                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                             />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 flex flex-col items-center justify-center gap-1 transition-all rounded-lg opacity-0 group-hover:opacity-100">
+                            <div className="absolute inset-0 bg-black/40 md:bg-black/0 md:group-hover:bg-black/50 flex flex-col items-center justify-center gap-1 transition-all rounded-lg opacity-100 md:opacity-0 md:group-hover:opacity-100">
                               <button
                                 onClick={async () => {
                                   if (downloadingUrl) return;

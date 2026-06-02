@@ -54,8 +54,8 @@ export async function GET(req: NextRequest) {
   const sub     = searchParams.get('sub')     || '';
   const size    = searchParams.get('size')    || 'blog';
 
-  const W = size === 'square' ? 1080 : 1200;
-  const H = size === 'square' ? 1080 : 628;
+  const W = 1200;
+  const H = size === 'square' ? 1200 : 628;
   const isBlog = size !== 'square';
 
   const t = THEMES[color] || THEMES.blue;
@@ -214,13 +214,13 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1080×1080 풀블리드 매거진
-    const fsSq = len <= 8 ? 110 : len <= 14 ? 94 : len <= 20 ? 82 : len <= 28 ? 72 : len <= 36 ? 64 : 56;
+    // 1200×1200 풀블리드 매거진
+    const fsSq = len <= 8 ? 122 : len <= 14 ? 104 : len <= 20 ? 90 : len <= 28 ? 80 : len <= 36 ? 70 : 62;
 
     return new ImageResponse(
       (
         <div style={{
-          width: 1080, height: 1080,
+          width: 1200, height: 1200,
           display: 'flex',
           position: 'relative', overflow: 'hidden',
           fontFamily: fontData ? 'NotoSansKR' : 'sans-serif',
@@ -229,7 +229,7 @@ export async function GET(req: NextRequest) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={bgUrl} alt="" style={{
             position: 'absolute', inset: 0,
-            width: 1080, height: 1080,
+            width: 1200, height: 1200,
             objectFit: 'cover', objectPosition: 'center 25%',
           }} />
 
@@ -346,7 +346,7 @@ export async function GET(req: NextRequest) {
   // ── 그라디언트 디자인 (배경 이미지 없을 때) ──────────────────────────
   const fontSize = isBlog
     ? (len <= 8 ? 78 : len <= 14 ? 68 : len <= 20 ? 58 : len <= 28 ? 50 : len <= 36 ? 44 : 42)
-    : (len <= 8 ? 112 : len <= 14 ? 96 : len <= 20 ? 82 : len <= 28 ? 70 : len <= 36 ? 62 : 56);
+    : (len <= 8 ? 124 : len <= 14 ? 107 : len <= 20 ? 91 : len <= 28 ? 78 : len <= 36 ? 68 : 60);
 
   if (isBlog) {
     return new ImageResponse(
@@ -491,11 +491,11 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 1080×1080 그라디언트
+  // 1200×1200 그라디언트
   return new ImageResponse(
     (
       <div style={{
-        width: 1080, height: 1080,
+        width: 1200, height: 1200,
         display: 'flex', flexDirection: 'column',
         background: `linear-gradient(148deg, ${t.g1} 0%, ${t.g2} 48%, ${t.g3} 100%)`,
         position: 'relative', overflow: 'hidden',
