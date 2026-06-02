@@ -159,6 +159,9 @@ export default function AutoServicePage() {
   const [selSns, setSelSns] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
+  // 백링크 플랫폼
+  const [selBacklink, setSelBacklink] = useState<string[]>([]);
+  const [backlinkStatus, setBacklinkStatus] = useState<{ medium: boolean; tumblr: boolean }>({ medium: false, tumblr: false });
   // YouTube Shorts 자동 생성
   const [autoShorts, setAutoShorts] = useState(false);
   const [shortsJobs, setShortsJobs] = useState<{ id: string; title: string; status: string; progress: string; video_url?: string; yt_url?: string }[]>([]);
@@ -233,6 +236,16 @@ export default function AutoServicePage() {
     fetch('/api/wordpress/sites')
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setWpSites(d); });
+    // 백링크 연결 상태 확인
+    Promise.allSettled([
+      fetch('/api/backlink/medium').then(r => r.json()),
+      fetch('/api/backlink/tumblr').then(r => r.json()),
+    ]).then(([med, tum]) => {
+      setBacklinkStatus({
+        medium: med.status === 'fulfilled' && med.value?.connected === true,
+        tumblr: tum.status === 'fulfilled' && tum.value?.configured === true,
+      });
+    });
     loadModels();
   }, [loadModels]);
 
@@ -791,6 +804,7 @@ export default function AutoServicePage() {
           blog_platforms: selBlog,
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
+          backlink_platforms: selBacklink,
         }),
       });
       const data = await res.json();
@@ -1927,6 +1941,33 @@ export default function AutoServicePage() {
                       <label key={p.id} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                         <input type="checkbox" checked={selSns.includes(p.id)} onChange={() => togglePlatform(selSns, setSelSns, p.id)} className="w-4 h-4" />
                         <span className="text-sm">{p.icon} {p.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 백링크 자동 포스팅 */}
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                  <p className="text-sm font-medium text-blue-800 mb-2">🔗 백링크 자동 포스팅 (SEO)</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { id: 'medium', label: 'Medium', icon: 'Ⓜ️', desc: 'DA 95 — 영문 요약 자동 생성', ok: backlinkStatus.medium },
+                      { id: 'tumblr', label: 'Tumblr', icon: '📝', desc: 'DA 74 — 링크 포스팅', ok: backlinkStatus.tumblr },
+                    ].map(p => (
+                      <label key={p.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer ${p.ok ? 'bg-white' : 'bg-gray-100 opacity-60'}`}>
+                        <input type="checkbox"
+                          checked={selBacklink.includes(p.id)}
+                          disabled={!p.ok}
+                          onChange={() => setSelBacklink(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])}
+                          className="w-4 h-4" />
+                        <span className="text-base">{p.icon}</span>
+                        <div className="flex-1">
+                          <span className="text-sm font-medium text-gray-800">{p.label}</span>
+                          <span className="text-xs text-gray-500 ml-1.5">{p.desc}</span>
+                        </div>
+                        {!p.ok && (
+                          <a href="/dashboard/settings" className="text-xs text-blue-600 underline flex-shrink-0">설정</a>
+                        )}
                       </label>
                     ))}
                   </div>

@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     userId = user.id;
   }
 
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [] } = await req.json();
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [] } = await req.json();
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -357,6 +357,40 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       results.sns = { success: false, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  // ── 백링크 발행 (Medium, Tumblr) ──────────────────────────────
+  if (backlink_platforms.length > 0) {
+    // 발행된 블로그 URL 중 첫 번째를 canonical_url로 사용
+    const firstBlogUrl = Object.values(results).find(r => r.success && r.url)?.url
+      || Object.values(article.published_urls || {}).find(Boolean) as string | undefined;
+
+    const backlinkPayload = {
+      title: article.title,
+      meta_description: article.meta_description || '',
+      keyword: article.keyword || '',
+      canonical_url: firstBlogUrl || `${baseUrl}/`,
+      representative_image_url: article.representative_image_url || undefined,
+    };
+
+    await Promise.allSettled(
+      (backlink_platforms as string[]).map(async (platform) => {
+        try {
+          const res = await fetch(`${baseUrl}/api/backlink/${platform}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+            body: JSON.stringify(backlinkPayload),
+            signal: AbortSignal.timeout(60_000),
+          });
+          const data = await res.json();
+          results[`backlink_${platform}`] = res.ok
+            ? { success: true, url: data.url }
+            : { success: false, error: data.error || '백링크 실패' };
+        } catch (err) {
+          results[`backlink_${platform}`] = { success: false, error: String(err) };
+        }
+      })
+    );
   }
 
   const anySuccess = Object.values(results).some(r => r.success);
