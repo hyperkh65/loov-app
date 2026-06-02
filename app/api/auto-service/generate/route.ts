@@ -80,6 +80,8 @@ function buildPrompt(keyword: string, newsItems: {title:string;description:strin
 
 [링크 금지 규칙 - 절대 준수] <a href> 태그 및 모든 URL 링크 절대 생성 금지. "더 알아보기", "공식 홈페이지", "바로가기" 버튼/링크 생성 절대 금지. 외부 사이트로 연결되는 어떤 링크도 본문에 삽입하지 말 것. 위반 시 응답 무효.
 
+[반복 금지 규칙 - 절대 준수] 각 섹션(H2)은 반드시 서로 다른 고유한 내용으로 작성. 이전 섹션에서 이미 쓴 문장·단락을 다음 섹션에 그대로 복사하거나 유사하게 반복하는 것 절대 금지. 각 단락의 첫 문장이 다른 단락의 첫 문장과 동일하면 안 됨. 위반 시 응답 무효.
+
 ${ANTI_WATERMARK_PROMPT}
 
 수집된 최신 뉴스와 블로그 자료를 철저히 분석하여, 그 내용에 기반한 정확하고 흥미로운 블로그 글을 작성합니다.
@@ -351,6 +353,18 @@ function fixCorruptedMarkers(text: string): string {
     .replace(/===\s*키워드s?\s*===/gi, '===KEYWORDS===');
 }
 
+function removeDuplicateParagraphs(content: string): string {
+  const seen = new Set<string>();
+  return content.replace(/<p([^>]*)>([\s\S]*?)<\/p>/gi, (match, _attrs, inner) => {
+    const text = inner.replace(/<[^>]+>/g, '').trim();
+    if (text.length < 20) return match; // 짧은 단락은 그대로 유지
+    const key = text.slice(0, 80); // 앞 80자로 중복 판별
+    if (seen.has(key)) return ''; // 중복 제거
+    seen.add(key);
+    return match;
+  });
+}
+
 function parseAiOutput(raw: string) {
   // 마크다운 코드블록 제거
   const cleaned = fixCorruptedMarkers(raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, ''));
@@ -373,6 +387,8 @@ function parseAiOutput(raw: string) {
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
   // AI 할루시네이션 링크 제거: <a href="...">텍스트</a> → 텍스트만 남김
   content = content.replace(/<a\s[^>]*>/gi, '').replace(/<\/a>/gi, '');
+  // 중복 단락 제거: 동일한 내용의 <p> 태그가 반복되면 첫 번째만 유지
+  content = removeDuplicateParagraphs(content);
 
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
