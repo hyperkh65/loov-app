@@ -82,7 +82,7 @@ export default function AutoServicePage() {
 
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
-    enabled: false, ai_model: 'qwen3', max_per_run: 3,
+    enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
     custom_keywords: [], last_run_at: null, last_run_status: null, last_run_count: 0,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string }[]>([
