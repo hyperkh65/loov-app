@@ -20,6 +20,7 @@ async function getMediumUserId(token: string): Promise<string | null> {
 async function generateEnglishSummary(title: string, metaDesc: string, keyword: string): Promise<string> {
   try {
     const result = await callAI({
+      provider: 'ollama',
       messages: [
         {
           role: 'user',
