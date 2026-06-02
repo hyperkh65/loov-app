@@ -22,9 +22,133 @@ interface SNSConnection {
 }
 
 
+function BacklinkSettingsPanel() {
+  const [mediumToken, setMediumToken] = useState('');
+  const [tumblrToken, setTumblrToken] = useState('');
+  const [tumblrBlog, setTumblrBlog] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [status, setStatus] = useState<{ medium_configured: boolean; tumblr_configured: boolean; tumblr_blog: string }>({
+    medium_configured: false, tumblr_configured: false, tumblr_blog: '',
+  });
+
+  useEffect(() => {
+    fetch('/api/backlink/settings')
+      .then(r => r.json())
+      .then(d => { if (d && !d.error) { setStatus(d); setTumblrBlog(d.tumblr_blog || ''); } });
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setMsg('');
+    const body: Record<string, string> = { tumblr_blog: tumblrBlog };
+    if (mediumToken) body.medium_token = mediumToken;
+    if (tumblrToken) body.tumblr_token = tumblrToken;
+    const res = await fetch('/api/backlink/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setMsg('✅ 저장 완료');
+      setMediumToken('');
+      setTumblrToken('');
+      const r = await fetch('/api/backlink/settings').then(x => x.json());
+      if (!r.error) setStatus(r);
+    } else {
+      setMsg('❌ ' + (data.error || '저장 실패'));
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-900 space-y-1">
+        <p className="font-bold">🔗 백링크 자동 포스팅 설정</p>
+        <p>블로그 글 발행 시 Medium·Tumblr에 영문 요약 + 원문 링크를 자동 포스팅하여 고품질 백링크를 생성합니다.</p>
+      </div>
+
+      {/* Medium */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-900">Ⓜ️ Medium</h3>
+            <p className="text-xs text-gray-500 mt-0.5">DA 95 — 영문 요약 AI 자동 생성 + 원문 링크 canonical URL 설정</p>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.medium_configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+            {status.medium_configured ? '✅ 연결됨' : '미설정'}
+          </span>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-600 mb-1 block">Integration Token</label>
+          <input
+            type="password"
+            value={mediumToken}
+            onChange={e => setMediumToken(e.target.value)}
+            placeholder={status.medium_configured ? '••••••••••••••• (변경 시 입력)' : 'medium.com → Settings → Integration tokens → 생성'}
+            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            <a href="https://medium.com/me/settings/security" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">medium.com → Settings → Security → Integration tokens</a>에서 발급
+          </p>
+        </div>
+      </div>
+
+      {/* Tumblr */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-900">📝 Tumblr</h3>
+            <p className="text-xs text-gray-500 mt-0.5">DA 74 — 링크 포스팅 + 태그 백링크</p>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.tumblr_configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+            {status.tumblr_configured ? `✅ ${status.tumblr_blog}` : '미설정'}
+          </span>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">OAuth Access Token</label>
+            <input
+              type="password"
+              value={tumblrToken}
+              onChange={e => setTumblrToken(e.target.value)}
+              placeholder={status.tumblr_configured ? '••••••••••••••• (변경 시 입력)' : 'Tumblr OAuth Access Token'}
+              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">블로그 이름 (username)</label>
+            <input
+              type="text"
+              value={tumblrBlog}
+              onChange={e => setTumblrBlog(e.target.value)}
+              placeholder="예: myblog (myblog.tumblr.com)"
+              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <div className="p-3 bg-gray-50 rounded-xl text-xs text-gray-600 space-y-1">
+            <p className="font-semibold text-gray-700">Tumblr OAuth Token 발급 방법</p>
+            <p>1. <a href="https://www.tumblr.com/oauth/apps" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">tumblr.com/oauth/apps</a> → 앱 등록</p>
+            <p>2. Consumer Key / Secret 발급 후</p>
+            <p>3. OAuth 1.0a 인증 → Access Token / Secret 발급</p>
+            <p className="text-orange-600">※ Tumblr는 OAuth 과정이 복잡합니다. 간편하게는 <strong>Medium만</strong> 사용해도 충분합니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
+        {saving ? '저장 중...' : '💾 저장'}
+      </button>
+      {msg && <p className={`text-sm font-medium ${msg.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>{msg}</p>}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { companySettings, updateCompanySettings, employees, updateEmployeeAI } = useStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat' | 'erp' | 'camera' | 'myconfig'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'company' | 'plan' | 'sns' | 'notion' | 'google' | 'coupang' | 'apikeys' | 'naver' | 'gallery' | 'led' | 'backup' | 'wechat' | 'erp' | 'camera' | 'myconfig' | 'backlink'>('ai');
   const [isServiceDomain, setIsServiceDomain] = useState(false);
   const [snsConnections, setSnsConnections] = useState<SNSConnection[]>([]);
 
@@ -372,7 +496,7 @@ export default function SettingsPage() {
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-100 pb-4">
           {[
             ...(isServiceDomain ? [['myconfig', '🔧 내 연동 설정']] : []),
-            ['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['camera', '📷 카메라'], ['erp', '📊 ERP DB 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원'],
+            ['ai', '🤖 AI 설정'], ['apikeys', '🔑 API 키'], ['naver', '🟢 네이버 API'], ['backlink', '🔗 백링크'], ['camera', '📷 카메라'], ['erp', '📊 ERP DB 설정'], ['company', '🏢 회사 정보'], ['plan', '💳 구독 플랜'], ['sns', '🌐 SNS 연결'], ['notion', '📔 Notion 연동'], ['google', '📅 Google 캘린더'], ['coupang', '🛒 쿠팡파트너스'], ['gallery', '🖼️ 갤러리'], ['led', '💡 LED 인텔'], ['wechat', '💬 위챗 백업'], ['backup', '💾 백업/복원'],
           ].map(([v, l]) => (
             <button key={v} onClick={() => setActiveTab(v as typeof activeTab)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
@@ -2202,6 +2326,8 @@ export default function SettingsPage() {
 
         {/* LED 인텔 탭 */}
         {activeTab === 'erp' && <ErpDbSettingsPanel />}
+
+        {activeTab === 'backlink' && <BacklinkSettingsPanel />}
 
         {activeTab === 'led' && (
           <div className="space-y-6 max-w-2xl">
