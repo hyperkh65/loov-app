@@ -36,7 +36,7 @@ const SNS_PLATFORMS = [
 ];
 
 type Tab = 'auto' | 'drafts' | 'history';
-type Status = 'draft' | 'approved' | 'published' | 'failed' | 'scheduled';
+type Status = 'draft' | 'approved' | 'published' | 'failed' | 'scheduled' | 'generating';
 
 interface Article {
   id: string;
@@ -74,6 +74,7 @@ const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
   published: { label: '발행완료', color: 'bg-green-100 text-green-800' },
   failed: { label: '실패', color: 'bg-red-100 text-red-800' },
   scheduled: { label: '예약됨', color: 'bg-purple-100 text-purple-800' },
+  generating: { label: '생성 중', color: 'bg-sky-100 text-sky-800' },
 };
 
 export default function AutoServicePage() {
@@ -267,6 +268,21 @@ export default function AutoServicePage() {
     if (tab === 'history') loadArticles('published');
   }, [tab, loadArticles]);
 
+  // generating 상태 항목이 있으면 5초마다 폴링해서 완료 여부 확인
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const hasGenerating = articles.some(a => a.status === 'generating');
+    if (hasGenerating && !pollingRef.current) {
+      pollingRef.current = setInterval(() => { void loadArticles(); }, 5000);
+    } else if (!hasGenerating && pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    return () => {
+      if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+    };
+  }, [articles, loadArticles]);
+
   // 설정 저장
   const saveSettings = async (newSettings: Partial<AutoSettings>) => {
     setSavingSettings(true);
@@ -381,25 +397,19 @@ export default function AutoServicePage() {
     setGenerating(true);
     setGeneratingKw(keyword);
     try {
-      const res = await fetch('/api/auto-service/generate', {
+      // 백그라운드 잡 시작 — 즉시 article_id 반환, 페이지 이탈해도 서버에서 계속 실행
+      const res = await fetch('/api/auto-service/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keyword, ai_model: autoSettings.ai_model, ...getAiKeys() }),
       });
-      const rawText = await res.text();
-      let data: { error?: string; thumbnail_error?: string };
-      try { data = JSON.parse(rawText); } catch {
-        throw new Error(`서버 응답 오류 (${res.status}) — AI 생성이 너무 오래 걸렸거나 서버 에러입니다. 잠시 후 다시 시도해주세요.`);
-      }
-      if (!res.ok) throw new Error(data.error || '생성 실패');
+      const data = await res.json() as { article_id?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || '잡 시작 실패');
       setManualKeyword('');
       setTab('drafts');
-      await loadArticles();
-      if (data.thumbnail_error) {
-        alert(`⚠️ 글은 생성됐지만 대표이미지 실패:\n${data.thumbnail_error}\n\n→ Vercel 환경변수에 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_URL 을 설정해주세요.`);
-      }
+      await loadArticles(); // 'generating' 상태 항목 즉시 표시
     } catch (err) {
-      alert(`글 생성 실패: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`글 생성 시작 실패: ${err instanceof Error ? err.message : String(err)}`);
     }
     setGenerating(false);
     setGeneratingKw('');
@@ -1231,10 +1241,13 @@ export default function AutoServicePage() {
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[article.status].color}`}>
-                        {STATUS_LABELS[article.status].label}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${STATUS_LABELS[article.status]?.color ?? 'bg-gray-100 text-gray-600'}`}>
+                        {article.status === 'generating' && (
+                          <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                        )}
+                        {STATUS_LABELS[article.status]?.label ?? article.status}
                       </span>
-                      <span className="text-xs text-gray-400">{article.word_count.toLocaleString()}자</span>
+                      {article.status !== 'generating' && <span className="text-xs text-gray-400">{article.word_count.toLocaleString()}자</span>}
                       <span className="text-xs text-gray-400">• {ollamaModels.find(m => m.id === article.ai_model)?.emoji} {article.ai_model}</span>
                     </div>
                     <h3 className="font-semibold text-gray-900 line-clamp-1">{article.title}</h3>
@@ -1249,10 +1262,12 @@ export default function AutoServicePage() {
                     )}
                   </div>
                   <div className="flex flex-col gap-2 flex-shrink-0">
+                    {article.status !== 'generating' && (
                     <button onClick={() => openPreview(article)}
                       className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
                       미리보기/편집
                     </button>
+                    )}
                     {article.status === 'scheduled' ? (
                       <>
                         <button onClick={() => openSchedule(article)}
