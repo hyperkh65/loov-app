@@ -4,6 +4,7 @@ import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
+import { consumeJobToken } from '@/lib/internal-job-auth';
 
 export const maxDuration = 300;
 
@@ -376,12 +377,26 @@ function parseAiOutput(raw: string) {
 }
 
 export async function POST(req: NextRequest) {
+  // 본문을 먼저 읽음 (auth 방식에 무관하게 필요)
+  const body = await req.json() as {
+    keyword: string; ai_model?: string;
+    clientOllamaKey?: string; clientOpenrouterKey?: string;
+    clientGlobalAIKey?: string; clientGlobalAIModel?: string;
+    article_id?: string; _job_token?: string;
+  };
+
   // BOT_SECRET 우회 (clawdbot 연동)
   const botSecret = process.env.BOT_SECRET || process.env.CRON_SECRET;
   const isBot = !!(botSecret && req.headers.get('authorization') === `Bearer ${botSecret}`);
 
+  // 내부 백그라운드 잡 인증 (jobs/route.ts에서 발급한 1회용 토큰)
+  const jobUserId = body._job_token ? consumeJobToken(body._job_token) : null;
+  const isInternalJob = !!jobUserId;
+
   let userId: string;
-  if (isBot) {
+  if (isInternalJob) {
+    userId = jobUserId!;
+  } else if (isBot) {
     userId = process.env.OWNER_USER_ID!;
   } else {
     const supabase = await createClient();
@@ -389,9 +404,9 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
     userId = user.id;
   }
-  const supabase = isBot ? await createAdminClient() : await createClient();
+  const supabase = (isBot || isInternalJob) ? createAdminClient() : await createClient();
 
-  const { keyword, ai_model = 'qwen3', clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel } = await req.json();
+  const { keyword, ai_model = 'qwen3', clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, article_id } = body;
   if (!keyword?.trim()) return NextResponse.json({ error: '키워드를 입력하세요' }, { status: 400 });
 
   // 1. 뉴스/블로그 수집
@@ -445,27 +460,41 @@ export async function POST(req: NextRequest) {
   const wordCount = content.replace(/<[^>]+>/g, '').length;
 
   // 6. DB 저장
-  const { data, error } = await supabase
-    .from('bossai_auto_articles')
-    .insert({
-      user_id: userId,
-      keyword,
-      focus_keyword: keyword,
-      title,
-      meta_description,
-      content,
-      representative_image_url: imageUrl,
-      ai_model,
-      status: 'draft',
-      sources: [
-        ...newsItems.map((n: {title:string;description:string;link:string}) => ({ type: 'news', ...n })),
-        ...blogItems.map((b: {title:string;description:string;link:string}) => ({ type: 'blog', ...b })),
-        ...scrapedImages.map(img => ({ type: 'collected_image', title: img.title, link: img.url })),
-      ],
-      word_count: wordCount,
-    })
-    .select()
-    .single();
+  const articleData = {
+    user_id: userId,
+    keyword,
+    focus_keyword: keyword,
+    title,
+    meta_description,
+    content,
+    representative_image_url: imageUrl,
+    ai_model,
+    status: 'draft',
+    sources: [
+      ...newsItems.map((n: {title:string;description:string;link:string}) => ({ type: 'news', ...n })),
+      ...blogItems.map((b: {title:string;description:string;link:string}) => ({ type: 'blog', ...b })),
+      ...scrapedImages.map(img => ({ type: 'collected_image', title: img.title, link: img.url })),
+    ],
+    word_count: wordCount,
+    updated_at: new Date().toISOString(),
+  };
+
+  let data, error;
+  if (article_id) {
+    // 백그라운드 잡: 기존 placeholder 행 업데이트
+    ({ data, error } = await supabase
+      .from('bossai_auto_articles')
+      .update(articleData)
+      .eq('id', article_id)
+      .select()
+      .single());
+  } else {
+    ({ data, error } = await supabase
+      .from('bossai_auto_articles')
+      .insert(articleData)
+      .select()
+      .single());
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ item: data, keywords, word_count: wordCount, thumbnail_error: thumbnailError });
