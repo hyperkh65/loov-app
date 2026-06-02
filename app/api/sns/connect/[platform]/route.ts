@@ -27,16 +27,22 @@ export async function GET(
     getSetting('FACEBOOK_APP_SECRET'),
   ]);
 
-  const missingEnv: Record<string, boolean> = {
-    twitter:   !process.env.TWITTER_CLIENT_ID   || !process.env.TWITTER_CLIENT_SECRET,
-    threads:   !process.env.THREADS_APP_ID      || !process.env.THREADS_APP_SECRET,
-    facebook:  !(fbAppId || process.env.FACEBOOK_APP_ID) || !(fbAppSecret || process.env.FACEBOOK_APP_SECRET),
-    instagram: !(igAppId || fbAppId || process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID),
-    linkedin:  !process.env.LINKEDIN_CLIENT_ID  || !process.env.LINKEDIN_CLIENT_SECRET,
+  const missingEnvMsg: Record<string, string | null> = {
+    twitter:   (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET)
+                 ? 'Twitter Client ID/Secret이 없습니다. NAS .env에 TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET을 추가하세요.' : null,
+    threads:   (!process.env.THREADS_APP_ID || !process.env.THREADS_APP_SECRET)
+                 ? 'Threads App ID/Secret이 없습니다.' : null,
+    facebook:  (!(fbAppId || process.env.FACEBOOK_APP_ID) || !(fbAppSecret || process.env.FACEBOOK_APP_SECRET))
+                 ? 'Facebook App ID/Secret이 없습니다. 설정 → API 키에서 등록하세요.' : null,
+    instagram: !(igAppId || fbAppId || process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID)
+                 ? 'Instagram App ID가 없습니다. 설정 → API 키에서 등록하세요.' : null,
+    linkedin:  (!process.env.LINKEDIN_CLIENT_ID || !process.env.LINKEDIN_CLIENT_SECRET)
+                 ? 'LinkedIn Client ID/Secret이 없습니다.' : null,
   };
-  if (missingEnv[platform]) {
+  const errMsg = missingEnvMsg[platform];
+  if (errMsg) {
     return NextResponse.redirect(
-      `${siteUrl}/dashboard/sns?error=${encodeURIComponent('SNS 앱 키가 설정되지 않았습니다. 설정 → API 키에서 Instagram App ID/Secret을 등록하세요.')}`
+      `${siteUrl}/dashboard/sns?error=${encodeURIComponent(errMsg)}`
     );
   }
 
