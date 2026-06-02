@@ -85,16 +85,10 @@ export default function AutoServicePage() {
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
     custom_keywords: [], last_run_at: null, last_run_status: null, last_run_count: 0,
   });
-  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string }[]>([
-    { id: 'qwen3', name: 'Qwen 3', emoji: '🔮', group: 'ollama' },
-    { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama' },
-    { id: 'llama3.3', name: 'Llama 3.3', emoji: '🦙', group: 'ollama' },
-    { id: 'mistral', name: 'Mistral', emoji: '🌪️', group: 'ollama' },
-    { id: 'gemma3', name: 'Gemma 3', emoji: '💎', group: 'ollama' },
-    { id: 'deepseek-r1', name: 'DeepSeek R1', emoji: '🧠', group: 'ollama' },
-    { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku', emoji: '🟣', group: 'claude' },
-    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet', emoji: '🟣', group: 'claude' },
-    { id: 'claude-opus-4-7', name: 'Claude Opus', emoji: '🟣', group: 'claude' },
+  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
+    { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
+    { id: 'llama3.3', name: 'Llama 3.3', emoji: '🦙', group: 'ollama', category: 'heavy' },
+    { id: 'qwen3', name: 'Qwen 3', emoji: '🔮', group: 'ollama', category: 'light' },
   ]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -198,26 +192,39 @@ export default function AutoServicePage() {
     };
   };
 
-  const loadModels = useCallback(async () => {
+  const loadModels = useCallback(async (forceRefresh = false) => {
     setModelsLoading(true);
     try {
-      const [ollamaRes, claudeRes] = await Promise.allSettled([
-        fetch('/api/ollama/models').then(r => r.ok ? r.json() : null),
-        fetch('/api/claude/models').then(r => r.ok ? r.json() : null),
-      ]);
-      const ollamaPopular: string[] = ollamaRes.status === 'fulfilled' && ollamaRes.value
-        ? (ollamaRes.value.popular || ollamaRes.value.models || [])
-        : [];
-      const claudeList: string[] = claudeRes.status === 'fulfilled' && claudeRes.value
-        ? (claudeRes.value.models || [])
-        : ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-7'];
+      const url = `/api/ollama/models${forceRefresh ? '?refresh=1' : ''}`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json() as {
+        models?: Array<{ id: string; category: string }>;
+        claude?: string[];
+        popular?: string[];
+      };
+
+      const ollamaList = data.models ?? (data.popular ?? []).map((id: string) => ({ id, category: 'medium' }));
+      const claudeList: string[] = data.claude ?? ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-7'];
+
+      const CATEGORY_MAP: Record<string, string> = { light: '경량', medium: '중형', heavy: '대형' };
+
       const combined = [
-        ...ollamaPopular.map((id: string) => ({ id, name: modelLabel(id), emoji: modelEmoji(id), group: 'ollama' })),
+        ...ollamaList.map((m: { id: string; category: string }) => ({
+          id: m.id,
+          name: modelLabel(m.id),
+          emoji: modelEmoji(m.id),
+          group: 'ollama',
+          category: m.category || 'medium',
+          categoryLabel: CATEGORY_MAP[m.category] ?? '중형',
+        })),
         ...claudeList.map((id: string) => ({
           id,
           name: id.includes('haiku') ? 'Claude Haiku' : id.includes('sonnet') ? 'Claude Sonnet' : id.includes('opus') ? 'Claude Opus' : id,
           emoji: '🟣',
           group: 'claude',
+          category: 'claude',
+          categoryLabel: 'Claude',
         })),
       ];
       if (combined.length > 0) setOllamaModels(combined);
@@ -980,36 +987,50 @@ export default function AutoServicePage() {
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-gray-700">AI 모델</label>
                 <button
-                  onClick={loadModels}
+                  onClick={() => loadModels(true)}
                   disabled={modelsLoading}
-                  title="모델 목록 새로고침"
+                  title="Ollama Cloud에서 최신 모델 목록 새로고침"
                   className="px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600 text-xs disabled:opacity-50"
                 >
-                  {modelsLoading ? '⟳' : '🔄 새로고침'}
+                  {modelsLoading ? '⟳ 조회 중…' : '🔄 Cloud에서 불러오기'}
                 </button>
               </div>
-              {/* Ollama 모델 */}
-              <p className="text-xs text-gray-400 mb-1">Ollama</p>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {ollamaModels.filter(m => m.group === 'ollama').map(m => (
-                  <button key={m.id}
-                    onClick={() => setAutoSettings(prev => ({ ...prev, ai_model: m.id }))}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${autoSettings.ai_model === m.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                    {m.emoji} {m.name}
-                  </button>
-                ))}
-              </div>
+              {/* Ollama 카테고리별 그룹 */}
+              {(['light', 'medium', 'heavy'] as const).map(cat => {
+                const catModels = ollamaModels.filter(m => m.group === 'ollama' && m.category === cat);
+                if (catModels.length === 0) return null;
+                const catInfo = { light: { label: '경량 🟢', sub: '빠름·저자원' }, medium: { label: '중형 🟡', sub: '균형' }, heavy: { label: '대형 🔴', sub: '고품질·느림' } }[cat];
+                return (
+                  <div key={cat} className="mb-3">
+                    <p className="text-xs text-gray-400 mb-1">{catInfo.label} <span className="text-gray-300">— {catInfo.sub}</span></p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {catModels.map(m => (
+                        <button key={m.id}
+                          onClick={() => setAutoSettings(prev => ({ ...prev, ai_model: m.id }))}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${autoSettings.ai_model === m.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                          {m.emoji} {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
               {/* Claude 모델 */}
-              <p className="text-xs text-gray-400 mb-1">Claude</p>
-              <div className="flex flex-wrap gap-2">
-                {ollamaModels.filter(m => m.group === 'claude').map(m => (
-                  <button key={m.id}
-                    onClick={() => setAutoSettings(prev => ({ ...prev, ai_model: m.id }))}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${autoSettings.ai_model === m.id ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-700 hover:bg-violet-100'}`}>
-                    {m.emoji} {m.name}
-                  </button>
-                ))}
-              </div>
+              {ollamaModels.some(m => m.group === 'claude') && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-1">Claude 🟣</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ollamaModels.filter(m => m.group === 'claude').map(m => (
+                      <button key={m.id}
+                        onClick={() => setAutoSettings(prev => ({ ...prev, ai_model: m.id }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${autoSettings.ai_model === m.id ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-700 hover:bg-violet-100'}`}>
+                        {m.emoji} {m.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {modelsLoading && <p className="text-xs text-gray-400 mt-2">Ollama Cloud에서 모델 목록 조회 중…</p>}
             </div>
 
             {/* 최대 생성 수 */}
