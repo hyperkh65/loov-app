@@ -78,6 +78,8 @@ function buildPrompt(keyword: string, newsItems: {title:string;description:strin
 
 [언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 한국어 동의어가 있는 영어 단어 절대 사용 금지: marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, trend→트렌드, review→리뷰, digital→디지털, global→글로벌, online→온라인, channel→채널, quality→품질, experience→경험, customer→고객, solution→솔루션, network→네트워크, traffic→트래픽, algorithm→알고리즘, share→공유, escalation→에스컬레이션, broadcasting→방송, humanitarian→인도주의, universal→다양한, Israel→이스라엘, Palestinian→팔레스타인. 고유 브랜드명(iPhone, Google, YouTube 등)만 예외. ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 마커는 영문 그대로 유지. 위반 시 응답 무효.
 
+[링크 금지 규칙 - 절대 준수] <a href> 태그 및 모든 URL 링크 절대 생성 금지. "더 알아보기", "공식 홈페이지", "바로가기" 버튼/링크 생성 절대 금지. 외부 사이트로 연결되는 어떤 링크도 본문에 삽입하지 말 것. 위반 시 응답 무효.
+
 ${ANTI_WATERMARK_PROMPT}
 
 수집된 최신 뉴스와 블로그 자료를 철저히 분석하여, 그 내용에 기반한 정확하고 흥미로운 블로그 글을 작성합니다.
@@ -369,6 +371,8 @@ function parseAiOutput(raw: string) {
   // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+  // AI 할루시네이션 링크 제거: <a href="...">텍스트</a> → 텍스트만 남김
+  content = content.replace(/<a\s[^>]*>/gi, '').replace(/<\/a>/gi, '');
 
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
