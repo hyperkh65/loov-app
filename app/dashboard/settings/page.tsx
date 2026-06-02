@@ -24,7 +24,10 @@ interface SNSConnection {
 
 function BacklinkSettingsPanel() {
   const [mediumToken, setMediumToken] = useState('');
-  const [tumblrToken, setTumblrToken] = useState('');
+  const [tumblrConsumerKey, setTumblrConsumerKey] = useState('');
+  const [tumblrConsumerSecret, setTumblrConsumerSecret] = useState('');
+  const [tumblrAccessToken, setTumblrAccessToken] = useState('');
+  const [tumblrAccessTokenSecret, setTumblrAccessTokenSecret] = useState('');
   const [tumblrBlog, setTumblrBlog] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -43,7 +46,10 @@ function BacklinkSettingsPanel() {
     setMsg('');
     const body: Record<string, string> = { tumblr_blog: tumblrBlog };
     if (mediumToken) body.medium_token = mediumToken;
-    if (tumblrToken) body.tumblr_token = tumblrToken;
+    if (tumblrConsumerKey) body.tumblr_consumer_key = tumblrConsumerKey;
+    if (tumblrConsumerSecret) body.tumblr_consumer_secret = tumblrConsumerSecret;
+    if (tumblrAccessToken) body.tumblr_access_token = tumblrAccessToken;
+    if (tumblrAccessTokenSecret) body.tumblr_access_token_secret = tumblrAccessTokenSecret;
     const res = await fetch('/api/backlink/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -53,7 +59,8 @@ function BacklinkSettingsPanel() {
     if (res.ok) {
       setMsg('✅ 저장 완료');
       setMediumToken('');
-      setTumblrToken('');
+      setTumblrConsumerKey(''); setTumblrConsumerSecret('');
+      setTumblrAccessToken(''); setTumblrAccessTokenSecret('');
       const r = await fetch('/api/backlink/settings').then(x => x.json());
       if (!r.error) setStatus(r);
     } else {
@@ -100,39 +107,46 @@ function BacklinkSettingsPanel() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-bold text-gray-900">📝 Tumblr</h3>
-            <p className="text-xs text-gray-500 mt-0.5">DA 74 — 링크 포스팅 + 태그 백링크</p>
+            <p className="text-xs text-gray-500 mt-0.5">DA 74 — OAuth 1.0a — Consumer Key/Secret + Access Token/Secret 4개 필요</p>
           </div>
           <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.tumblr_configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
             {status.tumblr_configured ? `✅ ${status.tumblr_blog}` : '미설정'}
           </span>
         </div>
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+          <p className="font-semibold">🔑 Access Token 발급 방법</p>
+          <p>1. <a href="https://www.tumblr.com/oauth/apps" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">tumblr.com/oauth/apps</a> 에서 앱 등록 완료</p>
+          <p>2. 앱 클릭 → <strong>Consumer Key</strong> · <strong>Secret Key</strong> 복사</p>
+          <p>3. <a href="https://api.tumblr.com/console" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">api.tumblr.com/console</a> 접속 → Consumer Key/Secret 입력 후 Authorize 클릭</p>
+          <p>4. <strong>OAuth Token</strong> · <strong>OAuth Token Secret</strong> 복사</p>
+        </div>
         <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">OAuth Access Token</label>
-            <input
-              type="password"
-              value={tumblrToken}
-              onChange={e => setTumblrToken(e.target.value)}
-              placeholder={status.tumblr_configured ? '••••••••••••••• (변경 시 입력)' : 'Tumblr OAuth Access Token'}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
+          {[
+            { label: 'Consumer Key (API Key)', val: tumblrConsumerKey, set: setTumblrConsumerKey, ph: 'Tumblr 앱 페이지의 Consumer Key' },
+            { label: 'Consumer Secret (Secret Key)', val: tumblrConsumerSecret, set: setTumblrConsumerSecret, ph: 'Tumblr 앱 페이지의 Secret Key' },
+            { label: 'OAuth Access Token', val: tumblrAccessToken, set: setTumblrAccessToken, ph: 'api.tumblr.com/console 에서 발급한 Token' },
+            { label: 'OAuth Access Token Secret', val: tumblrAccessTokenSecret, set: setTumblrAccessTokenSecret, ph: 'api.tumblr.com/console 에서 발급한 Token Secret' },
+          ].map(({ label, val, set, ph }) => (
+            <div key={label}>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">{label}</label>
+              <input
+                type="password"
+                value={val}
+                onChange={e => set(e.target.value)}
+                placeholder={status.tumblr_configured ? '••••••••••••••• (변경 시 입력)' : ph}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+          ))}
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">블로그 이름 (username)</label>
             <input
               type="text"
               value={tumblrBlog}
               onChange={e => setTumblrBlog(e.target.value)}
-              placeholder="예: myblog (myblog.tumblr.com)"
+              placeholder="예: myblog (myblog.tumblr.com에서 myblog 부분)"
               className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
-          </div>
-          <div className="p-3 bg-gray-50 rounded-xl text-xs text-gray-600 space-y-1">
-            <p className="font-semibold text-gray-700">Tumblr OAuth Token 발급 방법</p>
-            <p>1. <a href="https://www.tumblr.com/oauth/apps" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">tumblr.com/oauth/apps</a> → 앱 등록</p>
-            <p>2. Consumer Key / Secret 발급 후</p>
-            <p>3. OAuth 1.0a 인증 → Access Token / Secret 발급</p>
-            <p className="text-orange-600">※ Tumblr는 OAuth 과정이 복잡합니다. 간편하게는 <strong>Medium만</strong> 사용해도 충분합니다.</p>
           </div>
         </div>
       </div>
