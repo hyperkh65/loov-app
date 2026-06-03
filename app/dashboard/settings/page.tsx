@@ -963,14 +963,14 @@ export default function SettingsPage() {
                         ? 'border-red-300 bg-red-50 focus:border-red-400'
                         : 'border-gray-200 focus:border-indigo-400'
                     }`}
-                    placeholder={AI_PROVIDER_INFO[globalAI.provider].placeholder}
+                    placeholder={AI_PROVIDER_INFO[globalAI.provider]?.placeholder ?? 'API Key...'}
                     autoComplete="off"
                     autoCorrect="off"
                     spellCheck={false}
                   />
                   {globalAI.apiKey.startsWith('http') && (
                     <p className="text-xs text-red-600 mt-1 font-medium">
-                      ⚠️ URL이 아닌 API 키를 입력하세요 ({AI_PROVIDER_INFO[globalAI.provider].placeholder} 형식)
+                      ⚠️ URL이 아닌 API 키를 입력하세요 ({AI_PROVIDER_INFO[globalAI.provider]?.placeholder ?? 'API Key...'} 형식)
                     </p>
                   )}
                   {!globalAI.apiKey.startsWith('http') && (
