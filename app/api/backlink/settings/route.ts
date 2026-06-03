@@ -7,14 +7,16 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const [mediumToken, consumerKey, accessToken, blogName] = await Promise.all([
+  const [mediumToken, consumerKey, consumerSecret, accessToken, accessTokenSecret, blogName] = await Promise.all([
     getSetting('MEDIUM_INTEGRATION_TOKEN'),
     getSetting('TUMBLR_CONSUMER_KEY'),
+    getSetting('TUMBLR_CONSUMER_SECRET'),
     getSetting('TUMBLR_ACCESS_TOKEN'),
+    getSetting('TUMBLR_ACCESS_TOKEN_SECRET'),
     getSetting('TUMBLR_BLOG_NAME'),
   ]);
 
-  const tumblrConfigured = !!(consumerKey && accessToken && blogName);
+  const tumblrConfigured = !!(consumerKey && consumerSecret && accessToken && accessTokenSecret && blogName);
 
   return NextResponse.json({
     medium_token: mediumToken ? '****' + mediumToken.slice(-6) : '',
