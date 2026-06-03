@@ -300,8 +300,9 @@ export default function SettingsPage() {
     setOllamaModelsLoading(true);
     fetch('/api/ollama/models')
       .then((r) => r.ok ? r.json() : null)
-      .then((d: { models?: string[] } | null) => {
-        if (d?.models?.length) setOllamaModels(d.models);
+      .then((d: { models?: unknown[]; popular?: string[] } | null) => {
+        const ids = d?.popular ?? (d?.models ?? []).map((m) => typeof m === 'string' ? m : (m as { id: string }).id);
+        if (ids.length) setOllamaModels(ids);
       })
       .catch(() => {})
       .finally(() => setOllamaModelsLoading(false));
@@ -832,7 +833,7 @@ export default function SettingsPage() {
                           setOllamaModelsLoading(true);
                           fetch('/api/ollama/models')
                             .then((r) => r.ok ? r.json() : null)
-                            .then((d: { models?: string[] } | null) => { if (d?.models?.length) setOllamaModels(d.models); })
+                            .then((d: { models?: unknown[]; popular?: string[] } | null) => { const ids = d?.popular ?? (d?.models ?? []).map((m) => typeof m === 'string' ? m : (m as { id: string }).id); if (ids.length) setOllamaModels(ids); })
                             .catch(() => {})
                             .finally(() => setOllamaModelsLoading(false));
                         }}
