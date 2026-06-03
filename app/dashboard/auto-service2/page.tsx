@@ -36,7 +36,7 @@ const SNS_PLATFORMS = [
 ];
 
 type Tab = 'auto' | 'drafts' | 'history';
-type Status = 'draft' | 'approved' | 'published' | 'failed' | 'scheduled';
+type Status = 'draft' | 'approved' | 'published' | 'failed' | 'scheduled' | 'generating';
 
 interface Article {
   id: string;
@@ -74,6 +74,7 @@ const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
   published: { label: '발행완료', color: 'bg-green-100 text-green-800' },
   failed: { label: '실패', color: 'bg-red-100 text-red-800' },
   scheduled: { label: '예약됨', color: 'bg-purple-100 text-purple-800' },
+  generating: { label: '생성 중', color: 'bg-sky-100 text-sky-800' },
 };
 
 export default function AutoService2Page() {
@@ -1273,8 +1274,8 @@ export default function AutoService2Page() {
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[article.status].color}`}>
-                        {STATUS_LABELS[article.status].label}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[article.status]?.color ?? 'bg-gray-100 text-gray-600'}`}>
+                        {STATUS_LABELS[article.status]?.label ?? article.status}
                       </span>
                       <span className="text-xs text-gray-400">{article.word_count.toLocaleString()}자</span>
                       <span className="text-xs text-gray-400">• {ollamaModels.find(m => m.id === article.ai_model)?.emoji} {article.ai_model}</span>
@@ -1385,8 +1386,8 @@ export default function AutoService2Page() {
             {/* 헤더 */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[previewArticle.status].color}`}>
-                  {STATUS_LABELS[previewArticle.status].label}
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[previewArticle.status]?.color ?? 'bg-gray-100 text-gray-600'}`}>
+                  {STATUS_LABELS[previewArticle.status]?.label ?? previewArticle.status}
                 </span>
                 <span className="text-sm text-gray-500">{previewArticle.word_count.toLocaleString()}자</span>
               </div>
