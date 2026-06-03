@@ -78,7 +78,14 @@ export async function POST(req: NextRequest) {
   ]);
 
   if (!consumerKey || !consumerSecret || !accessToken || !accessTokenSecret || !blogName) {
-    return NextResponse.json({ error: 'Tumblr OAuth 키 4개 + 블로그명이 모두 필요합니다' }, { status: 400 });
+    const missing = [
+      !consumerKey && 'Consumer Key',
+      !consumerSecret && 'Consumer Secret',
+      !accessToken && 'Access Token',
+      !accessTokenSecret && 'Access Token Secret',
+      !blogName && '블로그 이름',
+    ].filter(Boolean).join(', ');
+    return NextResponse.json({ error: `Tumblr 설정 누락: ${missing}` }, { status: 400 });
   }
 
   const tags = [
