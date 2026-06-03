@@ -914,13 +914,13 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {AI_PROVIDER_INFO[globalAI.provider].models.length > 0 && (
+                {(AI_PROVIDER_INFO[globalAI.provider]?.models.length ?? 0) > 0 && (
                   <div>
                     <label className="text-sm font-semibold text-gray-700 mb-1 block">모델 선택</label>
                     <select value={globalAI.model}
                       onChange={(e) => setGlobalAI({ ...globalAI, model: e.target.value })}
                       className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400">
-                      {AI_PROVIDER_INFO[globalAI.provider].models.map((m) => (
+                      {(AI_PROVIDER_INFO[globalAI.provider]?.models ?? []).map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
