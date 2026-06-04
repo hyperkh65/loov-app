@@ -24,19 +24,34 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // 프로필 URN 조회
-    const meRes = await fetch('https://api.linkedin.com/v2/me', {
+    // 프로필 URN 조회 — /v2/userinfo (openid scope) 우선, 실패 시 /v2/me 시도
+    let personId: string | undefined;
+    const userinfoRes = await fetch('https://api.linkedin.com/v2/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!meRes.ok) {
-      return NextResponse.json(
-        { error: 'LinkedIn 인증 실패 — Access Token을 확인해주세요 (만료 여부 확인)' },
-        { status: 500 },
-      );
+    if (userinfoRes.ok) {
+      const d = await userinfoRes.json() as { sub?: string };
+      personId = d.sub;
     }
-    const meData = await meRes.json();
-    const personUrn = `urn:li:person:${meData.id}`;
+    if (!personId) {
+      const meRes = await fetch('https://api.linkedin.com/v2/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!meRes.ok) {
+        return NextResponse.json(
+          { error: 'LinkedIn 인증 실패 — Access Token을 확인해주세요 (만료 여부 확인 / w_member_social 스코프 필요)' },
+          { status: 500 },
+        );
+      }
+      const meData = await meRes.json() as { id?: string };
+      personId = meData.id;
+    }
+    if (!personId) {
+      return NextResponse.json({ error: 'LinkedIn 프로필 ID 조회 실패 — openid 또는 r_liteprofile 스코프가 필요합니다' }, { status: 500 });
+    }
+    const personUrn = `urn:li:person:${personId}`;
 
     const tags = keyword ? `#${keyword.split(' ')[0].replace(/[^a-zA-Z0-9가-힣]/g, '')}` : '';
     const commentary = `${title}\n\n${meta_description || ''}\n\n${tags}`.trim();
