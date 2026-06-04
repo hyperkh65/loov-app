@@ -35,6 +35,13 @@ const SNS_PLATFORMS = [
   { id: 'facebook', name: '페이스북', icon: '📘' },
 ];
 
+const BACKLINK_PLATFORMS = [
+  { id: 'medium', name: 'Medium', icon: 'Ⓜ️', da: 95 },
+  { id: 'tumblr', name: 'Tumblr', icon: '📝', da: 74 },
+  { id: 'pinterest', name: 'Pinterest', icon: '📌', da: 94 },
+  { id: 'linkedin', name: 'LinkedIn', icon: '💼', da: 98 },
+];
+
 type Tab = 'auto' | 'drafts' | 'history';
 type Status = 'draft' | 'approved' | 'published' | 'failed' | 'scheduled' | 'generating';
 
@@ -158,6 +165,7 @@ export default function AutoService2Page() {
   const [publishArticle, setPublishArticle] = useState<Article | null>(null);
   const [selBlog, setSelBlog] = useState<string[]>([]);
   const [selSns, setSelSns] = useState<string[]>([]);
+  const [selBacklink, setSelBacklink] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
   // YouTube Shorts 자동 생성
@@ -172,6 +180,7 @@ export default function AutoService2Page() {
   const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [schedBlog, setSchedBlog] = useState<string[]>([]);
   const [schedSns, setSchedSns] = useState<string[]>([]);
+  const [schedBacklink, setSchedBacklink] = useState<string[]>([]);
   const [schedWpSiteIds, setSchedWpSiteIds] = useState<string[]>([]);
   const [scheduling, setScheduling] = useState(false);
 
@@ -756,6 +765,7 @@ export default function AutoService2Page() {
           blog_platforms: schedBlog,
           sns_platforms: schedSns,
           wp_site_ids: schedWpSiteIds,
+          backlink_platforms: schedBacklink,
         }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || '저장 실패'); }
@@ -848,6 +858,7 @@ export default function AutoService2Page() {
           blog_platforms: selBlog,
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
+          backlink_platforms: selBacklink,
         }),
       });
       const data = await res.json();
@@ -1989,6 +2000,21 @@ export default function AutoService2Page() {
                   </div>
                 </div>
 
+                {/* 백링크 플랫폼 */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">🔗 백링크 (선택)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {BACKLINK_PLATFORMS.map(p => (
+                      <label key={p.id} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" checked={selBacklink.includes(p.id)} onChange={() => togglePlatform(selBacklink, setSelBacklink, p.id)} className="w-4 h-4" />
+                        <span className="text-sm">{p.icon} {p.name}</span>
+                        <span className="ml-auto text-[10px] text-gray-400">DA{p.da}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1.5">설정 페이지 → 백링크 탭에서 API 키 등록 필요</p>
+                </div>
+
                 {/* YouTube Shorts 자동 생성 토글 */}
                 <div className={`rounded-xl border p-3 transition-colors ${autoShorts ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -2005,7 +2031,7 @@ export default function AutoService2Page() {
 
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setPublishArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
-                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts)}
+                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && selBacklink.length === 0 && !autoShorts)}
                     className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                     {publishing ? '발행 중...' : '🚀 발행하기'}
                   </button>
@@ -2117,11 +2143,24 @@ export default function AutoService2Page() {
                   ))}
                 </div>
               </div>
+              {/* 백링크 */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">🔗 백링크 (선택)</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {BACKLINK_PLATFORMS.map(p => (
+                    <label key={p.id} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                      <input type="checkbox" checked={schedBacklink.includes(p.id)} onChange={() => togglePlatform(schedBacklink, setSchedBacklink, p.id)} className="w-4 h-4" />
+                      <span className="text-sm">{p.icon} {p.name}</span>
+                      <span className="ml-auto text-[10px] text-gray-400">DA{p.da}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setScheduleArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
                 <button
                   onClick={doSchedule}
-                  disabled={scheduling || !scheduleDateTime || (schedBlog.length === 0 && schedSns.length === 0)}
+                  disabled={scheduling || !scheduleDateTime || (schedBlog.length === 0 && schedSns.length === 0 && schedBacklink.length === 0)}
                   className="flex-1 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
                   {scheduling ? '저장 중...' : '⏰ 예약 저장'}
                 </button>
