@@ -134,8 +134,8 @@ function VideoPlayer({ file, onClose }: { file: FileInfo; onClose: () => void })
           src={streamUrl}
           controls
           autoPlay
+          playsInline
           className="max-w-full max-h-full rounded-lg"
-          crossOrigin="anonymous"
         >
           {trackUrl && <track kind="subtitles" src={trackUrl} srcLang="ja" label="자막" default />}
         </video>
