@@ -55,16 +55,14 @@ export async function GET(req: NextRequest) {
           const fileSize: number = stats.size;
           let start = 0;
           let end = fileSize - 1;
-          let status = 206;
+          let status = 200;
 
           if (rangeHeader) {
             const [, range] = rangeHeader.split('=');
             const [s, e] = range.split('-');
             start = parseInt(s, 10) || 0;
-            end = e ? parseInt(e, 10) : Math.min(start + 5 * 1024 * 1024, fileSize - 1);
-          } else {
-            // iOS Safari: respond with first 5MB to allow quick playback start
-            end = Math.min(5 * 1024 * 1024, fileSize - 1);
+            end = e ? parseInt(e, 10) : Math.min(start + 10 * 1024 * 1024, fileSize - 1);
+            status = 206;
           }
 
           const chunkSize = end - start + 1;
