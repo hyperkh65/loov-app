@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 const PASS = '0506';
 const AUTH_KEY = 'dl_auth_v1';
@@ -102,8 +103,8 @@ function VideoPlayer({ file, onClose }: { file: FileInfo; onClose: () => void })
     setGenerating(false);
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex flex-col" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 bg-black/90 z-[9999] flex flex-col" onClick={onClose}>
       <div className="flex items-center justify-between px-4 py-2 bg-gray-900 shrink-0" onClick={e => e.stopPropagation()}>
         <span className="text-white text-sm font-medium truncate max-w-lg">{file.name}</span>
         <div className="flex items-center gap-2">
@@ -140,7 +141,8 @@ function VideoPlayer({ file, onClose }: { file: FileInfo; onClose: () => void })
           {trackUrl && <track kind="subtitles" src={trackUrl} srcLang="ja" label="자막" default />}
         </video>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
