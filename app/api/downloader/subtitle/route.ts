@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 
@@ -14,6 +15,32 @@ function toSrt(segments: { start: number; end: number; text: string }[]): string
     };
     return `${i + 1}\n${fmt(seg.start)} --> ${fmt(seg.end)}\n${seg.text.trim()}\n`;
   }).join('\n');
+}
+
+async function readFileFromNAS(remotePath: string): Promise<Buffer> {
+  const { Client } = require('ssh2');
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    conn.on('ready', () => {
+      conn.sftp((err: any, sftp: any) => {
+        if (err) { conn.end(); return reject(err); }
+        const chunks: Buffer[] = [];
+        const s = sftp.createReadStream(remotePath);
+        s.on('data', (c: Buffer) => chunks.push(c));
+        s.on('end', () => { conn.end(); resolve(Buffer.concat(chunks)); });
+        s.on('error', (e: Error) => { conn.end(); reject(e); });
+      });
+    });
+    conn.on('error', reject);
+    conn.connect({
+      host: process.env.NAS_SSH_HOST || 'hy64.synology.me',
+      port: parseInt(process.env.NAS_SSH_PORT || '22'),
+      username: process.env.NAS_SSH_USER || 'urjent',
+      password: process.env.NAS_SSH_PASSWORD || 'Aa050677##7759',
+      tryKeyboard: true,
+      readyTimeout: 15000,
+    });
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -33,94 +60,83 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, srt: checkRes.stdout, cached: true });
   }
 
-  // ffmpeg로 오디오 추출 (NAS 또는 missav container)
-  const ffmpegCheck = await nasExec('which ffmpeg 2>/dev/null || /usr/local/bin/docker exec missav-dlp-web which ffmpeg 2>/dev/null || echo ""');
-  const hasFfmpeg = ffmpegCheck.stdout.trim().length > 0;
+  // ffmpeg 확인 (NAS 또는 missav container)
+  const ffmpegCheck = await nasExec('which ffmpeg 2>/dev/null || echo ""');
+  const dockerFfmpeg = ffmpegCheck.stdout.trim()
+    ? ffmpegCheck.stdout.trim()
+    : null;
 
-  if (!hasFfmpeg) {
-    return NextResponse.json({ error: 'ffmpeg를 찾을 수 없습니다. NAS에 ffmpeg를 설치해주세요.' }, { status: 500 });
+  let ffmpegCmd: string;
+  if (dockerFfmpeg) {
+    ffmpegCmd = `ffmpeg -i "${videoPath}" -vn -ar 16000 -ac 1 -t 1800 -f mp3 "${audioPath}" -y 2>&1`;
+  } else {
+    // missav container에서 ffmpeg 시도
+    const containerCheck = await nasExec('/usr/local/bin/docker exec missav-dlp-web which ffmpeg 2>/dev/null || echo ""');
+    if (!containerCheck.stdout.trim()) {
+      return NextResponse.json({ error: 'ffmpeg 없음 — NAS 패키지 매니저에서 ffmpeg를 설치해주세요.' }, { status: 500 });
+    }
+    ffmpegCmd = `/usr/local/bin/docker exec missav-dlp-web ffmpeg -i "/downloads/${filename}" -vn -ar 16000 -ac 1 -t 1800 -f mp3 "${audioPath}" -y 2>&1`;
   }
-
-  // ffmpeg 명령 결정
-  const ffmpegCmd = ffmpegCheck.stdout.includes('docker')
-    ? `/usr/local/bin/docker exec missav-dlp-web ffmpeg -i "/downloads/${filename}" -vn -ar 16000 -ac 1 -f mp3 "${audioPath}" -y 2>&1`
-    : `ffmpeg -i "${videoPath}" -vn -ar 16000 -ac 1 -f mp3 "${audioPath}" -y 2>&1`;
 
   const extractRes = await nasExec(ffmpegCmd);
-  if (extractRes.code !== 0 && !extractRes.stderr.includes('size=')) {
-    return NextResponse.json({ error: `ffmpeg 오류: ${extractRes.stderr.slice(0, 300)}` }, { status: 500 });
+  if (extractRes.code !== 0) {
+    return NextResponse.json({ error: `ffmpeg 오류: ${(extractRes.stderr || extractRes.stdout).slice(0, 300)}` }, { status: 500 });
   }
 
-  // 오디오 파일 읽기
-  const readRes = await nasExec(`wc -c < "${audioPath}" 2>/dev/null || echo 0`);
-  const audioSize = parseInt(readRes.stdout.trim() || '0');
+  // 오디오 크기 확인
+  const sizeRes = await nasExec(`wc -c < "${audioPath}" 2>/dev/null || echo 0`);
+  const audioSize = parseInt(sizeRes.stdout.trim() || '0');
   if (audioSize === 0) {
     return NextResponse.json({ error: '오디오 추출 실패' }, { status: 500 });
   }
   if (audioSize > 24 * 1024 * 1024) {
-    return NextResponse.json({ error: `오디오 파일이 너무 큽니다 (${(audioSize/1024/1024).toFixed(0)}MB > 24MB). 영상이 너무 긴 경우 앞부분만 추출합니다.` }, { status: 400 });
+    await nasExec(`rm -f "${audioPath}"`);
+    return NextResponse.json({ error: `오디오가 너무 큽니다 (${(audioSize / 1024 / 1024).toFixed(0)}MB). 앞 30분만 자르거나 짧은 영상을 사용하세요.` }, { status: 400 });
   }
 
-  // OpenAI Whisper API
+  // OpenAI API Key 확인
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     await nasExec(`rm -f "${audioPath}"`);
-    return NextResponse.json({ error: 'OPENAI_API_KEY가 설정되지 않았습니다.' }, { status: 500 });
+    return NextResponse.json({ error: 'OPENAI_API_KEY 환경변수가 없습니다.' }, { status: 500 });
   }
 
-  // 오디오를 NAS에서 읽어서 Whisper API로 전송
-  const { Client } = require('ssh2');
-  const audioBuffer: Buffer = await new Promise((resolve, reject) => {
-    const conn = new (Client)();
-    conn.on('ready', () => {
-      conn.sftp((err: unknown, sftp: { createReadStream: (path: string) => NodeJS.ReadableStream }) => {
-        if (err) { conn.end(); return reject(err); }
-        const chunks: Buffer[] = [];
-        const s = sftp.createReadStream(audioPath);
-        s.on('data', (c: Buffer) => chunks.push(c));
-        s.on('end', () => { conn.end(); resolve(Buffer.concat(chunks)); });
-        s.on('error', (e: Error) => { conn.end(); reject(e); });
-      });
-    });
-    conn.on('error', reject);
-    conn.connect({ host: 'hy64.synology.me', port: 22, username: 'urjent', password: 'Aa050677##7759', tryKeyboard: true, readyTimeout: 15000 });
-  });
-
+  // NAS에서 오디오 파일 읽기
+  let audioBuffer: Buffer;
+  try {
+    audioBuffer = await readFileFromNAS(audioPath);
+  } catch (e) {
+    return NextResponse.json({ error: `오디오 읽기 실패: ${String(e)}` }, { status: 500 });
+  }
   await nasExec(`rm -f "${audioPath}"`);
 
-  // Whisper API 호출 (multipart form)
-  const FormData = (await import('form-data')).default;
-  const form = new FormData();
-  form.append('file', audioBuffer, { filename: 'audio.mp3', contentType: 'audio/mpeg' });
-  form.append('model', 'whisper-1');
-  form.append('response_format', 'verbose_json');
-  form.append('timestamp_granularities[]', 'segment');
+  // Whisper API (OpenAI SDK)
+  const { OpenAI } = require('openai');
+  const openai = new OpenAI({ apiKey });
 
-  const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
-    body: form.getBuffer(),
-    signal: AbortSignal.timeout(120_000),
-  });
+  try {
+    const audioFile = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['segment'],
+    });
 
-  if (!whisperRes.ok) {
-    const errText = await whisperRes.text();
-    return NextResponse.json({ error: `Whisper API 오류: ${errText.slice(0, 200)}` }, { status: 500 });
+    const srt = toSrt((transcription.segments || []) as { start: number; end: number; text: string }[]);
+    await nasExecWithStdin(`cat > "${srtPath}"`, srt);
+    return NextResponse.json({ success: true, srt, cached: false });
+  } catch (e) {
+    return NextResponse.json({ error: `Whisper 오류: ${String(e)}` }, { status: 500 });
   }
-
-  const whisperData = await whisperRes.json() as { segments: { start: number; end: number; text: string }[] };
-  const srt = toSrt(whisperData.segments || []);
-
-  // SRT 저장
-  await nasExecWithStdin(`cat > "${srtPath}"`, srt);
-
-  return NextResponse.json({ success: true, srt, cached: false });
 }
 
 // SRT 파일 읽기
 export async function GET(req: NextRequest) {
   const filename = req.nextUrl.searchParams.get('file');
-  if (!filename || filename.includes('..')) return NextResponse.json({ error: 'Invalid' }, { status: 400 });
+  if (!filename || filename.includes('..')) {
+    return NextResponse.json({ error: 'Invalid' }, { status: 400 });
+  }
   const baseName = filename.replace(/\.[^.]+$/, '');
   const res = await nasExec(`cat "${DL_PATH}/${baseName}.srt" 2>/dev/null || echo ""`);
   return NextResponse.json({ srt: res.stdout || null });
