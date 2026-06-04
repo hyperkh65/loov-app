@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
   const openai = new OpenAI({ apiKey });
 
   try {
-    const audioFile = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+    const audioFile = new File([new Uint8Array(audioBuffer)], 'audio.mp3', { type: 'audio/mpeg' });
     const transcription = await openai.audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-1',
