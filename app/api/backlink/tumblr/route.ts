@@ -134,15 +134,15 @@ export async function POST(req: NextRequest) {
     const responseText = await res.text();
 
     if (!res.ok) {
-      let friendlyError = `Tumblr 오류 (${res.status})`;
+      let friendlyError = `Tumblr 오류 (${res.status}): ${responseText.slice(0, 300)}`;
       try {
         const errJson = JSON.parse(responseText);
         const code = errJson?.errors?.[0]?.code;
         const detail = errJson?.errors?.[0]?.detail || errJson?.meta?.msg;
-        if (code === 1008 || detail?.includes('authorize')) {
-          friendlyError = 'Tumblr OAuth 인증 실패 — 설정 페이지에서 Consumer Key/Secret, Access Token/Secret 4개를 다시 확인해주세요';
+        if (code === 1008 || detail?.includes('authorize') || detail?.includes('Unauthorized')) {
+          friendlyError = `Tumblr OAuth 인증 실패 (code:${code}) — Consumer Key로 시작하는 값: ${consumerKey.slice(0,6)}... 설정 페이지에서 4개 키 다시 저장해주세요`;
         } else if (detail) {
-          friendlyError = `Tumblr 오류: ${detail}`;
+          friendlyError = `Tumblr 오류 (${res.status}): ${detail}`;
         }
       } catch { /* ignore */ }
       return NextResponse.json({ error: friendlyError }, { status: 500 });
