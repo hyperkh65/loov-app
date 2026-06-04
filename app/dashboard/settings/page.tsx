@@ -29,27 +29,49 @@ function BacklinkSettingsPanel() {
   const [tumblrAccessToken, setTumblrAccessToken] = useState('');
   const [tumblrAccessTokenSecret, setTumblrAccessTokenSecret] = useState('');
   const [tumblrBlog, setTumblrBlog] = useState('');
+  const [pinterestToken, setPinterestToken] = useState('');
+  const [pinterestBoardId, setPinterestBoardId] = useState('');
+  const [linkedinToken, setLinkedinToken] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  const [status, setStatus] = useState<{ medium_configured: boolean; tumblr_configured: boolean; tumblr_blog: string }>({
+  const [status, setStatus] = useState<{
+    medium_configured: boolean;
+    tumblr_configured: boolean;
+    tumblr_blog: string;
+    pinterest_configured: boolean;
+    pinterest_board_id: string;
+    linkedin_configured: boolean;
+  }>({
     medium_configured: false, tumblr_configured: false, tumblr_blog: '',
+    pinterest_configured: false, pinterest_board_id: '', linkedin_configured: false,
   });
 
   useEffect(() => {
     fetch('/api/backlink/settings')
       .then(r => r.json())
-      .then(d => { if (d && !d.error) { setStatus(d); setTumblrBlog(d.tumblr_blog || ''); } });
+      .then(d => {
+        if (d && !d.error) {
+          setStatus(d);
+          setTumblrBlog(d.tumblr_blog || '');
+          setPinterestBoardId(d.pinterest_board_id || '');
+        }
+      });
   }, []);
 
   const save = async () => {
     setSaving(true);
     setMsg('');
-    const body: Record<string, string> = { tumblr_blog: tumblrBlog };
+    const body: Record<string, string> = {
+      tumblr_blog: tumblrBlog,
+      pinterest_board_id: pinterestBoardId,
+    };
     if (mediumToken) body.medium_token = mediumToken;
     if (tumblrConsumerKey) body.tumblr_consumer_key = tumblrConsumerKey;
     if (tumblrConsumerSecret) body.tumblr_consumer_secret = tumblrConsumerSecret;
     if (tumblrAccessToken) body.tumblr_access_token = tumblrAccessToken;
     if (tumblrAccessTokenSecret) body.tumblr_access_token_secret = tumblrAccessTokenSecret;
+    if (pinterestToken) body.pinterest_access_token = pinterestToken;
+    if (linkedinToken) body.linkedin_access_token = linkedinToken;
     const res = await fetch('/api/backlink/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -61,6 +83,7 @@ function BacklinkSettingsPanel() {
       setMediumToken('');
       setTumblrConsumerKey(''); setTumblrConsumerSecret('');
       setTumblrAccessToken(''); setTumblrAccessTokenSecret('');
+      setPinterestToken(''); setLinkedinToken('');
       const r = await fetch('/api/backlink/settings').then(x => x.json());
       if (!r.error) setStatus(r);
     } else {
@@ -73,7 +96,7 @@ function BacklinkSettingsPanel() {
     <div className="space-y-6 max-w-2xl">
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-900 space-y-1">
         <p className="font-bold">🔗 백링크 자동 포스팅 설정</p>
-        <p>블로그 글 발행 시 Medium·Tumblr에 영문 요약 + 원문 링크를 자동 포스팅하여 고품질 백링크를 생성합니다.</p>
+        <p>블로그 글 발행 시 Medium·Tumblr·Pinterest·LinkedIn에 원문 링크를 자동 포스팅하여 고품질 백링크를 생성합니다.</p>
       </div>
 
       {/* Medium */}
@@ -148,6 +171,78 @@ function BacklinkSettingsPanel() {
               className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Pinterest */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-900">📌 Pinterest</h3>
+            <p className="text-xs text-gray-500 mt-0.5">DA 94 — 핀 자동 생성 (대표이미지 + 원문 링크) — 이미지 필수</p>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.pinterest_configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+            {status.pinterest_configured ? '✅ 연결됨' : '미설정'}
+          </span>
+        </div>
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+          <p className="font-semibold">🔑 Access Token 발급 방법</p>
+          <p>1. <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">developers.pinterest.com/apps</a> → 앱 생성</p>
+          <p>2. Configure → Add scopes: <strong>boards:read, pins:write</strong></p>
+          <p>3. Generate access token → User token 복사</p>
+          <p>4. Board ID: 발행할 보드 URL의 숫자 ID (API 또는 핀 보드 설정에서 확인)</p>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Access Token</label>
+            <input
+              type="password"
+              value={pinterestToken}
+              onChange={e => setPinterestToken(e.target.value)}
+              placeholder={status.pinterest_configured ? '••••••••••••••• (변경 시 입력)' : 'Pinterest Developer → Generate access token'}
+              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Board ID</label>
+            <input
+              type="text"
+              value={pinterestBoardId}
+              onChange={e => setPinterestBoardId(e.target.value)}
+              placeholder="예: 1234567890123456789 (보드의 숫자 ID)"
+              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* LinkedIn */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-900">💼 LinkedIn</h3>
+            <p className="text-xs text-gray-500 mt-0.5">DA 98 — 아티클 링크 포스트 자동 공유 — 개인 프로필 게시</p>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.linkedin_configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+            {status.linkedin_configured ? '✅ 연결됨' : '미설정'}
+          </span>
+        </div>
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+          <p className="font-semibold">🔑 Access Token 발급 방법</p>
+          <p>1. <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">linkedin.com/developers/apps</a> → 앱 생성</p>
+          <p>2. Products → <strong>Share on LinkedIn</strong> + <strong>Sign In with LinkedIn</strong> 요청</p>
+          <p>3. OAuth 2.0 tools → 토큰 생성 (scopes: <strong>w_member_social, r_liteprofile</strong>)</p>
+          <p>⚠️ LinkedIn 토큰 유효기간: 60일 (만료 시 재발급 필요)</p>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-600 mb-1 block">Access Token</label>
+          <input
+            type="password"
+            value={linkedinToken}
+            onChange={e => setLinkedinToken(e.target.value)}
+            placeholder={status.linkedin_configured ? '••••••••••••••• (변경 시 입력)' : 'LinkedIn Developer → OAuth 2.0 tools → Generate token'}
+            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
         </div>
       </div>
 
