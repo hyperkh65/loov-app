@@ -156,7 +156,7 @@ export default function AutoServicePage() {
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
   // 백링크 플랫폼
   const [selBacklink, setSelBacklink] = useState<string[]>([]);
-  const [backlinkStatus, setBacklinkStatus] = useState<{ medium: boolean; tumblr: boolean }>({ medium: false, tumblr: false });
+  const [backlinkStatus, setBacklinkStatus] = useState<{ medium: boolean; tumblr: boolean; pinterest: boolean; linkedin: boolean }>({ medium: false, tumblr: false, pinterest: false, linkedin: false });
   // YouTube Shorts 자동 생성
   const [autoShorts, setAutoShorts] = useState(false);
   const [shortsJobs, setShortsJobs] = useState<{ id: string; title: string; status: string; progress: string; video_url?: string; yt_url?: string }[]>([]);
@@ -248,10 +248,14 @@ export default function AutoServicePage() {
     Promise.allSettled([
       fetch('/api/backlink/medium').then(r => r.json()),
       fetch('/api/backlink/tumblr').then(r => r.json()),
-    ]).then(([med, tum]) => {
+      fetch('/api/backlink/pinterest').then(r => r.json()),
+      fetch('/api/backlink/linkedin').then(r => r.json()),
+    ]).then(([med, tum, pin, lin]) => {
       setBacklinkStatus({
         medium: med.status === 'fulfilled' && med.value?.connected === true,
         tumblr: tum.status === 'fulfilled' && tum.value?.configured === true,
+        pinterest: pin.status === 'fulfilled' && pin.value?.configured === true,
+        linkedin: lin.status === 'fulfilled' && lin.value?.configured === true,
       });
     });
     loadModels();
@@ -2006,6 +2010,8 @@ export default function AutoServicePage() {
                     {[
                       { id: 'medium', label: 'Medium', icon: 'Ⓜ️', desc: 'DA 95 — 영문 요약 자동 생성', ok: backlinkStatus.medium },
                       { id: 'tumblr', label: 'Tumblr', icon: '📝', desc: 'DA 74 — 링크 포스팅', ok: backlinkStatus.tumblr },
+                      { id: 'pinterest', label: 'Pinterest', icon: '📌', desc: 'DA 94 — 핀 자동 생성 (이미지 필수)', ok: backlinkStatus.pinterest },
+                      { id: 'linkedin', label: 'LinkedIn', icon: '💼', desc: 'DA 98 — 아티클 링크 공유', ok: backlinkStatus.linkedin },
                     ].map(p => (
                       <label key={p.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer ${p.ok ? 'bg-white' : 'bg-gray-100 opacity-60'}`}>
                         <input type="checkbox"
