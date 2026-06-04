@@ -31,6 +31,17 @@ export async function GET(req: NextRequest) {
 
   const { Client } = require('ssh2');
 
+  const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range',
+    'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length',
+  };
+
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   return new Promise<Response>((resolve) => {
     const conn = new Client();
 
@@ -44,14 +55,16 @@ export async function GET(req: NextRequest) {
           const fileSize: number = stats.size;
           let start = 0;
           let end = fileSize - 1;
-          let status = 200;
+          let status = 206;
 
           if (rangeHeader) {
             const [, range] = rangeHeader.split('=');
             const [s, e] = range.split('-');
-            start = parseInt(s, 10);
+            start = parseInt(s, 10) || 0;
             end = e ? parseInt(e, 10) : Math.min(start + 5 * 1024 * 1024, fileSize - 1);
-            status = 206;
+          } else {
+            // iOS Safari: respond with first 5MB to allow quick playback start
+            end = Math.min(5 * 1024 * 1024, fileSize - 1);
           }
 
           const chunkSize = end - start + 1;
@@ -69,6 +82,7 @@ export async function GET(req: NextRequest) {
           resolve(new Response(readable, {
             status,
             headers: {
+              ...CORS_HEADERS,
               'Content-Type': contentType,
               'Content-Length': String(chunkSize),
               'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -80,7 +94,7 @@ export async function GET(req: NextRequest) {
       });
     });
 
-    conn.on('error', (e: Error) => resolve(new Response(String(e), { status: 500 })));
+    conn.on('error', (e: Error) => resolve(new Response(String(e), { status: 500, headers: CORS_HEADERS })));
     conn.connect(SSH_CONFIG);
   });
 }
