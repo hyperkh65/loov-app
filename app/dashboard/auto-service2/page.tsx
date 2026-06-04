@@ -862,11 +862,9 @@ export default function AutoService2Page() {
         }),
       });
       const text = await res.text();
-      const data = (() => {
-        try { return JSON.parse(text) as Record<string, unknown>; }
-        catch { throw new Error(`서버 오류 (HTTP ${res.status}) — 응답이 JSON이 아님. NAS 서버 재시작 필요`); }
-      })();
-      setPublishResult((data.results as Record<string, unknown>) || {});
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = (() => { try { return JSON.parse(text); } catch { throw new Error(`서버 오류 (HTTP ${res.status}) — NAS 서버 재시작 필요`); } })();
+      setPublishResult(data.results || {});
       if (data.error) alert(`발행 오류: ${data.error}`);
       await loadArticles();
 
