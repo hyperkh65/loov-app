@@ -862,9 +862,10 @@ export default function AutoService2Page() {
         }),
       });
       const text = await res.text();
-      let data: Record<string, unknown>;
-      try { data = JSON.parse(text); }
-      catch { throw new Error(`서버 오류 (HTTP ${res.status}) — 응답이 JSON이 아님. 서버 재시작이 필요할 수 있습니다.`); }
+      const data = (() => {
+        try { return JSON.parse(text) as Record<string, unknown>; }
+        catch { throw new Error(`서버 오류 (HTTP ${res.status}) — 응답이 JSON이 아님. NAS 서버 재시작 필요`); }
+      })();
       setPublishResult((data.results as Record<string, unknown>) || {});
       if (data.error) alert(`발행 오류: ${data.error}`);
       await loadArticles();
