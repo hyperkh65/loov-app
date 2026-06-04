@@ -31,6 +31,9 @@ function BacklinkSettingsPanel() {
   const [tumblrBlog, setTumblrBlog] = useState('');
   const [pinterestToken, setPinterestToken] = useState('');
   const [pinterestBoardId, setPinterestBoardId] = useState('');
+  const [pinterestBoards, setPinterestBoards] = useState<{ id: string; name: string; privacy: string }[]>([]);
+  const [pinterestBoardsLoading, setPinterestBoardsLoading] = useState(false);
+  const [pinterestBoardsError, setPinterestBoardsError] = useState('');
   const [linkedinToken, setLinkedinToken] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -38,12 +41,13 @@ function BacklinkSettingsPanel() {
     medium_configured: boolean;
     tumblr_configured: boolean;
     tumblr_blog: string;
+    pinterest_token_set: boolean;
     pinterest_configured: boolean;
     pinterest_board_id: string;
     linkedin_configured: boolean;
   }>({
     medium_configured: false, tumblr_configured: false, tumblr_blog: '',
-    pinterest_configured: false, pinterest_board_id: '', linkedin_configured: false,
+    pinterest_token_set: false, pinterest_configured: false, pinterest_board_id: '', linkedin_configured: false,
   });
 
   useEffect(() => {
@@ -85,7 +89,7 @@ function BacklinkSettingsPanel() {
       setTumblrAccessToken(''); setTumblrAccessTokenSecret('');
       setPinterestToken(''); setLinkedinToken('');
       const r = await fetch('/api/backlink/settings').then(x => x.json());
-      if (!r.error) setStatus(r);
+      if (!r.error) { setStatus(r); setPinterestBoardId(r.pinterest_board_id || ''); }
     } else {
       setMsg('❌ ' + (data.error || '저장 실패'));
     }
@@ -181,16 +185,19 @@ function BacklinkSettingsPanel() {
             <h3 className="font-bold text-gray-900">📌 Pinterest</h3>
             <p className="text-xs text-gray-500 mt-0.5">DA 94 — 핀 자동 생성 (대표이미지 + 원문 링크) — 이미지 필수</p>
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${status.pinterest_configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-            {status.pinterest_configured ? '✅ 연결됨' : '미설정'}
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+            status.pinterest_configured ? 'bg-green-100 text-green-700' :
+            status.pinterest_token_set ? 'bg-yellow-100 text-yellow-700' :
+            'bg-gray-100 text-gray-500'
+          }`}>
+            {status.pinterest_configured ? '✅ 연결됨' : status.pinterest_token_set ? '⚠️ 보드 미설정' : '미설정'}
           </span>
         </div>
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
           <p className="font-semibold">🔑 Access Token 발급 방법</p>
-          <p>1. <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">developers.pinterest.com/apps</a> → 앱 생성</p>
-          <p>2. Configure → Add scopes: <strong>boards:read, pins:write</strong></p>
-          <p>3. Generate access token → User token 복사</p>
-          <p>4. Board ID: 발행할 보드 URL의 숫자 ID (API 또는 핀 보드 설정에서 확인)</p>
+          <p>1. <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">developers.pinterest.com/apps</a> → 앱에서 토큰 생성</p>
+          <p>2. 스코프: <strong>boards:read, pins:write</strong> 포함 필요</p>
+          <p>3. 토큰 저장 후 아래 "내 보드 목록 가져오기" 버튼으로 보드 선택</p>
         </div>
         <div className="space-y-3">
           <div>
@@ -199,19 +206,62 @@ function BacklinkSettingsPanel() {
               type="password"
               value={pinterestToken}
               onChange={e => setPinterestToken(e.target.value)}
-              placeholder={status.pinterest_configured ? '••••••••••••••• (변경 시 입력)' : 'Pinterest Developer → Generate access token'}
+              placeholder={status.pinterest_token_set ? '••••••••••••••• (변경 시 입력)' : 'Pinterest Developer → Generate access token'}
               className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Board ID</label>
-            <input
-              type="text"
-              value={pinterestBoardId}
-              onChange={e => setPinterestBoardId(e.target.value)}
-              placeholder="예: 1234567890123456789 (보드의 숫자 ID)"
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-600">Board ID</label>
+              {status.pinterest_token_set && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setPinterestBoardsLoading(true);
+                    setPinterestBoardsError('');
+                    setPinterestBoards([]);
+                    const res = await fetch('/api/backlink/pinterest/boards');
+                    const data = await res.json();
+                    if (!res.ok) {
+                      setPinterestBoardsError(data.error || '조회 실패');
+                    } else {
+                      setPinterestBoards(data.boards || []);
+                    }
+                    setPinterestBoardsLoading(false);
+                  }}
+                  disabled={pinterestBoardsLoading}
+                  className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  {pinterestBoardsLoading ? '조회 중...' : '📋 내 보드 목록 가져오기'}
+                </button>
+              )}
+            </div>
+            {pinterestBoards.length > 0 ? (
+              <select
+                value={pinterestBoardId}
+                onChange={e => setPinterestBoardId(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              >
+                <option value="">보드 선택...</option>
+                {pinterestBoards.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.privacy}) — {b.id}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={pinterestBoardId}
+                onChange={e => setPinterestBoardId(e.target.value)}
+                placeholder={status.pinterest_configured ? status.pinterest_board_id : '토큰 저장 후 위 버튼으로 자동 조회'}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            )}
+            {pinterestBoardsError && <p className="text-xs text-red-500 mt-1">{pinterestBoardsError}</p>}
+            {status.pinterest_configured && !pinterestBoards.length && (
+              <p className="text-xs text-green-600 mt-1">현재 보드 ID: {status.pinterest_board_id}</p>
+            )}
           </div>
         </div>
       </div>
