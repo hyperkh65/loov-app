@@ -1,16 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest } from 'next/server';
 
-const DL_PATH = '/volume1/homes/urjent/missav_downloads';
-
-const SSH_CONFIG = {
-  host: process.env.NAS_SSH_HOST || 'hy64.synology.me',
-  port: parseInt(process.env.NAS_SSH_PORT || '22'),
-  username: process.env.NAS_SSH_USER || 'urjent',
-  password: process.env.NAS_SSH_PASSWORD || 'Aa050677##7759',
-  tryKeyboard: true as const,
-  readyTimeout: 15000,
-};
+// missav 컨테이너 HTTP 직접 프록시 (SSH/SFTP 불필요)
+const MISSAV_BASE = process.env.MISSAV_STREAM_BASE || 'http://172.17.0.1:58000';
 
 export async function GET(req: NextRequest) {
   const filename = req.nextUrl.searchParams.get('file');
@@ -18,81 +9,45 @@ export async function GET(req: NextRequest) {
     return new Response('Invalid filename', { status: 400 });
   }
 
-  const remotePath = `${DL_PATH}/${filename}`;
-  const rangeHeader = req.headers.get('range');
+  const upstreamUrl = `${MISSAV_BASE}/api/video/${encodeURIComponent(filename)}`;
 
-  const ext = filename.split('.').pop()?.toLowerCase() || 'mp4';
-  const mimeMap: Record<string, string> = {
-    mp4: 'video/mp4', mkv: 'video/x-matroska', webm: 'video/webm',
-    avi: 'video/x-msvideo', mov: 'video/quicktime', ts: 'video/mp2t',
-    m4v: 'video/mp4', flv: 'video/x-flv',
-  };
-  const contentType = mimeMap[ext] || 'video/mp4';
+  const upstreamHeaders: Record<string, string> = {};
+  const range = req.headers.get('range');
+  if (range) upstreamHeaders['Range'] = range;
 
-  const { Client } = require('ssh2');
+  try {
+    const upstream = await fetch(upstreamUrl, { headers: upstreamHeaders });
 
-  const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-    'Access-Control-Allow-Headers': 'Range',
-    'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length',
-  };
+    const resHeaders: Record<string, string> = {
+      'Access-Control-Allow-Origin': '*',
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-cache',
+    };
 
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
-  }
+    const ct = upstream.headers.get('content-type');
+    const cl = upstream.headers.get('content-length');
+    const cr = upstream.headers.get('content-range');
+    if (ct) resHeaders['Content-Type'] = ct;
+    if (cl) resHeaders['Content-Length'] = cl;
+    if (cr) resHeaders['Content-Range'] = cr;
 
-  return new Promise<Response>((resolve) => {
-    const conn = new Client();
-
-    conn.on('ready', () => {
-      conn.sftp((err: any, sftp: any) => {
-        if (err) { conn.end(); return resolve(new Response('SFTP error', { status: 500 })); }
-
-        sftp.stat(remotePath, (statErr: any, stats: any) => {
-          if (statErr) { conn.end(); return resolve(new Response('File not found', { status: 404 })); }
-
-          const fileSize: number = stats.size;
-          let start = 0;
-          let end = fileSize - 1;
-          let status = 200;
-
-          if (rangeHeader) {
-            const [, range] = rangeHeader.split('=');
-            const [s, e] = range.split('-');
-            start = parseInt(s, 10) || 0;
-            end = e ? parseInt(e, 10) : Math.min(start + 10 * 1024 * 1024, fileSize - 1);
-            status = 206;
-          }
-
-          const chunkSize = end - start + 1;
-          const sftpStream = sftp.createReadStream(remotePath, { start, end });
-
-          const readable = new ReadableStream({
-            start(controller) {
-              sftpStream.on('data', (chunk: Buffer) => controller.enqueue(chunk));
-              sftpStream.on('end', () => { controller.close(); conn.end(); });
-              sftpStream.on('error', (e: Error) => { controller.error(e); conn.end(); });
-            },
-            cancel() { sftpStream.destroy(); conn.end(); },
-          });
-
-          resolve(new Response(readable, {
-            status,
-            headers: {
-              ...CORS_HEADERS,
-              'Content-Type': contentType,
-              'Content-Length': String(chunkSize),
-              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-              'Accept-Ranges': 'bytes',
-              'Cache-Control': 'no-cache',
-            },
-          }));
-        });
-      });
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: resHeaders,
     });
+  } catch (e) {
+    return new Response(`Stream error: ${String(e)}`, { status: 502 });
+  }
+}
 
-    conn.on('error', (e: Error) => resolve(new Response(String(e), { status: 500, headers: CORS_HEADERS })));
-    conn.connect(SSH_CONFIG);
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range',
+      'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length',
+    },
   });
 }
