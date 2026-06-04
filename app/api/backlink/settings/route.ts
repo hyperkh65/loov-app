@@ -27,6 +27,7 @@ export async function GET() {
     tumblr_consumer_key: consumerKey ? consumerKey.slice(0, 6) + '••••••' : '',
     tumblr_blog: blogName || '',
     tumblr_configured: tumblrConfigured,
+    pinterest_token_set: !!pinterestToken,
     pinterest_configured: !!(pinterestToken && pinterestBoardId),
     pinterest_board_id: pinterestBoardId || '',
     linkedin_configured: !!linkedinToken,
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   if (tumblr_access_token_secret?.trim()) updated.TUMBLR_ACCESS_TOKEN_SECRET = tumblr_access_token_secret.trim();
   if (tumblr_blog !== undefined) updated.TUMBLR_BLOG_NAME = tumblr_blog.trim();
   if (pinterest_access_token?.trim()) updated.PINTEREST_ACCESS_TOKEN = pinterest_access_token.trim();
-  if (pinterest_board_id !== undefined) updated.PINTEREST_BOARD_ID = pinterest_board_id.trim();
+  if (pinterest_board_id?.trim()) updated.PINTEREST_BOARD_ID = pinterest_board_id.trim();
   if (linkedin_access_token?.trim()) updated.LINKEDIN_ACCESS_TOKEN = linkedin_access_token.trim();
 
   const { error } = await admin
