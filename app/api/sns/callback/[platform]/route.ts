@@ -84,15 +84,21 @@ export async function GET(
         break;
       }
       case 'threads': {
+        const [dbThAppId, dbThAppSecret] = await Promise.all([
+          getSetting('THREADS_APP_ID'),
+          getSetting('THREADS_APP_SECRET'),
+        ]);
+        const threadsAppId = dbThAppId || process.env.THREADS_APP_ID || '';
+        const threadsAppSecret = dbThAppSecret || process.env.THREADS_APP_SECRET || '';
         const tokenRes = await fetch('https://graph.threads.net/oauth/access_token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ client_id: process.env.THREADS_APP_ID!, client_secret: process.env.THREADS_APP_SECRET!, code, grant_type: 'authorization_code', redirect_uri: redirectUri }),
+          body: new URLSearchParams({ client_id: threadsAppId, client_secret: threadsAppSecret, code, grant_type: 'authorization_code', redirect_uri: redirectUri }),
         });
         const tokenData = await tokenRes.json();
         if (!tokenRes.ok) throw new Error(JSON.stringify(tokenData));
         const shortToken = tokenData.access_token;
-        const ltRes = await fetch(`https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${process.env.THREADS_APP_SECRET}&access_token=${shortToken}`);
+        const ltRes = await fetch(`https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${threadsAppSecret}&access_token=${shortToken}`);
         const ltData = await ltRes.json();
         accessToken = ltData.access_token || shortToken;
         expiresIn = ltData.expires_in || null;
