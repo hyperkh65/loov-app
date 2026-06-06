@@ -72,6 +72,9 @@ const ALLOWED_KEYS = [
   // Twitter/X OAuth 2.0 앱 키
   'TWITTER_CLIENT_ID',
   'TWITTER_CLIENT_SECRET',
+  // Threads OAuth 앱 키
+  'THREADS_APP_ID',
+  'THREADS_APP_SECRET',
 ] as const;
 
 export async function GET() {
