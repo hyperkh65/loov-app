@@ -37,6 +37,8 @@ function BacklinkSettingsPanel() {
   const [linkedinToken, setLinkedinToken] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [tumblrTestMsg, setTumblrTestMsg] = useState('');
+  const [tumblrTesting, setTumblrTesting] = useState(false);
   const [status, setStatus] = useState<{
     medium_configured: boolean;
     tumblr_configured: boolean;
@@ -175,6 +177,24 @@ function BacklinkSettingsPanel() {
               className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
+          {status.tumblr_configured && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  setTumblrTesting(true); setTumblrTestMsg('');
+                  const r = await fetch('/api/backlink/tumblr?test=1').then(x => x.json());
+                  setTumblrTesting(false);
+                  if (r.test_ok) setTumblrTestMsg(`✅ 연결 성공! (Consumer Key: ${r.consumer_key_prefix}...)`);
+                  else setTumblrTestMsg(`❌ ${r.test_error || '실패'} (Key: ${r.consumer_key_prefix || '?'}...)`);
+                }}
+                disabled={tumblrTesting}
+                className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg border border-blue-200 disabled:opacity-50"
+              >
+                {tumblrTesting ? '테스트 중...' : '🔌 연결 테스트'}
+              </button>
+              {tumblrTestMsg && <span className="text-xs text-gray-700">{tumblrTestMsg}</span>}
+            </div>
+          )}
         </div>
       </div>
 

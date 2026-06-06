@@ -123,6 +123,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/videos',     icon: '🎬', label: '동영상 보관함' },
       { href: '/dashboard/cctv',       icon: '📷', label: 'CCTV 뷰어' },
       { href: '/dashboard/wp-auto',    icon: '🌐', label: 'WordPress 자동세팅' },
+      { href: '/dashboard/downloader',  icon: '🎥', label: '다운로더' },
       { href: '/dashboard/deploy',     icon: '🚀', label: '배포 현황' },
     ],
   },

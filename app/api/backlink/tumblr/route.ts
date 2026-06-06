@@ -134,15 +134,15 @@ export async function POST(req: NextRequest) {
     const responseText = await res.text();
 
     if (!res.ok) {
-      let friendlyError = `Tumblr 오류 (${res.status})`;
+      let friendlyError = `Tumblr 오류 (${res.status}): ${responseText.slice(0, 300)}`;
       try {
         const errJson = JSON.parse(responseText);
         const code = errJson?.errors?.[0]?.code;
         const detail = errJson?.errors?.[0]?.detail || errJson?.meta?.msg;
-        if (code === 1008 || detail?.includes('authorize')) {
-          friendlyError = 'Tumblr OAuth 인증 실패 — 설정 페이지에서 Consumer Key/Secret, Access Token/Secret 4개를 다시 확인해주세요';
+        if (code === 1008 || detail?.includes('authorize') || detail?.includes('Unauthorized')) {
+          friendlyError = `Tumblr OAuth 인증 실패 (code:${code}) — Consumer Key로 시작하는 값: ${consumerKey.slice(0,6)}... 설정 페이지에서 4개 키 다시 저장해주세요`;
         } else if (detail) {
-          friendlyError = `Tumblr 오류: ${detail}`;
+          friendlyError = `Tumblr 오류 (${res.status}): ${detail}`;
         }
       } catch { /* ignore */ }
       return NextResponse.json({ error: friendlyError }, { status: 500 });
@@ -157,17 +157,42 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET: 연결 상태 확인
-export async function GET() {
+// GET: 연결 상태 확인 + ?test=1 시 실제 API 호출 테스트
+export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const [consumerKey, accessToken, blogName] = await Promise.all([
+  const [consumerKey, consumerSecret, accessToken, accessTokenSecret, blogName] = await Promise.all([
     getSetting('TUMBLR_CONSUMER_KEY'),
+    getSetting('TUMBLR_CONSUMER_SECRET'),
     getSetting('TUMBLR_ACCESS_TOKEN'),
+    getSetting('TUMBLR_ACCESS_TOKEN_SECRET'),
     getSetting('TUMBLR_BLOG_NAME'),
   ]);
 
-  return NextResponse.json({ configured: !!(consumerKey && accessToken && blogName), blog_name: blogName || '' });
+  const configured = !!(consumerKey && consumerSecret && accessToken && accessTokenSecret && blogName);
+
+  const doTest = new URL(req.url).searchParams.get('test') === '1';
+  if (doTest && configured) {
+    const testUrl = `https://api.tumblr.com/v2/blog/${blogName}/info`;
+    const authHeader = buildOAuth1Header('GET', testUrl, consumerKey!, consumerSecret!, accessToken!, accessTokenSecret!);
+    try {
+      const r = await fetch(testUrl, {
+        headers: { Authorization: authHeader, 'User-Agent': 'loov-backlink/1.0' },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const body = await r.text();
+      if (r.ok) {
+        return NextResponse.json({ configured, blog_name: blogName || '', test_ok: true, consumer_key_prefix: consumerKey!.slice(0, 6) });
+      }
+      let detail = '';
+      try { detail = JSON.parse(body)?.errors?.[0]?.detail || JSON.parse(body)?.meta?.msg || body.slice(0, 200); } catch { detail = body.slice(0, 200); }
+      return NextResponse.json({ configured, blog_name: blogName || '', test_ok: false, test_error: `${r.status}: ${detail}`, consumer_key_prefix: consumerKey!.slice(0, 6) });
+    } catch (e) {
+      return NextResponse.json({ configured, blog_name: blogName || '', test_ok: false, test_error: String(e) });
+    }
+  }
+
+  return NextResponse.json({ configured, blog_name: blogName || '', consumer_key_prefix: consumerKey ? consumerKey.slice(0, 6) : '' });
 }
