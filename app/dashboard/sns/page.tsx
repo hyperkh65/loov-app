@@ -13,7 +13,15 @@ interface Connection {
   platform_avatar: string | null;
   is_active: boolean;
   updated_at: string;
+  extra?: { caption_language?: string } | null;
 }
+
+const CAPTION_LANGUAGES = [
+  { value: 'ko', label: '🇰🇷 한국어' },
+  { value: 'en', label: '🇺🇸 English' },
+  { value: 'ja', label: '🇯🇵 日本語' },
+  { value: 'es', label: '🇪🇸 Español' },
+];
 
 interface Template {
   id: string;
@@ -129,6 +137,15 @@ export default function SNSPage() {
       if (connParam || errParam) window.history.replaceState({}, '', '/dashboard/sns');
     } catch { /* ignore */ }
   }, []);
+
+  const updateLanguage = async (platform: string, platform_user_id: string, caption_language: string) => {
+    await fetch('/api/sns/connections', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, platform_user_id, caption_language }),
+    });
+    loadAll();
+  };
 
   const disconnect = async (platform: string, platform_user_id?: string) => {
     const label = PLATFORM_INFO[platform]?.label;
@@ -404,16 +421,26 @@ export default function SNSPage() {
                     {activeConns.length > 0 ? (
                       <div className="space-y-2">
                         {activeConns.map((conn) => (
-                          <div key={conn.platform_user_id} className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
-                            {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-7 h-7 rounded-full flex-shrink-0" />}
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-medium text-gray-700 truncate">{conn.platform_display_name || conn.platform_username}</div>
-                              <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>
+                          <div key={conn.platform_user_id} className="bg-gray-50 rounded-xl p-2.5 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-7 h-7 rounded-full flex-shrink-0" />}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-medium text-gray-700 truncate">{conn.platform_display_name || conn.platform_username}</div>
+                                <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>
+                              </div>
+                              <button
+                                onClick={() => disconnect(platform, conn.platform_user_id)}
+                                className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 px-1"
+                                title="연결 해제">✕</button>
                             </div>
-                            <button
-                              onClick={() => disconnect(platform, conn.platform_user_id)}
-                              className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 px-1"
-                              title="연결 해제">✕</button>
+                            <select
+                              value={conn.extra?.caption_language || 'ko'}
+                              onChange={(e) => updateLanguage(platform, conn.platform_user_id, e.target.value)}
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-indigo-400">
+                              {CAPTION_LANGUAGES.map(l => (
+                                <option key={l.value} value={l.value}>{l.label}</option>
+                              ))}
+                            </select>
                           </div>
                         ))}
                         <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-xs font-bold py-2 rounded-xl hover:opacity-90 transition-opacity`}>
