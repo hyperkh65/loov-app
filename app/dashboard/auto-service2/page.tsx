@@ -861,7 +861,9 @@ export default function AutoService2Page() {
           backlink_platforms: selBacklink,
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = (() => { try { return JSON.parse(text); } catch { throw new Error(`서버 오류 (HTTP ${res.status}) — NAS 서버 재시작 필요`); } })();
       setPublishResult(data.results || {});
       if (data.error) alert(`발행 오류: ${data.error}`);
       await loadArticles();

@@ -53,7 +53,9 @@ export async function POST(req: NextRequest) {
   const jobToken = createJobToken(user.id);
 
   // 3. 백그라운드에서 실제 생성 실행 (await 없이 → 페이지 이탈해도 계속 실행)
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  // Docker 환경에서 HOSTNAME이 컨테이너 ID로 설정되므로 localhost 대신 사용
+  const internalBase = `http://${process.env.HOSTNAME || 'localhost'}:${process.env.PORT || '3000'}`;
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || internalBase;
   void fetch(`${baseUrl}/api/auto-service/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
