@@ -201,6 +201,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
     userId = user.id;
   }
+  // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
   const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [] } = await req.json();
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
@@ -213,6 +214,9 @@ export async function POST(req: NextRequest) {
   const { data: article, error: fetchErr } = await articleQuery.single();
 
   if (fetchErr || !article) return NextResponse.json({ error: '글을 찾을 수 없습니다' }, { status: 404 });
+
+  // cron 실행 시 article의 user_id로 userId 보완 (언어 설정 조회)
+  if (!userId && article.user_id) userId = article.user_id;
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get('host')}`;
   const results: Record<string, { success: boolean; url?: string; error?: string }> = {};
