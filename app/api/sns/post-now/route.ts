@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { content: directContent, template_id, platforms, media_urls, thread_items } = await req.json();
+  const { content: directContent, template_id, platforms, media_urls, thread_items, account_ids } = await req.json();
 
   let content: string = directContent || '';
   const templateId: string | null = template_id || null;
@@ -39,12 +39,14 @@ export async function POST(req: NextRequest) {
   const results: { platform: string; success: boolean; error?: string }[] = [];
 
   for (const platform of platforms as Platform[]) {
-    const { data: connList } = await supabase
+    let connQuery = supabase
       .from('sns_connections')
       .select('access_token, refresh_token, token_expires_at, platform_user_id, is_active')
       .eq('user_id', user.id)
       .eq('platform', platform)
       .eq('is_active', true);
+    if (account_ids?.length) connQuery = connQuery.in('platform_user_id', account_ids);
+    const { data: connList } = await connQuery;
 
     if (!connList?.length) {
       results.push({ platform, success: false, error: '연결되지 않은 플랫폼' });

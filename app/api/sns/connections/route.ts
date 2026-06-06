@@ -18,10 +18,27 @@ export async function GET(req: NextRequest) {
 
   const { data } = await supabase
     .from('sns_connections')
-    .select('platform, platform_user_id, platform_username, platform_display_name, platform_avatar, is_active, updated_at')
+    .select('platform, platform_user_id, platform_username, platform_display_name, platform_avatar, is_active, updated_at, extra')
     .eq('user_id', user.id);
 
   return NextResponse.json(data || []);
+}
+
+export async function PATCH(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+
+  const { platform, platform_user_id, caption_language } = await req.json();
+  const { error } = await supabase
+    .from('sns_connections')
+    .update({ extra: { caption_language } })
+    .eq('user_id', user.id)
+    .eq('platform', platform)
+    .eq('platform_user_id', platform_user_id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
 }
 
 export async function DELETE(req: NextRequest) {
