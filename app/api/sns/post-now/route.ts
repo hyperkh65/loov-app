@@ -41,12 +41,26 @@ export async function POST(req: NextRequest) {
   for (const platform of platforms as Platform[]) {
     let connQuery = supabase
       .from('sns_connections')
-      .select('access_token, refresh_token, token_expires_at, platform_user_id, is_active')
+      .select('access_token, refresh_token, token_expires_at, platform_user_id, is_active, extra')
       .eq('user_id', user.id)
       .eq('platform', platform)
       .eq('is_active', true);
     if (account_ids?.length) connQuery = connQuery.in('platform_user_id', account_ids);
-    const { data: connList } = await connQuery;
+    const { data: rawConnList } = await connQuery;
+
+    // extra.extra_accounts 확장 — 마이그레이션 없이 다계정 지원
+    type ConnRow = { access_token: string; refresh_token?: string | null; token_expires_at?: string | null; platform_user_id: string; is_active: boolean; extra?: Record<string, unknown> | null };
+    const connList: ConnRow[] = [];
+    for (const row of (rawConnList || [])) {
+      connList.push(row as ConnRow);
+      const extraAccounts = Array.isArray((row.extra as Record<string, unknown>)?.extra_accounts)
+        ? ((row.extra as Record<string, unknown>).extra_accounts as ConnRow[]) : [];
+      for (const acc of extraAccounts) {
+        if (!acc.is_active) continue;
+        if (account_ids?.length && !account_ids.includes(acc.platform_user_id)) continue;
+        connList.push(acc);
+      }
+    }
 
     if (!connList?.length) {
       results.push({ platform, success: false, error: '연결되지 않은 플랫폼' });
