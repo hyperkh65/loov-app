@@ -360,19 +360,30 @@ export async function generateText(
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
     // 폴백 순서: 검증된 중간 크기 모델만 (전체 순회 금지 — 300s maxDuration 초과 방지)
     const OLLAMA_FALLBACKS = [
-      'llama3.3', 'qwen3.5', 'kimi-k2', 'deepseek-r1',
-      'qwen3', 'qwen3-coder', 'llama3.2',
-      'mistral-small3.1', 'gemma3', 'phi4', 'phi4-mini', 'ministral-3', 'mistral',
+      'llama3.3', 'kimi-k2.5', 'kimi-k2.6', 'kimi-k2',
+      'deepseek-v4-flash', 'deepseek-r1', 'glm-4', 'glm4',
+      'qwen3', 'qwen3.5', 'qwen3-coder',
+      'minimax-m2', 'llama3.2', 'mistral-small3.1', 'gemma3', 'phi4', 'ministral-3',
     ];
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
       const available = await getAvailableOllamaModels(key);
       let toTry: string[];
       if (available.length > 0) {
+        // 100B 초과 모델 또는 1T 모델은 구독 필요 → 제외
+        const isFreeModel = (name: string) => {
+          const m = name.match(/:(\d+)([bt])$/i);
+          if (!m) return true;
+          const size = parseInt(m[1]);
+          const unit = m[2].toLowerCase();
+          if (unit === 't') return false; // 1T+ = 구독 필요
+          if (unit === 'b' && size > 100) return false; // 100B+ = 구독 필요
+          return true;
+        };
         // 선택 모델 우선, 폴백은 OLLAMA_FALLBACKS 순서대로 available에 있는 것만 최대 4개
         const priority = available.filter(m => m === mainModel || m.startsWith(mainModel + ':'));
         const fallbackOrdered = OLLAMA_FALLBACKS
-          .flatMap(fb => available.filter(m => m === fb || m.startsWith(fb + ':')))
+          .flatMap(fb => available.filter(m => (m === fb || m.startsWith(fb + ':') || m.startsWith(fb + '.')) && isFreeModel(m)))
           .filter(m => !priority.includes(m))
           .slice(0, 4);
         toTry = [...priority, ...fallbackOrdered];
