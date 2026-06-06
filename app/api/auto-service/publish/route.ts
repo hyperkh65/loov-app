@@ -370,12 +370,14 @@ export async function POST(req: NextRequest) {
       }
 
       // ── AI 후킹성 반말 SNS 캡션 생성 (한국어 기본) ─────────────
-      const useGptForCaption = !!(article.ai_model && (article.ai_model === 'openai' || article.ai_model.startsWith('gpt')));
+      const captionModel = article.ai_model === 'openai' || article.ai_model?.startsWith('gpt') ? 'openai'
+        : article.ai_model === 'openrouter' ? 'openrouter'
+        : 'qwen3';
       const aiCaption = await generateSnsCaption(
         article.title,
         article.meta_description || '',
         article.keyword || article.focus_keyword || '',
-        useGptForCaption ? 'openai' : 'qwen3',
+        captionModel,
       );
 
       // ── Threads 계정별 언어 설정 조회 ────────────────────────────
@@ -482,7 +484,7 @@ export async function POST(req: NextRequest) {
             : await generateSnsCaption(
                 article.title, article.meta_description || '',
                 article.keyword || article.focus_keyword || '',
-                useGptForCaption ? 'openai' : undefined, lang as CaptionLanguage,
+                captionModel !== 'qwen3' ? captionModel : undefined, lang as CaptionLanguage,
               );
 
           const res = await fetch(`${baseUrl}/api/sns/post-now`, {
