@@ -161,11 +161,18 @@ function replaceEnglishWords(text: string): string {
 }
 
 const OPENROUTER_MODELS = [
-  'qwen/qwen3-235b-a22b:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'deepseek/deepseek-r1:free',
-  'google/gemma-3-27b-it:free',
-  'mistralai/mistral-7b-instruct:free',
+  'moonshotai/kimi-k2.6:free',              // 한국어 강함, 262K ctx
+  'openrouter/free',                         // 자동 최적 무료 모델 선택
+  'qwen/qwen3-next-80b-a3b-instruct:free',  // Qwen3 인스트럭트, 한국어 우수
+  'qwen/qwen3-coder:free',                  // Qwen3 480B A35B, 1M ctx
+  'z-ai/glm-4.5-air:free',                 // GLM 4.5, 한국어/중국어 강함
+  'nvidia/nemotron-3-ultra-550b-a55b:free', // 550B, 1M ctx
+  'nvidia/nemotron-3-super-120b-a12b:free', // 120B, 1M ctx
+  'openai/gpt-oss-120b:free',              // OpenAI OSS 120B
+  'nousresearch/hermes-3-llama-3.1-405b:free', // 405B
+  'meta-llama/llama-3.3-70b-instruct:free', // Llama 70B
+  'google/gemma-4-31b-it:free',             // Gemma 4 31B, 262K ctx
+  'openai/gpt-oss-20b:free',               // OpenAI OSS 20B (빠름)
 ];
 
 async function callOllama(apiKey: string, model: string, prompt: string): Promise<string> {
