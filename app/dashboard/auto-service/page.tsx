@@ -63,6 +63,7 @@ interface AutoSettings {
   ai_model: string;
   max_per_run: number;
   custom_keywords: string[];
+  use_gpt: boolean;
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_count: number;
@@ -83,7 +84,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], last_run_at: null, last_run_status: null, last_run_count: 0,
+    custom_keywords: [], use_gpt: false, last_run_at: null, last_run_status: null, last_run_count: 0,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -332,7 +333,7 @@ export default function AutoServicePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           keywords: autoSettings.custom_keywords.length > 0 ? autoSettings.custom_keywords : [],
-          ai_model: autoSettings.ai_model,
+          ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.ai_model,
           max: autoSettings.max_per_run,
           ...getAiKeys(),
         }),
@@ -412,7 +413,7 @@ export default function AutoServicePage() {
       const res = await fetch('/api/auto-service/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, ai_model: autoSettings.ai_model, ...getAiKeys() }),
+        body: JSON.stringify({ keyword, ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.ai_model, ...getAiKeys() }),
       });
       const data = await res.json() as { article_id?: string; error?: string };
       if (!res.ok) throw new Error(data.error || '잡 시작 실패');
@@ -986,7 +987,24 @@ export default function AutoServicePage() {
           <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
             <h2 className="font-semibold text-gray-800">상세 설정</h2>
 
-            {/* AI 모델 */}
+            {/* GPT 사용 토글 */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">GPT 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.use_gpt ? 'GPT-4o mini로 블로그·SNS 캡션 생성 (설정의 OpenAI 키 사용)' : '기본값: Ollama Cloud 모델 사용'}
+                </p>
+              </div>
+              <button
+                onClick={() => setAutoSettings(prev => ({ ...prev, use_gpt: !prev.use_gpt }))}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.use_gpt ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.use_gpt ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* AI 모델 (GPT 꺼진 경우만 표시) */}
+            {!autoSettings.use_gpt && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-gray-700">AI 모델</label>
@@ -1036,6 +1054,7 @@ export default function AutoServicePage() {
               )}
               {modelsLoading && <p className="text-xs text-gray-400 mt-2">Ollama Cloud에서 모델 목록 조회 중…</p>}
             </div>
+            )}
 
             {/* 최대 생성 수 */}
             <div>
