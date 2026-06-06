@@ -64,6 +64,7 @@ interface AutoSettings {
   max_per_run: number;
   custom_keywords: string[];
   use_gpt: boolean;
+  use_openrouter: boolean;
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_count: number;
@@ -84,7 +85,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], use_gpt: false, last_run_at: null, last_run_status: null, last_run_count: 0,
+    custom_keywords: [], use_gpt: false, use_openrouter: false, last_run_at: null, last_run_status: null, last_run_count: 0,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -333,7 +334,7 @@ export default function AutoServicePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           keywords: autoSettings.custom_keywords.length > 0 ? autoSettings.custom_keywords : [],
-          ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.ai_model,
+          ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.use_openrouter ? 'openrouter' : autoSettings.ai_model,
           max: autoSettings.max_per_run,
           ...getAiKeys(),
         }),
@@ -413,7 +414,7 @@ export default function AutoServicePage() {
       const res = await fetch('/api/auto-service/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.ai_model, ...getAiKeys() }),
+        body: JSON.stringify({ keyword, ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.use_openrouter ? 'openrouter' : autoSettings.ai_model, ...getAiKeys() }),
       });
       const data = await res.json() as { article_id?: string; error?: string };
       if (!res.ok) throw new Error(data.error || '잡 시작 실패');
@@ -996,15 +997,31 @@ export default function AutoServicePage() {
                 </p>
               </div>
               <button
-                onClick={() => setAutoSettings(prev => ({ ...prev, use_gpt: !prev.use_gpt }))}
+                onClick={() => setAutoSettings(prev => ({ ...prev, use_gpt: !prev.use_gpt, use_openrouter: prev.use_gpt ? prev.use_openrouter : false }))}
                 className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.use_gpt ? 'bg-green-500' : 'bg-gray-300'}`}
               >
                 <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.use_gpt ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
 
-            {/* AI 모델 (GPT 꺼진 경우만 표시) */}
-            {!autoSettings.use_gpt && (
+            {/* OpenRouter 사용 토글 */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">OpenRouter 사용 <span className="text-xs text-green-600 font-normal">무료</span></p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.use_openrouter ? 'OpenRouter 무료 모델 사용 (Qwen3-235B, DeepSeek-R1 등)' : '기본값: Ollama Cloud 모델 사용'}
+                </p>
+              </div>
+              <button
+                onClick={() => setAutoSettings(prev => ({ ...prev, use_openrouter: !prev.use_openrouter, use_gpt: prev.use_openrouter ? prev.use_gpt : false }))}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.use_openrouter ? 'bg-purple-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.use_openrouter ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* AI 모델 (GPT·OpenRouter 꺼진 경우만 표시) */}
+            {!autoSettings.use_gpt && !autoSettings.use_openrouter && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-gray-700">AI 모델</label>
