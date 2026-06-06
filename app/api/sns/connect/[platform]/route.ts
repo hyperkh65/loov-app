@@ -20,23 +20,27 @@ export async function GET(
   }
 
   // DB 설정 → 환경변수 순으로 읽기
-  const [igAppId, igAppSecret, fbAppId, fbAppSecret, twClientId, twClientSecret] = await Promise.all([
+  const [igAppId, igAppSecret, fbAppId, fbAppSecret, twClientId, twClientSecret, dbThreadsAppId, dbThreadsAppSecret] = await Promise.all([
     getSetting('INSTAGRAM_APP_ID'),
     getSetting('INSTAGRAM_APP_SECRET'),
     getSetting('FACEBOOK_APP_ID'),
     getSetting('FACEBOOK_APP_SECRET'),
     getSetting('TWITTER_CLIENT_ID'),
     getSetting('TWITTER_CLIENT_SECRET'),
+    getSetting('THREADS_APP_ID'),
+    getSetting('THREADS_APP_SECRET'),
   ]);
 
   const resolvedTwClientId = twClientId || process.env.TWITTER_CLIENT_ID;
   const resolvedTwClientSecret = twClientSecret || process.env.TWITTER_CLIENT_SECRET;
+  const resolvedThreadsAppId = dbThreadsAppId || process.env.THREADS_APP_ID;
+  const resolvedThreadsAppSecret = dbThreadsAppSecret || process.env.THREADS_APP_SECRET;
 
   const missingEnvMsg: Record<string, string | null> = {
     twitter:   (!resolvedTwClientId || !resolvedTwClientSecret)
                  ? 'Twitter Client ID/Secret이 없습니다. 설정 → API 키에서 Twitter Client ID/Secret을 등록하세요.' : null,
-    threads:   (!process.env.THREADS_APP_ID || !process.env.THREADS_APP_SECRET)
-                 ? 'Threads App ID/Secret이 없습니다.' : null,
+    threads:   (!resolvedThreadsAppId || !resolvedThreadsAppSecret)
+                 ? 'Threads App ID/Secret이 없습니다. 설정 → API 키에서 등록하세요.' : null,
     facebook:  (!(fbAppId || process.env.FACEBOOK_APP_ID) || !(fbAppSecret || process.env.FACEBOOK_APP_SECRET))
                  ? 'Facebook App ID/Secret이 없습니다. 설정 → API 키에서 등록하세요.' : null,
     instagram: !(igAppId || fbAppId || process.env.INSTAGRAM_APP_ID || process.env.FACEBOOK_APP_ID)
@@ -83,7 +87,7 @@ export async function GET(
     }
     case 'threads': {
       authUrl = new URL('https://threads.net/oauth/authorize');
-      authUrl.searchParams.set('client_id', process.env.THREADS_APP_ID!);
+      authUrl.searchParams.set('client_id', resolvedThreadsAppId!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', PLATFORMS.threads.scopes.join(','));
       authUrl.searchParams.set('response_type', 'code');
