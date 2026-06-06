@@ -383,7 +383,15 @@ export async function POST(req: NextRequest) {
           .eq('platform', 'threads')
           .eq('is_active', true);
         for (const c of threadsConns || []) {
-          threadsLangMap[c.platform_user_id] = (c.extra?.caption_language as CaptionLanguage) || 'ko';
+          const extra = c.extra as Record<string, unknown> | null;
+          threadsLangMap[c.platform_user_id] = ((extra?.caption_language) as CaptionLanguage) || 'ko';
+          // extra_accounts도 포함
+          const extraAccounts = Array.isArray(extra?.extra_accounts)
+            ? (extra!.extra_accounts as { platform_user_id: string; caption_language?: string; is_active?: boolean }[]) : [];
+          for (const acc of extraAccounts) {
+            if (acc.is_active === false) continue;
+            threadsLangMap[acc.platform_user_id] = (acc.caption_language as CaptionLanguage) || 'ko';
+          }
         }
       }
 
