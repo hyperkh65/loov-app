@@ -385,6 +385,9 @@ export default function SettingsPage() {
   // OpenRouter state
   const [openrouterKey, setOpenrouterKey] = useState('');
   const [openrouterKeySaved, setOpenrouterKeySaved] = useState(false);
+  const [openrouterCloudKeysMasked, setOpenrouterCloudKeysMasked] = useState<string[]>([]);
+  const [newOpenrouterKey, setNewOpenrouterKey] = useState('');
+  const [openrouterKeyAdding, setOpenrouterKeyAdding] = useState(false);
 
   // 서버 글로벌 AI 설정 (DB에서 읽기/저장)
   const [serverGlobalProvider, setServerGlobalProvider] = useState('gemini');
@@ -521,10 +524,11 @@ export default function SettingsPage() {
     if (activeTab === 'ai') {
       fetch('/api/app-settings')
         .then((r) => r.ok ? r.json() : {})
-        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string>; ollamaKeysMasked?: string[] }) => {
+        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string>; ollamaKeysMasked?: string[]; openrouterKeysMasked?: string[] }) => {
           setOllamaCloudKeysMasked(d.ollamaKeysMasked || []);
+          setOpenrouterCloudKeysMasked(d.openrouterKeysMasked || []);
           setOllamaUrlSaved(!!d.hasKey?.['OLLAMA_BASE_URL']);
-          setOpenrouterKeySaved(!!d.hasKey?.['OPENROUTER_API_KEY']);
+          setOpenrouterKeySaved(!!(d.hasKey?.['OPENROUTER_API_KEY'] || (d.openrouterKeysMasked?.length ?? 0) > 0));
           // Load server global AI setting
           if (d.settings?.['AI_GLOBAL_PROVIDER']) setServerGlobalProvider(d.settings['AI_GLOBAL_PROVIDER']);
           if (d.settings?.['AI_GLOBAL_MODEL']) setServerGlobalModel(d.settings['AI_GLOBAL_MODEL']);
@@ -1414,43 +1418,64 @@ export default function SettingsPage() {
             {/* OpenRouter 설정 */}
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <div className="flex items-center justify-between mb-1">
-                <h3 className="font-bold text-gray-900">OpenRouter API Key</h3>
-                <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" className="text-xs text-blue-500 hover:underline">발급받기 →</a>
+                <h3 className="font-bold text-gray-900">OpenRouter</h3>
+                <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" className="text-xs text-blue-500 hover:underline">API 키 발급 →</a>
               </div>
-              <p className="text-xs text-gray-500 mb-2">무료 모델 포함 100+ 모델 접근. <span className="text-emerald-600 font-medium">:free 모델은 완전 무료.</span></p>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {['qwen/qwen3-235b-a22b:free', 'meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-r1:free'].map((m) => (
-                  <span key={m} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">{m}</span>
-                ))}
+              <p className="text-xs text-gray-500 mb-3">:free 모델 완전 무료. 여러 계정 키 등록 시 한도 초과 때 자동 순환.<br/>무료 한도: 결제 전 50회/일 → $10 충전 후 1,000회/일</p>
+
+              {/* Multi-key pool */}
+              <div className="mb-3">
+                <label className="text-xs font-semibold text-gray-700 mb-1 block">
+                  OpenRouter API Keys
+                  <span className="ml-2 text-gray-400 font-normal">({openrouterCloudKeysMasked.length}개 저장 — 429 한도 시 자동 순환)</span>
+                </label>
+                {openrouterCloudKeysMasked.length > 0 && (
+                  <ul className="mb-2 space-y-1">
+                    {openrouterCloudKeysMasked.map((masked, i) => (
+                      <li key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5">
+                        <span className="flex-1 text-xs font-mono text-gray-600">{i + 1}. {masked}</span>
+                        <button
+                          onClick={async () => {
+                            await fetch('/api/app-settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ OPENROUTER_API_KEYS_DELETE_INDEX: String(i) }),
+                            });
+                            setOpenrouterCloudKeysMasked((prev) => prev.filter((_, idx) => idx !== i));
+                          }}
+                          className="text-xs text-red-400 hover:text-red-600 px-1"
+                        >삭제</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={newOpenrouterKey}
+                    onChange={(e) => setNewOpenrouterKey(e.target.value)}
+                    placeholder="sk-or-... (새 키 추가)"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!newOpenrouterKey.trim()) return;
+                      setOpenrouterKeyAdding(true);
+                      await fetch('/api/app-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ OPENROUTER_API_KEYS_ADD: newOpenrouterKey.trim() }),
+                      });
+                      setOpenrouterCloudKeysMasked((prev) => [...prev, newOpenrouterKey.trim().slice(0, 8) + '••••••••']);
+                      setOpenrouterKeySaved(true);
+                      setNewOpenrouterKey('');
+                      setOpenrouterKeyAdding(false);
+                    }}
+                    disabled={!newOpenrouterKey.trim() || openrouterKeyAdding}
+                    className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
+                  >{openrouterKeyAdding ? '...' : '추가'}</button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={openrouterKey}
-                  onChange={(e) => setOpenrouterKey(e.target.value)}
-                  placeholder={openrouterKeySaved ? '저장됨 — 변경 시 입력' : 'sk-or-...'}
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
-                />
-                <button
-                  onClick={async () => {
-                    if (!openrouterKey.trim()) return;
-                    await fetch('/api/app-settings', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ OPENROUTER_API_KEY: openrouterKey }),
-                    });
-                    setOpenrouterKeySaved(true);
-                    setOpenrouterKey('');
-                  }}
-                  disabled={!openrouterKey.trim()}
-                  className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
-                >
-                  저장
-                </button>
-              </div>
-              {openrouterKeySaved && !openrouterKey && (
-                <p className="mt-2 text-xs text-emerald-600 font-medium">OpenRouter API 키가 저장되어 있습니다.</p>
-              )}
             </div>
 
             {/* AI 폴백 체인 */}
