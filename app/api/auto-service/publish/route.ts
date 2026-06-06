@@ -63,14 +63,18 @@ async function resolveTermId(
   return null;
 }
 
-// AI로 SNS 후킹성 반말 캡션 생성
+type CaptionLanguage = 'ko' | 'en' | 'ja' | 'es';
+
+// AI로 SNS 후킹성 캡션 생성 (다국어 지원)
 async function generateSnsCaption(
   title: string,
   metaDescription: string,
   keyword: string,
   preferModel: string = 'qwen3',
+  language: CaptionLanguage = 'ko',
 ): Promise<string> {
-  const prompt = `다음 블로그 글에 대한 SNS 게시물 문구를 작성해.
+  const prompts: Record<CaptionLanguage, string> = {
+    ko: `다음 블로그 글에 대한 SNS 게시물 문구를 작성해.
 
 제목: ${title}
 키워드: ${keyword}
@@ -80,7 +84,6 @@ async function generateSnsCaption(
 - 영어 단어 절대 금지: 한국어로 100% 작성. "SNS", "AI", "콘텐츠", "트렌드", "팁", "핵심", "포인트", "체크", "업데이트", "서비스", "바이럴", "임팩트", "컴팩트" 같은 영어 외래어·영문 표기 모두 금지. 순수 한국어 단어만 사용.
 - * 기호 절대 금지: 별표(*), 볼드(**) 마크다운 기호 일절 사용 불가.
 - AI 냄새 나는 표현 절대 금지: "~해보세요", "~확인해보세요", "~알아보겠습니다", "~살펴보면", "~중요합니다", "~필요합니다", "~있습니다", "~됩니다" 같은 딱딱하고 인공적인 표현 금지.
-- 한국 사람이 실제로 안 쓰는 어색한 표현 금지: 번역체, 직역체, 광고 문구 말투 금지.
 
 [작성 규칙]
 - 반말 구어체 (예: ~야, ~잖아, ~했대, ~봐봐, ~래, ~거야, ~다고, ~이래)
@@ -89,18 +92,68 @@ async function generateSnsCaption(
 - 핵심 정보 1~2개 압축
 - 이모지 2~3개 적절히 포함
 - 150자 이내
-- 사실 왜곡·과장 없음
 - URL, 해시태그, 따옴표 미포함
 
-문구만 출력해. 설명이나 부연 절대 붙이지 마.`;
+문구만 출력해. 설명이나 부연 절대 붙이지 마.`,
+
+    en: `Write a social media caption in English for the following blog post.
+
+Title: ${title}
+Keyword: ${keyword}
+Summary: ${metaDescription || title}
+
+Rules:
+- Natural, casual English like texting a friend (not formal, not robotic)
+- First sentence must hook the reader (surprising fact or intriguing question)
+- Include 2-3 emojis naturally
+- Under 150 characters
+- No hashtags, no URLs, no asterisks, no markdown
+- No AI-sounding phrases like "dive into", "delve", "it's important to note", "in conclusion"
+- Compress to 1-2 key facts
+
+Output only the caption text. Nothing else.`,
+
+    ja: `次のブログ記事についてSNS投稿文を日本語で書いてください。
+
+タイトル: ${title}
+キーワード: ${keyword}
+概要: ${metaDescription || title}
+
+ルール:
+- 友達にLINEで送るような自然なカジュアルな日本語
+- 最初の一文で読者を引きつける（驚きの事実や疑問を呼び起こす）
+- 絵文字2〜3個を自然に含める
+- 150文字以内
+- ハッシュタグ・URL・アスタリスク・マークダウン禁止
+- AIっぽい堅い表現禁止（「ぜひご確認ください」「重要です」等）
+- 要点を1〜2個に絞る
+
+キャプションテキストのみ出力してください。`,
+
+    es: `Escribe un pie de foto para redes sociales en español para el siguiente artículo de blog.
+
+Título: ${title}
+Palabra clave: ${keyword}
+Resumen: ${metaDescription || title}
+
+Reglas:
+- Español natural y casual, como un mensaje a un amigo
+- La primera frase debe enganchar al lector (dato sorprendente o pregunta intrigante)
+- Incluye 2-3 emojis de forma natural
+- Menos de 150 caracteres
+- Sin hashtags, sin URLs, sin asteriscos, sin markdown
+- Sin frases con sabor a IA ("es importante destacar", "en conclusión", etc.)
+- Comprime en 1-2 datos clave
+
+Escribe solo el texto del pie de foto. Nada más.`,
+  };
 
   try {
-    const result = await generateText(prompt, preferModel);
+    const result = await generateText(prompts[language], preferModel);
     const cleaned = result.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
     if (cleaned.length > 15) return cleaned;
   } catch { /* fallback */ }
 
-  // fallback: 원본 그대로
   return `${title}\n${metaDescription || ''}`.trim();
 }
 
@@ -313,12 +366,26 @@ export async function POST(req: NextRequest) {
         sns_platforms.push(...validPlatforms);
       }
 
-      // ── AI 후킹성 반말 SNS 캡션 생성 ──────────────────────────
+      // ── AI 후킹성 반말 SNS 캡션 생성 (한국어 기본) ─────────────
       const aiCaption = await generateSnsCaption(
         article.title,
         article.meta_description || '',
         article.keyword || article.focus_keyword || '',
       );
+
+      // ── Threads 계정별 언어 설정 조회 ────────────────────────────
+      let threadsLangMap: Record<string, CaptionLanguage> = {};
+      if (userId && sns_platforms.includes('threads')) {
+        const { data: threadsConns } = await supabase
+          .from('sns_connections')
+          .select('platform_user_id, extra')
+          .eq('user_id', userId)
+          .eq('platform', 'threads')
+          .eq('is_active', true);
+        for (const c of threadsConns || []) {
+          threadsLangMap[c.platform_user_id] = (c.extra?.caption_language as CaptionLanguage) || 'ko';
+        }
+      }
 
       // 블로그 URL 수집: 현재 요청 결과 + 이미 DB에 저장된 기존 발행 URL 합산
       const existingBlogUrls = Object.entries(article.published_urls || {})
@@ -388,25 +455,46 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Threads: 본문에 URL 없이 발행 → 블로그 URL은 댓글(reply)로 추가
+      // Threads: 계정별 언어로 캡션 생성 후 발행
       if (threadsIncluded) {
         const threadItems = blogUrls.length > 0
           ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
           : [];
-        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({
-            content: aiCaption,
-            platforms: ['threads'],
-            media_urls: (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })(),
-            thread_items: threadItems,
-          }),
-        });
-        const data = await res.json();
-        if (data.results) {
-          for (const r of data.results) {
-            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+        const mediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
+
+        // 언어별로 계정 그룹핑
+        const langGroups: Record<string, string[]> = {};
+        for (const [uid, lang] of Object.entries(threadsLangMap)) {
+          if (!langGroups[lang]) langGroups[lang] = [];
+          langGroups[lang].push(uid);
+        }
+        if (Object.keys(langGroups).length === 0) langGroups['ko'] = [];
+
+        for (const [lang, accountIds] of Object.entries(langGroups)) {
+          const caption = lang === 'ko'
+            ? aiCaption
+            : await generateSnsCaption(
+                article.title, article.meta_description || '',
+                article.keyword || article.focus_keyword || '',
+                undefined, lang as CaptionLanguage,
+              );
+
+          const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+            body: JSON.stringify({
+              content: caption,
+              platforms: ['threads'],
+              account_ids: accountIds.length > 0 ? accountIds : undefined,
+              media_urls: mediaUrls,
+              thread_items: threadItems,
+            }),
+          });
+          const data = await res.json();
+          if (data.results) {
+            for (const r of data.results) {
+              results[`sns_threads_${lang}`] = { success: r.success, error: r.error };
+            }
           }
         }
       }
