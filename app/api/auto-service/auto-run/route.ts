@@ -460,7 +460,7 @@ export async function GET(req: NextRequest) {
   // 자동실행 활성화된 모든 사용자 조회
   const { data: settings, error: settingsErr } = await supabase
     .from('bossai_auto_settings')
-    .select('user_id, ai_model, max_per_run, custom_keywords')
+    .select('user_id, ai_model, max_per_run, custom_keywords, use_gpt')
     .eq('enabled', true);
 
   if (settingsErr || !settings?.length) {
@@ -473,7 +473,7 @@ export async function GET(req: NextRequest) {
   const summary: { userId: string; generated: number; keywords: string[] }[] = [];
 
   for (const setting of settings) {
-    const { user_id, ai_model, max_per_run, custom_keywords } = setting;
+    const { user_id, ai_model, max_per_run, custom_keywords, use_gpt } = setting;
 
     // 사용자 커스텀 키워드 우선, 없으면 트렌딩 키워드 사용
     const keywordsToUse = (custom_keywords?.length > 0 ? custom_keywords : trendKeywords).slice(0, max_per_run * 2);
@@ -483,7 +483,7 @@ export async function GET(req: NextRequest) {
 
     for (const keyword of keywordsToUse) {
       if (generated >= max_per_run) break;
-      const result = await generateArticleForUser(supabase, user_id, keyword, ai_model || 'qwen3');
+      const result = await generateArticleForUser(supabase, user_id, keyword, use_gpt ? 'openai' : (ai_model || 'qwen3'));
       if (result.ok) {
         generated++;
         usedKeywords.push(keyword);
