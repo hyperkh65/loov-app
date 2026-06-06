@@ -358,7 +358,7 @@ export async function generateText(
   // ── Ollama Cloud ────────────────────────────────────────
   const tryOllama = async (mainModel: string) => {
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
-    // 큰 모델(고품질) 우선 — 블로그 장문 생성에 최적화
+    // 폴백 순서: 검증된 중간 크기 모델만 (전체 순회 금지 — 300s maxDuration 초과 방지)
     const OLLAMA_FALLBACKS = [
       'llama3.3', 'qwen3.5', 'kimi-k2', 'deepseek-r1',
       'qwen3', 'qwen3-coder', 'llama3.2',
@@ -366,19 +366,22 @@ export async function generateText(
     ];
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
-      // 키마다 모델 목록 조회 — 429 한도 초과된 키는 빈 목록 반환하므로 다음 키로 넘어감
       const available = await getAvailableOllamaModels(key);
       let toTry: string[];
       if (available.length > 0) {
+        // 선택 모델 우선, 폴백은 OLLAMA_FALLBACKS 순서대로 available에 있는 것만 최대 4개
         const priority = available.filter(m => m === mainModel || m.startsWith(mainModel + ':'));
-        const rest = available.filter(m => !priority.includes(m));
-        toTry = [...priority, ...rest];
+        const fallbackOrdered = OLLAMA_FALLBACKS
+          .flatMap(fb => available.filter(m => m === fb || m.startsWith(fb + ':')))
+          .filter(m => !priority.includes(m))
+          .slice(0, 4);
+        toTry = [...priority, ...fallbackOrdered];
       } else {
-        // 모델 목록 조회 실패 시 :cloud 접미사도 함께 시도
+        // 모델 목록 조회 실패 시 :cloud 접미사도 함께 시도 (최대 6개)
         const withCloud = [mainModel + ':cloud', mainModel,
-          ...OLLAMA_FALLBACKS.filter(m => m !== mainModel).flatMap(m => [m + ':cloud', m])
+          ...OLLAMA_FALLBACKS.slice(0, 3).flatMap(m => [m + ':cloud', m])
         ];
-        toTry = [...new Set(withCloud)];
+        toTry = [...new Set(withCloud)].slice(0, 6);
       }
       for (const model of toTry) {
         try { return await callOllama(key, model, prompt); }
