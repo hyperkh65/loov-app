@@ -430,12 +430,35 @@ export async function generateText(
     catch (e) { errors.push(`Gemini: ${e}`); return false; }
   };
   const tryOpenRouter = async () => {
-    const key = clientOpenrouterKey || await getSetting('OPENROUTER_API_KEY');
-    if (!key) { errors.push('OpenRouter: API 키 미설정'); return false; }
-    for (const model of OPENROUTER_MODELS) {
-      try { return await callOpenRouter(key, model, prompt); } catch { continue; }
+    // 다중 키 수집 (OPENROUTER_API_KEYS 배열 + 레거시 단일 키)
+    const orKeys: string[] = [];
+    if (clientOpenrouterKey) orKeys.push(clientOpenrouterKey);
+    try {
+      const raw = await getSetting('OPENROUTER_API_KEYS');
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        if (Array.isArray(arr)) orKeys.push(...arr.filter(Boolean));
+      }
+    } catch { /* ignore */ }
+    const legacyOrKey = await getSetting('OPENROUTER_API_KEY');
+    if (legacyOrKey && !orKeys.includes(legacyOrKey)) orKeys.push(legacyOrKey);
+
+    if (orKeys.length === 0) { errors.push('OpenRouter: API 키 미설정'); return false; }
+
+    const firstErrors: string[] = [];
+    for (const key of orKeys) {
+      for (const model of OPENROUTER_MODELS) {
+        try { return await callOpenRouter(key, model, prompt); }
+        catch (e) {
+          const msg = String(e);
+          // 429(한도 초과) → 다음 키로, 그 외 오류 → 다음 모델로
+          if (msg.includes('429')) break;
+          if (firstErrors.length < 3) firstErrors.push(`key${orKeys.indexOf(key)+1}/${model}: ${msg.slice(0,50)}`);
+          continue;
+        }
+      }
     }
-    errors.push('OpenRouter: 모든 모델 실패');
+    errors.push(`OpenRouter: 모든 키/모델 실패${firstErrors.length ? ` (${firstErrors.join(' | ')})` : ''}`);
     return false;
   };
   const tryOpenAI = async () => {
