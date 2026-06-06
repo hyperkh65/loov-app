@@ -7,6 +7,7 @@ type Tab = 'connections' | 'compose' | 'templates' | 'comments' | 'logs';
 
 interface Connection {
   platform: string;
+  platform_user_id: string;
   platform_username: string;
   platform_display_name: string;
   platform_avatar: string | null;
@@ -129,12 +130,18 @@ export default function SNSPage() {
     } catch { /* ignore */ }
   }, []);
 
-  const disconnect = async (platform: string) => {
-    if (!confirm(`${PLATFORM_INFO[platform]?.label} 연결을 해제하시겠습니까?`)) return;
-    await fetch('/api/sns/connections', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform }) });
+  const disconnect = async (platform: string, platform_user_id?: string) => {
+    const label = PLATFORM_INFO[platform]?.label;
+    if (!confirm(`${label} 연결을 해제하시겠습니까?`)) return;
+    await fetch('/api/sns/connections', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, platform_user_id }),
+    });
     loadAll();
   };
 
+  const getConnections = (platform: string) => connections.filter((c) => c.platform === platform);
   const getConnection = (platform: string) => connections.find((c) => c.platform === platform);
 
   // ── 미디어 업로드 ──────────────────────────────────────
@@ -373,7 +380,8 @@ export default function SNSPage() {
         {!loading && tab === 'connections' && (
           <div className="grid md:grid-cols-3 gap-4">
             {(Object.keys(PLATFORMS) as Platform[]).map((platform) => {
-              const conn = getConnection(platform);
+              const conns = getConnections(platform);
+              const activeConns = conns.filter((c) => c.is_active);
               const info = PLATFORM_INFO[platform];
               return (
                 <div key={platform} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -386,23 +394,31 @@ export default function SNSPage() {
                       <div>
                         <div className="font-bold text-gray-800 text-sm">{info.label}</div>
                         <div className="flex items-center gap-1">
-                          <div className={`w-1.5 h-1.5 rounded-full ${conn?.is_active ? 'bg-emerald-400' : 'bg-gray-200'}`} />
-                          <span className="text-xs text-gray-400">{conn?.is_active ? '연결됨' : '미연결'}</span>
+                          <div className={`w-1.5 h-1.5 rounded-full ${activeConns.length > 0 ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                          <span className="text-xs text-gray-400">
+                            {activeConns.length > 0 ? `${activeConns.length}개 연결됨` : '미연결'}
+                          </span>
                         </div>
                       </div>
                     </div>
-                    {conn?.is_active ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
-                          {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-8 h-8 rounded-full" />}
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-gray-700 truncate">{conn.platform_display_name || conn.platform_username}</div>
-                            <div className="text-xs text-gray-400 truncate">@{conn.platform_username}</div>
+                    {activeConns.length > 0 ? (
+                      <div className="space-y-2">
+                        {activeConns.map((conn) => (
+                          <div key={conn.platform_user_id} className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
+                            {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-7 h-7 rounded-full flex-shrink-0" />}
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-medium text-gray-700 truncate">{conn.platform_display_name || conn.platform_username}</div>
+                              <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>
+                            </div>
+                            <button
+                              onClick={() => disconnect(platform, conn.platform_user_id)}
+                              className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 px-1"
+                              title="연결 해제">✕</button>
                           </div>
-                        </div>
-                        <button onClick={() => disconnect(platform)} className="w-full text-xs text-red-500 hover:text-red-600 border border-red-100 hover:border-red-200 rounded-xl py-2 transition-colors">
-                          연결 해제
-                        </button>
+                        ))}
+                        <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-xs font-bold py-2 rounded-xl hover:opacity-90 transition-opacity`}>
+                          + 계정 추가
+                        </a>
                       </div>
                     ) : (
                       <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition-opacity`}>
