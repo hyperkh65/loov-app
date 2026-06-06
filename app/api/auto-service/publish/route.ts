@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
-import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
 
 export const maxDuration = 600;
@@ -415,17 +414,10 @@ export async function POST(req: NextRequest) {
       const otherPlatforms = sns_platforms.filter((p: string) => p !== 'threads' && p !== 'instagram');
       const defaultMediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
 
-      // Instagram: 뉴스카드 자동 생성 후 발행
+      // Instagram: 블로그 대표이미지로 발행
       if (instagramIncluded) {
         const instagramCaption = `${aiCaption}${blogLinkText}`.trim();
-        let instagramMedia = defaultMediaUrls;
-        try {
-          const newsCardUrl = await generateAndUploadThumbnail(
-            article.title, article.keyword || article.title.slice(0, 20), 'blue',
-            undefined, undefined, undefined, 'square'
-          );
-          instagramMedia = [newsCardUrl];
-        } catch { /* 생성 실패 시 기존 이미지 사용 */ }
+        const instagramMedia = defaultMediaUrls;
         const res = await fetch(`${baseUrl}/api/sns/post-now`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
