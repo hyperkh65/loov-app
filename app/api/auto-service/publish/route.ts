@@ -148,7 +148,8 @@ Escribe solo el texto del pie de foto. Nada más.`,
   };
 
   try {
-    const result = await generateText(prompts[language], preferModel);
+    // 다국어 모드: 한국어 강제 규칙·문자 정제 생략 (영어/일본어/스페인어 보존)
+    const result = await generateText(prompts[language], preferModel, undefined, undefined, undefined, undefined, language !== 'ko' ? { multilingual: true } : undefined);
     const cleaned = result.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
     if (cleaned.length > 15) return cleaned;
   } catch { /* fallback */ }
@@ -463,9 +464,13 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Threads: 계정별 언어로 캡션 생성 후 발행 (블로그 링크 직접 포함)
+      // Threads: 계정별 언어로 캡션 생성 후 발행 + 블로그 링크를 댓글(thread_items)로 첨부
       if (threadsIncluded) {
         const mediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
+        // 블로그 링크를 댓글 체인으로 첨부
+        const threadItems = blogUrls.length > 0
+          ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
+          : [];
 
         // 언어별로 계정 그룹핑
         const langGroups: Record<string, string[]> = {};
@@ -476,7 +481,7 @@ export async function POST(req: NextRequest) {
         if (Object.keys(langGroups).length === 0) langGroups['ko'] = [];
 
         for (const [lang, accountIds] of Object.entries(langGroups)) {
-          const baseCaption = lang === 'ko'
+          const caption = lang === 'ko'
             ? aiCaption
             : await generateSnsCaption(
                 article.title, article.meta_description || '',
@@ -484,19 +489,15 @@ export async function POST(req: NextRequest) {
                 captionModel !== 'qwen3' ? captionModel : undefined, lang as CaptionLanguage,
               );
 
-          // 블로그 링크를 캡션에 직접 포함 (thread_items 대신)
-          const captionWithLink = blogLinkText
-            ? `${baseCaption}${blogLinkText}`
-            : baseCaption;
-
           const res = await fetch(`${baseUrl}/api/sns/post-now`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
             body: JSON.stringify({
-              content: captionWithLink,
+              content: caption,
               platforms: ['threads'],
               account_ids: accountIds.length > 0 ? accountIds : undefined,
               media_urls: mediaUrls,
+              thread_items: threadItems,
             }),
           });
           const data = await res.json();
