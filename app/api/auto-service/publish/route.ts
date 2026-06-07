@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
+import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 
 export const maxDuration = 600;
 
@@ -381,27 +382,6 @@ export async function POST(req: NextRequest) {
         captionModel,
       );
 
-      // ── Threads 계정별 언어 설정 조회 ────────────────────────────
-      let threadsLangMap: Record<string, CaptionLanguage> = {};
-      if (userId && sns_platforms.includes('threads')) {
-        const { data: threadsConns } = await supabase
-          .from('sns_connections')
-          .select('platform_user_id, extra')
-          .eq('user_id', userId)
-          .eq('platform', 'threads')
-          .eq('is_active', true);
-        for (const c of threadsConns || []) {
-          const extra = c.extra as Record<string, unknown> | null;
-          threadsLangMap[c.platform_user_id] = ((extra?.caption_language) as CaptionLanguage) || 'ko';
-          // extra_accounts도 포함
-          const extraAccounts = Array.isArray(extra?.extra_accounts)
-            ? (extra!.extra_accounts as { platform_user_id: string; caption_language?: string; is_active?: boolean }[]) : [];
-          for (const acc of extraAccounts) {
-            if (acc.is_active === false) continue;
-            threadsLangMap[acc.platform_user_id] = (acc.caption_language as CaptionLanguage) || 'ko';
-          }
-        }
-      }
 
       // 블로그 URL 수집: 현재 요청 결과 + 이미 DB에 저장된 기존 발행 URL 합산
       const existingBlogUrls = Object.entries(article.published_urls || {})
@@ -464,48 +444,87 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Threads: 계정별 언어로 캡션 생성 후 발행 + 블로그 링크를 댓글(thread_items)로 첨부
-      if (threadsIncluded) {
-        const mediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
-        // 블로그 링크를 댓글 체인으로 첨부
-        const threadItems = blogUrls.length > 0
-          ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
-          : [];
+      // Threads: 각 계정(메인+extra)에 직접 발행 — post-now 우회로 auth/계정 필터링 문제 해결
+      if (threadsIncluded && userId) {
+        try {
+          const { data: threadsConns } = await supabase
+            .from('sns_connections')
+            .select('platform_user_id, access_token, extra')
+            .eq('user_id', userId)
+            .eq('platform', 'threads')
+            .eq('is_active', true);
 
-        // 언어별로 계정 그룹핑
-        const langGroups: Record<string, string[]> = {};
-        for (const [uid, lang] of Object.entries(threadsLangMap)) {
-          if (!langGroups[lang]) langGroups[lang] = [];
-          langGroups[lang].push(uid);
-        }
-        if (Object.keys(langGroups).length === 0) langGroups['ko'] = [];
-
-        for (const [lang, accountIds] of Object.entries(langGroups)) {
-          const caption = lang === 'ko'
-            ? aiCaption
-            : await generateSnsCaption(
-                article.title, article.meta_description || '',
-                article.keyword || article.focus_keyword || '',
-                captionModel !== 'qwen3' ? captionModel : undefined, lang as CaptionLanguage,
-              );
-
-          const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-            body: JSON.stringify({
-              content: caption,
-              platforms: ['threads'],
-              account_ids: accountIds.length > 0 ? accountIds : undefined,
-              media_urls: mediaUrls,
-              thread_items: threadItems,
-            }),
-          });
-          const data = await res.json();
-          if (data.results) {
-            for (const r of data.results) {
-              results[`sns_threads_${lang}`] = { success: r.success, error: r.error };
+          type ThreadsAcc = { platform_user_id: string; access_token: string; caption_language: CaptionLanguage };
+          const allAccounts: ThreadsAcc[] = [];
+          for (const conn of threadsConns || []) {
+            const extra = conn.extra as Record<string, unknown> | null;
+            if (conn.access_token && conn.platform_user_id) {
+              allAccounts.push({
+                platform_user_id: conn.platform_user_id,
+                access_token: conn.access_token,
+                caption_language: ((extra?.caption_language) as CaptionLanguage) || 'ko',
+              });
+            }
+            const extraAccounts = Array.isArray(extra?.extra_accounts)
+              ? (extra!.extra_accounts as { platform_user_id: string; access_token: string; caption_language?: string; is_active?: boolean }[])
+              : [];
+            for (const acc of extraAccounts) {
+              if (acc.is_active === false || !acc.access_token || !acc.platform_user_id) continue;
+              allAccounts.push({
+                platform_user_id: acc.platform_user_id,
+                access_token: acc.access_token,
+                caption_language: (acc.caption_language as CaptionLanguage) || 'ko',
+              });
             }
           }
+
+          const threadsMediaUrls = (() => {
+            const img = article.representative_image_url || extractFirstImageUrl(article.content || '');
+            return img ? [img] : [];
+          })();
+          const blogLinkComment = blogUrls.length > 0 ? '🔗 ' + blogUrls.join('\n🔗 ') : '';
+
+          // 언어별 캡션 캐시 (ko는 이미 생성됨)
+          const captionCache: Partial<Record<CaptionLanguage, string>> = { ko: aiCaption };
+
+          let anyThreadsSuccess = false;
+          const threadsErrors: string[] = [];
+
+          for (const acc of allAccounts) {
+            try {
+              const lang = acc.caption_language;
+              if (!captionCache[lang]) {
+                captionCache[lang] = await generateSnsCaption(
+                  article.title, article.meta_description || '',
+                  article.keyword || article.focus_keyword || '',
+                  captionModel, lang,
+                );
+              }
+              const caption = captionCache[lang]!;
+
+              const { id: postId } = await postToThreadsWithMedia(
+                acc.access_token, acc.platform_user_id, caption,
+                threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
+              );
+
+              if (blogLinkComment) {
+                try {
+                  await waitThreadsPostAccessible(postId, acc.access_token);
+                  await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                } catch { /* 댓글 실패해도 게시물은 성공으로 처리 */ }
+              }
+
+              anyThreadsSuccess = true;
+            } catch (accErr) {
+              threadsErrors.push(`${acc.platform_user_id.slice(0, 8)}: ${(accErr instanceof Error ? accErr.message : String(accErr)).slice(0, 80)}`);
+            }
+          }
+
+          results['sns_threads'] = anyThreadsSuccess
+            ? { success: true }
+            : { success: false, error: allAccounts.length === 0 ? 'Threads 계정 없음' : threadsErrors.join(' | ') };
+        } catch (err) {
+          results['sns_threads'] = { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       }
     } catch (err) {
