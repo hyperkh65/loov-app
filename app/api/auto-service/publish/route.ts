@@ -463,11 +463,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Threads: 계정별 언어로 캡션 생성 후 발행
+      // Threads: 계정별 언어로 캡션 생성 후 발행 (블로그 링크 직접 포함)
       if (threadsIncluded) {
-        const threadItems = blogUrls.length > 0
-          ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
-          : [];
         const mediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
 
         // 언어별로 계정 그룹핑
@@ -479,7 +476,7 @@ export async function POST(req: NextRequest) {
         if (Object.keys(langGroups).length === 0) langGroups['ko'] = [];
 
         for (const [lang, accountIds] of Object.entries(langGroups)) {
-          const caption = lang === 'ko'
+          const baseCaption = lang === 'ko'
             ? aiCaption
             : await generateSnsCaption(
                 article.title, article.meta_description || '',
@@ -487,15 +484,19 @@ export async function POST(req: NextRequest) {
                 captionModel !== 'qwen3' ? captionModel : undefined, lang as CaptionLanguage,
               );
 
+          // 블로그 링크를 캡션에 직접 포함 (thread_items 대신)
+          const captionWithLink = blogLinkText
+            ? `${baseCaption}${blogLinkText}`
+            : baseCaption;
+
           const res = await fetch(`${baseUrl}/api/sns/post-now`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
             body: JSON.stringify({
-              content: caption,
+              content: captionWithLink,
               platforms: ['threads'],
               account_ids: accountIds.length > 0 ? accountIds : undefined,
               media_urls: mediaUrls,
-              thread_items: threadItems,
             }),
           });
           const data = await res.json();
