@@ -401,45 +401,65 @@ export async function POST(req: NextRequest) {
 
       // Instagram: 블로그 대표이미지로 발행
       if (instagramIncluded) {
-        const instagramCaption = `${aiCaption}${blogLinkText}`.trim();
-        const instagramMedia = defaultMediaUrls;
-        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({ content: instagramCaption, platforms: ['instagram'], media_urls: instagramMedia }),
-        });
-        const data = await res.json();
-        if (data.results) {
-          for (const r of data.results) {
-            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+        try {
+          const instagramCaption = `${aiCaption}${blogLinkText}`.trim();
+          const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+            body: JSON.stringify({ content: instagramCaption, platforms: ['instagram'], media_urls: defaultMediaUrls }),
+          });
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data.results) {
+              for (const r of data.results) {
+                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+              }
+            } else if (!res.ok) {
+              results['sns_instagram'] = { success: false, error: data.error || `HTTP ${res.status}` };
+            }
+          } catch {
+            results['sns_instagram'] = { success: false, error: `서버 오류 (${res.status})` };
           }
+        } catch (err) {
+          results['sns_instagram'] = { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       }
 
       // Threads 외 나머지 플랫폼 (Twitter, Facebook 등): AI 캡션 + 블로그 링크
       if (otherPlatforms.length > 0) {
-        // Twitter는 280자 제한 (링크 포함 ~23자 소모) → 캡션 240자 이내로 자름
-        const hasTwitter = otherPlatforms.includes('twitter');
-        const twitterCaption = hasTwitter
-          ? aiCaption.slice(0, 200) + (blogLinkText ? blogLinkText : '')
-          : `${aiCaption}${blogLinkText}`.trim();
-        const snsContent = hasTwitter && otherPlatforms.length === 1
-          ? twitterCaption
-          : `${aiCaption}${blogLinkText}`.trim();
+        try {
+          // Twitter는 280자 제한 (링크 포함 ~23자 소모) → 캡션 240자 이내로 자름
+          const hasTwitter = otherPlatforms.includes('twitter');
+          const snsContent = hasTwitter && otherPlatforms.length === 1
+            ? aiCaption.slice(0, 200) + blogLinkText
+            : `${aiCaption}${blogLinkText}`.trim();
 
-        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({
-            content: snsContent,
-            platforms: otherPlatforms,
-            media_urls: defaultMediaUrls,
-          }),
-        });
-        const data = await res.json();
-        if (data.results) {
-          for (const r of data.results) {
-            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+          const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+            body: JSON.stringify({ content: snsContent, platforms: otherPlatforms, media_urls: defaultMediaUrls }),
+          });
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data.results) {
+              for (const r of data.results) {
+                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+              }
+            } else if (!res.ok) {
+              for (const p of otherPlatforms) {
+                results[`sns_${p}`] = { success: false, error: data.error || `HTTP ${res.status}` };
+              }
+            }
+          } catch {
+            for (const p of otherPlatforms) {
+              results[`sns_${p}`] = { success: false, error: `서버 오류 (${res.status})` };
+            }
+          }
+        } catch (err) {
+          for (const p of otherPlatforms) {
+            results[`sns_${p}`] = { success: false, error: err instanceof Error ? err.message : String(err) };
           }
         }
       }
