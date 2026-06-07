@@ -346,9 +346,10 @@ export async function generateText(
   clientOpenrouterKey?: string,
   clientGlobalAIKey?: string,
   clientGlobalAIModel?: string,
+  options?: { multilingual?: boolean }, // 다국어 모드: 한국어 강제 규칙·문자 정제 생략
 ): Promise<string> {
-  // 한국어 강제 지시문 추가 (중복 방지)
-  if (!prompt.includes('[언어 규칙 - 절대 준수]')) {
+  // 한국어 강제 지시문 추가 (중복 방지, 다국어 모드 제외)
+  if (!options?.multilingual && !prompt.includes('[언어 규칙 - 절대 준수]')) {
     prompt = prompt + '\n\n' + KOREAN_ONLY_SUFFIX;
   }
 
@@ -482,8 +483,12 @@ export async function generateText(
   };
 
   // ── 결과 정제: think 블록 → 이스케이프 복원 → 외국어 제거 → 유럽어 제거 → 영어 치환 ──
+  // 다국어 모드는 외국어 문자 제거 생략 (영어/일본어/스페인어 캡션 보존)
   const clean = (r: string | false) =>
-    r ? replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r))))) : false;
+    r ? (options?.multilingual
+      ? unescapeQuotes(stripThinkBlocks(r))
+      : replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))))
+    ) : false;
 
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
   let result: string | false = false;
