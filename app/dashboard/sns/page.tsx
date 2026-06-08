@@ -145,12 +145,14 @@ export default function SNSPage() {
         ? { ...c, extra: { ...c.extra, caption_language } }
         : c
     ));
-    await fetch('/api/sns/connections', {
+    const res = await fetch('/api/sns/connections', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ platform, platform_user_id, caption_language }),
     });
-    loadAll();
+    // 성공 시 loadAll() 호출 안 함 — loadAll()이 DB 구버전 데이터로 덮어쓰는 버그 방지
+    // 실패 시에만 원래 상태로 복원
+    if (!res.ok) loadAll();
   };
 
   const disconnect = async (platform: string, platform_user_id?: string) => {
