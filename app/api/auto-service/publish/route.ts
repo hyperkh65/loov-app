@@ -96,7 +96,9 @@ async function generateSnsCaption(
 
 문구만 출력해. 설명이나 부연 절대 붙이지 마.`,
 
-    en: `Write a social media caption in English for the following blog post.
+    en: `[LANGUAGE RULE - ABSOLUTE]: You MUST write in ENGLISH ONLY. No Korean. No other language. English only.
+
+Write a social media caption in English for the following blog post.
 
 Title: ${title}
 Keyword: ${keyword}
@@ -111,9 +113,11 @@ Rules:
 - No AI-sounding phrases like "dive into", "delve", "it's important to note", "in conclusion"
 - Compress to 1-2 key facts
 
-Output only the caption text. Nothing else.`,
+Output ONLY the English caption text. No Korean. No explanation.`,
 
-    ja: `次のブログ記事についてSNS投稿文を日本語で書いてください。
+    ja: `【言語ルール・絶対厳守】必ず日本語のみで書いてください。韓国語・英語・他の言語は絶対禁止。日本語のみ。
+
+次のブログ記事についてSNS投稿文を日本語で書いてください。
 
 タイトル: ${title}
 キーワード: ${keyword}
@@ -128,9 +132,11 @@ Output only the caption text. Nothing else.`,
 - AIっぽい堅い表現禁止（「ぜひご確認ください」「重要です」等）
 - 要点を1〜2個に絞る
 
-キャプションテキストのみ出力してください。`,
+日本語のキャプションテキストのみ出力してください。韓国語禁止。`,
 
-    es: `Escribe un pie de foto para redes sociales en español para el siguiente artículo de blog.
+    es: `[REGLA DE IDIOMA - ABSOLUTA]: Debes escribir SOLO en español. Nada de coreano. Solo español.
+
+Escribe un pie de foto para redes sociales en español para el siguiente artículo de blog.
 
 Título: ${title}
 Palabra clave: ${keyword}
@@ -145,7 +151,7 @@ Reglas:
 - Sin frases con sabor a IA ("es importante destacar", "en conclusión", etc.)
 - Comprime en 1-2 datos clave
 
-Escribe solo el texto del pie de foto. Nada más.`,
+Escribe SOLO el texto en español. Sin coreano. Sin explicaciones.`,
   };
 
   try {
@@ -530,7 +536,15 @@ export async function POST(req: NextRequest) {
               if (blogLinkComment) {
                 try {
                   await waitThreadsPostAccessible(postId, acc.access_token);
-                  await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                  // 댓글 달기 — 실패 시 최대 3회 재시도 (5s 간격)
+                  let commentOk = false;
+                  for (let attempt = 0; attempt < 3 && !commentOk; attempt++) {
+                    try {
+                      if (attempt > 0) await new Promise(r => setTimeout(r, 5000));
+                      await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                      commentOk = true;
+                    } catch { /* 다음 시도 */ }
+                  }
                 } catch { /* 댓글 실패해도 게시물은 성공으로 처리 */ }
               }
 
