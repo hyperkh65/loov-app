@@ -65,15 +65,12 @@ async function resolveTermId(
 
 type CaptionLanguage = 'ko' | 'en' | 'ja' | 'es';
 
-// 한국어 문자 포함 여부 (U+AC00–U+D7AF)
-const hasKorean = (s: string) => /[가-힯]/.test(s);
-
-// AI 실패 시 최소 보장 캡션 템플릿
-const LANG_FALLBACK: Record<CaptionLanguage, (t: string, k: string) => string> = {
-  ko: (t) => `${t} 지금 확인해봐 🔥`,
-  en: (t, k) => `Just dropped: ${t} 🔥${k ? ' #' + k.replace(/\s+/g, '') : ''}`,
-  ja: (t) => `新着記事！${t} 🔥`,
-  es: (t) => `¡Nuevo artículo! ${t} 🔥`,
+// 언어별 잘못된 문자 감지
+// en/es: CJK(한중일) 전체 금지 / ja: 한국어만 금지(한자는 일본어에 정상) / ko: 체크 안함
+const isWrongLang = (s: string, lang: CaptionLanguage): boolean => {
+  if (lang === 'ko') return false;
+  if (lang === 'ja') return /[가-힯]/.test(s); // 일본어 캡션에 한국어 금지
+  return /[぀-ヿ㐀-鿿豈-﫿가-힯]/.test(s); // en/es: CJK 전체 금지
 };
 
 // AI로 SNS 후킹성 캡션 생성 (다국어 지원)
@@ -165,25 +162,41 @@ Reglas:
 Escribe SOLO el texto en español. Sin coreano. Sin explicaciones.`,
   };
 
+  const clean = (r: string) => r.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
+
+  // 1차: 지정 모델로 시도
   try {
-    // 다국어 모드: 한국어 강제 규칙·문자 정제 생략 (영어/일본어/스페인어 보존)
-    const result = await generateText(prompts[language], preferModel, undefined, undefined, undefined, undefined, language !== 'ko' ? { multilingual: true } : undefined);
-    const cleaned = result.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
+    const r1 = await generateText(prompts[language], preferModel, undefined, undefined, undefined, undefined, language !== 'ko' ? { multilingual: true } : undefined);
+    const c1 = clean(r1);
+    if (c1.length > 15 && !isWrongLang(c1, language)) return c1;
+  } catch { /* continue */ }
 
-    // 비한국어 설정인데 한국어가 나온 경우 → Gemini로 재시도 후 폴백 템플릿
-    if (language !== 'ko' && hasKorean(cleaned)) {
-      try {
-        const r2 = await generateText(prompts[language], 'gemini', undefined, undefined, undefined, undefined, { multilingual: true });
-        const c2 = r2.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
-        if (c2.length > 15 && !hasKorean(c2)) return c2;
-      } catch { /* ignore */ }
-      return LANG_FALLBACK[language](title, keyword);
-    }
+  // 2차: Claude로 재시도 (지시 준수 우수)
+  if (language !== 'ko') {
+    try {
+      const r2 = await generateText(prompts[language], 'claude', undefined, undefined, undefined, undefined, { multilingual: true });
+      const c2 = clean(r2);
+      if (c2.length > 15 && !isWrongLang(c2, language)) return c2;
+    } catch { /* continue */ }
 
-    if (cleaned.length > 15) return cleaned;
-  } catch { /* fallback */ }
+    // 3차: Gemini로 재시도
+    try {
+      const r3 = await generateText(prompts[language], 'gemini', undefined, undefined, undefined, undefined, { multilingual: true });
+      const c3 = clean(r3);
+      if (c3.length > 15 && !isWrongLang(c3, language)) return c3;
+    } catch { /* continue */ }
 
-  if (language !== 'ko') return LANG_FALLBACK[language](title, keyword);
+    // 모두 실패 → 언어별 안전 템플릿 (메타설명 영역 번역 활용)
+    const summary = (metaDescription || title).slice(0, 80);
+    const SAFE: Record<CaptionLanguage, string> = {
+      ko: '',
+      en: `📰 ${summary} — Read more! 🔗`,
+      ja: `📰 ${summary} — 続きを読む！🔗`,
+      es: `📰 ${summary} — ¡Lee más! 🔗`,
+    };
+    return SAFE[language];
+  }
+
   return `${title}\n${metaDescription || ''}`.trim();
 }
 
@@ -536,34 +549,50 @@ export async function POST(req: NextRequest) {
           })();
           const blogLinkComment = blogUrls.length > 0 ? '🔗 ' + blogUrls.join('\n🔗 ') : '';
 
-          // ① 필요한 언어별 캡션 미리 생성 (순차, 캐시 활용)
-          const captionCache: Partial<Record<CaptionLanguage, string>> = { ko: aiCaption };
+          // ① 언어별 캡션 병렬 생성 (순차 → 병렬로 변경, 3언어 × 15초 → 15초로 단축)
           const uniqueLangs = [...new Set(allAccounts.map(a => a.caption_language))];
-          for (const lang of uniqueLangs) {
-            if (captionCache[lang]) continue;
-            // 비한국어는 openrouter 강제 — qwen3(ollama)는 지시 무시하고 한국어 출력
-            const langModel = lang !== 'ko' ? 'openrouter' : captionModel;
-            captionCache[lang] = await generateSnsCaption(
-              article.title, article.meta_description || '',
-              article.keyword || article.focus_keyword || '',
-              langModel, lang,
-            );
-          }
+          const captionEntries = await Promise.all(
+            uniqueLangs.map(async (lang): Promise<[CaptionLanguage, string]> => {
+              if (lang === 'ko') return [lang, aiCaption];
+              // 비한국어: claude 우선 → openrouter kimi(중국어)/qwen(한국어) 문제 우회
+              return [lang, await generateSnsCaption(
+                article.title, article.meta_description || '',
+                article.keyword || article.focus_keyword || '',
+                'claude', lang,
+              )];
+            })
+          );
+          const captionCache: Partial<Record<CaptionLanguage, string>> = Object.fromEntries(captionEntries);
+          if (!captionCache['ko']) captionCache['ko'] = aiCaption;
 
-          // ② 모든 계정 병렬 발행 — 순차 처리 시 타임아웃 발생 방지
+          // ② 모든 계정 병렬 발행
           const accountResults = await Promise.allSettled(
             allAccounts.map(async (acc) => {
-              const caption = captionCache[acc.caption_language]!;
+              const caption = captionCache[acc.caption_language] || aiCaption;
               const { id: postId } = await postToThreadsWithMedia(
                 acc.access_token, acc.platform_user_id, caption,
                 threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
               );
-              // ③ 댓글: 10초 고정 대기 후 1회 시도 (60초 폴링 대신 — 타임아웃 방지)
+
+              // ③ 댓글: 최대 20초 폴링(4초 간격)으로 게시물 인덱싱 확인 후 댓글 게시
               if (blogLinkComment) {
-                await new Promise(r => setTimeout(r, 10000));
-                try {
-                  await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
-                } catch { /* 댓글 실패 무시 */ }
+                const deadline = Date.now() + 20000;
+                let accessible = false;
+                while (Date.now() < deadline) {
+                  await new Promise(r => setTimeout(r, 4000));
+                  try {
+                    const ck = await fetch(
+                      `https://graph.threads.net/v1.0/${postId}?fields=id&access_token=${acc.access_token}`,
+                      { signal: AbortSignal.timeout(4000) },
+                    );
+                    if (ck.ok) { const d = await ck.json(); if (d.id) { accessible = true; break; } }
+                  } catch { /* 계속 폴링 */ }
+                }
+                if (accessible) {
+                  try {
+                    await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                  } catch { /* 댓글 실패 무시 */ }
+                }
               }
               return postId;
             })
