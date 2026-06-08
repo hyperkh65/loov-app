@@ -163,41 +163,33 @@ Escribe SOLO el texto en español. Sin coreano. Sin explicaciones.`,
   };
 
   const clean = (r: string) => r.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
+  const tryOllama = async (model: string) => {
+    const r = await generateText(prompts[language], model, undefined, undefined, undefined, undefined, language !== 'ko' ? { multilingual: true } : undefined);
+    return clean(r);
+  };
 
-  // 1차: 지정 모델로 시도
-  try {
-    const r1 = await generateText(prompts[language], preferModel, undefined, undefined, undefined, undefined, language !== 'ko' ? { multilingual: true } : undefined);
-    const c1 = clean(r1);
-    if (c1.length > 15 && !isWrongLang(c1, language)) return c1;
-  } catch { /* continue */ }
-
-  // 2차: Claude로 재시도 (지시 준수 우수)
-  if (language !== 'ko') {
-    try {
-      const r2 = await generateText(prompts[language], 'claude', undefined, undefined, undefined, undefined, { multilingual: true });
-      const c2 = clean(r2);
-      if (c2.length > 15 && !isWrongLang(c2, language)) return c2;
-    } catch { /* continue */ }
-
-    // 3차: Gemini로 재시도
-    try {
-      const r3 = await generateText(prompts[language], 'gemini', undefined, undefined, undefined, undefined, { multilingual: true });
-      const c3 = clean(r3);
-      if (c3.length > 15 && !isWrongLang(c3, language)) return c3;
-    } catch { /* continue */ }
-
-    // 모두 실패 → 언어별 안전 템플릿 (메타설명 영역 번역 활용)
-    const summary = (metaDescription || title).slice(0, 80);
-    const SAFE: Record<CaptionLanguage, string> = {
-      ko: '',
-      en: `📰 ${summary} — Read more! 🔗`,
-      ja: `📰 ${summary} — 続きを読む！🔗`,
-      es: `📰 ${summary} — ¡Lee más! 🔗`,
-    };
-    return SAFE[language];
+  if (language === 'ko') {
+    try { const c = await tryOllama(preferModel); if (c.length > 15) return c; } catch { /* ignore */ }
+    return `${title}\n${metaDescription || ''}`.trim();
   }
 
-  return `${title}\n${metaDescription || ''}`.trim();
+  // 비한국어: Ollama 모델 순서대로 시도 — Claude/Gemini 없음
+  // 1차: 사용자가 선택한 모델
+  // 2차: llama3.3 (없으면 스킵)
+  // 3차: mistral-small3.1 (없으면 스킵)
+  const OLLAMA_FALLBACKS = [preferModel, 'llama3.3', 'mistral-small3.1', 'llama3.2', 'gemma3'];
+  const tried = new Set<string>();
+  for (const model of OLLAMA_FALLBACKS) {
+    if (tried.has(model)) continue;
+    tried.add(model);
+    try {
+      const c = await tryOllama(model);
+      if (c.length > 15 && !isWrongLang(c, language)) return c;
+    } catch { /* 다음 모델로 */ }
+  }
+
+  // 모든 Ollama 모델 실패 시 메타설명 그대로 사용 (번역 없이)
+  return (metaDescription || title).slice(0, 150);
 }
 
 // 본문 HTML에서 첫 번째 이미지 URL 추출
