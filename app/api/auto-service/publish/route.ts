@@ -163,33 +163,34 @@ Escribe SOLO el texto en español. Sin coreano. Sin explicaciones.`,
   };
 
   const clean = (r: string) => r.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
-  const tryOllama = async (model: string) => {
-    const r = await generateText(prompts[language], model, undefined, undefined, undefined, undefined, language !== 'ko' ? { multilingual: true } : undefined);
-    return clean(r);
+  const fallback = (metaDescription || title).slice(0, 150);
+
+  // 단일 시도에 15초 타임아웃 강제 (callOllama 내부 타임아웃이 9분이라 직접 제한)
+  const tryOllamaTimeout = async (model: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('caption_timeout')), 15000);
+      generateText(prompts[language], model, undefined, undefined, undefined, undefined,
+        language !== 'ko' ? { multilingual: true } : undefined)
+        .then(r => { clearTimeout(t); resolve(clean(r)); })
+        .catch(e => { clearTimeout(t); reject(e); });
+    });
   };
 
   if (language === 'ko') {
-    try { const c = await tryOllama(preferModel); if (c.length > 15) return c; } catch { /* ignore */ }
+    try { const c = await tryOllamaTimeout(preferModel); if (c.length > 15) return c; } catch { /* ignore */ }
     return `${title}\n${metaDescription || ''}`.trim();
   }
 
-  // 비한국어: Ollama 모델 순서대로 시도 — Claude/Gemini 없음
-  // 1차: 사용자가 선택한 모델
-  // 2차: llama3.3 (없으면 스킵)
-  // 3차: mistral-small3.1 (없으면 스킵)
-  const OLLAMA_FALLBACKS = [preferModel, 'llama3.3', 'mistral-small3.1', 'llama3.2', 'gemma3'];
-  const tried = new Set<string>();
-  for (const model of OLLAMA_FALLBACKS) {
-    if (tried.has(model)) continue;
-    tried.add(model);
+  // 비한국어: 최대 2회 시도(preferModel → llama3.3), 각 15초 타임아웃 — 504 방지
+  const modelsToTry = preferModel === 'llama3.3' ? [preferModel] : [preferModel, 'llama3.3'];
+  for (const model of modelsToTry) {
     try {
-      const c = await tryOllama(model);
+      const c = await tryOllamaTimeout(model);
       if (c.length > 15 && !isWrongLang(c, language)) return c;
+      if (c.length > 15) return c; // 언어 검증 실패해도 뭔가 나왔으면 사용
     } catch { /* 다음 모델로 */ }
   }
-
-  // 모든 Ollama 모델 실패 시 메타설명 그대로 사용 (번역 없이)
-  return (metaDescription || title).slice(0, 150);
+  return fallback;
 }
 
 // 본문 HTML에서 첫 번째 이미지 URL 추출
@@ -580,17 +581,16 @@ export async function POST(req: NextRequest) {
                 threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
               );
 
-              // ③ 댓글: 20초 대기 후 게시, 실패 시 10초 후 1회 재시도
+              // ③ 댓글: 8초 대기 후 게시, 실패 시 7초 후 1회 재시도
               if (blogLinkComment) {
-                await new Promise(r => setTimeout(r, 20000));
+                await new Promise(r => setTimeout(r, 8000));
                 let commentOk = false;
                 try {
                   await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
                   commentOk = true;
                 } catch (e1) {
-                  // 재시도 1회
                   try {
-                    await new Promise(r => setTimeout(r, 10000));
+                    await new Promise(r => setTimeout(r, 7000));
                     await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
                     commentOk = true;
                   } catch (e2) {
