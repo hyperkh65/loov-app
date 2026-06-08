@@ -65,6 +65,17 @@ async function resolveTermId(
 
 type CaptionLanguage = 'ko' | 'en' | 'ja' | 'es';
 
+// 한국어 문자 포함 여부 (U+AC00–U+D7AF)
+const hasKorean = (s: string) => /[가-힯]/.test(s);
+
+// AI 실패 시 최소 보장 캡션 템플릿
+const LANG_FALLBACK: Record<CaptionLanguage, (t: string, k: string) => string> = {
+  ko: (t) => `${t} 지금 확인해봐 🔥`,
+  en: (t, k) => `Just dropped: ${t} 🔥${k ? ' #' + k.replace(/\s+/g, '') : ''}`,
+  ja: (t) => `新着記事！${t} 🔥`,
+  es: (t) => `¡Nuevo artículo! ${t} 🔥`,
+};
+
 // AI로 SNS 후킹성 캡션 생성 (다국어 지원)
 async function generateSnsCaption(
   title: string,
@@ -158,9 +169,21 @@ Escribe SOLO el texto en español. Sin coreano. Sin explicaciones.`,
     // 다국어 모드: 한국어 강제 규칙·문자 정제 생략 (영어/일본어/스페인어 보존)
     const result = await generateText(prompts[language], preferModel, undefined, undefined, undefined, undefined, language !== 'ko' ? { multilingual: true } : undefined);
     const cleaned = result.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
+
+    // 비한국어 설정인데 한국어가 나온 경우 → Gemini로 재시도 후 폴백 템플릿
+    if (language !== 'ko' && hasKorean(cleaned)) {
+      try {
+        const r2 = await generateText(prompts[language], 'gemini', undefined, undefined, undefined, undefined, { multilingual: true });
+        const c2 = r2.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
+        if (c2.length > 15 && !hasKorean(c2)) return c2;
+      } catch { /* ignore */ }
+      return LANG_FALLBACK[language](title, keyword);
+    }
+
     if (cleaned.length > 15) return cleaned;
   } catch { /* fallback */ }
 
+  if (language !== 'ko') return LANG_FALLBACK[language](title, keyword);
   return `${title}\n${metaDescription || ''}`.trim();
 }
 
