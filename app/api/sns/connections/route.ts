@@ -66,9 +66,10 @@ export async function PATCH(req: NextRequest) {
 
   if (!row) return NextResponse.json({ error: '연결 없음' }, { status: 404 });
 
-  if (row.platform_user_id === platform_user_id) {
+  const prevExtra = (row.extra as Record<string, unknown>) || {};
+
+  if (String(row.platform_user_id) === String(platform_user_id)) {
     // 기본 계정 언어 변경
-    const prevExtra = (row.extra as Record<string, unknown>) || {};
     const { error } = await supabase.from('sns_connections')
       .update({ extra: { ...prevExtra, caption_language } })
       .eq('user_id', user.id).eq('platform', platform);
@@ -76,11 +77,11 @@ export async function PATCH(req: NextRequest) {
   } else {
     // extra_accounts에서 해당 계정 언어 변경
     type ExtraAccount = Record<string, unknown>;
-    const prevExtra = (row.extra as Record<string, unknown>) || {};
     const extraAccounts: ExtraAccount[] = Array.isArray(prevExtra.extra_accounts)
       ? (prevExtra.extra_accounts as ExtraAccount[]) : [];
-    const idx = extraAccounts.findIndex((a) => a.platform_user_id === platform_user_id);
-    if (idx >= 0) extraAccounts[idx] = { ...extraAccounts[idx], caption_language };
+    const idx = extraAccounts.findIndex((a) => String(a.platform_user_id) === String(platform_user_id));
+    if (idx < 0) return NextResponse.json({ error: `계정 못찾음: ${platform_user_id}` }, { status: 404 });
+    extraAccounts[idx] = { ...extraAccounts[idx], caption_language };
     const { error } = await supabase.from('sns_connections')
       .update({ extra: { ...prevExtra, extra_accounts: extraAccounts } })
       .eq('user_id', user.id).eq('platform', platform);
