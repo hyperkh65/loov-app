@@ -581,20 +581,33 @@ export async function POST(req: NextRequest) {
                 threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
               );
 
-              // ③ 댓글: 8초 대기 후 게시, 실패 시 7초 후 1회 재시도
+              // ③ 댓글: 게시물 접근 가능 확인(최대 20초 폴링) 후 댓글 게시
               if (blogLinkComment) {
-                await new Promise(r => setTimeout(r, 8000));
+                // 최대 20초 폴링 — 게시물이 조회 가능해질 때까지 대기
+                const pollDeadline = Date.now() + 20000;
+                while (Date.now() < pollDeadline) {
+                  await new Promise(r => setTimeout(r, 4000));
+                  try {
+                    const ck = await fetch(
+                      `https://graph.threads.net/v1.0/${postId}?fields=id&access_token=${acc.access_token}`,
+                      { signal: AbortSignal.timeout(4000) },
+                    );
+                    if (ck.ok) { const d = await ck.json(); if (d.id) break; }
+                  } catch { /* 계속 폴링 */ }
+                }
+                // 접근 가능 여부와 무관하게 댓글 시도 (실패 에러 전문 캡처)
                 let commentOk = false;
                 try {
                   await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
                   commentOk = true;
                 } catch (e1) {
+                  // 5초 후 1회 재시도
                   try {
-                    await new Promise(r => setTimeout(r, 7000));
+                    await new Promise(r => setTimeout(r, 5000));
                     await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
                     commentOk = true;
                   } catch (e2) {
-                    commentErrors.push(`uid=${acc.platform_user_id} postId=${postId}: ${String(e2).slice(0, 120)}`);
+                    commentErrors.push(`[${String(e2).slice(0, 400)}]`);
                   }
                 }
                 if (commentOk) commentSuccesses.push(1);
