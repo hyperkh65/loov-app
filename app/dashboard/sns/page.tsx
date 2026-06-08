@@ -139,6 +139,12 @@ export default function SNSPage() {
   }, []);
 
   const updateLanguage = async (platform: string, platform_user_id: string, caption_language: string) => {
+    // 낙관적 업데이트: 서버 응답 전에 UI 즉시 반영
+    setConnections(prev => prev.map(c =>
+      c.platform === platform && c.platform_user_id === platform_user_id
+        ? { ...c, extra: { ...c.extra, caption_language } }
+        : c
+    ));
     await fetch('/api/sns/connections', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
