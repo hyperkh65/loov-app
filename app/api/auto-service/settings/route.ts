@@ -19,6 +19,7 @@ export async function GET() {
     custom_keywords: [],
     use_gpt: false,
     use_openrouter: false,
+    sns_caption_model: 'llama3.3',
     last_run_at: null,
     last_run_status: null,
     last_run_count: 0,
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const body = await req.json();
-  const { enabled, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter } = body;
+  const { enabled, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, sns_caption_model } = body;
 
   const { data, error } = await supabase
     .from('bossai_auto_settings')
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
       custom_keywords: custom_keywords || [],
       use_gpt: use_gpt ?? false,
       use_openrouter: use_openrouter ?? false,
+      sns_caption_model: sns_caption_model || 'llama3.3',
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
     .select()
