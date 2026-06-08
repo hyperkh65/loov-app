@@ -65,6 +65,7 @@ interface AutoSettings {
   custom_keywords: string[];
   use_gpt: boolean;
   use_openrouter: boolean;
+  sns_caption_model: string;
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_count: number;
@@ -85,7 +86,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], use_gpt: false, use_openrouter: false, last_run_at: null, last_run_status: null, last_run_count: 0,
+    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', last_run_at: null, last_run_status: null, last_run_count: 0,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -1074,6 +1075,43 @@ export default function AutoServicePage() {
               {modelsLoading && <p className="text-xs text-gray-400 mt-2">Ollama Cloud에서 모델 목록 조회 중…</p>}
             </div>
             )}
+
+            {/* SNS 다국어 캡션 번역 모델 */}
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                🌐 SNS 다국어 캡션 모델
+                <span className="ml-1.5 text-xs text-gray-400 font-normal">영어·일본어·스페인어 계정 발행 시 사용</span>
+              </label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {[
+                  { id: 'llama3.3', label: 'Llama 3.3 (70B)', badge: '⭐ 추천', desc: '지시 준수 최강 — 영/일/스페인어 모두 정확', color: 'border-blue-300 bg-blue-50' },
+                  { id: 'mistral-small3.1', label: 'Mistral Small 3.1', badge: '✅ 우수', desc: '빠르고 다국어 지시 준수 좋음', color: 'border-green-300 bg-green-50' },
+                  { id: 'gemma3', label: 'Gemma 3 (Google)', badge: '✅ 우수', desc: 'Google 모델, 다국어 준수 양호', color: 'border-green-300 bg-green-50' },
+                  { id: 'llama3.2', label: 'Llama 3.2 (경량)', badge: '🟡 보통', desc: '빠름, 소형 — 단순 캡션에 적합', color: 'border-yellow-200 bg-yellow-50' },
+                  { id: 'qwen3.5', label: 'Qwen 3.5', badge: '⚠️ 주의', desc: '한국어 주제에서 한국어로 응답하는 경향', color: 'border-orange-200 bg-orange-50' },
+                  { id: 'kimi-k2.6', label: 'Kimi K2.6', badge: '⚠️ 주의', desc: '중국어로 응답하는 경향 (영어 계정 비추천)', color: 'border-red-200 bg-red-50' },
+                ].map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setAutoSettings(prev => ({ ...prev, sns_caption_model: m.id }))}
+                    className={`flex items-start gap-2 px-3 py-2 rounded-xl border-2 text-left transition-all ${
+                      autoSettings.sns_caption_model === m.id
+                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                        : `${m.color} opacity-70 hover:opacity-100`
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-gray-800">{m.label}</span>
+                        <span className="text-xs">{m.badge}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+                    </div>
+                    {autoSettings.sns_caption_model === m.id && <span className="text-blue-600 text-sm flex-shrink-0">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* 최대 생성 수 */}
             <div>
