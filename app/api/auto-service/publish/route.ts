@@ -196,6 +196,7 @@ async function uploadContentImages(
 }
 
 export async function POST(req: NextRequest) {
+  try {
   // CRON_SECRET bypass: GitHub Actions 예약 발행용
   const cronSecret = process.env.CRON_SECRET;
   const isCron = !!(cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`);
@@ -210,7 +211,9 @@ export async function POST(req: NextRequest) {
   }
   // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [] } = await req.json();
+  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[] };
+  try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [] } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -620,4 +623,7 @@ export async function POST(req: NextRequest) {
   await (userId ? updateQuery.eq('user_id', userId) : updateQuery);
 
   return NextResponse.json({ results, published_urls: publishedUrls });
+  } catch (fatalErr) {
+    return NextResponse.json({ error: fatalErr instanceof Error ? fatalErr.message : String(fatalErr), results: {} }, { status: 500 });
+  }
 }
