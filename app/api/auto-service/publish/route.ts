@@ -473,7 +473,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Threads: 각 계정(메인+extra)에 직접 발행 — post-now 우회로 auth/계정 필터링 문제 해결
+      // Threads: 각 계정(메인+extra)에 직접 발행 — 병렬 처리로 타임아웃 방지
       if (threadsIncluded && userId) {
         try {
           const { data: threadsConns } = await supabase
@@ -513,49 +513,43 @@ export async function POST(req: NextRequest) {
           })();
           const blogLinkComment = blogUrls.length > 0 ? '🔗 ' + blogUrls.join('\n🔗 ') : '';
 
-          // 언어별 캡션 캐시 (ko는 이미 생성됨)
+          // ① 필요한 언어별 캡션 미리 생성 (순차, 캐시 활용)
           const captionCache: Partial<Record<CaptionLanguage, string>> = { ko: aiCaption };
+          const uniqueLangs = [...new Set(allAccounts.map(a => a.caption_language))];
+          for (const lang of uniqueLangs) {
+            if (captionCache[lang]) continue;
+            // 비한국어는 openrouter 강제 — qwen3(ollama)는 지시 무시하고 한국어 출력
+            const langModel = lang !== 'ko' ? 'openrouter' : captionModel;
+            captionCache[lang] = await generateSnsCaption(
+              article.title, article.meta_description || '',
+              article.keyword || article.focus_keyword || '',
+              langModel, lang,
+            );
+          }
 
-          let anyThreadsSuccess = false;
-          const threadsErrors: string[] = [];
-
-          for (const acc of allAccounts) {
-            try {
-              const lang = acc.caption_language;
-              if (!captionCache[lang]) {
-                captionCache[lang] = await generateSnsCaption(
-                  article.title, article.meta_description || '',
-                  article.keyword || article.focus_keyword || '',
-                  captionModel, lang,
-                );
-              }
-              const caption = captionCache[lang]!;
-
+          // ② 모든 계정 병렬 발행 — 순차 처리 시 타임아웃 발생 방지
+          const accountResults = await Promise.allSettled(
+            allAccounts.map(async (acc) => {
+              const caption = captionCache[acc.caption_language]!;
               const { id: postId } = await postToThreadsWithMedia(
                 acc.access_token, acc.platform_user_id, caption,
                 threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
               );
-
+              // ③ 댓글: 10초 고정 대기 후 1회 시도 (60초 폴링 대신 — 타임아웃 방지)
               if (blogLinkComment) {
+                await new Promise(r => setTimeout(r, 10000));
                 try {
-                  await waitThreadsPostAccessible(postId, acc.access_token);
-                  // 댓글 달기 — 실패 시 최대 3회 재시도 (5s 간격)
-                  let commentOk = false;
-                  for (let attempt = 0; attempt < 3 && !commentOk; attempt++) {
-                    try {
-                      if (attempt > 0) await new Promise(r => setTimeout(r, 5000));
-                      await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
-                      commentOk = true;
-                    } catch { /* 다음 시도 */ }
-                  }
-                } catch { /* 댓글 실패해도 게시물은 성공으로 처리 */ }
+                  await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                } catch { /* 댓글 실패 무시 */ }
               }
+              return postId;
+            })
+          );
 
-              anyThreadsSuccess = true;
-            } catch (accErr) {
-              threadsErrors.push(`${acc.platform_user_id.slice(0, 8)}: ${(accErr instanceof Error ? accErr.message : String(accErr)).slice(0, 80)}`);
-            }
-          }
+          const anyThreadsSuccess = accountResults.some(r => r.status === 'fulfilled');
+          const threadsErrors = accountResults
+            .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+            .map((r, i) => `acc${i + 1}: ${String(r.reason).slice(0, 80)}`);
 
           results['sns_threads'] = anyThreadsSuccess
             ? { success: true }
