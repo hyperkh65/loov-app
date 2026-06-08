@@ -571,6 +571,7 @@ export async function POST(req: NextRequest) {
 
           // ② 모든 계정 병렬 발행
           const commentErrors: string[] = [];
+          const commentSuccesses: number[] = [];
           const accountResults = await Promise.allSettled(
             allAccounts.map(async (acc) => {
               const caption = captionCache[acc.caption_language] || aiCaption;
@@ -579,14 +580,24 @@ export async function POST(req: NextRequest) {
                 threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
               );
 
-              // ③ 댓글: 10초 고정 대기 후 댓글 게시 (폴링 불필요 — 게시 직후 API가 항상 ID 반환)
+              // ③ 댓글: 20초 대기 후 게시, 실패 시 10초 후 1회 재시도
               if (blogLinkComment) {
-                await new Promise(r => setTimeout(r, 10000));
+                await new Promise(r => setTimeout(r, 20000));
+                let commentOk = false;
                 try {
                   await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
-                } catch (commentErr) {
-                  commentErrors.push(`${acc.platform_user_id}: ${String(commentErr).slice(0, 100)}`);
+                  commentOk = true;
+                } catch (e1) {
+                  // 재시도 1회
+                  try {
+                    await new Promise(r => setTimeout(r, 10000));
+                    await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                    commentOk = true;
+                  } catch (e2) {
+                    commentErrors.push(`uid=${acc.platform_user_id} postId=${postId}: ${String(e2).slice(0, 120)}`);
+                  }
                 }
+                if (commentOk) commentSuccesses.push(1);
               }
               return postId;
             })
@@ -597,9 +608,16 @@ export async function POST(req: NextRequest) {
             .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
             .map((r, i) => `acc${i + 1}: ${String(r.reason).slice(0, 80)}`);
 
-          const threadsNote = commentErrors.length > 0 ? ` [댓글 실패: ${commentErrors.join(' | ')}]` : '';
+          // 디버그 노트: 항상 댓글 상태 포함
+          const threadsNote = !blogLinkComment
+            ? '[URL없음: 블로그를 함께 발행하거나 이전 발행기록이 있어야 댓글이 달립니다]'
+            : commentErrors.length > 0
+              ? `[댓글 실패(${commentErrors.join(' | ')})]`
+              : commentSuccesses.length > 0
+                ? `[댓글 ${commentSuccesses.length}개 게시됨]`
+                : '[댓글 미시도]';
           results['sns_threads'] = anyThreadsSuccess
-            ? { success: true, ...(threadsNote ? { error: threadsNote } : {}) }
+            ? { success: true, error: threadsNote }
             : { success: false, error: allAccounts.length === 0 ? 'Threads 계정 없음' : threadsErrors.join(' | ') };
         } catch (err) {
           results['sns_threads'] = { success: false, error: err instanceof Error ? err.message : String(err) };
