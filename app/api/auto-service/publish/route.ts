@@ -420,6 +420,18 @@ export async function POST(req: NextRequest) {
       const captionModel = article.ai_model === 'openai' || article.ai_model?.startsWith('gpt') ? 'openai'
         : article.ai_model === 'openrouter' ? 'openrouter'
         : 'qwen3';
+
+      // SNS 번역 모델: 설정에서 읽기 (기본값 llama3.3 — 다국어 지시 준수 우수)
+      let snsCaptionModel = 'llama3.3';
+      if (userId) {
+        const { data: autoSettings } = await supabase
+          .from('bossai_auto_settings')
+          .select('sns_caption_model')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (autoSettings?.sns_caption_model) snsCaptionModel = autoSettings.sns_caption_model;
+      }
+
       const aiCaption = await generateSnsCaption(
         article.title,
         article.meta_description || '',
@@ -554,11 +566,11 @@ export async function POST(req: NextRequest) {
           const captionEntries = await Promise.all(
             uniqueLangs.map(async (lang): Promise<[CaptionLanguage, string]> => {
               if (lang === 'ko') return [lang, aiCaption];
-              // 비한국어: claude 우선 → openrouter kimi(중국어)/qwen(한국어) 문제 우회
+              // 비한국어: 설정된 SNS 번역 모델 사용 (기본 llama3.3)
               return [lang, await generateSnsCaption(
                 article.title, article.meta_description || '',
                 article.keyword || article.focus_keyword || '',
-                'claude', lang,
+                snsCaptionModel, lang,
               )];
             })
           );
