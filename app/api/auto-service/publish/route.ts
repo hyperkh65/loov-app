@@ -570,6 +570,7 @@ export async function POST(req: NextRequest) {
           if (!captionCache['ko']) captionCache['ko'] = aiCaption;
 
           // ② 모든 계정 병렬 발행
+          const commentErrors: string[] = [];
           const accountResults = await Promise.allSettled(
             allAccounts.map(async (acc) => {
               const caption = captionCache[acc.caption_language] || aiCaption;
@@ -578,24 +579,13 @@ export async function POST(req: NextRequest) {
                 threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
               );
 
-              // ③ 댓글: 최대 20초 폴링(4초 간격)으로 게시물 인덱싱 확인 후 댓글 게시
+              // ③ 댓글: 10초 고정 대기 후 댓글 게시 (폴링 불필요 — 게시 직후 API가 항상 ID 반환)
               if (blogLinkComment) {
-                const deadline = Date.now() + 20000;
-                let accessible = false;
-                while (Date.now() < deadline) {
-                  await new Promise(r => setTimeout(r, 4000));
-                  try {
-                    const ck = await fetch(
-                      `https://graph.threads.net/v1.0/${postId}?fields=id&access_token=${acc.access_token}`,
-                      { signal: AbortSignal.timeout(4000) },
-                    );
-                    if (ck.ok) { const d = await ck.json(); if (d.id) { accessible = true; break; } }
-                  } catch { /* 계속 폴링 */ }
-                }
-                if (accessible) {
-                  try {
-                    await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
-                  } catch { /* 댓글 실패 무시 */ }
+                await new Promise(r => setTimeout(r, 10000));
+                try {
+                  await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                } catch (commentErr) {
+                  commentErrors.push(`${acc.platform_user_id}: ${String(commentErr).slice(0, 100)}`);
                 }
               }
               return postId;
@@ -607,8 +597,9 @@ export async function POST(req: NextRequest) {
             .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
             .map((r, i) => `acc${i + 1}: ${String(r.reason).slice(0, 80)}`);
 
+          const threadsNote = commentErrors.length > 0 ? ` [댓글 실패: ${commentErrors.join(' | ')}]` : '';
           results['sns_threads'] = anyThreadsSuccess
-            ? { success: true }
+            ? { success: true, ...(threadsNote ? { error: threadsNote } : {}) }
             : { success: false, error: allAccounts.length === 0 ? 'Threads 계정 없음' : threadsErrors.join(' | ') };
         } catch (err) {
           results['sns_threads'] = { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -658,6 +649,8 @@ export async function POST(req: NextRequest) {
   for (const [k, v] of Object.entries(results)) {
     if (v.success && v.url) publishedUrls[k] = v.url;
   }
+  // 기존 블로그 URL 보존: Threads만 재발행해도 WordPress URL 등이 사라지지 않도록 병합
+  const mergedPublishedUrls = { ...(article.published_urls || {}), ...publishedUrls };
 
   const updateQuery = supabase
     .from('bossai_auto_articles')
@@ -665,7 +658,7 @@ export async function POST(req: NextRequest) {
       status: anySuccess ? 'published' : 'failed',
       blog_platforms,
       sns_platforms,
-      published_urls: publishedUrls,
+      published_urls: mergedPublishedUrls,
       published_at: anySuccess ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     })
