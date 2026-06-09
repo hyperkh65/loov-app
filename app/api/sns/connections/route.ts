@@ -55,9 +55,10 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
+  const admin = createAdminClient();
   const { platform, platform_user_id, caption_language } = await req.json();
 
-  const { data: row } = await supabase
+  const { data: row } = await admin
     .from('sns_connections')
     .select('platform_user_id, extra')
     .eq('user_id', user.id)
@@ -69,20 +70,18 @@ export async function PATCH(req: NextRequest) {
   const prevExtra = (row.extra as Record<string, unknown>) || {};
 
   if (String(row.platform_user_id) === String(platform_user_id)) {
-    // 기본 계정 언어 변경
-    const { error } = await supabase.from('sns_connections')
+    const { error } = await admin.from('sns_connections')
       .update({ extra: { ...prevExtra, caption_language } })
       .eq('user_id', user.id).eq('platform', platform);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   } else {
-    // extra_accounts에서 해당 계정 언어 변경
     type ExtraAccount = Record<string, unknown>;
     const extraAccounts: ExtraAccount[] = Array.isArray(prevExtra.extra_accounts)
       ? (prevExtra.extra_accounts as ExtraAccount[]) : [];
     const idx = extraAccounts.findIndex((a) => String(a.platform_user_id) === String(platform_user_id));
     if (idx < 0) return NextResponse.json({ error: `계정 못찾음: ${platform_user_id}` }, { status: 404 });
     extraAccounts[idx] = { ...extraAccounts[idx], caption_language };
-    const { error } = await supabase.from('sns_connections')
+    const { error } = await admin.from('sns_connections')
       .update({ extra: { ...prevExtra, extra_accounts: extraAccounts } })
       .eq('user_id', user.id).eq('platform', platform);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -91,21 +90,22 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  // 사용자 인증은 createClient()로, DB 조작은 createAdminClient()로 (RLS 우회)
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
+  const admin = createAdminClient();
   const { platform, platform_user_id } = await req.json();
 
   if (!platform_user_id) {
-    // platform 전체 삭제
-    const { error } = await supabase.from('sns_connections').delete()
+    const { error } = await admin.from('sns_connections').delete()
       .eq('user_id', user.id).eq('platform', platform);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ success: true });
   }
 
-  const { data: row } = await supabase
+  const { data: row } = await admin
     .from('sns_connections')
     .select('platform_user_id, extra')
     .eq('user_id', user.id).eq('platform', platform)
@@ -114,18 +114,16 @@ export async function DELETE(req: NextRequest) {
   if (!row) return NextResponse.json({ success: true });
 
   if (String(row.platform_user_id) === String(platform_user_id)) {
-    // 기본 계정 삭제 — 행 전체 삭제
-    const { error } = await supabase.from('sns_connections').delete()
+    const { error } = await admin.from('sns_connections').delete()
       .eq('user_id', user.id).eq('platform', platform);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   } else {
-    // extra_accounts에서 해당 계정 제거
     type ExtraAccount = Record<string, unknown>;
     const prevExtra = (row.extra as Record<string, unknown>) || {};
     const extraAccounts: ExtraAccount[] = Array.isArray(prevExtra.extra_accounts)
       ? (prevExtra.extra_accounts as ExtraAccount[]) : [];
     const filtered = extraAccounts.filter((a) => String(a.platform_user_id) !== String(platform_user_id));
-    const { error } = await supabase.from('sns_connections')
+    const { error } = await admin.from('sns_connections')
       .update({ extra: { ...prevExtra, extra_accounts: filtered } })
       .eq('user_id', user.id).eq('platform', platform);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
