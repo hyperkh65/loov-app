@@ -660,17 +660,22 @@ export async function postCommentOnOwnPost(
       } else {
         containerBody = { media_type: 'TEXT', text: content.substring(0, 500), reply_to_id: postId, access_token: accessToken };
       }
-      const cr = await fetch(`https://graph.threads.net/v1.0/${platformUserId}/threads`, {
+      // 공식 문서: /me 엔드포인트 사용 (/{user-id} 대신 — 토큰 불일치 방지)
+      const cr = await fetch(`https://graph.threads.net/v1.0/me/threads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(containerBody),
       });
       if (!cr.ok) throw new Error(`Threads 댓글 생성 실패: ${await cr.text()}`);
       const { id: containerId } = await cr.json();
-      // 미디어 포함 컨테이너는 처리 완료 대기 필요
-      const needsContainerWait = containerBody.media_type !== 'TEXT';
-      if (needsContainerWait) await waitThreadsContainerFinished(containerId, accessToken);
-      const pr = await fetch(`https://graph.threads.net/v1.0/${platformUserId}/threads_publish`, {
+      // 공식 문서: 답글 컨테이너 생성 후 ~30초 대기 필요 (서버 처리 시간)
+      // 미디어: waitThreadsContainerFinished, 텍스트: 10초 고정 대기
+      if (containerBody.media_type !== 'TEXT') {
+        await waitThreadsContainerFinished(containerId, accessToken);
+      } else {
+        await new Promise(r => setTimeout(r, 10000));
+      }
+      const pr = await fetch(`https://graph.threads.net/v1.0/me/threads_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ creation_id: containerId, access_token: accessToken }),
