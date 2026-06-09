@@ -5,11 +5,22 @@ import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost
 
 export const maxDuration = 600;
 
+function toImageSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\w\s가-힣-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 60)
+    || 'image';
+}
+
 // WordPress: 이미지 URL → WP 미디어 업로드 → 미디어 ID/URL 반환
 async function uploadImageToWordpress(
   imageUrl: string,
   siteUrl: string,
   auth: string,
+  slug?: string,
 ): Promise<{ id: number; url: string } | null> {
   try {
     const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) });
@@ -17,7 +28,7 @@ async function uploadImageToWordpress(
     const buffer = await imgRes.arrayBuffer();
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
     const ext = contentType.split('/')[1]?.split(';')[0]?.split('+')[0] || 'jpg';
-    const filename = `auto_blog_${Date.now()}.${ext}`;
+    const filename = slug ? `${slug}.${ext}` : `image-${Date.now()}.${ext}`;
 
     const res = await fetch(`${siteUrl}/wp-json/wp/v2/media`, {
       method: 'POST',
@@ -204,6 +215,7 @@ async function uploadContentImages(
   content: string,
   siteUrl: string,
   auth: string,
+  titleSlug?: string,
 ): Promise<string> {
   const imgRegex = /<img([^>]+)src="([^"]+)"([^>]*)>/gi;
   const matches = [...content.matchAll(imgRegex)];
@@ -214,7 +226,7 @@ async function uploadContentImages(
   if (urlsToUpload.length === 0) return content;
 
   const results = await Promise.all(
-    urlsToUpload.map(url => uploadImageToWordpress(url, siteUrl, auth))
+    urlsToUpload.map((url, i) => uploadImageToWordpress(url, siteUrl, auth, titleSlug ? `${titleSlug}-${i + 1}` : undefined))
   );
 
   let processed = content;
@@ -315,15 +327,17 @@ export async function POST(req: NextRequest) {
           const siteKey = `wordpress_${site.site_name}`;
 
           try {
+            const titleSlug = toImageSlug(article.focus_keyword || article.title || '');
+
             // 1. 대표이미지(SVG 썸네일)를 WP 미디어로 먼저 업로드
             let featuredMediaId: number | undefined;
             if (article.representative_image_url) {
-              const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth);
+              const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth, titleSlug);
               if (thumb) featuredMediaId = thumb.id;
             }
 
             // 2. 본문 내 이미지를 WP 미디어로 업로드 + URL 교체
-            const wpContent = await uploadContentImages(article.content, site.site_url, auth);
+            const wpContent = await uploadContentImages(article.content, site.site_url, auth, titleSlug);
 
             // 3. 카테고리 "Aboda" 조회 또는 생성
             const catId = await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
