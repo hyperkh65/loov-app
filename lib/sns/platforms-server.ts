@@ -327,7 +327,7 @@ export async function postToThreadsWithMedia(
   const createRes = await fetch(`https://graph.threads.net/v1.0/${userId}/threads`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...containerBody, reply_control: 'everyone' }),
+    body: JSON.stringify(containerBody),
   });
   if (!createRes.ok) throw new Error(`Threads 컨테이너 생성 실패: ${await createRes.text()}`);
   const { id: containerId } = await createRes.json();
