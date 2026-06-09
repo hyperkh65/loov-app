@@ -113,7 +113,7 @@ export async function DELETE(req: NextRequest) {
 
   if (!row) return NextResponse.json({ success: true });
 
-  if (row.platform_user_id === platform_user_id) {
+  if (String(row.platform_user_id) === String(platform_user_id)) {
     // 기본 계정 삭제 — 행 전체 삭제
     const { error } = await supabase.from('sns_connections').delete()
       .eq('user_id', user.id).eq('platform', platform);
@@ -124,7 +124,7 @@ export async function DELETE(req: NextRequest) {
     const prevExtra = (row.extra as Record<string, unknown>) || {};
     const extraAccounts: ExtraAccount[] = Array.isArray(prevExtra.extra_accounts)
       ? (prevExtra.extra_accounts as ExtraAccount[]) : [];
-    const filtered = extraAccounts.filter((a) => a.platform_user_id !== platform_user_id);
+    const filtered = extraAccounts.filter((a) => String(a.platform_user_id) !== String(platform_user_id));
     const { error } = await supabase.from('sns_connections')
       .update({ extra: { ...prevExtra, extra_accounts: filtered } })
       .eq('user_id', user.id).eq('platform', platform);
