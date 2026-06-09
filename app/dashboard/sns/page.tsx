@@ -158,12 +158,16 @@ export default function SNSPage() {
   const disconnect = async (platform: string, platform_user_id?: string) => {
     const label = PLATFORM_INFO[platform]?.label;
     if (!confirm(`${label} 연결을 해제하시겠습니까?`)) return;
-    await fetch('/api/sns/connections', {
+    const res = await fetch('/api/sns/connections', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ platform, platform_user_id }),
     });
-    loadAll();
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert('삭제 실패: ' + (data.error || `HTTP ${res.status}`));
+    }
+    await loadAll();
   };
 
   const getConnections = (platform: string) => connections.filter((c) => c.platform === platform);
