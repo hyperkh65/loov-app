@@ -6,13 +6,14 @@ import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost
 export const maxDuration = 600;
 
 function toImageSlug(title: string): string {
-  return title
+  const slug = title
     .toLowerCase()
-    .replace(/[^\w\s가-힣-]/g, '')
+    .replace(/[^\w\s-]/g, '')   // ASCII만 유지 (한국어 등 비ASCII 제거)
     .trim()
     .replace(/\s+/g, '-')
-    .slice(0, 60)
-    || 'image';
+    .replace(/-+/g, '-')
+    .slice(0, 60);
+  return slug || `img-${Date.now()}`;
 }
 
 // WordPress: 이미지 URL → WP 미디어 업로드 → 미디어 ID/URL 반환
