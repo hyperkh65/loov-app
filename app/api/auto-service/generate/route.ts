@@ -193,10 +193,20 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
 
 function fixCorruptedMarkers(text: string): string {
   return text
+    // <think>...</think> 블록 제거 (Qwen3, DeepSeek-R1 등 추론 모델)
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    // 마크다운 코드블록 제거
+    .replace(/```[a-z]*\n?/gi, '').replace(/```/g, '')
+    // 한국어 마커 복구
     .replace(/===\s*(콘텐츠|내용|본문)\s*===/gi, '===CONTENT===')
     .replace(/===\s*제목\s*===/gi, '===TITLE===')
-    .replace(/===\s*메타\s*===/gi, '===META===')
-    .replace(/===\s*키워드s?\s*===/gi, '===KEYWORDS===');
+    .replace(/===\s*메타\s*(설명)?\s*===/gi, '===META===')
+    .replace(/===\s*키워드[s]?\s*===/gi, '===KEYWORDS===')
+    // 공백/줄바꿈으로 오염된 마커 복구 (=== TITLE === 등)
+    .replace(/={3,}\s*TITLE\s*={3,}/gi, '===TITLE===')
+    .replace(/={3,}\s*META\s*={3,}/gi, '===META===')
+    .replace(/={3,}\s*CONTENT\s*={3,}/gi, '===CONTENT===')
+    .replace(/={3,}\s*KEYWORDS?\s*={3,}/gi, '===KEYWORDS===');
 }
 
 function removeDuplicateParagraphs(content: string): string {
@@ -212,8 +222,7 @@ function removeDuplicateParagraphs(content: string): string {
 }
 
 function parseAiOutput(raw: string) {
-  // 마크다운 코드블록 제거
-  const cleaned = fixCorruptedMarkers(raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, ''));
+  const cleaned = fixCorruptedMarkers(raw);
 
   const extract = (tag: string) => {
     const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?=====[A-Za-z]|$)`, 'i');
@@ -303,7 +312,8 @@ export async function POST(req: NextRequest) {
 
   const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
   if (!title || !rawContent) {
-    return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
+    const preview = rawOutput.slice(0, 300).replace(/\n/g, ' ');
+    return NextResponse.json({ error: `AI 출력 파싱 실패 (===TITLE=== 또는 ===CONTENT=== 마커 없음). 다시 시도해주세요. [응답 앞부분: ${preview}]` }, { status: 500 });
   }
 
   // 3. 이미지 검색 + 본문 삽입
