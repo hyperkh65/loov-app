@@ -195,58 +195,72 @@ export async function GET(
 
     const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null;
 
-    // 기존 연결 조회
-    const { data: existing } = await supabase
+    type ExtraAccount = {
+      platform_user_id: string; access_token: string; refresh_token?: string | null;
+      token_expires_at?: string | null; platform_username: string;
+      platform_display_name: string; platform_avatar?: string | null;
+      is_active: boolean; caption_language?: string;
+    };
+
+    // 이 정확한 계정(user_id+platform+platform_user_id)이 이미 있는지 조회
+    const { data: exactMatch } = await supabase
       .from('sns_connections')
-      .select('platform_user_id, extra')
+      .select('extra')
       .eq('user_id', userId)
       .eq('platform', platform)
+      .eq('platform_user_id', platformUserId)
       .maybeSingle();
 
-    if (!existing) {
-      // 첫 번째 계정 — 새 행 삽입
-      const { error: insertErr } = await supabase.from('sns_connections').insert({
-        user_id: userId, platform, access_token: accessToken, refresh_token: refreshToken,
-        token_expires_at: expiresAt, platform_user_id: platformUserId, platform_username: platformUsername,
-        platform_display_name: platformDisplayName, platform_avatar: platformAvatar,
-        is_active: true, updated_at: new Date().toISOString(),
-      });
-      if (insertErr) throw new Error(`DB저장실패: ${insertErr.message}`);
-    } else if (existing.platform_user_id === platformUserId) {
-      // 같은 계정 재연결 — 기본 행 업데이트
+    if (exactMatch !== null) {
+      // 같은 계정 재연결 — 해당 행 업데이트
       const { error: updateErr } = await supabase.from('sns_connections').update({
         access_token: accessToken, refresh_token: refreshToken,
         token_expires_at: expiresAt, platform_username: platformUsername,
         platform_display_name: platformDisplayName, platform_avatar: platformAvatar,
         is_active: true, updated_at: new Date().toISOString(),
-      }).eq('user_id', userId).eq('platform', platform);
+      }).eq('user_id', userId).eq('platform', platform).eq('platform_user_id', platformUserId);
       if (updateErr) throw new Error(`DB저장실패: ${updateErr.message}`);
     } else {
-      // 다른 계정 추가 — extra.extra_accounts 배열에 저장 (마이그레이션 없이 다계정 지원)
-      type ExtraAccount = {
-        platform_user_id: string; access_token: string; refresh_token?: string | null;
-        token_expires_at?: string | null; platform_username: string;
-        platform_display_name: string; platform_avatar?: string | null;
-        is_active: boolean; caption_language?: string;
-      };
-      const prevExtra = (existing.extra as Record<string, unknown>) || {};
-      const extraAccounts: ExtraAccount[] = Array.isArray(prevExtra.extra_accounts)
-        ? (prevExtra.extra_accounts as ExtraAccount[]) : [];
-      const idx = extraAccounts.findIndex((a) => a.platform_user_id === platformUserId);
-      const newAcc: ExtraAccount = {
-        platform_user_id: platformUserId, access_token: accessToken,
-        refresh_token: refreshToken, token_expires_at: expiresAt,
-        platform_username: platformUsername, platform_display_name: platformDisplayName,
-        platform_avatar: platformAvatar, is_active: true,
-        caption_language: idx >= 0 ? (extraAccounts[idx].caption_language || 'ko') : 'ko',
-      };
-      if (idx >= 0) extraAccounts[idx] = newAcc;
-      else extraAccounts.push(newAcc);
-      const { error: updateErr } = await supabase.from('sns_connections').update({
-        extra: { ...prevExtra, extra_accounts: extraAccounts },
-        updated_at: new Date().toISOString(),
-      }).eq('user_id', userId).eq('platform', platform);
-      if (updateErr) throw new Error(`DB저장실패: ${updateErr.message}`);
+      // 이 플랫폼의 메인 연결 행이 있는지 확인
+      const { data: mainRow } = await supabase
+        .from('sns_connections')
+        .select('platform_user_id, extra')
+        .eq('user_id', userId)
+        .eq('platform', platform)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (!mainRow) {
+        // 첫 번째 계정 — 새 행 삽입
+        const { error: insertErr } = await supabase.from('sns_connections').insert({
+          user_id: userId, platform, access_token: accessToken, refresh_token: refreshToken,
+          token_expires_at: expiresAt, platform_user_id: platformUserId, platform_username: platformUsername,
+          platform_display_name: platformDisplayName, platform_avatar: platformAvatar,
+          is_active: true, updated_at: new Date().toISOString(),
+        });
+        if (insertErr) throw new Error(`DB저장실패: ${insertErr.message}`);
+      } else {
+        // 다른 계정 추가 — extra.extra_accounts 배열에 저장 (마이그레이션 없이 다계정 지원)
+        const prevExtra = (mainRow.extra as Record<string, unknown>) || {};
+        const extraAccounts: ExtraAccount[] = Array.isArray(prevExtra.extra_accounts)
+          ? (prevExtra.extra_accounts as ExtraAccount[]) : [];
+        const idx = extraAccounts.findIndex((a) => a.platform_user_id === platformUserId);
+        const newAcc: ExtraAccount = {
+          platform_user_id: platformUserId, access_token: accessToken,
+          refresh_token: refreshToken, token_expires_at: expiresAt,
+          platform_username: platformUsername, platform_display_name: platformDisplayName,
+          platform_avatar: platformAvatar, is_active: true,
+          caption_language: idx >= 0 ? (extraAccounts[idx].caption_language || 'ko') : 'ko',
+        };
+        if (idx >= 0) extraAccounts[idx] = newAcc;
+        else extraAccounts.push(newAcc);
+        const { error: updateErr } = await supabase.from('sns_connections').update({
+          extra: { ...prevExtra, extra_accounts: extraAccounts },
+          updated_at: new Date().toISOString(),
+        }).eq('user_id', userId).eq('platform', platform).eq('platform_user_id', mainRow.platform_user_id);
+        if (updateErr) throw new Error(`DB저장실패: ${updateErr.message}`);
+      }
     }
     return clearReturnCookie(NextResponse.redirect(`${returnUrl}?connected=${platform}`));
   } catch (err: unknown) {
