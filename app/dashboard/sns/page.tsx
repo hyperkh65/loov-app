@@ -268,14 +268,19 @@ export default function SNSPage() {
   const saveTemplate = async () => {
     if (!newTitle.trim() || !newContent.trim()) return;
     setSavingTemplate(true);
-    await fetch('/api/sns/templates', {
+    const res = await fetch('/api/sns/templates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: newTitle, content: newContent }),
     });
+    setSavingTemplate(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert('저장 실패: ' + (data.error || `HTTP ${res.status}`));
+      return;
+    }
     setNewTitle('');
     setNewContent('');
-    setSavingTemplate(false);
     loadAll();
   };
 
