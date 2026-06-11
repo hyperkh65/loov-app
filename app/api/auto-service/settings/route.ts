@@ -20,6 +20,7 @@ export async function GET() {
     use_gpt: false,
     use_openrouter: false,
     sns_caption_model: 'llama3.3',
+    prompt_template: null,
     last_run_at: null,
     last_run_status: null,
     last_run_count: 0,
@@ -32,21 +33,23 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const body = await req.json();
-  const { enabled, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, sns_caption_model } = body;
+  const { enabled, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, sns_caption_model, prompt_template } = body;
+
+  const upsertData: Record<string, unknown> = {
+    user_id: user.id,
+    enabled: enabled ?? false,
+    ai_model: ai_model || 'qwen3',
+    max_per_run: max_per_run ?? 3,
+    custom_keywords: custom_keywords || [],
+    updated_at: new Date().toISOString(),
+  };
+
+  // prompt_template: 컬럼이 없으면 무시되도록 별도 upsert 시도
+  if (prompt_template !== undefined) upsertData.prompt_template = prompt_template || null;
 
   const { data, error } = await supabase
     .from('bossai_auto_settings')
-    .upsert({
-      user_id: user.id,
-      enabled: enabled ?? false,
-      ai_model: ai_model || 'qwen3',
-      max_per_run: max_per_run ?? 3,
-      custom_keywords: custom_keywords || [],
-      use_gpt: use_gpt ?? false,
-      use_openrouter: use_openrouter ?? false,
-      sns_caption_model: sns_caption_model || 'llama3.3',
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' })
+    .upsert(upsertData, { onConflict: 'user_id' })
     .select()
     .single();
 
