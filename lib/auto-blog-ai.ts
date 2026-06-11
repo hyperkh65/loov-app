@@ -184,8 +184,8 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
       messages: [{ role: 'user', content: prompt }],
       stream: false,
       options: {
-        num_predict: -1,   // 출력 토큰 무제한
-        num_ctx: 16384,    // 컨텍스트 윈도우 16K
+        num_predict: 8192,  // 출력 토큰 최대 8K (Cloud API는 -1 미지원)
+        num_ctx: 8192,      // 컨텍스트 윈도우 8K
       },
     }),
     signal: AbortSignal.timeout(540_000),
