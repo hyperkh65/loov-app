@@ -183,6 +183,10 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
       model,
       messages: [{ role: 'user', content: prompt }],
       stream: false,
+      options: {
+        num_predict: -1,   // 출력 토큰 무제한
+        num_ctx: 16384,    // 컨텍스트 윈도우 16K
+      },
     }),
     signal: AbortSignal.timeout(540_000),
   });
@@ -206,6 +210,7 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
       model,
       messages: [{ role: 'user', content: prompt }],
       stream: false,
+      max_tokens: 8192,
     }),
     signal: AbortSignal.timeout(540_000),
   });
@@ -224,7 +229,10 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 8192 },
+        }),
         signal: AbortSignal.timeout(540_000),
       }
     );
