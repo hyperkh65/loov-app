@@ -144,7 +144,7 @@ export default function AutoServicePage() {
   // 대표이미지 편집기 (Canvas 기반)
   const [thumbTitle, setThumbTitle] = useState('');
   const [thumbSubTitle, setThumbSubTitle] = useState('');
-  const [thumbColor, setThumbColor] = useState<'dark' | 'blue' | 'green' | 'red' | 'orange' | 'violet' | 'teal' | 'golden'>('dark');
+  const [thumbColor, setThumbColor] = useState<'dark' | 'blue' | 'green' | 'red' | 'orange' | 'violet' | 'teal' | 'golden'>('blue');
   const [thumbGenerating, setThumbGenerating] = useState(false);
   const [thumbRepUrl, setThumbRepUrl] = useState<string | null>(null);
   const [thumbBgQuery, setThumbBgQuery] = useState('');
