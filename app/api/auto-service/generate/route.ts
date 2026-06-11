@@ -67,16 +67,23 @@ async function searchNaver(type: 'news' | 'blog', query: string) {
   } catch { return []; }
 }
 
-function buildPrompt(keyword: string, newsItems: {title:string;description:string}[], blogItems: {title:string;description:string}[]): string {
+function buildPrompt(keyword: string, newsItems: {title:string;description:string}[], blogItems: {title:string;description:string}[], promptTemplate?: string | null): string {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
   const sources = [
     ...newsItems.map((n, i) => `[뉴스${i+1}] ${n.title}\n${n.description}`),
     ...blogItems.map((b, i) => `[블로그${i+1}] ${b.title}\n${b.description}`),
   ].join('\n\n');
 
+  if (promptTemplate) {
+    return promptTemplate
+      .replace(/\{\{keyword\}\}/g, keyword)
+      .replace(/\{\{today\}\}/g, today)
+      .replace(/\{\{sources\}\}/g, sources || '(참고자료 없음)');
+  }
+
   return `당신은 대한민국 최고의 저널리스트이자 SEO 전문 블로그 작가입니다.
 
-[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 한국어 동의어가 있는 영어 단어 절대 사용 금지: marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, trend→트렌드, review→리뷰, digital→디지털, global→글로벌, online→온라인, channel→채널, quality→품질, experience→경험, customer→고객, solution→솔루션, network→네트워크, traffic→트래픽, algorithm→알고리즘, share→공유, escalation→에스컬레이션, broadcasting→방송, humanitarian→인도주의, universal→다양한, Israel→이스라엘, Palestinian→팔레스타인. 고유 브랜드명(iPhone, Google, YouTube 등)만 예외. ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 마커는 영문 그대로 유지. 위반 시 응답 무효.
+[언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어(漢字) · 일본어(ひらがな · カタカナ) · 러시아어(Кириллица) 등 외국어 문자 절대 금지. 한국어 동의어가 있는 영어 단어 절대 사용 금지: living→생활/거주, kitchen→주방/부엌, nationwide→전국적, footage→영상, cover→다루다/보도, content→내용, media→언론/매체, scene→장면, case→사례, point→사항, face→직면하다, impact→영향, result→결과, process→과정, situation→상황, report→보고/보도, base→기반, detail→세부사항, marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, trend→트렌드, review→리뷰, digital→디지털, global→글로벌, online→온라인, channel→채널, quality→품질, experience→경험, customer→고객, solution→솔루션, network→네트워크, traffic→트래픽, algorithm→알고리즘, share→공유, escalation→에스컬레이션, broadcasting→방송. 고유 브랜드명(iPhone, Google, YouTube 등)만 예외. ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 마커는 영문 그대로 유지. 위반 시 응답 무효.
 
 [유럽어 금지 규칙 - 절대 준수] 포르투갈어·폴란드어·스페인어·프랑스어·독일어·이탈리아어 등 유럽 언어 단어 절대 금지. 영어 단어도 한국어 동의어가 있으면 금지. "volatilidade", "administracyjna" 같은 비영어 외국어 단어 절대 사용 금지. 위반 시 응답 무효.
 
@@ -105,10 +112,12 @@ ${ANTI_WATERMARK_PROMPT}
 - 예: 제품/서비스 키워드 → 특징, 가격, 사용법, 비교 위주 소제목
 - 예: 트렌드/이슈 키워드 → 현황, 배경, 영향, 전망 위주 소제목
 
-【참고자료 활용 원칙】
+【참고자료 활용 원칙 - 절대 준수】
 - 제공된 뉴스/블로그 자료의 구체적 내용(날짜, 인물명, 수치, 사건 경위)을 글에 반드시 반영
-- 자료에 없는 내용을 억지로 지어내지 말 것
-- 자료가 사건/사고라면 안전, 원인, 피해, 대응 관점으로 서술
+- 수집된 자료에 없는 사실, 날짜, 수치, 발언, 인물, 사건은 절대 추가 금지 (지어내기 금지)
+- "~로 알려졌다", "~인 것으로 전해진다" 등 자료 근거 없는 추측성 표현 금지
+- 과장 표현("충격", "경악", "폭로", "전격") 남발 금지 — 자료에 있는 표현만 사용
+- 자료가 사건/사고라면 경위, 원인, 피해, 대응 관점으로 서술
 - 자료가 제품/서비스라면 실사용 관점으로 서술
 
 【문체 원칙】
@@ -118,10 +127,10 @@ ${ANTI_WATERMARK_PROMPT}
 - 각 단락 최소 4문장, 충분한 내용 서술
 
 【분량 원칙】
-- 순수 텍스트(HTML 태그 제외) 최소 4000자 이상 필수 (미달 시 재작성)
-- H2 섹션 6개, 각 섹션 단락 3개 이상
-- 각 단락은 반드시 5문장 이상 (짧은 문장 금지, 한 문장 최소 30자 이상)
-- 각 H2 첫 번째 단락은 7-8문장으로 충분히 풀어쓸 것
+- 순수 텍스트(HTML 태그 제외) 4000자~5000자 사이 필수 (5000자 초과 절대 금지, 미달 시 재작성)
+- H2 섹션 5개, 각 섹션 단락 2~3개
+- 각 단락은 3~4문장 (5문장 초과 금지, 한 문장 최소 30자 이상)
+- 각 H2 첫 번째 단락은 4~5문장으로 서술
 
 포커스 키워드: "${keyword}"
 오늘 날짜: ${today}
@@ -148,40 +157,33 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2문장]</div>
 
 <h2 id="section2" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2문장]</div>
 
 <h2 id="section3" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2문장]</div>
 
 <h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2문장]</div>
 
 <h2 id="section5" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 5문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
-
-<h2 id="section6" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>6. [참고자료 내용 기반 소제목]</b></h2>
-<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 반드시 7-8문장으로 충분히 서술. 구체적 수치/사례 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인을 깊이 파고들어 5-6문장. 전문가 시각이나 비교 관점 포함]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 + 향후 전망: 앞으로 어떻게 될지, 독자가 어떻게 대응해야 할지 5-6문장]</p>
-<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2-3문장]</div>
+<p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 + 향후 전망: 앞으로 어떻게 될지, 독자가 어떻게 대응해야 할지 3~4문장]</p>
+<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>[이 섹션의 가장 중요한 사실 2문장]</div>
 
 <div class="single-summary-card" style="border:2px solid #ccc;padding:20px;border-radius:8px;max-width:800px;background-color:#ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin:20px auto;">
 <div class="card-header" style="display:flex;align-items:center;border-bottom:2px solid #1a73e8;padding-bottom:10px;margin-bottom:10px;"><span style="font-size:24px;color:#1a73e8;margin-right:10px;">💡</span><h3 style="font-size:20px;color:#1a73e8;margin:0;" data-ke-size="size23">핵심 요약</h3></div>
@@ -432,14 +434,15 @@ export async function POST(req: NextRequest) {
   const { keyword, ai_model = 'qwen3.5', clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, article_id } = body;
   if (!keyword?.trim()) return NextResponse.json({ error: '키워드를 입력하세요' }, { status: 400 });
 
-  // 1. 뉴스/블로그 수집
-  const [newsItems, blogItems] = await Promise.all([
-    searchNaver('news', keyword),
-    searchNaver('blog', keyword),
+  // 1. 뉴스/블로그 수집 + 커스텀 프롬프트 로드 병렬
+  const [[newsItems, blogItems], userSettingsResult] = await Promise.all([
+    Promise.all([searchNaver('news', keyword), searchNaver('blog', keyword)]),
+    supabase.from('bossai_auto_settings').select('prompt_template').eq('user_id', userId).maybeSingle(),
   ]);
+  const customPromptTemplate: string | null = (userSettingsResult.data as {prompt_template?: string | null} | null)?.prompt_template || null;
 
   // 2. AI 글 생성 + 소스 이미지 스크래핑 병렬 처리
-  const prompt = buildPrompt(keyword, newsItems, blogItems);
+  const prompt = buildPrompt(keyword, newsItems, blogItems, customPromptTemplate);
   const allSourceItems = [...newsItems, ...blogItems];
 
   let rawOutput: string;
