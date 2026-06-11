@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { DEFAULT_BLOG_PROMPT_TEMPLATE } from '@/lib/auto-blog-prompt';
 
 function modelEmoji(id: string): string {
   if (id.includes('qwen')) return '🔮';
@@ -124,8 +125,8 @@ export default function AutoServicePage() {
   } | null>(null);
   const [wmLoading, setWmLoading] = useState(false);
   const [refining, setRefining] = useState(false);
-  const [promptDraft, setPromptDraft] = useState<string>('');
-  const [defaultPromptText, setDefaultPromptText] = useState<string>('');
+  const [promptDraft, setPromptDraft] = useState<string>(DEFAULT_BLOG_PROMPT_TEMPLATE);
+  const [defaultPromptText, setDefaultPromptText] = useState<string>(DEFAULT_BLOG_PROMPT_TEMPLATE);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -246,15 +247,7 @@ export default function AutoServicePage() {
   useEffect(() => {
     fetch('/api/auto-service/settings')
       .then(r => r.json())
-      .then(d => { if (d && !d.error) { setAutoSettings(d); setPromptDraft(d.prompt_template || ''); } });
-    fetch('/api/auto-service/default-prompt')
-      .then(r => r.json())
-      .then(d => {
-        if (d?.prompt) {
-          setDefaultPromptText(d.prompt);
-          setPromptDraft(prev => prev || d.prompt);
-        }
-      });
+      .then(d => { if (d && !d.error) { setAutoSettings(d); setPromptDraft(d.prompt_template || DEFAULT_BLOG_PROMPT_TEMPLATE); } });
     // WordPress 사이트 목록 로드
     fetch('/api/wordpress/sites')
       .then(r => r.json())
