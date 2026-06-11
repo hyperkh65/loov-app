@@ -125,6 +125,7 @@ export default function AutoServicePage() {
   const [wmLoading, setWmLoading] = useState(false);
   const [refining, setRefining] = useState(false);
   const [promptDraft, setPromptDraft] = useState<string>('');
+  const [defaultPromptText, setDefaultPromptText] = useState<string>('');
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -246,6 +247,14 @@ export default function AutoServicePage() {
     fetch('/api/auto-service/settings')
       .then(r => r.json())
       .then(d => { if (d && !d.error) { setAutoSettings(d); setPromptDraft(d.prompt_template || ''); } });
+    fetch('/api/auto-service/default-prompt')
+      .then(r => r.json())
+      .then(d => {
+        if (d?.prompt) {
+          setDefaultPromptText(d.prompt);
+          setPromptDraft(prev => prev || d.prompt);
+        }
+      });
     // WordPress 사이트 목록 로드
     fetch('/api/wordpress/sites')
       .then(r => r.json())
@@ -1185,7 +1194,7 @@ export default function AutoServicePage() {
                       {savingSettings ? '저장 중...' : '💾 프롬프트 저장'}
                     </button>
                     <button
-                      onClick={() => setPromptDraft('')}
+                      onClick={() => { setPromptDraft(defaultPromptText); saveSettings({ ...autoSettings, prompt_template: null }); }}
                       className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200"
                     >
                       기본값으로
