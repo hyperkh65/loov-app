@@ -66,6 +66,7 @@ interface AutoSettings {
   use_gpt: boolean;
   use_openrouter: boolean;
   sns_caption_model: string;
+  prompt_template: string | null;
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_count: number;
@@ -86,7 +87,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', last_run_at: null, last_run_status: null, last_run_count: 0,
+    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -123,6 +124,8 @@ export default function AutoServicePage() {
   } | null>(null);
   const [wmLoading, setWmLoading] = useState(false);
   const [refining, setRefining] = useState(false);
+  const [promptDraft, setPromptDraft] = useState<string>('');
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [editTitle, setEditTitle] = useState('');
@@ -242,7 +245,7 @@ export default function AutoServicePage() {
   useEffect(() => {
     fetch('/api/auto-service/settings')
       .then(r => r.json())
-      .then(d => { if (d && !d.error) setAutoSettings(d); });
+      .then(d => { if (d && !d.error) { setAutoSettings(d); setPromptDraft(d.prompt_template || ''); } });
     // WordPress 사이트 목록 로드
     fetch('/api/wordpress/sites')
       .then(r => r.json())
@@ -1147,6 +1150,55 @@ export default function AutoServicePage() {
                   <span className="text-xs text-gray-400">트렌딩 키워드 자동 사용 중</span>
                 )}
               </div>
+            </div>
+
+            {/* 프롬프트 편집 */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setPromptExpanded(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-sm font-medium text-gray-700"
+              >
+                <span>✏️ AI 글쓰기 프롬프트 설정</span>
+                <span className="text-gray-400">{promptExpanded ? '▲' : '▼'}</span>
+              </button>
+              {promptExpanded && (
+                <div className="p-4 space-y-3">
+                  <p className="text-xs text-gray-500">
+                    비워두면 기본 프롬프트 사용. 직접 입력 시 기본 프롬프트를 완전히 대체합니다.<br/>
+                    템플릿 변수: <code className="bg-gray-100 px-1 rounded">{'{{keyword}}'}</code> 포커스키워드,{' '}
+                    <code className="bg-gray-100 px-1 rounded">{'{{today}}'}</code> 날짜,{' '}
+                    <code className="bg-gray-100 px-1 rounded">{'{{sources}}'}</code> 수집된 뉴스/블로그
+                  </p>
+                  <textarea
+                    value={promptDraft}
+                    onChange={e => setPromptDraft(e.target.value)}
+                    rows={16}
+                    placeholder="비워두면 기본 프롬프트가 사용됩니다."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveSettings({ ...autoSettings, prompt_template: promptDraft || null })}
+                      disabled={savingSettings}
+                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {savingSettings ? '저장 중...' : '💾 프롬프트 저장'}
+                    </button>
+                    <button
+                      onClick={() => setPromptDraft('')}
+                      className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200"
+                    >
+                      기본값으로
+                    </button>
+                  </div>
+                  {settingsError && settingsError.includes('prompt_template') && (
+                    <p className="text-xs text-red-500">
+                      Supabase SQL Editor에서 실행 필요:<br/>
+                      <code className="bg-red-50 block mt-1 p-2 rounded">ALTER TABLE bossai_auto_settings ADD COLUMN IF NOT EXISTS prompt_template text;</code>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <button onClick={() => saveSettings(autoSettings)} disabled={savingSettings}
