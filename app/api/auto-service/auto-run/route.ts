@@ -504,7 +504,6 @@ export async function GET(req: NextRequest) {
   const summary: { userId: string; generated: number; keywords: string[] }[] = [];
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
-  const cronSecret = process.env.CRON_SECRET;
 
   for (const setting of settings) {
     const { user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish } = setting;
