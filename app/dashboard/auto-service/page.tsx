@@ -71,6 +71,7 @@ interface AutoSettings {
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_count: number;
+  naver_auto_publish: boolean;
 }
 
 const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
@@ -88,7 +89,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0,
+    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0, naver_auto_publish: false,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -342,6 +343,7 @@ export default function AutoServicePage() {
           keywords: autoSettings.custom_keywords.length > 0 ? autoSettings.custom_keywords : [],
           ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.use_openrouter ? 'openrouter' : autoSettings.ai_model,
           max: autoSettings.max_per_run,
+          naver_auto_publish: autoSettings.naver_auto_publish,
           ...getAiKeys(),
         }),
       });
@@ -1025,6 +1027,22 @@ export default function AutoServicePage() {
                 className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.use_openrouter ? 'bg-purple-500' : 'bg-gray-300'}`}
               >
                 <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.use_openrouter ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* 네이버 자동 발행 토글 */}
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">🟢 네이버 블로그 자동 발행</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.naver_auto_publish ? '글 생성 후 네이버 블로그에 자동 발행됩니다' : '글 생성만 하고 발행은 수동으로 합니다'}
+                </p>
+              </div>
+              <button
+                onClick={() => saveSettings({ naver_auto_publish: !autoSettings.naver_auto_publish })}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.naver_auto_publish ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.naver_auto_publish ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
 

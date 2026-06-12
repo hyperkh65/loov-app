@@ -381,7 +381,7 @@ async function generateArticleForUser(
   clientOpenrouterKey?: string,
   clientGlobalAIKey?: string,
   clientGlobalAIModel?: string,
-): Promise<{ ok: boolean; reason?: string }> {
+): Promise<{ ok: boolean; reason?: string; articleId?: string }> {
   // 동일 인스턴스 내 중복 실행 차단
   const lockKey = `${userId}:${keyword}`;
   if (_generatingLocks.has(lockKey)) return { ok: false, reason: '이미 생성 중 (동시 실행 방지)' };
@@ -463,7 +463,7 @@ async function generateArticleForUser(
       word_count: wordCount,
     }).eq('id', placeholder.id);
 
-    return { ok: true };
+    return { ok: true, articleId: placeholder.id };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[auto-run] ${keyword} 생성 실패:`, msg);
@@ -491,7 +491,7 @@ export async function GET(req: NextRequest) {
   // 자동실행 활성화된 모든 사용자 조회
   const { data: settings, error: settingsErr } = await supabase
     .from('bossai_auto_settings')
-    .select('user_id, ai_model, max_per_run, custom_keywords, use_gpt')
+    .select('user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish')
     .eq('enabled', true);
 
   if (settingsErr || !settings?.length) {
@@ -503,8 +503,11 @@ export async function GET(req: NextRequest) {
 
   const summary: { userId: string; generated: number; keywords: string[] }[] = [];
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+  const cronSecret = process.env.CRON_SECRET;
+
   for (const setting of settings) {
-    const { user_id, ai_model, max_per_run, custom_keywords, use_gpt } = setting;
+    const { user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish } = setting;
 
     // 사용자 커스텀 키워드 우선, 없으면 트렌딩 키워드 사용
     const keywordsToUse = (custom_keywords?.length > 0 ? custom_keywords : trendKeywords).slice(0, max_per_run * 2);
@@ -514,10 +517,45 @@ export async function GET(req: NextRequest) {
 
     for (const keyword of keywordsToUse) {
       if (generated >= max_per_run) break;
-      const result = await generateArticleForUser(supabase, user_id, keyword, use_gpt ? 'openai' : (ai_model || 'qwen3'));
+      const effectiveModel = use_gpt ? 'openai' : use_openrouter ? 'openrouter' : (ai_model || 'qwen3');
+      const result = await generateArticleForUser(supabase, user_id, keyword, effectiveModel);
       if (result.ok) {
         generated++;
         usedKeywords.push(keyword);
+
+        // 네이버 자동 발행
+        if (naver_auto_publish && result.articleId && cronSecret) {
+          try {
+            const { data: article } = await supabase
+              .from('bossai_auto_articles')
+              .select('title, content, focus_keyword')
+              .eq('id', result.articleId)
+              .single();
+            if (article) {
+              const pubRes = await fetch(`${appUrl}/api/naver/publish-internal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cronSecret}` },
+                body: JSON.stringify({
+                  user_id,
+                  title: article.title,
+                  content: article.content,
+                  tags: article.focus_keyword ? [article.focus_keyword] : [],
+                }),
+              });
+              if (pubRes.ok) {
+                const pubData = await pubRes.json();
+                await supabase.from('bossai_auto_articles').update({
+                  status: 'published',
+                  blog_platforms: ['naver'],
+                  published_urls: { naver: pubData.url || '' },
+                  published_at: new Date().toISOString(),
+                }).eq('id', result.articleId);
+              }
+            }
+          } catch (pubErr) {
+            console.error(`[auto-run] 네이버 발행 실패 (${keyword}):`, pubErr instanceof Error ? pubErr.message : pubErr);
+          }
+        }
       }
     }
 
@@ -555,7 +593,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel } = await req.json();
+  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, naver_auto_publish: naverAutoPub } = await req.json();
   const adminSupabase = createAdminClient();
 
   const encoder = new TextEncoder();
@@ -585,6 +623,45 @@ export async function POST(req: NextRequest) {
             generated++;
             usedKeywords.push(keyword);
             send({ type: 'progress', keyword, status: 'done', generated });
+
+            // 네이버 자동 발행
+            if (naverAutoPub && result.articleId && process.env.CRON_SECRET) {
+              try {
+                const { data: article } = await adminSupabase
+                  .from('bossai_auto_articles')
+                  .select('title, content, focus_keyword')
+                  .eq('id', result.articleId)
+                  .single();
+                if (article) {
+                  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+                  const pubRes = await fetch(`${baseUrl}/api/naver/publish-internal`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CRON_SECRET}` },
+                    body: JSON.stringify({
+                      user_id: user!.id,
+                      title: article.title,
+                      content: article.content,
+                      tags: article.focus_keyword ? [article.focus_keyword] : [],
+                    }),
+                  });
+                  if (pubRes.ok) {
+                    const pubData = await pubRes.json();
+                    await adminSupabase.from('bossai_auto_articles').update({
+                      status: 'published',
+                      blog_platforms: ['naver'],
+                      published_urls: { naver: pubData.url || '' },
+                      published_at: new Date().toISOString(),
+                    }).eq('id', result.articleId);
+                    send({ type: 'naver_published', keyword, url: pubData.url });
+                  } else {
+                    const errData = await pubRes.json().catch(() => ({}));
+                    send({ type: 'naver_error', keyword, reason: errData.error || '발행 실패' });
+                  }
+                }
+              } catch (pubErr) {
+                send({ type: 'naver_error', keyword, reason: pubErr instanceof Error ? pubErr.message : String(pubErr) });
+              }
+            }
           } else if (result.reason && !result.reason.includes('중복')) {
             errors.push({ keyword, reason: result.reason });
             send({ type: 'progress', keyword, status: 'error', reason: result.reason });
