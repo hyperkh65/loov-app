@@ -10,6 +10,9 @@ const NAVER_POST_SCRIPT = `#!/usr/bin/env python3
 import sys, json, re
 import urllib.request, urllib.parse, urllib.error
 
+DQ = chr(34)
+SQ = chr(39)
+
 data = json.loads(sys.stdin.read())
 blog_id = data['blogId']
 nid_aut = data['nidAut']
@@ -57,9 +60,12 @@ errors = []
 try:
     form_html, _, _ = http_get('https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id)
     hidden = {}
-    for m in re.finditer(r'<input[^>]+type=["\']hidden["\'][^>]*>', form_html, re.I):
-        nm = re.search(r'name=["\']([^"\']+)["\']', m.group())
-        vm = re.search(r'value=["\']([^"\']*)["\']', m.group())
+    input_re = '<input[^>]+type=[' + DQ + SQ + ']hidden[' + DQ + SQ + '][^>]*>'
+    name_re = 'name=[' + DQ + SQ + ']([^' + DQ + SQ + ']+)[' + DQ + SQ + ']'
+    value_re = 'value=[' + DQ + SQ + ']([^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
+    for m in re.finditer(input_re, form_html, re.I):
+        nm = re.search(name_re, m.group())
+        vm = re.search(value_re, m.group())
         if nm:
             hidden[nm.group(1)] = vm.group(1) if vm else ''
     post_data = {**hidden,
@@ -78,7 +84,9 @@ try:
     if 200 <= status < 300:
         m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})(?:[^0-9/?#]|$)', final_url)
         if not m:
-            m = re.search(r'logNo[=:]["\' ]*([0-9]{5,})', body) or re.search(r'"(?:logNo|postNo)"[ ]*:[ ]*"?([0-9]{5,})"?', body)
+            logno_re = 'logNo[=:][' + DQ + SQ + ' ]*([0-9]{5,})'
+            postno_re = DQ + '(?:logNo|postNo)' + DQ + '[ ]*:[ ]*' + DQ + '?([0-9]{5,})' + DQ + '?'
+            m = re.search(logno_re, body) or re.search(postno_re, body)
         if m:
             pid = m.group(1)
             out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + pid})
