@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
-import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
+import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 
 export const maxDuration = 600;
+
+function toImageSlug(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')   // ASCII만 유지 (한국어 등 비ASCII 제거)
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 60);
+  return slug || `img-${Date.now()}`;
+}
 
 // WordPress: 이미지 URL → WP 미디어 업로드 → 미디어 ID/URL 반환
 async function uploadImageToWordpress(
   imageUrl: string,
   siteUrl: string,
   auth: string,
+  slug?: string,
 ): Promise<{ id: number; url: string } | null> {
   try {
     const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) });
@@ -17,7 +29,7 @@ async function uploadImageToWordpress(
     const buffer = await imgRes.arrayBuffer();
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
     const ext = contentType.split('/')[1]?.split(';')[0]?.split('+')[0] || 'jpg';
-    const filename = `auto_blog_${Date.now()}.${ext}`;
+    const filename = slug ? `${slug}.${ext}` : `image-${Date.now()}.${ext}`;
 
     const res = await fetch(`${siteUrl}/wp-json/wp/v2/media`, {
       method: 'POST',
@@ -65,6 +77,14 @@ async function resolveTermId(
 
 type CaptionLanguage = 'ko' | 'en' | 'ja' | 'es';
 
+// 언어별 잘못된 문자 감지
+// en/es: CJK(한중일) 전체 금지 / ja: 한국어만 금지(한자는 일본어에 정상) / ko: 체크 안함
+const isWrongLang = (s: string, lang: CaptionLanguage): boolean => {
+  if (lang === 'ko') return false;
+  if (lang === 'ja') return /[가-힯]/.test(s); // 일본어 캡션에 한국어 금지
+  return /[぀-ヿ㐀-鿿豈-﫿가-힯]/.test(s); // en/es: CJK 전체 금지
+};
+
 // AI로 SNS 후킹성 캡션 생성 (다국어 지원)
 async function generateSnsCaption(
   title: string,
@@ -96,7 +116,9 @@ async function generateSnsCaption(
 
 문구만 출력해. 설명이나 부연 절대 붙이지 마.`,
 
-    en: `Write a social media caption in English for the following blog post.
+    en: `[LANGUAGE RULE - ABSOLUTE]: You MUST write in ENGLISH ONLY. No Korean. No other language. English only.
+
+Write a social media caption in English for the following blog post.
 
 Title: ${title}
 Keyword: ${keyword}
@@ -111,9 +133,11 @@ Rules:
 - No AI-sounding phrases like "dive into", "delve", "it's important to note", "in conclusion"
 - Compress to 1-2 key facts
 
-Output only the caption text. Nothing else.`,
+Output ONLY the English caption text. No Korean. No explanation.`,
 
-    ja: `次のブログ記事についてSNS投稿文を日本語で書いてください。
+    ja: `【言語ルール・絶対厳守】必ず日本語のみで書いてください。韓国語・英語・他の言語は絶対禁止。日本語のみ。
+
+次のブログ記事についてSNS投稿文を日本語で書いてください。
 
 タイトル: ${title}
 キーワード: ${keyword}
@@ -128,9 +152,11 @@ Output only the caption text. Nothing else.`,
 - AIっぽい堅い表現禁止（「ぜひご確認ください」「重要です」等）
 - 要点を1〜2個に絞る
 
-キャプションテキストのみ出力してください。`,
+日本語のキャプションテキストのみ出力してください。韓国語禁止。`,
 
-    es: `Escribe un pie de foto para redes sociales en español para el siguiente artículo de blog.
+    es: `[REGLA DE IDIOMA - ABSOLUTA]: Debes escribir SOLO en español. Nada de coreano. Solo español.
+
+Escribe un pie de foto para redes sociales en español para el siguiente artículo de blog.
 
 Título: ${title}
 Palabra clave: ${keyword}
@@ -145,16 +171,38 @@ Reglas:
 - Sin frases con sabor a IA ("es importante destacar", "en conclusión", etc.)
 - Comprime en 1-2 datos clave
 
-Escribe solo el texto del pie de foto. Nada más.`,
+Escribe SOLO el texto en español. Sin coreano. Sin explicaciones.`,
   };
 
-  try {
-    const result = await generateText(prompts[language], preferModel);
-    const cleaned = result.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
-    if (cleaned.length > 15) return cleaned;
-  } catch { /* fallback */ }
+  const clean = (r: string) => r.trim().replace(/^["'"'「『【\[]|["'"'」』】\]]$/g, '').trim();
+  const fallback = (metaDescription || title).slice(0, 150);
 
-  return `${title}\n${metaDescription || ''}`.trim();
+  // 단일 시도에 15초 타임아웃 강제 (callOllama 내부 타임아웃이 9분이라 직접 제한)
+  const tryOllamaTimeout = async (model: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('caption_timeout')), 15000);
+      generateText(prompts[language], model, undefined, undefined, undefined, undefined,
+        language !== 'ko' ? { multilingual: true } : undefined)
+        .then(r => { clearTimeout(t); resolve(clean(r)); })
+        .catch(e => { clearTimeout(t); reject(e); });
+    });
+  };
+
+  if (language === 'ko') {
+    try { const c = await tryOllamaTimeout(preferModel); if (c.length > 15) return c; } catch { /* ignore */ }
+    return `${title}\n${metaDescription || ''}`.trim();
+  }
+
+  // 비한국어: 최대 2회 시도(preferModel → llama3.3), 각 15초 타임아웃 — 504 방지
+  const modelsToTry = preferModel === 'llama3.3' ? [preferModel] : [preferModel, 'llama3.3'];
+  for (const model of modelsToTry) {
+    try {
+      const c = await tryOllamaTimeout(model);
+      if (c.length > 15 && !isWrongLang(c, language)) return c;
+      if (c.length > 15) return c; // 언어 검증 실패해도 뭔가 나왔으면 사용
+    } catch { /* 다음 모델로 */ }
+  }
+  return fallback;
 }
 
 // 본문 HTML에서 첫 번째 이미지 URL 추출
@@ -168,6 +216,7 @@ async function uploadContentImages(
   content: string,
   siteUrl: string,
   auth: string,
+  titleSlug?: string,
 ): Promise<string> {
   const imgRegex = /<img([^>]+)src="([^"]+)"([^>]*)>/gi;
   const matches = [...content.matchAll(imgRegex)];
@@ -178,7 +227,7 @@ async function uploadContentImages(
   if (urlsToUpload.length === 0) return content;
 
   const results = await Promise.all(
-    urlsToUpload.map(url => uploadImageToWordpress(url, siteUrl, auth))
+    urlsToUpload.map((url, i) => uploadImageToWordpress(url, siteUrl, auth, titleSlug ? `${titleSlug}-${i + 1}` : undefined))
   );
 
   let processed = content;
@@ -189,6 +238,7 @@ async function uploadContentImages(
 }
 
 export async function POST(req: NextRequest) {
+  try {
   // CRON_SECRET bypass: GitHub Actions 예약 발행용
   const cronSecret = process.env.CRON_SECRET;
   const isCron = !!(cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`);
@@ -201,8 +251,11 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
     userId = user.id;
   }
+  // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [] } = await req.json();
+  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[] };
+  try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [] } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -213,6 +266,9 @@ export async function POST(req: NextRequest) {
   const { data: article, error: fetchErr } = await articleQuery.single();
 
   if (fetchErr || !article) return NextResponse.json({ error: '글을 찾을 수 없습니다' }, { status: 404 });
+
+  // cron 실행 시 article의 user_id로 userId 보완 (언어 설정 조회)
+  if (!userId && article.user_id) userId = article.user_id;
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get('host')}`;
   const results: Record<string, { success: boolean; url?: string; error?: string }> = {};
@@ -272,15 +328,17 @@ export async function POST(req: NextRequest) {
           const siteKey = `wordpress_${site.site_name}`;
 
           try {
+            const titleSlug = toImageSlug(article.focus_keyword || article.title || '');
+
             // 1. 대표이미지(SVG 썸네일)를 WP 미디어로 먼저 업로드
             let featuredMediaId: number | undefined;
             if (article.representative_image_url) {
-              const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth);
+              const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth, titleSlug);
               if (thumb) featuredMediaId = thumb.id;
             }
 
             // 2. 본문 내 이미지를 WP 미디어로 업로드 + URL 교체
-            const wpContent = await uploadContentImages(article.content, site.site_url, auth);
+            const wpContent = await uploadContentImages(article.content, site.site_url, auth, titleSlug);
 
             // 3. 카테고리 "Aboda" 조회 또는 생성
             const catId = await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
@@ -367,25 +425,28 @@ export async function POST(req: NextRequest) {
       }
 
       // ── AI 후킹성 반말 SNS 캡션 생성 (한국어 기본) ─────────────
+      const captionModel = article.ai_model === 'openai' || article.ai_model?.startsWith('gpt') ? 'openai'
+        : article.ai_model === 'openrouter' ? 'openrouter'
+        : 'qwen3';
+
+      // SNS 번역 모델: 설정에서 읽기 (기본값 llama3.3 — 다국어 지시 준수 우수)
+      let snsCaptionModel = 'llama3.3';
+      if (userId) {
+        const { data: autoSettings } = await supabase
+          .from('bossai_auto_settings')
+          .select('sns_caption_model')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (autoSettings?.sns_caption_model) snsCaptionModel = autoSettings.sns_caption_model;
+      }
+
       const aiCaption = await generateSnsCaption(
         article.title,
         article.meta_description || '',
         article.keyword || article.focus_keyword || '',
+        captionModel,
       );
 
-      // ── Threads 계정별 언어 설정 조회 ────────────────────────────
-      let threadsLangMap: Record<string, CaptionLanguage> = {};
-      if (userId && sns_platforms.includes('threads')) {
-        const { data: threadsConns } = await supabase
-          .from('sns_connections')
-          .select('platform_user_id, extra')
-          .eq('user_id', userId)
-          .eq('platform', 'threads')
-          .eq('is_active', true);
-        for (const c of threadsConns || []) {
-          threadsLangMap[c.platform_user_id] = (c.extra?.caption_language as CaptionLanguage) || 'ko';
-        }
-      }
 
       // 블로그 URL 수집: 현재 요청 결과 + 이미 DB에 저장된 기존 발행 URL 합산
       const existingBlogUrls = Object.entries(article.published_urls || {})
@@ -403,99 +464,191 @@ export async function POST(req: NextRequest) {
       const otherPlatforms = sns_platforms.filter((p: string) => p !== 'threads' && p !== 'instagram');
       const defaultMediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
 
-      // Instagram: 뉴스카드 자동 생성 후 발행
+      // Instagram: 블로그 대표이미지로 발행
       if (instagramIncluded) {
-        const instagramCaption = `${aiCaption}${blogLinkText}`.trim();
-        let instagramMedia = defaultMediaUrls;
         try {
-          const newsCardUrl = await generateAndUploadThumbnail(
-            article.title, article.keyword || article.title.slice(0, 20), 'blue',
-            undefined, undefined, undefined, 'square'
-          );
-          instagramMedia = [newsCardUrl];
-        } catch { /* 생성 실패 시 기존 이미지 사용 */ }
-        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({ content: instagramCaption, platforms: ['instagram'], media_urls: instagramMedia }),
-        });
-        const data = await res.json();
-        if (data.results) {
-          for (const r of data.results) {
-            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+          const instagramCaption = `${aiCaption}${blogLinkText}`.trim();
+          const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+            body: JSON.stringify({ content: instagramCaption, platforms: ['instagram'], media_urls: defaultMediaUrls }),
+          });
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data.results) {
+              for (const r of data.results) {
+                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+              }
+            } else if (!res.ok) {
+              results['sns_instagram'] = { success: false, error: data.error || `HTTP ${res.status}` };
+            }
+          } catch {
+            results['sns_instagram'] = { success: false, error: `서버 오류 (${res.status})` };
           }
+        } catch (err) {
+          results['sns_instagram'] = { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       }
 
       // Threads 외 나머지 플랫폼 (Twitter, Facebook 등): AI 캡션 + 블로그 링크
       if (otherPlatforms.length > 0) {
-        // Twitter는 280자 제한 (링크 포함 ~23자 소모) → 캡션 240자 이내로 자름
-        const hasTwitter = otherPlatforms.includes('twitter');
-        const twitterCaption = hasTwitter
-          ? aiCaption.slice(0, 200) + (blogLinkText ? blogLinkText : '')
-          : `${aiCaption}${blogLinkText}`.trim();
-        const snsContent = hasTwitter && otherPlatforms.length === 1
-          ? twitterCaption
-          : `${aiCaption}${blogLinkText}`.trim();
-
-        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({
-            content: snsContent,
-            platforms: otherPlatforms,
-            media_urls: defaultMediaUrls,
-          }),
-        });
-        const data = await res.json();
-        if (data.results) {
-          for (const r of data.results) {
-            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
-          }
-        }
-      }
-
-      // Threads: 계정별 언어로 캡션 생성 후 발행
-      if (threadsIncluded) {
-        const threadItems = blogUrls.length > 0
-          ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
-          : [];
-        const mediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
-
-        // 언어별로 계정 그룹핑
-        const langGroups: Record<string, string[]> = {};
-        for (const [uid, lang] of Object.entries(threadsLangMap)) {
-          if (!langGroups[lang]) langGroups[lang] = [];
-          langGroups[lang].push(uid);
-        }
-        if (Object.keys(langGroups).length === 0) langGroups['ko'] = [];
-
-        for (const [lang, accountIds] of Object.entries(langGroups)) {
-          const caption = lang === 'ko'
-            ? aiCaption
-            : await generateSnsCaption(
-                article.title, article.meta_description || '',
-                article.keyword || article.focus_keyword || '',
-                undefined, lang as CaptionLanguage,
-              );
+        try {
+          // Twitter는 280자 제한 (링크 포함 ~23자 소모) → 캡션 240자 이내로 자름
+          const hasTwitter = otherPlatforms.includes('twitter');
+          const snsContent = hasTwitter && otherPlatforms.length === 1
+            ? aiCaption.slice(0, 200) + blogLinkText
+            : `${aiCaption}${blogLinkText}`.trim();
 
           const res = await fetch(`${baseUrl}/api/sns/post-now`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-            body: JSON.stringify({
-              content: caption,
-              platforms: ['threads'],
-              account_ids: accountIds.length > 0 ? accountIds : undefined,
-              media_urls: mediaUrls,
-              thread_items: threadItems,
-            }),
+            body: JSON.stringify({ content: snsContent, platforms: otherPlatforms, media_urls: defaultMediaUrls }),
           });
-          const data = await res.json();
-          if (data.results) {
-            for (const r of data.results) {
-              results[`sns_threads_${lang}`] = { success: r.success, error: r.error };
+          const text = await res.text();
+          try {
+            const data = JSON.parse(text);
+            if (data.results) {
+              for (const r of data.results) {
+                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+              }
+            } else if (!res.ok) {
+              for (const p of otherPlatforms) {
+                results[`sns_${p}`] = { success: false, error: data.error || `HTTP ${res.status}` };
+              }
+            }
+          } catch {
+            for (const p of otherPlatforms) {
+              results[`sns_${p}`] = { success: false, error: `서버 오류 (${res.status})` };
             }
           }
+        } catch (err) {
+          for (const p of otherPlatforms) {
+            results[`sns_${p}`] = { success: false, error: err instanceof Error ? err.message : String(err) };
+          }
+        }
+      }
+
+      // Threads: 각 계정(메인+extra)에 직접 발행 — 병렬 처리로 타임아웃 방지
+      if (threadsIncluded && userId) {
+        try {
+          const { data: threadsConns } = await supabase
+            .from('sns_connections')
+            .select('platform_user_id, access_token, extra')
+            .eq('user_id', userId)
+            .eq('platform', 'threads')
+            .eq('is_active', true);
+
+          type ThreadsAcc = { platform_user_id: string; access_token: string; caption_language: CaptionLanguage };
+          const allAccounts: ThreadsAcc[] = [];
+          for (const conn of threadsConns || []) {
+            const extra = conn.extra as Record<string, unknown> | null;
+            if (conn.access_token && conn.platform_user_id) {
+              allAccounts.push({
+                platform_user_id: conn.platform_user_id,
+                access_token: conn.access_token,
+                caption_language: ((extra?.caption_language) as CaptionLanguage) || 'ko',
+              });
+            }
+            const extraAccounts = Array.isArray(extra?.extra_accounts)
+              ? (extra!.extra_accounts as { platform_user_id: string; access_token: string; caption_language?: string; is_active?: boolean }[])
+              : [];
+            for (const acc of extraAccounts) {
+              if (acc.is_active === false || !acc.access_token || !acc.platform_user_id) continue;
+              allAccounts.push({
+                platform_user_id: acc.platform_user_id,
+                access_token: acc.access_token,
+                caption_language: (acc.caption_language as CaptionLanguage) || 'ko',
+              });
+            }
+          }
+
+          const threadsMediaUrls = (() => {
+            const img = article.representative_image_url || extractFirstImageUrl(article.content || '');
+            return img ? [img] : [];
+          })();
+          const blogLinkComment = blogUrls.length > 0 ? '🔗 ' + blogUrls.join('\n🔗 ') : '';
+
+          // ① 언어별 캡션 병렬 생성 (순차 → 병렬로 변경, 3언어 × 15초 → 15초로 단축)
+          const uniqueLangs = [...new Set(allAccounts.map(a => a.caption_language))];
+          const captionEntries = await Promise.all(
+            uniqueLangs.map(async (lang): Promise<[CaptionLanguage, string]> => {
+              if (lang === 'ko') return [lang, aiCaption];
+              // 비한국어: 설정된 SNS 번역 모델 사용 (기본 llama3.3)
+              return [lang, await generateSnsCaption(
+                article.title, article.meta_description || '',
+                article.keyword || article.focus_keyword || '',
+                snsCaptionModel, lang,
+              )];
+            })
+          );
+          const captionCache: Partial<Record<CaptionLanguage, string>> = Object.fromEntries(captionEntries);
+          if (!captionCache['ko']) captionCache['ko'] = aiCaption;
+
+          // ② 모든 계정 병렬 발행
+          const commentErrors: string[] = [];
+          const commentSuccesses: number[] = [];
+          const accountResults = await Promise.allSettled(
+            allAccounts.map(async (acc) => {
+              const caption = captionCache[acc.caption_language] || aiCaption;
+              const { id: postId } = await postToThreadsWithMedia(
+                acc.access_token, acc.platform_user_id, caption,
+                threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
+              );
+
+              // ③ 댓글: 게시물 접근 가능 확인(최대 20초 폴링) 후 댓글 게시
+              if (blogLinkComment) {
+                // 최대 20초 폴링 — 게시물이 조회 가능해질 때까지 대기
+                const pollDeadline = Date.now() + 20000;
+                while (Date.now() < pollDeadline) {
+                  await new Promise(r => setTimeout(r, 4000));
+                  try {
+                    const ck = await fetch(
+                      `https://graph.threads.net/v1.0/${postId}?fields=id&access_token=${acc.access_token}`,
+                      { signal: AbortSignal.timeout(4000) },
+                    );
+                    if (ck.ok) { const d = await ck.json(); if (d.id) break; }
+                  } catch { /* 계속 폴링 */ }
+                }
+                // 접근 가능 여부와 무관하게 댓글 시도 (실패 에러 전문 캡처)
+                let commentOk = false;
+                try {
+                  await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                  commentOk = true;
+                } catch (e1) {
+                  // 5초 후 1회 재시도
+                  try {
+                    await new Promise(r => setTimeout(r, 5000));
+                    await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                    commentOk = true;
+                  } catch (e2) {
+                    commentErrors.push(`[${String(e2).slice(0, 400)}]`);
+                  }
+                }
+                if (commentOk) commentSuccesses.push(1);
+              }
+              return postId;
+            })
+          );
+
+          const anyThreadsSuccess = accountResults.some(r => r.status === 'fulfilled');
+          const threadsErrors = accountResults
+            .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+            .map((r, i) => `acc${i + 1}: ${String(r.reason).slice(0, 80)}`);
+
+          // 디버그 노트: 항상 댓글 상태 포함
+          const threadsNote = !blogLinkComment
+            ? '[URL없음: 블로그를 함께 발행하거나 이전 발행기록이 있어야 댓글이 달립니다]'
+            : commentErrors.length > 0
+              ? `[댓글 실패(${commentErrors.join(' | ')})]`
+              : commentSuccesses.length > 0
+                ? `[댓글 ${commentSuccesses.length}개 게시됨]`
+                : '[댓글 미시도]';
+          results['sns_threads'] = anyThreadsSuccess
+            ? { success: true, error: threadsNote }
+            : { success: false, error: allAccounts.length === 0 ? 'Threads 계정 없음' : threadsErrors.join(' | ') };
+        } catch (err) {
+          results['sns_threads'] = { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       }
     } catch (err) {
@@ -542,6 +695,8 @@ export async function POST(req: NextRequest) {
   for (const [k, v] of Object.entries(results)) {
     if (v.success && v.url) publishedUrls[k] = v.url;
   }
+  // 기존 블로그 URL 보존: Threads만 재발행해도 WordPress URL 등이 사라지지 않도록 병합
+  const mergedPublishedUrls = { ...(article.published_urls || {}), ...publishedUrls };
 
   const updateQuery = supabase
     .from('bossai_auto_articles')
@@ -549,7 +704,7 @@ export async function POST(req: NextRequest) {
       status: anySuccess ? 'published' : 'failed',
       blog_platforms,
       sns_platforms,
-      published_urls: publishedUrls,
+      published_urls: mergedPublishedUrls,
       published_at: anySuccess ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     })
@@ -557,4 +712,7 @@ export async function POST(req: NextRequest) {
   await (userId ? updateQuery.eq('user_id', userId) : updateQuery);
 
   return NextResponse.json({ results, published_urls: publishedUrls });
+  } catch (fatalErr) {
+    return NextResponse.json({ error: fatalErr instanceof Error ? fatalErr.message : String(fatalErr), results: {} }, { status: 500 });
+  }
 }

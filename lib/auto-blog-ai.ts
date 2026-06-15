@@ -161,11 +161,18 @@ function replaceEnglishWords(text: string): string {
 }
 
 const OPENROUTER_MODELS = [
-  'qwen/qwen3-235b-a22b:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'deepseek/deepseek-r1:free',
-  'google/gemma-3-27b-it:free',
-  'mistralai/mistral-7b-instruct:free',
+  'moonshotai/kimi-k2.6:free',              // 한국어 강함, 262K ctx
+  'openrouter/free',                         // 자동 최적 무료 모델 선택
+  'qwen/qwen3-next-80b-a3b-instruct:free',  // Qwen3 인스트럭트, 한국어 우수
+  'qwen/qwen3-coder:free',                  // Qwen3 480B A35B, 1M ctx
+  'z-ai/glm-4.5-air:free',                 // GLM 4.5, 한국어/중국어 강함
+  'nvidia/nemotron-3-ultra-550b-a55b:free', // 550B, 1M ctx
+  'nvidia/nemotron-3-super-120b-a12b:free', // 120B, 1M ctx
+  'openai/gpt-oss-120b:free',              // OpenAI OSS 120B
+  'nousresearch/hermes-3-llama-3.1-405b:free', // 405B
+  'meta-llama/llama-3.3-70b-instruct:free', // Llama 70B
+  'google/gemma-4-31b-it:free',             // Gemma 4 31B, 262K ctx
+  'openai/gpt-oss-20b:free',               // OpenAI OSS 20B (빠름)
 ];
 
 async function callOllama(apiKey: string, model: string, prompt: string): Promise<string> {
@@ -176,6 +183,10 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
       model,
       messages: [{ role: 'user', content: prompt }],
       stream: false,
+      options: {
+        num_predict: 8192,  // 출력 토큰 최대 8K (Cloud API는 -1 미지원)
+        num_ctx: 8192,      // 컨텍스트 윈도우 8K
+      },
     }),
     signal: AbortSignal.timeout(540_000),
   });
@@ -199,6 +210,7 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
       model,
       messages: [{ role: 'user', content: prompt }],
       stream: false,
+      max_tokens: 8192,
     }),
     signal: AbortSignal.timeout(540_000),
   });
@@ -217,7 +229,10 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 8192 },
+        }),
         signal: AbortSignal.timeout(540_000),
       }
     );
@@ -230,20 +245,29 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
 }
 
 async function callOpenAI(apiKey: string, prompt: string, model = 'gpt-4o-mini'): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-    signal: AbortSignal.timeout(540_000),
-  });
-  if (!res.ok) throw new Error(`OpenAI ${res.status}`);
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content || '';
-  if (!text) throw new Error('OpenAI 빈 응답');
-  return text;
+  const RETRY_DELAYS = [3000, 8000, 15000];
+  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 8192,
+      }),
+      signal: AbortSignal.timeout(540_000),
+    });
+    if (res.status === 429 && attempt < RETRY_DELAYS.length) {
+      await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
+      continue;
+    }
+    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    if (!text) throw new Error('OpenAI 빈 응답');
+    return text;
+  }
+  throw new Error('OpenAI 429: 재시도 횟수 초과');
 }
 
 // Ollama 가용 모델 캐시 (키별, 1시간)
@@ -330,9 +354,10 @@ export async function generateText(
   clientOpenrouterKey?: string,
   clientGlobalAIKey?: string,
   clientGlobalAIModel?: string,
+  options?: { multilingual?: boolean }, // 다국어 모드: 한국어 강제 규칙·문자 정제 생략
 ): Promise<string> {
-  // 한국어 강제 지시문 추가 (중복 방지)
-  if (!prompt.includes('[언어 규칙 - 절대 준수]')) {
+  // 한국어 강제 지시문 추가 (중복 방지, 다국어 모드 제외)
+  if (!options?.multilingual && !prompt.includes('[언어 규칙 - 절대 준수]')) {
     prompt = prompt + '\n\n' + KOREAN_ONLY_SUFFIX;
   }
 
@@ -358,27 +383,41 @@ export async function generateText(
   // ── Ollama Cloud ────────────────────────────────────────
   const tryOllama = async (mainModel: string) => {
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
-    // 큰 모델(고품질) 우선 — 블로그 장문 생성에 최적화
+    // 폴백 순서: 검증된 중간 크기 모델만 (전체 순회 금지 — 300s maxDuration 초과 방지)
     const OLLAMA_FALLBACKS = [
-      'llama3.3', 'qwen3.5', 'kimi-k2', 'deepseek-r1',
-      'qwen3', 'qwen3-coder', 'llama3.2',
-      'mistral-small3.1', 'gemma3', 'phi4', 'phi4-mini', 'ministral-3', 'mistral',
+      'llama3.3', 'kimi-k2.5', 'kimi-k2.6', 'kimi-k2',
+      'deepseek-v4-flash', 'deepseek-r1', 'glm-4', 'glm4',
+      'qwen3', 'qwen3.5', 'qwen3-coder',
+      'minimax-m2', 'llama3.2', 'mistral-small3.1', 'gemma3', 'phi4', 'ministral-3',
     ];
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
-      // 키마다 모델 목록 조회 — 429 한도 초과된 키는 빈 목록 반환하므로 다음 키로 넘어감
       const available = await getAvailableOllamaModels(key);
       let toTry: string[];
       if (available.length > 0) {
+        // 100B 초과 모델 또는 1T 모델은 구독 필요 → 제외
+        const isFreeModel = (name: string) => {
+          const m = name.match(/:(\d+)([bt])$/i);
+          if (!m) return true;
+          const size = parseInt(m[1]);
+          const unit = m[2].toLowerCase();
+          if (unit === 't') return false; // 1T+ = 구독 필요
+          if (unit === 'b' && size > 100) return false; // 100B+ = 구독 필요
+          return true;
+        };
+        // 선택 모델 우선, 폴백은 OLLAMA_FALLBACKS 순서대로 available에 있는 것만 최대 4개
         const priority = available.filter(m => m === mainModel || m.startsWith(mainModel + ':'));
-        const rest = available.filter(m => !priority.includes(m));
-        toTry = [...priority, ...rest];
+        const fallbackOrdered = OLLAMA_FALLBACKS
+          .flatMap(fb => available.filter(m => (m === fb || m.startsWith(fb + ':') || m.startsWith(fb + '.')) && isFreeModel(m)))
+          .filter(m => !priority.includes(m))
+          .slice(0, 4);
+        toTry = [...priority, ...fallbackOrdered];
       } else {
-        // 모델 목록 조회 실패 시 :cloud 접미사도 함께 시도
+        // 모델 목록 조회 실패 시 :cloud 접미사도 함께 시도 (최대 6개)
         const withCloud = [mainModel + ':cloud', mainModel,
-          ...OLLAMA_FALLBACKS.filter(m => m !== mainModel).flatMap(m => [m + ':cloud', m])
+          ...OLLAMA_FALLBACKS.slice(0, 3).flatMap(m => [m + ':cloud', m])
         ];
-        toTry = [...new Set(withCloud)];
+        toTry = [...new Set(withCloud)].slice(0, 6);
       }
       for (const model of toTry) {
         try { return await callOllama(key, model, prompt); }
@@ -400,12 +439,35 @@ export async function generateText(
     catch (e) { errors.push(`Gemini: ${e}`); return false; }
   };
   const tryOpenRouter = async () => {
-    const key = clientOpenrouterKey || await getSetting('OPENROUTER_API_KEY');
-    if (!key) { errors.push('OpenRouter: API 키 미설정'); return false; }
-    for (const model of OPENROUTER_MODELS) {
-      try { return await callOpenRouter(key, model, prompt); } catch { continue; }
+    // 다중 키 수집 (OPENROUTER_API_KEYS 배열 + 레거시 단일 키)
+    const orKeys: string[] = [];
+    if (clientOpenrouterKey) orKeys.push(clientOpenrouterKey);
+    try {
+      const raw = await getSetting('OPENROUTER_API_KEYS');
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        if (Array.isArray(arr)) orKeys.push(...arr.filter(Boolean));
+      }
+    } catch { /* ignore */ }
+    const legacyOrKey = await getSetting('OPENROUTER_API_KEY');
+    if (legacyOrKey && !orKeys.includes(legacyOrKey)) orKeys.push(legacyOrKey);
+
+    if (orKeys.length === 0) { errors.push('OpenRouter: API 키 미설정'); return false; }
+
+    const firstErrors: string[] = [];
+    for (const key of orKeys) {
+      for (const model of OPENROUTER_MODELS) {
+        try { return await callOpenRouter(key, model, prompt); }
+        catch (e) {
+          const msg = String(e);
+          // 429(한도 초과) → 다음 키로, 그 외 오류 → 다음 모델로
+          if (msg.includes('429')) break;
+          if (firstErrors.length < 3) firstErrors.push(`key${orKeys.indexOf(key)+1}/${model}: ${msg.slice(0,50)}`);
+          continue;
+        }
+      }
     }
-    errors.push('OpenRouter: 모든 모델 실패');
+    errors.push(`OpenRouter: 모든 키/모델 실패${firstErrors.length ? ` (${firstErrors.join(' | ')})` : ''}`);
     return false;
   };
   const tryOpenAI = async () => {
@@ -429,8 +491,12 @@ export async function generateText(
   };
 
   // ── 결과 정제: think 블록 → 이스케이프 복원 → 외국어 제거 → 유럽어 제거 → 영어 치환 ──
+  // 다국어 모드는 외국어 문자 제거 생략 (영어/일본어/스페인어 캡션 보존)
   const clean = (r: string | false) =>
-    r ? replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r))))) : false;
+    r ? (options?.multilingual
+      ? unescapeQuotes(stripThinkBlocks(r))
+      : replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))))
+    ) : false;
 
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
   let result: string | false = false;
