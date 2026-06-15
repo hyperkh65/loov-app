@@ -9,6 +9,9 @@ export const maxDuration = 300;
 // Vercel Cron 또는 수동 트리거로 호출됨
 // Authorization: Bearer <CRON_SECRET>
 
+// 동일 인스턴스 내 동시 생성 방지 (같은 userId:keyword 중복 실행 차단)
+const _generatingLocks = new Set<string>();
+
 // 수집된 기사에서 og:image 스크래핑
 async function scrapeArticleImages(
   items: { link: string; title: string }[],
@@ -378,8 +381,12 @@ async function generateArticleForUser(
   clientOpenrouterKey?: string,
   clientGlobalAIKey?: string,
   clientGlobalAIModel?: string,
-): Promise<{ ok: boolean; reason?: string }> {
-  // 최근 7일 내 같은 키워드 글 있으면 스킵
+): Promise<{ ok: boolean; reason?: string; articleId?: string }> {
+  // 동일 인스턴스 내 중복 실행 차단
+  const lockKey = `${userId}:${keyword}`;
+  if (_generatingLocks.has(lockKey)) return { ok: false, reason: '이미 생성 중 (동시 실행 방지)' };
+
+  // 최근 7일 내 같은 키워드 글 있으면 스킵 (generating 포함)
   const { data: existing } = await supabase
     .from('bossai_auto_articles')
     .select('id')
@@ -389,6 +396,27 @@ async function generateArticleForUser(
     .limit(1);
 
   if (existing && existing.length > 0) return { ok: false, reason: `중복 키워드 (7일 이내 생성됨)` };
+
+  // 선점: 생성 전 플레이스홀더 INSERT → 다른 동시 요청이 위 중복 체크에서 걸림
+  _generatingLocks.add(lockKey);
+  const { data: placeholder, error: placeholderErr } = await supabase
+    .from('bossai_auto_articles')
+    .insert({
+      user_id: userId,
+      keyword,
+      focus_keyword: keyword,
+      title: `⏳ 생성 중... (${keyword})`,
+      status: 'generating',
+      content: '',
+      ai_model: aiModel,
+    })
+    .select('id')
+    .single();
+
+  if (placeholderErr || !placeholder) {
+    _generatingLocks.delete(lockKey);
+    return { ok: false, reason: 'DB 선점 실패' };
+  }
 
   try {
     const [news, blogs] = await Promise.all([
@@ -407,7 +435,7 @@ async function generateArticleForUser(
     ]);
 
     const { title, meta_description, content: rawContent } = parseAiOutput(rawOutput);
-    if (!title || !rawContent) return { ok: false, reason: 'AI 출력 파싱 실패' };
+    if (!title || !rawContent) throw new Error('AI 출력 파싱 실패');
 
     const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
     let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
@@ -421,15 +449,11 @@ async function generateArticleForUser(
     if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
     const wordCount = content.replace(/<[^>]+>/g, '').length;
 
-    await supabase.from('bossai_auto_articles').insert({
-      user_id: userId,
-      keyword,
-      focus_keyword: keyword,
+    await supabase.from('bossai_auto_articles').update({
       title,
       meta_description,
       content,
       representative_image_url: imageUrl,
-      ai_model: aiModel,
       status: 'draft',
       sources: [
         ...news.map((n: {title:string;description:string;link:string}) => ({ type: 'news', ...n })),
@@ -437,13 +461,20 @@ async function generateArticleForUser(
         ...scrapedImages.map(img => ({ type: 'collected_image', title: img.title, link: img.url })),
       ],
       word_count: wordCount,
-    });
+    }).eq('id', placeholder.id);
 
-    return { ok: true };
+    return { ok: true, articleId: placeholder.id };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[auto-run] ${keyword} 생성 실패:`, msg);
+    await supabase.from('bossai_auto_articles').update({
+      status: 'failed',
+      title: `❌ 생성 실패 (${keyword})`,
+      meta_description: msg.slice(0, 300),
+    }).eq('id', placeholder.id);
     return { ok: false, reason: msg };
+  } finally {
+    _generatingLocks.delete(lockKey);
   }
 }
 
@@ -460,7 +491,7 @@ export async function GET(req: NextRequest) {
   // 자동실행 활성화된 모든 사용자 조회
   const { data: settings, error: settingsErr } = await supabase
     .from('bossai_auto_settings')
-    .select('user_id, ai_model, max_per_run, custom_keywords')
+    .select('user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish')
     .eq('enabled', true);
 
   if (settingsErr || !settings?.length) {
@@ -472,8 +503,11 @@ export async function GET(req: NextRequest) {
 
   const summary: { userId: string; generated: number; keywords: string[] }[] = [];
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+  const cronSecret = process.env.CRON_SECRET;
+
   for (const setting of settings) {
-    const { user_id, ai_model, max_per_run, custom_keywords } = setting;
+    const { user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish } = setting;
 
     // 사용자 커스텀 키워드 우선, 없으면 트렌딩 키워드 사용
     const keywordsToUse = (custom_keywords?.length > 0 ? custom_keywords : trendKeywords).slice(0, max_per_run * 2);
@@ -483,10 +517,45 @@ export async function GET(req: NextRequest) {
 
     for (const keyword of keywordsToUse) {
       if (generated >= max_per_run) break;
-      const result = await generateArticleForUser(supabase, user_id, keyword, ai_model || 'qwen3');
+      const effectiveModel = use_gpt ? 'openai' : use_openrouter ? 'openrouter' : (ai_model || 'qwen3');
+      const result = await generateArticleForUser(supabase, user_id, keyword, effectiveModel);
       if (result.ok) {
         generated++;
         usedKeywords.push(keyword);
+
+        // 네이버 자동 발행
+        if (naver_auto_publish && result.articleId && cronSecret) {
+          try {
+            const { data: article } = await supabase
+              .from('bossai_auto_articles')
+              .select('title, content, focus_keyword')
+              .eq('id', result.articleId)
+              .single();
+            if (article) {
+              const pubRes = await fetch(`${appUrl}/api/naver/publish-internal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cronSecret}` },
+                body: JSON.stringify({
+                  user_id,
+                  title: article.title,
+                  content: article.content,
+                  tags: article.focus_keyword ? [article.focus_keyword] : [],
+                }),
+              });
+              if (pubRes.ok) {
+                const pubData = await pubRes.json();
+                await supabase.from('bossai_auto_articles').update({
+                  status: 'published',
+                  blog_platforms: ['naver'],
+                  published_urls: { naver: pubData.url || '' },
+                  published_at: new Date().toISOString(),
+                }).eq('id', result.articleId);
+              }
+            }
+          } catch (pubErr) {
+            console.error(`[auto-run] 네이버 발행 실패 (${keyword}):`, pubErr instanceof Error ? pubErr.message : pubErr);
+          }
+        }
       }
     }
 
@@ -524,7 +593,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel } = await req.json();
+  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, naver_auto_publish: naverAutoPub } = await req.json();
   const adminSupabase = createAdminClient();
 
   const encoder = new TextEncoder();
@@ -554,6 +623,45 @@ export async function POST(req: NextRequest) {
             generated++;
             usedKeywords.push(keyword);
             send({ type: 'progress', keyword, status: 'done', generated });
+
+            // 네이버 자동 발행
+            if (naverAutoPub && result.articleId && process.env.CRON_SECRET) {
+              try {
+                const { data: article } = await adminSupabase
+                  .from('bossai_auto_articles')
+                  .select('title, content, focus_keyword')
+                  .eq('id', result.articleId)
+                  .single();
+                if (article) {
+                  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+                  const pubRes = await fetch(`${baseUrl}/api/naver/publish-internal`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CRON_SECRET}` },
+                    body: JSON.stringify({
+                      user_id: user!.id,
+                      title: article.title,
+                      content: article.content,
+                      tags: article.focus_keyword ? [article.focus_keyword] : [],
+                    }),
+                  });
+                  if (pubRes.ok) {
+                    const pubData = await pubRes.json();
+                    await adminSupabase.from('bossai_auto_articles').update({
+                      status: 'published',
+                      blog_platforms: ['naver'],
+                      published_urls: { naver: pubData.url || '' },
+                      published_at: new Date().toISOString(),
+                    }).eq('id', result.articleId);
+                    send({ type: 'naver_published', keyword, url: pubData.url });
+                  } else {
+                    const errData = await pubRes.json().catch(() => ({}));
+                    send({ type: 'naver_error', keyword, reason: errData.error || '발행 실패' });
+                  }
+                }
+              } catch (pubErr) {
+                send({ type: 'naver_error', keyword, reason: pubErr instanceof Error ? pubErr.message : String(pubErr) });
+              }
+            }
           } else if (result.reason && !result.reason.includes('중복')) {
             errors.push({ keyword, reason: result.reason });
             send({ type: 'progress', keyword, status: 'error', reason: result.reason });

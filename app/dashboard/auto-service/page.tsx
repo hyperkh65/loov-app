@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { DEFAULT_BLOG_PROMPT_TEMPLATE } from '@/lib/auto-blog-prompt';
 
 function modelEmoji(id: string): string {
   if (id.includes('qwen')) return '🔮';
@@ -63,9 +64,14 @@ interface AutoSettings {
   ai_model: string;
   max_per_run: number;
   custom_keywords: string[];
+  use_gpt: boolean;
+  use_openrouter: boolean;
+  sns_caption_model: string;
+  prompt_template: string | null;
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_count: number;
+  naver_auto_publish: boolean;
 }
 
 const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
@@ -83,7 +89,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], last_run_at: null, last_run_status: null, last_run_count: 0,
+    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0, naver_auto_publish: false,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -120,6 +126,9 @@ export default function AutoServicePage() {
   } | null>(null);
   const [wmLoading, setWmLoading] = useState(false);
   const [refining, setRefining] = useState(false);
+  const [promptDraft, setPromptDraft] = useState<string>(DEFAULT_BLOG_PROMPT_TEMPLATE);
+  const [defaultPromptText, setDefaultPromptText] = useState<string>(DEFAULT_BLOG_PROMPT_TEMPLATE);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [editTitle, setEditTitle] = useState('');
@@ -136,7 +145,7 @@ export default function AutoServicePage() {
   // 대표이미지 편집기 (Canvas 기반)
   const [thumbTitle, setThumbTitle] = useState('');
   const [thumbSubTitle, setThumbSubTitle] = useState('');
-  const [thumbColor, setThumbColor] = useState<'dark' | 'blue' | 'green' | 'red' | 'orange' | 'violet' | 'teal' | 'golden'>('dark');
+  const [thumbColor, setThumbColor] = useState<'dark' | 'blue' | 'green' | 'red' | 'orange' | 'violet' | 'teal' | 'golden'>('blue');
   const [thumbGenerating, setThumbGenerating] = useState(false);
   const [thumbRepUrl, setThumbRepUrl] = useState<string | null>(null);
   const [thumbBgQuery, setThumbBgQuery] = useState('');
@@ -239,7 +248,7 @@ export default function AutoServicePage() {
   useEffect(() => {
     fetch('/api/auto-service/settings')
       .then(r => r.json())
-      .then(d => { if (d && !d.error) setAutoSettings(d); });
+      .then(d => { if (d && !d.error) { setAutoSettings(d); setPromptDraft(d.prompt_template || DEFAULT_BLOG_PROMPT_TEMPLATE); } });
     // WordPress 사이트 목록 로드
     fetch('/api/wordpress/sites')
       .then(r => r.json())
@@ -332,8 +341,9 @@ export default function AutoServicePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           keywords: autoSettings.custom_keywords.length > 0 ? autoSettings.custom_keywords : [],
-          ai_model: autoSettings.ai_model,
+          ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.use_openrouter ? 'openrouter' : autoSettings.ai_model,
           max: autoSettings.max_per_run,
+          naver_auto_publish: autoSettings.naver_auto_publish,
           ...getAiKeys(),
         }),
       });
@@ -412,7 +422,7 @@ export default function AutoServicePage() {
       const res = await fetch('/api/auto-service/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, ai_model: autoSettings.ai_model, ...getAiKeys() }),
+        body: JSON.stringify({ keyword, ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.use_openrouter ? 'openrouter' : autoSettings.ai_model, ...getAiKeys() }),
       });
       const data = await res.json() as { article_id?: string; error?: string };
       if (!res.ok) throw new Error(data.error || '잡 시작 실패');
@@ -828,7 +838,9 @@ export default function AutoServicePage() {
           backlink_platforms: selBacklink,
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: { results?: Record<string, { success: boolean; url?: string; error?: string }>; error?: string } = {};
+      try { data = JSON.parse(text); } catch { throw new Error(`서버 오류 (${res.status}): ${text.slice(0, 200)}`); }
       setPublishResult(data.results || {});
       if (data.error) alert(`발행 오류: ${data.error}`);
       await loadArticles();
@@ -986,7 +998,56 @@ export default function AutoServicePage() {
           <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
             <h2 className="font-semibold text-gray-800">상세 설정</h2>
 
-            {/* AI 모델 */}
+            {/* GPT 사용 토글 */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">GPT 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.use_gpt ? 'GPT-4o mini로 블로그·SNS 캡션 생성 (설정의 OpenAI 키 사용)' : '기본값: Ollama Cloud 모델 사용'}
+                </p>
+              </div>
+              <button
+                onClick={() => setAutoSettings(prev => ({ ...prev, use_gpt: !prev.use_gpt, use_openrouter: prev.use_gpt ? prev.use_openrouter : false }))}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.use_gpt ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.use_gpt ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* OpenRouter 사용 토글 */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">OpenRouter 사용 <span className="text-xs text-green-600 font-normal">무료</span></p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.use_openrouter ? 'OpenRouter 무료 모델 사용 (Qwen3-235B, DeepSeek-R1 등)' : '기본값: Ollama Cloud 모델 사용'}
+                </p>
+              </div>
+              <button
+                onClick={() => setAutoSettings(prev => ({ ...prev, use_openrouter: !prev.use_openrouter, use_gpt: prev.use_openrouter ? prev.use_gpt : false }))}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.use_openrouter ? 'bg-purple-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.use_openrouter ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* 네이버 자동 발행 토글 */}
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">🟢 네이버 블로그 자동 발행</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.naver_auto_publish ? '글 생성 후 네이버 블로그에 자동 발행됩니다' : '글 생성만 하고 발행은 수동으로 합니다'}
+                </p>
+              </div>
+              <button
+                onClick={() => saveSettings({ naver_auto_publish: !autoSettings.naver_auto_publish })}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.naver_auto_publish ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.naver_auto_publish ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* AI 모델 (GPT·OpenRouter 꺼진 경우만 표시) */}
+            {!autoSettings.use_gpt && !autoSettings.use_openrouter && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-gray-700">AI 모델</label>
@@ -1036,6 +1097,44 @@ export default function AutoServicePage() {
               )}
               {modelsLoading && <p className="text-xs text-gray-400 mt-2">Ollama Cloud에서 모델 목록 조회 중…</p>}
             </div>
+            )}
+
+            {/* SNS 다국어 캡션 번역 모델 */}
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                🌐 SNS 다국어 캡션 모델
+                <span className="ml-1.5 text-xs text-gray-400 font-normal">영어·일본어·스페인어 계정 발행 시 사용</span>
+              </label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {[
+                  { id: 'llama3.3', label: 'Llama 3.3 (70B)', badge: '⭐ 추천', desc: '지시 준수 최강 — 영/일/스페인어 모두 정확', color: 'border-blue-300 bg-blue-50' },
+                  { id: 'mistral-small3.1', label: 'Mistral Small 3.1', badge: '✅ 우수', desc: '빠르고 다국어 지시 준수 좋음', color: 'border-green-300 bg-green-50' },
+                  { id: 'gemma3', label: 'Gemma 3 (Google)', badge: '✅ 우수', desc: 'Google 모델, 다국어 준수 양호', color: 'border-green-300 bg-green-50' },
+                  { id: 'llama3.2', label: 'Llama 3.2 (경량)', badge: '🟡 보통', desc: '빠름, 소형 — 단순 캡션에 적합', color: 'border-yellow-200 bg-yellow-50' },
+                  { id: 'qwen3.5', label: 'Qwen 3.5', badge: '⚠️ 주의', desc: '한국어 주제에서 한국어로 응답하는 경향', color: 'border-orange-200 bg-orange-50' },
+                  { id: 'kimi-k2.6', label: 'Kimi K2.6', badge: '⚠️ 주의', desc: '중국어로 응답하는 경향 (영어 계정 비추천)', color: 'border-red-200 bg-red-50' },
+                ].map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setAutoSettings(prev => ({ ...prev, sns_caption_model: m.id }))}
+                    className={`flex items-start gap-2 px-3 py-2 rounded-xl border-2 text-left transition-all ${
+                      autoSettings.sns_caption_model === m.id
+                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                        : `${m.color} opacity-70 hover:opacity-100`
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-gray-800">{m.label}</span>
+                        <span className="text-xs">{m.badge}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+                    </div>
+                    {autoSettings.sns_caption_model === m.id && <span className="text-blue-600 text-sm flex-shrink-0">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* 최대 생성 수 */}
             <div>
@@ -1071,6 +1170,55 @@ export default function AutoServicePage() {
                   <span className="text-xs text-gray-400">트렌딩 키워드 자동 사용 중</span>
                 )}
               </div>
+            </div>
+
+            {/* 프롬프트 편집 */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setPromptExpanded(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-sm font-medium text-gray-700"
+              >
+                <span>✏️ AI 글쓰기 프롬프트 설정</span>
+                <span className="text-gray-400">{promptExpanded ? '▲' : '▼'}</span>
+              </button>
+              {promptExpanded && (
+                <div className="p-4 space-y-3">
+                  <p className="text-xs text-gray-500">
+                    비워두면 기본 프롬프트 사용. 직접 입력 시 기본 프롬프트를 완전히 대체합니다.<br/>
+                    템플릿 변수: <code className="bg-gray-100 px-1 rounded">{'{{keyword}}'}</code> 포커스키워드,{' '}
+                    <code className="bg-gray-100 px-1 rounded">{'{{today}}'}</code> 날짜,{' '}
+                    <code className="bg-gray-100 px-1 rounded">{'{{sources}}'}</code> 수집된 뉴스/블로그
+                  </p>
+                  <textarea
+                    value={promptDraft}
+                    onChange={e => setPromptDraft(e.target.value)}
+                    rows={16}
+                    placeholder="비워두면 기본 프롬프트가 사용됩니다."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveSettings({ ...autoSettings, prompt_template: promptDraft || null })}
+                      disabled={savingSettings}
+                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {savingSettings ? '저장 중...' : '💾 프롬프트 저장'}
+                    </button>
+                    <button
+                      onClick={() => { setPromptDraft(defaultPromptText); saveSettings({ ...autoSettings, prompt_template: null }); }}
+                      className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200"
+                    >
+                      기본값으로
+                    </button>
+                  </div>
+                  {settingsError && settingsError.includes('prompt_template') && (
+                    <p className="text-xs text-red-500">
+                      Supabase SQL Editor에서 실행 필요:<br/>
+                      <code className="bg-red-50 block mt-1 p-2 rounded">ALTER TABLE bossai_auto_settings ADD COLUMN IF NOT EXISTS prompt_template text;</code>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <button onClick={() => saveSettings(autoSettings)} disabled={savingSettings}
