@@ -1,0 +1,75 @@
+name: Supabase Backup
+
+on:
+  schedule:
+    - cron: '0 18 * * *'  # 매일 오전 3시 KST (18:00 UTC)
+  workflow_dispatch:
+
+env:
+  BACKUP_DIR: /volume1/docker/supabase-backup
+  DB_HOST: aws-1-ap-southeast-1.pooler.supabase.com
+  DB_USER: postgres.uhxkmprscovrnfigasia
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump cloud Supabase DB
+        run: |
+          FILENAME="supabase_backup_$(date +%Y%m%d_%H%M%S).sql.gz"
+          PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" pg_dump \
+            "host=${{ env.DB_HOST }} port=5432 dbname=postgres user=${{ env.DB_USER }} sslmode=require" \
+            --no-owner --no-privileges --clean --if-exists \
+            -n public -n auth -n storage \
+            | gzip > "$FILENAME"
+          echo "BACKUP_FILE=$FILENAME" >> $GITHUB_ENV
+          ls -lh "$FILENAME"
+
+      - name: Upload backup to NAS (hy65)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 22
+          source: "${{ env.BACKUP_FILE }}"
+          target: ${{ env.BACKUP_DIR }}
+          strip_components: 0
+
+      - name: Restore to self-hosted Supabase & cleanup old backups
+        uses: appleboy/ssh-action@v1
+        env:
+          BACKUP_FILE: ${{ env.BACKUP_FILE }}
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 22
+          envs: BACKUP_FILE,NAS2_PASS
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            BACKUP_DIR=/volume1/docker/supabase-backup
+            LATEST="$BACKUP_DIR/$BACKUP_FILE"
+
+            # public 스키마 데이터만 self-hosted로 복원 (앱 데이터 동기화)
+            if [ -f "$LATEST" ]; then
+              echo "Restoring public schema from $BACKUP_FILE ..."
+              echo "$NAS2_PASS" | sudo -S sh -c \
+                "gzip -dc '$LATEST' | grep -v 'SCHEMA auth\|SET search_path = auth\|auth\.' \
+                 | /usr/local/bin/docker exec -i supabase-db psql -U postgres -d postgres -q 2>&1 | grep -v '^$'" \
+                && echo "✓ Restore completed" \
+                || echo "⚠ Restore had warnings (non-fatal)"
+            fi
+
+            # 30일 이상 된 백업 자동 삭제
+            find "$BACKUP_DIR" -name "supabase_backup_*.sql.gz" -mtime +30 -delete 2>/dev/null || true
+
+            echo "=== 현재 보관 중인 백업 ==="
+            ls -lh "$BACKUP_DIR"/supabase_backup_*.sql.gz 2>/dev/null || echo "(백업 없음)"
