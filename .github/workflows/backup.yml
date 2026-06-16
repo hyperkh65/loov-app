@@ -27,6 +27,8 @@ jobs:
 
       - name: Dump cloud Supabase DB
         run: |
+          export PATH=/usr/lib/postgresql/17/bin:$PATH
+          pg_dump --version
           FILENAME="supabase_backup_$(date +%Y%m%d_%H%M%S).sql.gz"
           PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" pg_dump \
             "host=${{ env.DB_HOST }} port=5432 dbname=postgres user=${{ env.DB_USER }} sslmode=require" \
