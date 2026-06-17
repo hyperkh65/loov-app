@@ -143,6 +143,7 @@ jobs:
               -p 3100:3000 \
               --add-host=host.docker.internal:host-gateway \
               -v "${DIST_DIR}:/app" \
+              -v "/var/packages/DNSServer/target/named/var/log:/nas-dns-log:ro" \
               -w /app \
               -e DEPLOY_SECRET="$DEPLOY_SECRET" \
               node:20-alpine \
