@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
         if (!line.startsWith(grepDate)) continue
         const entry = parseLine(line)
         if (entry) entries.push(entry)
-        if (entries.length >= 10000) break
+        if (entries.length >= 50000) break
       }
     } catch {
       // 파일 없으면 skip
