@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { nasExec } from '@/lib/nas-ssh'
+import fs from 'fs/promises'
+import path from 'path'
 
-const LOG_PATH = '/var/packages/DNSServer/target/named/var/log'
+const LOG_DIR = '/nas-dns-log'
+const LOG_FILES = ['query.log', 'query.log.1', 'query.log.2']
 
 interface LogEntry {
   time: string
@@ -22,17 +24,21 @@ export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get('date') || new Date().toISOString().slice(0, 10)
   const grepDate = date.replace(/-/g, '/')
 
-  const cmd = `grep "^${grepDate}" ${LOG_PATH}/query.log ${LOG_PATH}/query.log.1 ${LOG_PATH}/query.log.2 2>/dev/null | head -10000`
-
-  const { stdout, code } = await nasExec(cmd)
-  if (code !== 0 && !stdout) {
-    return NextResponse.json({ date, entries: [] })
-  }
-
   const entries: LogEntry[] = []
-  for (const line of stdout.split('\n')) {
-    const entry = parseLine(line)
-    if (entry) entries.push(entry)
+
+  for (const filename of LOG_FILES) {
+    const filePath = path.join(LOG_DIR, filename)
+    try {
+      const content = await fs.readFile(filePath, 'utf-8')
+      for (const line of content.split('\n')) {
+        if (!line.startsWith(grepDate)) continue
+        const entry = parseLine(line)
+        if (entry) entries.push(entry)
+        if (entries.length >= 10000) break
+      }
+    } catch {
+      // 파일 없으면 skip
+    }
   }
 
   return NextResponse.json({ date, entries })
