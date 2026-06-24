@@ -36,29 +36,59 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── 쿠키 가이드 컴포넌트 ──────────────────────────────────────────────────────
 
+const BOOKMARKLET_CODE = `javascript:(function(){function gc(n){return('; '+document.cookie).split('; '+n+'=').pop().split(';')[0]}var a=gc('NID_AUT'),s=gc('NID_SES');if(!a||!s){alert('네이버에 로그인 후 실행해주세요');return;}location.href='https://loov.co.kr/dashboard/naver?nid_aut='+encodeURIComponent(a)+'&nid_ses='+encodeURIComponent(s)+'&tab=settings';})()`;
+
 function CookieGuide() {
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyBookmarklet = () => {
+    navigator.clipboard.writeText(BOOKMARKLET_CODE).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
-    <div className="mt-3">
-      <button onClick={() => setOpen((v) => !v)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
-        📖 쿠키 추출 방법 {open ? '▲' : '▼'}
+    <div className="mt-3 space-y-2">
+      {/* 북마클릿 자동 추출 */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+        <p className="text-xs font-bold text-indigo-800 mb-2">⚡ 자동 추출 (북마클릿)</p>
+        <ol className="text-xs text-indigo-700 space-y-1 list-decimal pl-4 mb-3">
+          <li>아래 버튼을 드래그해서 브라우저 <strong>북마크 바</strong>에 추가</li>
+          <li><a href="https://www.naver.com" target="_blank" rel="noopener" className="underline">naver.com</a>에서 <strong>로그인 후</strong> 그 북마크 클릭</li>
+          <li>자동으로 이 페이지로 돌아와 쿠키 저장</li>
+        </ol>
+        <div className="flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a
+            href={BOOKMARKLET_CODE}
+            onClick={(e) => e.preventDefault()}
+            draggable
+            className="inline-block bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-grab select-none hover:bg-indigo-700"
+            title="이 버튼을 북마크 바로 드래그하세요"
+          >
+            🔖 네이버 쿠키 자동저장
+          </a>
+          <button onClick={copyBookmarklet} className="text-xs text-indigo-500 hover:text-indigo-700">
+            {copied ? '✓ 복사됨' : '코드 복사'}
+          </button>
+        </div>
+      </div>
+
+      {/* 수동 추출 */}
+      <button onClick={() => setOpen((v) => !v)} className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
+        📖 수동 추출 방법 {open ? '▲' : '▼'}
       </button>
       {open && (
-        <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-2">
-          <p className="font-bold text-amber-800">🍪 네이버 쿠키 추출 방법 (Chrome 기준)</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-2">
           <ol className="list-decimal pl-4 space-y-1.5">
-            <li><strong>네이버에 로그인</strong>한 후 <a href="https://www.naver.com" target="_blank" rel="noopener" className="text-blue-600 underline">naver.com</a>에 접속</li>
-            <li><strong>F12</strong> → 개발자 도구 열기</li>
-            <li><strong>Application</strong> 탭 클릭</li>
-            <li>왼쪽 <strong>Cookies → https://www.naver.com</strong> 클릭</li>
-            <li>목록에서 <code className="bg-amber-100 px-1 rounded">NID_AUT</code> 찾아서 Value 복사 → NID_AUT 칸에 붙여넣기</li>
-            <li>목록에서 <code className="bg-amber-100 px-1 rounded">NID_SES</code> 찾아서 Value 복사 → NID_SES 칸에 붙여넣기</li>
+            <li>네이버 로그인 후 <strong>F12</strong> → 개발자 도구</li>
+            <li><strong>Application</strong> → Cookies → https://www.naver.com</li>
+            <li><code className="bg-amber-100 px-1 rounded">NID_AUT</code>, <code className="bg-amber-100 px-1 rounded">NID_SES</code> 값 복사 후 아래 입력</li>
           </ol>
           <p className="text-amber-700 bg-amber-100 p-2 rounded-lg">
-            ⚠️ 쿠키는 보통 <strong>14~30일</strong>마다 만료됩니다. 만료되면 재입력이 필요합니다.
-          </p>
-          <p className="text-amber-700">
-            💡 보안 강화: 네이버 계정 설정 → 보안 → "PC방문 시 자동로그인 허용" 체크 해제 상태에서는 쿠키 유효기간이 짧을 수 있습니다.
+            ⚠️ 쿠키는 <strong>14~30일</strong>마다 만료됩니다.
           </p>
         </div>
       )}
@@ -136,15 +166,17 @@ export default function NaverPage() {
 
   // ── 데이터 로드 ──────────────────────────────────────────────────────────
 
-  const loadConn = useCallback(async () => {
+  const loadConn = useCallback(async (): Promise<NaverConnection | null> => {
     const r = await fetch('/api/naver/connect');
     if (r.ok) {
       const d = await r.json() as NaverConnection | null;
       if (d) {
         setConn(d);
         setConnForm({ blog_id: d.blog_id, blog_name: d.blog_name, nid_aut: d.nid_aut, nid_ses: d.nid_ses });
+        return d;
       }
     }
+    return null;
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -164,12 +196,35 @@ export default function NaverPage() {
     const oauthParam = params.get('oauth');
     const errorParam = params.get('error');
     const tabParam = params.get('tab');
+    const nidAutParam = params.get('nid_aut');
+    const nidSesParam = params.get('nid_ses');
+
     if (tabParam === 'settings') setTab('settings');
     if (oauthParam === 'success') { setOauthMsg('✅ 네이버 OAuth 연결 완료!'); setTab('settings'); }
     else if (errorParam) { setOauthMsg(`❌ OAuth 연결 실패: ${errorParam}`); setTab('settings'); }
-    if (oauthParam || errorParam || tabParam) {
+
+    // 북마클릿으로 전달된 쿠키 자동 저장
+    if (nidAutParam && nidSesParam) {
+      setTab('settings');
+      setConnMsg('🔄 쿠키 자동 저장 중...');
+      loadConn().then((currentConn: NaverConnection | null) => {
+        const blogId = currentConn?.blog_id || '';
+        const blogName = currentConn?.blog_name || '';
+        const form = { blog_id: blogId, blog_name: blogName, nid_aut: nidAutParam, nid_ses: nidSesParam };
+        setConnForm(form);
+        return fetch('/api/naver/connect', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+      }).then((r: Response) => r.json()).then((d: NaverConnection) => {
+        setConn(d); setConnMsg('✅ 쿠키 자동 저장 완료!');
+      }).catch(() => setConnMsg('⚠️ 자동 저장 실패. 수동으로 입력해주세요.'));
+    }
+
+    const needsClean = oauthParam || errorParam || tabParam || nidAutParam || nidSesParam;
+    if (needsClean) {
       const url = new URL(window.location.href);
-      url.searchParams.delete('oauth'); url.searchParams.delete('error'); url.searchParams.delete('tab');
+      ['oauth','error','tab','nid_aut','nid_ses'].forEach(k => url.searchParams.delete(k));
       window.history.replaceState(null, '', url.toString());
     }
   }, [loadConn, loadHistory, loadNotionStatus]); // eslint-disable-line
