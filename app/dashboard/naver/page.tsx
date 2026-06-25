@@ -39,7 +39,6 @@ function StatusBadge({ status }: { status: string }) {
 const BOOKMARKLET_CODE = `javascript:(function(){function gc(n){return('; '+document.cookie).split('; '+n+'=').pop().split(';')[0]}var a=gc('NID_AUT'),s=gc('NID_SES');if(!a||!s){alert('네이버에 로그인 후 실행해주세요');return;}location.href='https://loov.co.kr/dashboard/naver?nid_aut='+encodeURIComponent(a)+'&nid_ses='+encodeURIComponent(s)+'&tab=settings';})()`;
 
 function CookieGuide() {
-  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const copyBookmarklet = () => {
@@ -50,48 +49,64 @@ function CookieGuide() {
   };
 
   return (
-    <div className="mt-3 space-y-2">
-      {/* 북마클릿 자동 추출 */}
-      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-        <p className="text-xs font-bold text-indigo-800 mb-2">⚡ 자동 추출 (북마클릿)</p>
-        <ol className="text-xs text-indigo-700 space-y-1 list-decimal pl-4 mb-3">
-          <li>아래 버튼을 드래그해서 브라우저 <strong>북마크 바</strong>에 추가</li>
-          <li><a href="https://www.naver.com" target="_blank" rel="noopener" className="underline">naver.com</a>에서 <strong>로그인 후</strong> 그 북마크 클릭</li>
-          <li>자동으로 이 페이지로 돌아와 쿠키 저장</li>
+    <div className="mt-3 space-y-3">
+      {/* 수동 추출 - 기본 방법 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-2">
+        <p className="font-bold text-amber-800 mb-2">🍪 쿠키 추출 방법 (크롬 기준)</p>
+        <ol className="list-decimal pl-4 space-y-2">
+          <li>
+            <a href="https://www.naver.com" target="_blank" rel="noopener" className="underline font-semibold">naver.com</a>에서 로그인
+          </li>
+          <li>
+            <strong>F12</strong> (개발자 도구) 열기
+          </li>
+          <li>
+            상단 탭 <strong>Application</strong> 클릭<br/>
+            <span className="text-amber-700">※ 탭이 안 보이면 &gt;&gt; 버튼 클릭</span>
+          </li>
+          <li>
+            왼쪽 메뉴 <strong>Cookies</strong> → <strong>https://www.naver.com</strong>
+          </li>
+          <li>
+            목록에서 <code className="bg-amber-100 px-1 rounded font-mono">NID_AUT</code> 행 클릭 → 아래 <strong>Value</strong> 전체 복사
+          </li>
+          <li>
+            같은 방법으로 <code className="bg-amber-100 px-1 rounded font-mono">NID_SES</code> 값도 복사
+          </li>
+          <li>위 NID_AUT, NID_SES 입력란에 각각 붙여넣기 → <strong>저장</strong></li>
         </ol>
-        <div className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-          <a
-            href={BOOKMARKLET_CODE}
-            onClick={(e) => e.preventDefault()}
-            draggable
-            className="inline-block bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-grab select-none hover:bg-indigo-700"
-            title="이 버튼을 북마크 바로 드래그하세요"
-          >
-            🔖 네이버 쿠키 자동저장
-          </a>
-          <button onClick={copyBookmarklet} className="text-xs text-indigo-500 hover:text-indigo-700">
-            {copied ? '✓ 복사됨' : '코드 복사'}
-          </button>
-        </div>
+        <p className="text-amber-700 bg-amber-100 p-2 rounded-lg mt-2">
+          ⚠️ 쿠키는 <strong>14~30일</strong>마다 만료됩니다. 발행 오류 시 재추출하세요.
+        </p>
       </div>
 
-      {/* 수동 추출 */}
-      <button onClick={() => setOpen((v) => !v)} className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
-        📖 수동 추출 방법 {open ? '▲' : '▼'}
-      </button>
-      {open && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-2">
-          <ol className="list-decimal pl-4 space-y-1.5">
-            <li>네이버 로그인 후 <strong>F12</strong> → 개발자 도구</li>
-            <li><strong>Application</strong> → Cookies → https://www.naver.com</li>
-            <li><code className="bg-amber-100 px-1 rounded">NID_AUT</code>, <code className="bg-amber-100 px-1 rounded">NID_SES</code> 값 복사 후 아래 입력</li>
+      {/* 북마클릿 - 보조 방법 */}
+      <details className="text-xs">
+        <summary className="cursor-pointer text-gray-400 hover:text-gray-600">⚡ 북마클릿 자동 추출 (보조)</summary>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 mt-2">
+          <ol className="text-indigo-700 space-y-1 list-decimal pl-4 mb-3">
+            <li>아래 버튼을 드래그해서 브라우저 <strong>북마크 바</strong>에 추가</li>
+            <li>naver.com 로그인 후 그 북마크 클릭</li>
+            <li>자동으로 이 페이지로 돌아와 쿠키 저장</li>
           </ol>
-          <p className="text-amber-700 bg-amber-100 p-2 rounded-lg">
-            ⚠️ 쿠키는 <strong>14~30일</strong>마다 만료됩니다.
-          </p>
+          <p className="text-indigo-600 mb-2">※ 네이버가 HttpOnly 쿠키를 사용하는 경우 동작하지 않을 수 있습니다.</p>
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href={BOOKMARKLET_CODE}
+              onClick={(e) => e.preventDefault()}
+              draggable
+              className="inline-block bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-lg cursor-grab select-none hover:bg-indigo-700"
+              title="이 버튼을 북마크 바로 드래그하세요"
+            >
+              🔖 네이버 쿠키 자동저장
+            </a>
+            <button onClick={copyBookmarklet} className="text-indigo-500 hover:text-indigo-700">
+              {copied ? '✓ 복사됨' : '코드 복사'}
+            </button>
+          </div>
         </div>
-      )}
+      </details>
     </div>
   );
 }
