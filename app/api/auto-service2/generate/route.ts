@@ -4,6 +4,7 @@ import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
+import { removeCitationPhrases } from '@/lib/auto-blog-prompt';
 
 export const maxDuration = 300;
 
@@ -422,6 +423,7 @@ function parseAiOutput(raw: string) {
   // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+  content = removeCitationPhrases(content);
 
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
