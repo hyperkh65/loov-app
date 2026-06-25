@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
+import { removeCitationPhrases } from '@/lib/auto-blog-prompt';
 
 export const maxDuration = 300;
 
@@ -118,6 +119,11 @@ function buildPrompt(keyword: string, news: {title:string;description:string}[],
 - 자료에 없는 내용을 억지로 지어내지 말 것
 - 자료가 사건/사고라면 안전, 원인, 피해, 대응 관점으로 서술
 - 자료가 제품/서비스라면 실사용 관점으로 서술
+
+【출처 표기 절대 금지 - 위반 시 응답 무효】
+- "블로그 자료에 따르면", "뉴스에 따르면", "자료에 따르면", "보도에 따르면", "전문가에 따르면", "한 매체에 따르면", "외신에 따르면", "연구에 따르면" 등 출처 언급 표현 절대 사용 금지
+- 자료의 내용을 직접 사실처럼 서술할 것 (예: "A는 B를 기록했다" O / "자료에 따르면 A는 B를 기록했다" X)
+- 독자 입장에서 직접 알 수 있는 사실처럼 자연스럽게 서술
 
 【문체 원칙】
 - 친근하고 읽기 쉬운 구어체 혼용, 딱딱한 공문체 금지
@@ -369,6 +375,8 @@ function parseAiOutput(raw: string) {
   const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+  // 출처 표기 문구 제거 (프롬프트 지시에도 간혹 생성되는 경우 대비)
+  content = removeCitationPhrases(content);
   return { title, meta_description, content };
 }
 
