@@ -277,32 +277,12 @@ export async function POST(req: NextRequest) {
   for (const platform of blog_platforms) {
     try {
       if (platform === 'naver') {
-        // HTML → 일반 텍스트 변환 (Playwright 에디터는 HTML 미지원)
-        const naverContent = (article.content || '')
-          .replace(/<br\s*\/?>/gi, '\n')
-          .replace(/<\/p>/gi, '\n')
-          .replace(/<\/div>/gi, '\n')
-          .replace(/<\/li>/gi, '\n')
-          .replace(/<[^>]+>/g, '')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-        // 본문 내 이미지 URL 추출 (최대 10개)
-        const naverImageUrls: string[] = [];
-        const imgMatches = [...(article.content || '').matchAll(/<img[^>]+src="([^"]+)"/gi)];
-        for (const m of imgMatches.slice(0, 10)) naverImageUrls.push(m[1]);
-        if (article.representative_image_url && !naverImageUrls.includes(article.representative_image_url)) {
-          naverImageUrls.unshift(article.representative_image_url);
-        }
-
         const res = await fetch(`${baseUrl}/api/naver/playwright-publish`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
           body: JSON.stringify({
             title: article.title,
-            content: naverContent,
-            imageUrls: naverImageUrls,
+            content: article.content || '',
             tags: article.focus_keyword ? [article.focus_keyword] : [],
           }),
         });
