@@ -40,6 +40,12 @@ ${ANTI_WATERMARK_PROMPT}
 - 자료가 사건/사고라면 경위, 원인, 피해, 대응 관점으로 서술
 - 자료가 제품/서비스라면 실사용 관점으로 서술
 
+【출처 표기 절대 금지 - 위반 시 응답 무효】
+- "블로그 자료에 따르면", "뉴스 자료에 따르면", "자료에 따르면", "보도에 따르면", "뉴스에 따르면", "전문가에 따르면", "한 매체에 따르면", "외신에 따르면", "연구에 따르면" 등 출처 언급 표현 절대 사용 금지
+- 자료의 내용을 직접 사실처럼 서술할 것 (예: "A조는 B를 기록했다" O / "블로그 자료에 따르면 A조는 B를 기록했다" X)
+- 기사나 블로그 포스트를 인용하는 형태의 문장 절대 금지
+- 독자 입장에서 직접 경험하거나 알 수 있는 사실처럼 자연스럽게 서술
+
 【문체 원칙】
 - 친근하고 읽기 쉬운 구어체 혼용, 딱딱한 공문체 금지
 - 독자가 "오, 이거 몰랐네!" 하고 무릎 칠 만한 사실 포함
@@ -145,6 +151,9 @@ ${ANTI_WATERMARK_PROMPT}
 </div>
 
 <p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[관련 키워드 10개 쉼표 구분]</span></p>
+
+{{news_links_section}}
+
 ===KEYWORDS===
 [관련 키워드 10개 쉼표 구분]
 
@@ -154,9 +163,46 @@ ${ANTI_WATERMARK_PROMPT}
 - 소제목은 키워드 성격에 맞게 AI가 직접 결정
 - HTML 태그 외 마크다운, 설명문, 대괄호 최종 출력에 절대 포함 금지`;
 
-export function applyPromptTemplate(template: string, keyword: string, today: string, sources: string): string {
+// 생성된 콘텐츠에서 출처 표기 문구 제거 (프롬프트 지시에도 간혹 포함되는 경우 대비)
+export function removeCitationPhrases(content: string): string {
+  // "XXX에 따르면[,][ ]" 패턴 제거
+  let result = content.replace(
+    /(?:블로그|뉴스|자료|보도|전문가|매체|외신|연구|분석|통계|조사|보고서|업계|관계자|당국)\s*(?:자료|기사|내용|분석)?\s*에\s*따르면[,，]?\s*/g,
+    '',
+  );
+  // "한 블로그에 따르면", "한 매체에 따르면" 등
+  result = result.replace(
+    /(?:한|일부|일각의?|해당|이\s*)?(?:블로그|뉴스|매체|전문가|보고서|연구진?|기관|소식통|관계자|당국)\s*에\s*따르면[,，]?\s*/g,
+    '',
+  );
+  // "이에 따르면", "이를 통해 보면" 등 남은 패턴
+  result = result.replace(/이에\s*따르면[,，]?\s*/g, '');
+  return result;
+}
+
+export function applyPromptTemplate(template: string, keyword: string, today: string, sources: string, newsLinks?: string): string {
+  const newsLinksSection = buildNewsLinksSection(newsLinks);
   return template
     .replace(/\{\{keyword\}\}/g, keyword)
     .replace(/\{\{today\}\}/g, today)
-    .replace(/\{\{sources\}\}/g, sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성)');
+    .replace(/\{\{sources\}\}/g, sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성)')
+    .replace(/\{\{news_links_section\}\}/g, newsLinksSection);
+}
+
+function buildNewsLinksSection(newsLinks?: string): string {
+  if (!newsLinks) return '';
+  const items = newsLinks.split('@@').filter(Boolean).map(item => {
+    const [title, url] = item.split('||');
+    return { title: title?.trim(), url: url?.trim() };
+  }).filter(item => item.title && item.url);
+  if (items.length === 0) return '';
+  const listItems = items.map(item =>
+    `<li style="margin-bottom:6px;"><a href="${item.url}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;text-decoration:none;">${item.title}</a></li>`
+  ).join('\n');
+  return `\n<div style="margin:30px 0 10px;padding:18px 20px;background-color:#f8f9fa;border:1px solid #e0e0e0;border-radius:8px;">
+<h2 style="font-size:16px;color:#555;margin:0 0 12px;font-weight:bold;" data-ke-size="size16">📰 참고 뉴스</h2>
+<ul style="margin:0;padding-left:20px;font-size:14px;color:#333;line-height:1.8;">
+${listItems}
+</ul>
+</div>`;
 }
