@@ -134,6 +134,13 @@ export default function AutoServicePage() {
   const [editTitle, setEditTitle] = useState('');
   const [editModel, setEditModel] = useState('qwen3');
   const [savingEdit, setSavingEdit] = useState(false);
+  // 찾기/바꾸기
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+  const [findCount, setFindCount] = useState(0);
+  const [editorPreviewMode, setEditorPreviewMode] = useState(false);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   // 이미지 편집
   const [imgSearchTab, setImgSearchTab] = useState<'naver' | 'google' | 'pixabay' | 'sns' | 'upload'>('naver');
   const [imgQuery, setImgQuery] = useState('');
@@ -599,6 +606,38 @@ export default function AutoServicePage() {
       setImgError(`검색 실패: ${e}`);
     }
     setImgLoading(false);
+  };
+
+  // 찾기/바꾸기 핸들러
+  const handleFindCount = (search: string, content: string) => {
+    if (!search) { setFindCount(0); return; }
+    const matches = content.split(search).length - 1;
+    setFindCount(matches);
+  };
+
+  const handleReplaceAll = () => {
+    if (!findText) return;
+    const count = editContent.split(findText).length - 1;
+    if (count === 0) return;
+    setEditContent(prev => prev.replaceAll(findText, replaceText));
+    setFindCount(0);
+    setFindText('');
+  };
+
+  const handleReplaceOne = () => {
+    if (!findText) return;
+    const idx = editContent.indexOf(findText);
+    if (idx === -1) return;
+    setEditContent(prev => prev.slice(0, idx) + replaceText + prev.slice(idx + findText.length));
+    handleFindCount(findText, editContent.slice(0, idx) + replaceText + editContent.slice(idx + findText.length));
+  };
+
+  const handleJumpToLine = (line: number) => {
+    if (!editTextareaRef.current) return;
+    const lines = editContent.split('\n');
+    const pos = lines.slice(0, line - 1).join('\n').length + (line > 1 ? 1 : 0);
+    editTextareaRef.current.setSelectionRange(pos, pos);
+    editTextareaRef.current.focus();
   };
 
   // 이미지 교체 (editContent 내 src URL 변경)
@@ -1611,10 +1650,141 @@ export default function AutoServicePage() {
                     ))}
                   </div>
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">HTML 내용 직접 수정</label>
-                  <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
-                    rows={22} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y" />
+                <div className="space-y-2">
+                  {/* 에디터 툴바 */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label className="text-xs font-medium text-gray-600">HTML 내용 직접 수정</label>
+                    <span className="text-[10px] text-gray-400">{editContent.replace(/<[^>]+>/g,'').length.toLocaleString()}자</span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => setFindReplaceOpen(v => !v)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-colors ${findReplaceOpen ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      🔍 찾기/바꾸기
+                    </button>
+                    <button
+                      onClick={() => setEditorPreviewMode(v => !v)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-colors ${editorPreviewMode ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      {editorPreviewMode ? '✏️ 편집' : '👁️ 미리보기'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const ta = editTextareaRef.current;
+                        if (!ta) return;
+                        ta.rows = ta.rows === 22 ? 45 : 22;
+                      }}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium"
+                    >
+                      ↕️ 높이
+                    </button>
+                  </div>
+
+                  {/* 찾기/바꾸기 패널 */}
+                  {findReplaceOpen && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
+                      <div className="flex gap-2 items-center">
+                        <input
+                          value={findText}
+                          onChange={e => { setFindText(e.target.value); handleFindCount(e.target.value, editContent); }}
+                          placeholder="찾을 텍스트"
+                          className="flex-1 border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"
+                        />
+                        {findText && (
+                          <span className="text-[11px] text-blue-700 font-semibold whitespace-nowrap">
+                            {findCount}개
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <input
+                          value={replaceText}
+                          onChange={e => setReplaceText(e.target.value)}
+                          placeholder="바꿀 텍스트 (비우면 삭제)"
+                          className="flex-1 border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"
+                        />
+                        <button
+                          onClick={handleReplaceOne}
+                          disabled={!findText || findCount === 0}
+                          className="text-[11px] px-2.5 py-1.5 bg-white border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-40 font-medium whitespace-nowrap"
+                        >
+                          1개
+                        </button>
+                        <button
+                          onClick={handleReplaceAll}
+                          disabled={!findText || findCount === 0}
+                          className="text-[11px] px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-40 font-medium whitespace-nowrap"
+                        >
+                          전체 ({findCount})
+                        </button>
+                      </div>
+                      {/* 빠른 태그 삭제 버튼 */}
+                      <div className="flex gap-1.5 flex-wrap pt-1 border-t border-blue-100">
+                        <span className="text-[10px] text-blue-500 font-medium self-center">빠른 처리:</span>
+                        {[
+                          { label: 'style 속성 제거', find: / style="[^"]*"/g, rep: '' },
+                          { label: 'class 제거', find: / class="[^"]*"/g, rep: '' },
+                          { label: '<br/> → 줄바꿈', find: '<br/>', rep: '\n' },
+                          { label: '&amp; → &', find: '&amp;', rep: '&' },
+                        ].map(({ label, find, rep }) => (
+                          <button
+                            key={label}
+                            onClick={() => {
+                              if (find instanceof RegExp) {
+                                setEditContent(prev => prev.replace(find, rep));
+                              } else {
+                                const cnt = editContent.split(find as string).length - 1;
+                                if (cnt > 0) { setEditContent(prev => prev.replaceAll(find as string, rep)); }
+                              }
+                            }}
+                            className="text-[10px] px-2 py-1 bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 에디터 / 미리보기 */}
+                  {editorPreviewMode ? (
+                    <div
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 min-h-[400px] max-h-[70vh] overflow-y-auto text-sm bg-white prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: editContent }}
+                    />
+                  ) : (
+                    <textarea
+                      ref={editTextareaRef}
+                      value={editContent}
+                      onChange={e => {
+                        setEditContent(e.target.value);
+                        if (findText) handleFindCount(findText, e.target.value);
+                      }}
+                      rows={22}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y leading-relaxed"
+                      spellCheck={false}
+                    />
+                  )}
+
+                  {/* 하단 정보 바 */}
+                  <div className="flex items-center gap-3 text-[10px] text-gray-400">
+                    <span>줄 수: {editContent.split('\n').length}</span>
+                    <span>글자: {editContent.length.toLocaleString()}</span>
+                    <span>태그 제외: {editContent.replace(/<[^>]+>/g,'').length.toLocaleString()}</span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => { setEditContent(editContent.trim()); }}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      앞뒤 공백 제거
+                    </button>
+                    <button
+                      onClick={() => navigator.clipboard?.writeText(editContent)}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      전체 복사
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
