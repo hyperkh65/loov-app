@@ -39,5 +39,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: result.errorCode === 'AUTH' ? 401 : 500 })
   }
 
-  return NextResponse.json({ postId: result.postId, postUrl: result.postUrl })
+  return NextResponse.json({ postId: result.postId, postUrl: result.postUrl, imagesUploaded: result.imagesUploaded ?? 0 })
 }
