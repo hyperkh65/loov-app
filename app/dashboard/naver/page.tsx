@@ -13,6 +13,8 @@ interface NaverConnection {
   last_tested_at: string | null;
   oauth_connected: boolean;
   token_expires_at: string | null;
+  has_upload_session: boolean;
+  naver_user_id: string;
 }
 interface NaverCategory { no: number; name: string; }
 interface NotionArticle { id: string; title: string; status: string; lastEdited: string; }
@@ -121,6 +123,12 @@ export default function NaverPage() {
   const [connForm, setConnForm] = useState({ blog_id: '', blog_name: '', nid_aut: '', nid_ses: '' });
   const [connMsg, setConnMsg] = useState('');
   const [connSaving, setConnSaving] = useState(false);
+
+  // 이미지 업로드 세션키
+  const [sessionKeyInput, setSessionKeyInput] = useState('');
+  const [naverUserIdInput, setNaverUserIdInput] = useState('');
+  const [sessionKeySaving, setSessionKeySaving] = useState(false);
+  const [sessionKeyMsg, setSessionKeyMsg] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok?: boolean; blogName?: string; categories?: NaverCategory[]; error?: string; note?: string } | null>(null);
   const [oauthMsg, setOauthMsg] = useState('');
@@ -188,6 +196,7 @@ export default function NaverPage() {
       if (d) {
         setConn(d);
         setConnForm({ blog_id: d.blog_id, blog_name: d.blog_name, nid_aut: d.nid_aut, nid_ses: d.nid_ses });
+        if (d.naver_user_id) setNaverUserIdInput(d.naver_user_id);
         return d;
       }
     }
@@ -272,6 +281,31 @@ export default function NaverPage() {
     if (r.ok) { setConn(d); setConnMsg('✓ 저장 완료'); }
     else setConnMsg(`⚠️ ${(d as { error?: string }).error}`);
     setConnSaving(false);
+  };
+
+  const handleSaveSessionKey = async () => {
+    setSessionKeySaving(true); setSessionKeyMsg('');
+    // JSON 형식("{\"isSuccess\":true,\"sessionKey\":\"...\"}")도 처리
+    let key = sessionKeyInput.trim();
+    if (key.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(key) as { sessionKey?: string; isSuccess?: boolean };
+        key = parsed.sessionKey || key;
+      } catch { /* 그대로 사용 */ }
+    }
+    const r = await fetch('/api/naver/connect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upload_session_key: key, naver_user_id: naverUserIdInput.trim() }),
+    });
+    if (r.ok) {
+      setSessionKeyMsg('✅ 이미지 업로드 세션키 저장 완료');
+      setSessionKeyInput('');
+      setConn(prev => prev ? { ...prev, has_upload_session: !!key } : prev);
+    } else {
+      const d = await r.json() as { error?: string };
+      setSessionKeyMsg(`⚠️ ${d.error || '저장 실패'}`);
+    }
+    setSessionKeySaving(false);
   };
 
   const handleTestConn = async () => {
@@ -1079,6 +1113,66 @@ export default function NaverPage() {
                 <li>네이버 앱에서 로그인 상태를 유지하면 PC 쿠키도 오래 유지됩니다</li>
                 <li>2단계 인증을 사용하는 경우 쿠키 유효기간이 길어질 수 있습니다</li>
               </ul>
+            </div>
+
+            {/* 이미지 업로드 세션키 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-bold text-gray-800">🖼️ 이미지 업로드 세션키</h3>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  블로그 포스팅 시 이미지를 네이버 CDN에 업로드하려면 세션키가 필요합니다.
+                  {conn?.has_upload_session && <span className="text-green-600 font-semibold ml-1">✅ 세션키 등록됨</span>}
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
+                <p className="font-bold">세션키 발급 방법:</p>
+                <ol className="list-decimal pl-4 space-y-1">
+                  <li>네이버 블로그에 로그인 후 글쓰기 페이지 열기</li>
+                  <li>Chrome DevTools → Network 탭 열기</li>
+                  <li>이미지 한 장 업로드 시도 (또는 페이지 로드 후 검색)</li>
+                  <li><code className="bg-amber-100 px-1 rounded">session-key</code> 요청 클릭 → Response 복사</li>
+                  <li>아래 입력란에 JSON 그대로 붙여넣기</li>
+                </ol>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">네이버 사용자 ID</label>
+                  <input
+                    value={naverUserIdInput}
+                    onChange={e => setNaverUserIdInput(e.target.value.trim())}
+                    placeholder="예: hyperkh65 (블로그 주소의 ID)"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+                    세션키 응답 JSON <span className="text-gray-400">(또는 sessionKey 값만)</span>
+                  </label>
+                  <textarea
+                    value={sessionKeyInput}
+                    onChange={e => setSessionKeyInput(e.target.value)}
+                    placeholder={'{"isSuccess":true,"sessionKey":"MjAy..."}\n또는 MjAy... 값만 입력'}
+                    rows={3}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-mono focus:outline-none focus:border-green-400 resize-none"
+                  />
+                </div>
+              </div>
+
+              {sessionKeyMsg && (
+                <div className={`p-2.5 rounded-xl text-xs font-medium ${sessionKeyMsg.includes('완료') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                  {sessionKeyMsg}
+                </div>
+              )}
+
+              <button
+                onClick={handleSaveSessionKey}
+                disabled={sessionKeySaving || (!sessionKeyInput.trim() && !naverUserIdInput.trim())}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white py-2.5 rounded-xl font-bold text-sm transition-colors"
+              >
+                {sessionKeySaving ? '저장 중...' : '💾 세션키 저장'}
+              </button>
             </div>
 
             {/* 카테고리 목록 */}
