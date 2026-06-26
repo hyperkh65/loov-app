@@ -13,6 +13,8 @@ interface NaverConnection {
   last_tested_at: string | null;
   oauth_connected: boolean;
   token_expires_at: string | null;
+  has_upload_session: boolean;
+  naver_user_id: string;
 }
 interface NaverCategory { no: number; name: string; }
 interface NotionArticle { id: string; title: string; status: string; lastEdited: string; }
@@ -39,7 +41,6 @@ function StatusBadge({ status }: { status: string }) {
 const BOOKMARKLET_CODE = `javascript:(function(){function gc(n){return('; '+document.cookie).split('; '+n+'=').pop().split(';')[0]}var a=gc('NID_AUT'),s=gc('NID_SES');if(!a||!s){alert('네이버에 로그인 후 실행해주세요');return;}location.href='https://loov.co.kr/dashboard/naver?nid_aut='+encodeURIComponent(a)+'&nid_ses='+encodeURIComponent(s)+'&tab=settings';})()`;
 
 function CookieGuide() {
-  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const copyBookmarklet = () => {
@@ -50,48 +51,64 @@ function CookieGuide() {
   };
 
   return (
-    <div className="mt-3 space-y-2">
-      {/* 북마클릿 자동 추출 */}
-      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-        <p className="text-xs font-bold text-indigo-800 mb-2">⚡ 자동 추출 (북마클릿)</p>
-        <ol className="text-xs text-indigo-700 space-y-1 list-decimal pl-4 mb-3">
-          <li>아래 버튼을 드래그해서 브라우저 <strong>북마크 바</strong>에 추가</li>
-          <li><a href="https://www.naver.com" target="_blank" rel="noopener" className="underline">naver.com</a>에서 <strong>로그인 후</strong> 그 북마크 클릭</li>
-          <li>자동으로 이 페이지로 돌아와 쿠키 저장</li>
+    <div className="mt-3 space-y-3">
+      {/* 수동 추출 - 기본 방법 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-2">
+        <p className="font-bold text-amber-800 mb-2">🍪 쿠키 추출 방법 (크롬 기준)</p>
+        <ol className="list-decimal pl-4 space-y-2">
+          <li>
+            <a href="https://www.naver.com" target="_blank" rel="noopener" className="underline font-semibold">naver.com</a>에서 로그인
+          </li>
+          <li>
+            <strong>F12</strong> (개발자 도구) 열기
+          </li>
+          <li>
+            상단 탭 <strong>Application</strong> 클릭<br/>
+            <span className="text-amber-700">※ 탭이 안 보이면 &gt;&gt; 버튼 클릭</span>
+          </li>
+          <li>
+            왼쪽 메뉴 <strong>Cookies</strong> → <strong>https://www.naver.com</strong>
+          </li>
+          <li>
+            목록에서 <code className="bg-amber-100 px-1 rounded font-mono">NID_AUT</code> 행 클릭 → 아래 <strong>Value</strong> 전체 복사
+          </li>
+          <li>
+            같은 방법으로 <code className="bg-amber-100 px-1 rounded font-mono">NID_SES</code> 값도 복사
+          </li>
+          <li>위 NID_AUT, NID_SES 입력란에 각각 붙여넣기 → <strong>저장</strong></li>
         </ol>
-        <div className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-          <a
-            href={BOOKMARKLET_CODE}
-            onClick={(e) => e.preventDefault()}
-            draggable
-            className="inline-block bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-grab select-none hover:bg-indigo-700"
-            title="이 버튼을 북마크 바로 드래그하세요"
-          >
-            🔖 네이버 쿠키 자동저장
-          </a>
-          <button onClick={copyBookmarklet} className="text-xs text-indigo-500 hover:text-indigo-700">
-            {copied ? '✓ 복사됨' : '코드 복사'}
-          </button>
-        </div>
+        <p className="text-amber-700 bg-amber-100 p-2 rounded-lg mt-2">
+          ⚠️ 쿠키는 <strong>14~30일</strong>마다 만료됩니다. 발행 오류 시 재추출하세요.
+        </p>
       </div>
 
-      {/* 수동 추출 */}
-      <button onClick={() => setOpen((v) => !v)} className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
-        📖 수동 추출 방법 {open ? '▲' : '▼'}
-      </button>
-      {open && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-2">
-          <ol className="list-decimal pl-4 space-y-1.5">
-            <li>네이버 로그인 후 <strong>F12</strong> → 개발자 도구</li>
-            <li><strong>Application</strong> → Cookies → https://www.naver.com</li>
-            <li><code className="bg-amber-100 px-1 rounded">NID_AUT</code>, <code className="bg-amber-100 px-1 rounded">NID_SES</code> 값 복사 후 아래 입력</li>
+      {/* 북마클릿 - 보조 방법 */}
+      <details className="text-xs">
+        <summary className="cursor-pointer text-gray-400 hover:text-gray-600">⚡ 북마클릿 자동 추출 (보조)</summary>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 mt-2">
+          <ol className="text-indigo-700 space-y-1 list-decimal pl-4 mb-3">
+            <li>아래 버튼을 드래그해서 브라우저 <strong>북마크 바</strong>에 추가</li>
+            <li>naver.com 로그인 후 그 북마크 클릭</li>
+            <li>자동으로 이 페이지로 돌아와 쿠키 저장</li>
           </ol>
-          <p className="text-amber-700 bg-amber-100 p-2 rounded-lg">
-            ⚠️ 쿠키는 <strong>14~30일</strong>마다 만료됩니다.
-          </p>
+          <p className="text-indigo-600 mb-2">※ 네이버가 HttpOnly 쿠키를 사용하는 경우 동작하지 않을 수 있습니다.</p>
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href={BOOKMARKLET_CODE}
+              onClick={(e) => e.preventDefault()}
+              draggable
+              className="inline-block bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-lg cursor-grab select-none hover:bg-indigo-700"
+              title="이 버튼을 북마크 바로 드래그하세요"
+            >
+              🔖 네이버 쿠키 자동저장
+            </a>
+            <button onClick={copyBookmarklet} className="text-indigo-500 hover:text-indigo-700">
+              {copied ? '✓ 복사됨' : '코드 복사'}
+            </button>
+          </div>
         </div>
-      )}
+      </details>
     </div>
   );
 }
@@ -106,6 +123,12 @@ export default function NaverPage() {
   const [connForm, setConnForm] = useState({ blog_id: '', blog_name: '', nid_aut: '', nid_ses: '' });
   const [connMsg, setConnMsg] = useState('');
   const [connSaving, setConnSaving] = useState(false);
+
+  // 이미지 업로드 세션키
+  const [sessionKeyInput, setSessionKeyInput] = useState('');
+  const [naverUserIdInput, setNaverUserIdInput] = useState('');
+  const [sessionKeySaving, setSessionKeySaving] = useState(false);
+  const [sessionKeyMsg, setSessionKeyMsg] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok?: boolean; blogName?: string; categories?: NaverCategory[]; error?: string; note?: string } | null>(null);
   const [oauthMsg, setOauthMsg] = useState('');
@@ -173,6 +196,7 @@ export default function NaverPage() {
       if (d) {
         setConn(d);
         setConnForm({ blog_id: d.blog_id, blog_name: d.blog_name, nid_aut: d.nid_aut, nid_ses: d.nid_ses });
+        if (d.naver_user_id) setNaverUserIdInput(d.naver_user_id);
         return d;
       }
     }
@@ -257,6 +281,31 @@ export default function NaverPage() {
     if (r.ok) { setConn(d); setConnMsg('✓ 저장 완료'); }
     else setConnMsg(`⚠️ ${(d as { error?: string }).error}`);
     setConnSaving(false);
+  };
+
+  const handleSaveSessionKey = async () => {
+    setSessionKeySaving(true); setSessionKeyMsg('');
+    // JSON 형식("{\"isSuccess\":true,\"sessionKey\":\"...\"}")도 처리
+    let key = sessionKeyInput.trim();
+    if (key.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(key) as { sessionKey?: string; isSuccess?: boolean };
+        key = parsed.sessionKey || key;
+      } catch { /* 그대로 사용 */ }
+    }
+    const r = await fetch('/api/naver/connect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upload_session_key: key, naver_user_id: naverUserIdInput.trim() }),
+    });
+    if (r.ok) {
+      setSessionKeyMsg('✅ 이미지 업로드 세션키 저장 완료');
+      setSessionKeyInput('');
+      setConn(prev => prev ? { ...prev, has_upload_session: !!key } : prev);
+    } else {
+      const d = await r.json() as { error?: string };
+      setSessionKeyMsg(`⚠️ ${d.error || '저장 실패'}`);
+    }
+    setSessionKeySaving(false);
   };
 
   const handleTestConn = async () => {
@@ -1064,6 +1113,66 @@ export default function NaverPage() {
                 <li>네이버 앱에서 로그인 상태를 유지하면 PC 쿠키도 오래 유지됩니다</li>
                 <li>2단계 인증을 사용하는 경우 쿠키 유효기간이 길어질 수 있습니다</li>
               </ul>
+            </div>
+
+            {/* 이미지 업로드 세션키 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-bold text-gray-800">🖼️ 이미지 업로드 세션키</h3>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  블로그 포스팅 시 이미지를 네이버 CDN에 업로드하려면 세션키가 필요합니다.
+                  {conn?.has_upload_session && <span className="text-green-600 font-semibold ml-1">✅ 세션키 등록됨</span>}
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
+                <p className="font-bold">세션키 발급 방법:</p>
+                <ol className="list-decimal pl-4 space-y-1">
+                  <li>네이버 블로그에 로그인 후 글쓰기 페이지 열기</li>
+                  <li>Chrome DevTools → Network 탭 열기</li>
+                  <li>이미지 한 장 업로드 시도 (또는 페이지 로드 후 검색)</li>
+                  <li><code className="bg-amber-100 px-1 rounded">session-key</code> 요청 클릭 → Response 복사</li>
+                  <li>아래 입력란에 JSON 그대로 붙여넣기</li>
+                </ol>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">네이버 사용자 ID</label>
+                  <input
+                    value={naverUserIdInput}
+                    onChange={e => setNaverUserIdInput(e.target.value.trim())}
+                    placeholder="예: hyperkh65 (블로그 주소의 ID)"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+                    세션키 응답 JSON <span className="text-gray-400">(또는 sessionKey 값만)</span>
+                  </label>
+                  <textarea
+                    value={sessionKeyInput}
+                    onChange={e => setSessionKeyInput(e.target.value)}
+                    placeholder={'{"isSuccess":true,"sessionKey":"MjAy..."}\n또는 MjAy... 값만 입력'}
+                    rows={3}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-mono focus:outline-none focus:border-green-400 resize-none"
+                  />
+                </div>
+              </div>
+
+              {sessionKeyMsg && (
+                <div className={`p-2.5 rounded-xl text-xs font-medium ${sessionKeyMsg.includes('완료') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                  {sessionKeyMsg}
+                </div>
+              )}
+
+              <button
+                onClick={handleSaveSessionKey}
+                disabled={sessionKeySaving || (!sessionKeyInput.trim() && !naverUserIdInput.trim())}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white py-2.5 rounded-xl font-bold text-sm transition-colors"
+              >
+                {sessionKeySaving ? '저장 중...' : '💾 세션키 저장'}
+              </button>
             </div>
 
             {/* 카테고리 목록 */}
