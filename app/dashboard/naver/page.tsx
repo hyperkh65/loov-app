@@ -129,6 +129,7 @@ export default function NaverPage() {
   const [naverUserIdInput, setNaverUserIdInput] = useState('');
   const [sessionKeySaving, setSessionKeySaving] = useState(false);
   const [sessionKeyMsg, setSessionKeyMsg] = useState('');
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok?: boolean; blogName?: string; categories?: NaverCategory[]; error?: string; note?: string } | null>(null);
   const [oauthMsg, setOauthMsg] = useState('');
@@ -306,6 +307,33 @@ export default function NaverPage() {
       setSessionKeyMsg(`⚠️ ${d.error || '저장 실패'}`);
     }
     setSessionKeySaving(false);
+  };
+
+  const handleAutoRefreshSessionKey = async () => {
+    if (!conn?.blog_id) { setSessionKeyMsg('⚠️ 블로그 ID가 없습니다'); return; }
+    setAutoRefreshing(true); setSessionKeyMsg('');
+    try {
+      // 브라우저 Naver 쿠키로 platform editor에서 직접 세션키 취득
+      const res = await fetch(
+        `https://platform.editor.naver.com/api/blogpc001/v1/photo-uploader/session-key?blogId=${conn.blog_id}&cliType=pc&lang=ko`,
+        { credentials: 'include' }
+      );
+      if (!res.ok) throw new Error(`네이버 로그인 필요 (${res.status})`);
+      const data = await res.json() as { sessionKey?: string; isSuccess?: boolean };
+      const key = data.sessionKey;
+      if (!key) throw new Error('세션키를 받지 못했습니다');
+      // DB 저장
+      const saveRes = await fetch('/api/naver/connect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_session_key: key }),
+      });
+      if (!saveRes.ok) throw new Error('DB 저장 실패');
+      setSessionKeyMsg('✅ 이미지 세션키 자동 갱신 완료!');
+      setConn(prev => prev ? { ...prev, has_upload_session: true } : prev);
+    } catch (e) {
+      setSessionKeyMsg(`⚠️ 자동 갱신 실패: ${e instanceof Error ? e.message : String(e)}\n브라우저에서 네이버에 로그인되어 있는지 확인하세요.`);
+    }
+    setAutoRefreshing(false);
   };
 
   const handleTestConn = async () => {
@@ -1125,14 +1153,25 @@ export default function NaverPage() {
                 </p>
               </div>
 
+              {/* 자동 갱신 버튼 */}
+              <button
+                onClick={handleAutoRefreshSessionKey}
+                disabled={autoRefreshing || !conn?.blog_id}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white py-2.5 rounded-xl font-bold text-sm transition-colors"
+              >
+                {autoRefreshing ? '🔄 갱신 중...' : '⚡ 세션키 자동 갱신 (이 버튼 하나로!)'}
+              </button>
+              <p className="text-[11px] text-gray-500 -mt-2 text-center">
+                이 브라우저에서 네이버 로그인 상태여야 합니다
+              </p>
+
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
-                <p className="font-bold">세션키 발급 방법:</p>
+                <p className="font-bold">자동 갱신 실패 시 수동 방법:</p>
                 <ol className="list-decimal pl-4 space-y-1">
                   <li>네이버 블로그에 로그인 후 글쓰기 페이지 열기</li>
                   <li>Chrome DevTools → Network 탭 열기</li>
-                  <li>이미지 한 장 업로드 시도 (또는 페이지 로드 후 검색)</li>
-                  <li><code className="bg-amber-100 px-1 rounded">session-key</code> 요청 클릭 → Response 복사</li>
-                  <li>아래 입력란에 JSON 그대로 붙여넣기</li>
+                  <li><code className="bg-amber-100 px-1 rounded">session-key</code> 요청 → Response 복사</li>
+                  <li>아래 입력란에 붙여넣기 후 저장</li>
                 </ol>
               </div>
 
