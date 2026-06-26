@@ -13,6 +13,8 @@ export interface NaverPostParams {
   tags: string[];
   categoryNo: number;
   isPublish: boolean;
+  uploadSessionKey?: string; // Naver 이미지 업로드 세션키
+  userId?: string; // Naver 사용자 ID (uploadSessionKey와 함께 사용)
 }
 
 export interface NaverPostResult {
@@ -203,10 +205,11 @@ export async function getNaverCategories(
 // ── 블로그 포스팅 (NAS post.py / SEOne API 경유) ───────────────────────────────
 
 export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPostResult> {
-  const { blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish } = params;
+  const { blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish, uploadSessionKey, userId } = params;
 
   const payload = JSON.stringify({
     blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish,
+    ...(uploadSessionKey ? { uploadSessionKey, userId: userId || blogId } : {}),
   });
 
   try {
