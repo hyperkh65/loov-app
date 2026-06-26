@@ -22,6 +22,7 @@ export interface NaverPostResult {
   postUrl?: string;
   error?: string;
   errorCode?: 'AUTH' | 'RATE_LIMIT' | 'CONTENT' | 'NETWORK' | 'UNKNOWN';
+  imagesUploaded?: number;
 }
 
 export interface NaverCategory {
@@ -223,8 +224,13 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
     }
 
     const parsed = JSON.parse(result.stdout) as {
-      postId?: string; postUrl?: string; error?: string; errorCode?: string;
+      postId?: string; postUrl?: string; error?: string; errorCode?: string; imagesUploaded?: number;
     };
+
+    // stderr에 이미지 업로드 관련 로그 있으면 서버 로그에 출력
+    if (result.stderr?.includes('[upload') || result.stderr?.includes('[session-key')) {
+      console.log('[NaverPost] upload log:', result.stderr.slice(0, 500));
+    }
 
     if (parsed.error) {
       const ec = parsed.errorCode;
@@ -234,7 +240,7 @@ export async function postToNaverBlog(params: NaverPostParams): Promise<NaverPos
       };
     }
 
-    return { postId: parsed.postId, postUrl: parsed.postUrl };
+    return { postId: parsed.postId, postUrl: parsed.postUrl, imagesUploaded: parsed.imagesUploaded };
   } catch (e) {
     return { error: `NAS SSH 오류: ${String(e)}`, errorCode: 'NETWORK' };
   }
