@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
 
   const { data: conn } = await supabase
     .from('naver_connections')
-    .select('blog_id, nid_aut, nid_ses')
+    .select('blog_id, nid_aut, nid_ses, upload_session_key, naver_user_id')
     .eq('user_id', user.id)
     .single()
 
@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
     tags,
     categoryNo,
     isPublish: true,
+    uploadSessionKey: conn.upload_session_key || undefined,
+    userId: conn.naver_user_id || conn.blog_id,
   })
 
   if (result.error) {
