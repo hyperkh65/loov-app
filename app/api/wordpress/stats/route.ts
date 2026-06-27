@@ -30,12 +30,20 @@ export async function GET(req: NextRequest) {
   try {
     const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
 
-    const [countRes, catRes, topRes, monthlyRes, commentRes] = await Promise.all([
+    // Check if post-views-counter plugin is active first
+    const pluginCheckRes = await wpFetch('/plugins/post-views-counter/post-views-counter')
+    const pluginActive = pluginCheckRes.ok && ((await pluginCheckRes.json().catch(() => ({}))) as Record<string, unknown>)?.status === 'active'
+
+    // If plugin active: fetch top 25 by views (meta); otherwise fetch by date for URL mapping
+    const topQuery = pluginActive
+      ? '/posts?per_page=25&orderby=meta_value_num&meta_key=_pvc_posts&order=desc&_fields=id,title,date,link,comment_count,categories,meta'
+      : '/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,comment_count,categories,meta'
+
+    const [countRes, catRes, topRes, monthlyRes] = await Promise.all([
       wpFetch('/posts?per_page=1&_fields=id'),
       wpFetch('/categories?per_page=50&orderby=count&order=desc&_fields=id,name,count'),
-      wpFetch('/posts?per_page=20&orderby=comment_count&order=desc&_fields=id,title,date,link,comment_count,categories,meta'),
+      wpFetch(topQuery),
       wpFetch(`/posts?per_page=100&orderby=date&order=desc&after=${yearAgo}&_fields=id,date`),
-      wpFetch('/comments?per_page=5&orderby=date&order=desc&_fields=id,author_name,content,date,post'),
     ])
 
     const totalPosts = parseInt(countRes.headers.get('X-WP-Total') || '0')
@@ -43,30 +51,32 @@ export async function GET(req: NextRequest) {
     const categories: { id: number; name: string; count: number }[] = catRes.ok ? await catRes.json() : []
     const topPostsRaw: Record<string, unknown>[] = topRes.ok ? await topRes.json() : []
     const recentPosts: { id: number; date: string }[] = monthlyRes.ok ? await monthlyRes.json() : []
-    const recentComments: Record<string, unknown>[] = commentRes.ok ? await commentRes.json() : []
 
-    // Check for view data (post-views-counter plugin)
-    const hasViewData = topPostsRaw.some(p => {
+    // Check for view data in meta (post-views-counter plugin fields)
+    const hasViewData = pluginActive || topPostsRaw.some(p => {
       const meta = p.meta as Record<string, unknown> | undefined
       return meta && (meta['views-count'] !== undefined || meta['_pvc_posts'] !== undefined)
     })
 
-    // Sort by views if available
-    const topPosts = topPostsRaw
-      .map(p => {
-        const meta = p.meta as Record<string, unknown> | undefined
-        const views = meta?.['views-count'] ?? meta?.['_pvc_posts'] ?? null
-        return {
-          id: p.id as number,
-          title: ((p.title as { rendered?: string })?.rendered || String(p.title)).replace(/<[^>]+>/g, ''),
-          date: p.date as string,
-          link: p.link as string,
-          comment_count: p.comment_count as number,
-          views: typeof views === 'number' ? views : views ? parseInt(String(views)) : null,
-          categories: (p.categories as number[]) || [],
-        }
-      })
-      .sort((a, b) => (hasViewData ? (b.views || 0) - (a.views || 0) : b.comment_count - a.comment_count))
+    const mapPost = (p: Record<string, unknown>) => {
+      const meta = p.meta as Record<string, unknown> | undefined
+      const views = meta?.['views-count'] ?? meta?.['_pvc_posts'] ?? null
+      return {
+        id: p.id as number,
+        title: ((p.title as { rendered?: string })?.rendered || String(p.title)).replace(/<[^>]+>/g, ''),
+        date: p.date as string,
+        link: p.link as string,
+        comment_count: (p.comment_count as number) || 0,
+        views: typeof views === 'number' ? views : views ? parseInt(String(views)) : null,
+        categories: (p.categories as number[]) || [],
+      }
+    }
+
+    const allPosts = topPostsRaw.map(mapPost)
+    // Sort: by views desc if plugin active, otherwise keep API order (by date)
+    const topPosts = pluginActive
+      ? allPosts.sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 25)
+      : allPosts.slice(0, 100) // return all for URL→title mapping in GSC tab
 
     // Monthly distribution
     const monthly: Record<string, number> = {}
@@ -75,27 +85,17 @@ export async function GET(req: NextRequest) {
       if (month) monthly[month] = (monthly[month] || 0) + 1
     }
 
-    // Total comments from count header
-    const totalComments = commentRes.ok ? parseInt(commentRes.headers.get('X-WP-Total') || '0') : 0
-
     return NextResponse.json({
       site_id: site.id,
       site_name: site.site_name,
       site_url: site.site_url,
       total_posts: totalPosts,
       total_pages: totalPages,
-      total_comments: totalComments,
       categories: categories.slice(0, 20),
       top_posts: topPosts,
       monthly,
       has_view_data: hasViewData,
-      recent_comments: recentComments.map(c => ({
-        id: c.id,
-        author: c.author_name,
-        content: ((c.content as { rendered?: string })?.rendered || '').replace(/<[^>]+>/g, '').slice(0, 80),
-        date: c.date,
-        post_id: c.post,
-      })),
+      plugin_active: pluginActive,
     })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
