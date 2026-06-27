@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { nasExec } from '@/lib/nas-ssh'
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,18 +58,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, message: '플러그인 설치 및 활성화 완료! 이제부터 전체 방문자 수가 집계됩니다.' })
     }
 
-    let errMsg = `설치 실패 (HTTP ${installRes.status})`
+    let wpApiErr = `설치 실패 (HTTP ${installRes.status})`
     try {
       const errJson = await installRes.json()
-      errMsg = errJson.message || errMsg
+      wpApiErr = errJson.message || wpApiErr
     } catch { /* ignore */ }
 
-    // WP REST API plugin install이 안 되는 경우 (권한 없거나 WP 5.5 미만)
-    if (installRes.status === 403 || installRes.status === 404) {
-      errMsg = 'WP REST API로 플러그인 설치 권한이 없습니다. WordPress 관리자 페이지에서 직접 "Post Views Counter" 플러그인을 설치해주세요.'
-    }
+    // WP REST API 실패 → NAS WP-CLI 폴백 시도
+    try {
+      const hostname = new URL(site.site_url).hostname
+      const parts = hostname.split('.')
+      const WP_CLI = '/volume1/homes/urjent/bin/wp'
+      const PHP = '/usr/local/bin/php82'
 
-    return NextResponse.json({ error: errMsg }, { status: 500 })
+      // 후보 경로: subdomain.domain.tld → /volume1/web/subdomain, hostname 등
+      const candidatePaths: string[] = []
+      if (parts.length >= 3) candidatePaths.push(`/volume1/web/${parts[0]}`)
+      candidatePaths.push(`/volume1/web/${hostname}`)
+      if (parts.length >= 2) candidatePaths.push(`/volume1/web/${parts[parts.length - 2]}`)
+
+      for (const wpPath of candidatePaths) {
+        const check = await nasExec(`test -f ${wpPath}/wp-config.php && echo exists || echo missing`)
+        if (!check.stdout.includes('exists')) continue
+
+        // 플러그인 디렉토리 권한 먼저 수정
+        await nasExec(`chmod -R 755 ${wpPath}/wp-content/plugins 2>/dev/null; chown -R http:http ${wpPath}/wp-content/plugins 2>/dev/null; true`)
+
+        const r = await nasExec(`${PHP} ${WP_CLI} plugin install ${plugin_slug} --activate --allow-root --path=${wpPath} 2>&1`)
+        const out = (r.stdout + ' ' + r.stderr).toLowerCase()
+
+        if (out.includes('success') || out.includes('activated') || out.includes('already installed') || r.code === 0) {
+          return NextResponse.json({ ok: true, message: `플러그인 설치 및 활성화 완료 (NAS WP-CLI: ${wpPath})` })
+        }
+        return NextResponse.json({ error: `NAS WP-CLI 실패: ${r.stdout || r.stderr}` }, { status: 500 })
+      }
+
+      return NextResponse.json({ error: `NAS에서 WordPress 경로를 찾을 수 없습니다 (시도: ${candidatePaths.join(', ')})` }, { status: 500 })
+    } catch (nasErr) {
+      // NAS SSH도 실패하면 원래 WP REST API 오류 반환
+      return NextResponse.json({ error: `WP REST API: ${wpApiErr} | NAS SSH: ${String(nasErr)}` }, { status: 500 })
+    }
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
