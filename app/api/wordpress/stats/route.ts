@@ -30,9 +30,21 @@ export async function GET(req: NextRequest) {
   try {
     const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
 
-    // Check if post-views-counter plugin is active first
+    // Check if post-views-counter plugin is active
+    // Method 1: admin plugin endpoint (requires install_plugins capability)
     const pluginCheckRes = await wpFetch('/plugins/post-views-counter/post-views-counter')
-    const pluginActive = pluginCheckRes.ok && ((await pluginCheckRes.json().catch(() => ({}))) as Record<string, unknown>)?.status === 'active'
+    let pluginActive = pluginCheckRes.ok &&
+      ((await pluginCheckRes.json().catch(() => ({}))) as Record<string, unknown>)?.status === 'active'
+
+    // Method 2 (fallback): check if views-count REST field appears on posts
+    // Works even without install_plugins capability
+    if (!pluginActive) {
+      const probeRes = await wpFetch('/posts?per_page=1&_fields=id,views-count')
+      if (probeRes.ok) {
+        const probe = (await probeRes.json().catch(() => [])) as Record<string, unknown>[]
+        if (probe.length > 0 && 'views-count' in probe[0]) pluginActive = true
+      }
+    }
 
     // PVC exposes view count as top-level REST field 'views-count' (not in meta)
     // and supports orderby=post-views-counter since v1.3+
