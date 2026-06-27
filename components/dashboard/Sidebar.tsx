@@ -60,6 +60,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/coupang',   icon: '🛒', label: '쿠팡파트너스 (URL)' },
       { href: '/dashboard/coupang/notion', icon: '🗂️', label: '쿠팡 Notion DB' },
       { href: '/dashboard/wordpress', icon: '📝', label: 'WordPress 발행' },
+      { href: '/dashboard/wp-stats', icon: '📊', label: 'WordPress 통계' },
       { href: '/dashboard/wordpress/wp-to-sns', icon: '📤', label: 'WP글→SNS 발행' },
       { href: '/dashboard/blogger',   icon: '📝', label: 'Google 블로거' },
       { href: '/dashboard/naver',     icon: '🟢', label: '네이버 블로그' },
