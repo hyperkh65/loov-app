@@ -30,33 +30,27 @@ export async function GET(req: NextRequest) {
   try {
     const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
 
-    // Check if post-views-counter plugin is active
-    // Method 1: admin plugin endpoint (requires install_plugins capability)
-    const pluginCheckRes = await wpFetch('/plugins/post-views-counter/post-views-counter')
-    let pluginActive = pluginCheckRes.ok &&
-      ((await pluginCheckRes.json().catch(() => ({}))) as Record<string, unknown>)?.status === 'active'
-
-    // Method 2 (fallback): check if views-count REST field appears on posts
-    // Works even without install_plugins capability
-    if (!pluginActive) {
-      const probeRes = await wpFetch('/posts?per_page=1&_fields=id,views-count')
-      if (probeRes.ok) {
-        const probe = (await probeRes.json().catch(() => [])) as Record<string, unknown>[]
-        if (probe.length > 0 && 'views-count' in probe[0]) pluginActive = true
-      }
+    // Detect PVC via WP REST index namespaces (no admin capability required)
+    const wpIndexRes = await fetch(`${base}/wp-json/`, {
+      headers: { Authorization: auth },
+      signal: AbortSignal.timeout(10000),
+    })
+    let pluginActive = false
+    if (wpIndexRes.ok) {
+      const idx = await wpIndexRes.json().catch(() => ({}))
+      pluginActive = Array.isArray(idx?.namespaces) && idx.namespaces.includes('post-views-counter')
     }
-
-    // PVC exposes view count as top-level REST field 'views-count'
-    // orderby=post-views-counter works on PVC v1.3+ but not all versions
-    // Fetch 100 posts by date, include views-count, sort client-side (safer fallback)
-    const topQuery = pluginActive
-      ? '/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,categories,views-count'
-      : '/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,categories'
+    // Fallback: admin plugin endpoint
+    if (!pluginActive) {
+      const pluginCheckRes = await wpFetch('/plugins/post-views-counter/post-views-counter')
+      pluginActive = pluginCheckRes.ok &&
+        ((await pluginCheckRes.json().catch(() => ({}))) as Record<string, unknown>)?.status === 'active'
+    }
 
     const [countRes, catRes, topRes, monthlyRes] = await Promise.all([
       wpFetch('/posts?per_page=1&_fields=id'),
       wpFetch('/categories?per_page=50&orderby=count&order=desc&_fields=id,name,count'),
-      wpFetch(topQuery),
+      wpFetch('/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,categories'),
       wpFetch(`/posts?per_page=100&orderby=date&order=desc&after=${yearAgo}&_fields=id,date`),
     ])
 
@@ -66,23 +60,37 @@ export async function GET(req: NextRequest) {
     const topPostsRaw: Record<string, unknown>[] = topRes.ok ? await topRes.json() : []
     const recentPosts: { id: number; date: string }[] = monthlyRes.ok ? await monthlyRes.json() : []
 
-    const mapPost = (p: Record<string, unknown>) => {
-      const rawViews = p['views-count']
-      const views = typeof rawViews === 'number' ? rawViews : rawViews ? parseInt(String(rawViews)) : null
-      return {
-        id: p.id as number,
-        title: ((p.title as { rendered?: string })?.rendered || String(p.title)).replace(/<[^>]+>/g, ''),
-        date: p.date as string,
-        link: p.link as string,
-        comment_count: 0,
-        views,
-        categories: (p.categories as number[]) || [],
+    // Get PVC view counts via batch API: /wp-json/post-views-counter/get-post-views/{ids}
+    let viewMap: Record<number, number> = {}
+    if (pluginActive && topPostsRaw.length > 0) {
+      const ids = topPostsRaw.map(p => p.id).join(',')
+      const pvcRes = await fetch(`${base}/wp-json/post-views-counter/get-post-views/${ids}`, {
+        headers: { Authorization: auth },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (pvcRes.ok) {
+        const pvcData = await pvcRes.json().catch(() => ({}))
+        // PVC returns { post_views: { "id": count, ... } } or flat object
+        const raw = pvcData?.post_views ?? pvcData
+        if (raw && typeof raw === 'object') {
+          for (const [k, v] of Object.entries(raw)) {
+            viewMap[parseInt(k)] = typeof v === 'number' ? v : parseInt(String(v)) || 0
+          }
+        }
       }
     }
 
+    const mapPost = (p: Record<string, unknown>) => ({
+      id: p.id as number,
+      title: ((p.title as { rendered?: string })?.rendered || String(p.title)).replace(/<[^>]+>/g, ''),
+      date: p.date as string,
+      link: p.link as string,
+      comment_count: 0,
+      views: pluginActive ? (viewMap[p.id as number] ?? 0) : null,
+      categories: (p.categories as number[]) || [],
+    })
+
     const allPosts = topPostsRaw.map(mapPost)
-    // If plugin active: sort by views desc, take top 25
-    // If not: return all 100 for GSC URL→title mapping
     const topPosts = pluginActive
       ? allPosts.sort((a, b) => (b.views ?? 0) - (a.views ?? 0)).slice(0, 25)
       : allPosts
