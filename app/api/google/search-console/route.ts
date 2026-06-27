@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const dimension = req.nextUrl.searchParams.get('dimension') || 'page'
   const endDate = new Date().toISOString().slice(0, 10)
   const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
         body: JSON.stringify({
           startDate,
           endDate,
-          dimensions: ['page'],
+          dimensions: [dimension],
           rowLimit: 25,
           orderby: [{ fieldName: 'clicks', sortOrder: 'DESCENDING' }],
         }),
