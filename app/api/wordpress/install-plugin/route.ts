@@ -84,8 +84,12 @@ export async function POST(req: NextRequest) {
           const wpSiteUrl = urlCheck.stdout.trim().replace(/\/$/, '')
           if (!wpSiteUrl.includes(siteHostname)) continue
 
-          // 권한 수정
-          await execFn(`chmod -R 755 ${wpPath}/wp-content/plugins 2>/dev/null; chown -R http:http ${wpPath}/wp-content/plugins 2>/dev/null; true`)
+          // wp-content 전체 권한 수정 + upgrade 폴더 생성
+          await execFn([
+            `mkdir -p ${wpPath}/wp-content/upgrade ${wpPath}/wp-content/plugins`,
+            `chmod -R 775 ${wpPath}/wp-content`,
+            `chown -R http:http ${wpPath}/wp-content`,
+          ].join(' && '))
 
           const r = await execFn(`${PHP} ${WP_CLI} plugin install ${plugin_slug} --activate --allow-root --path=${wpPath} 2>&1`)
           const out = (r.stdout + ' ' + r.stderr).toLowerCase()
