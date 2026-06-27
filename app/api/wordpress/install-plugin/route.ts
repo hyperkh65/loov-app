@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { nasExec } from '@/lib/nas-ssh'
+import { nasExec, nas2daysExec } from '@/lib/nas-ssh'
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,39 +65,47 @@ export async function POST(req: NextRequest) {
     } catch { /* ignore */ }
 
     // WP REST API 실패 → NAS WP-CLI 폴백 시도
-    try {
-      const hostname = new URL(site.site_url).hostname
-      const parts = hostname.split('.')
-      const WP_CLI = '/volume1/homes/urjent/bin/wp'
-      const PHP = '/usr/local/bin/php82'
+    // hy64(nasExec) = aboda.kr 계열, hy65(nas2daysExec) = 2days.kr 계열
+    const siteHostname = new URL(site.site_url).hostname
+    const WP_CLI = '/volume1/homes/urjent/bin/wp'
+    const PHP = '/usr/local/bin/php82'
 
-      // 후보 경로: subdomain.domain.tld → /volume1/web/subdomain, hostname 등
-      const candidatePaths: string[] = []
-      if (parts.length >= 3) candidatePaths.push(`/volume1/web/${parts[0]}`)
-      candidatePaths.push(`/volume1/web/${hostname}`)
-      if (parts.length >= 2) candidatePaths.push(`/volume1/web/${parts[parts.length - 2]}`)
+    const tryNasInstall = async (execFn: typeof nasExec, nasLabel: string): Promise<NextResponse | null> => {
+      try {
+        // find로 wp-config.php 위치 자동 탐색 후 siteurl로 매칭
+        const findResult = await execFn(`find /volume1/web -name "wp-config.php" -maxdepth 4 2>/dev/null`)
+        const wpPaths = findResult.stdout.split('\n')
+          .filter(Boolean)
+          .map(p => p.replace('/wp-config.php', ''))
 
-      for (const wpPath of candidatePaths) {
-        const check = await nasExec(`test -f ${wpPath}/wp-config.php && echo exists || echo missing`)
-        if (!check.stdout.includes('exists')) continue
+        for (const wpPath of wpPaths) {
+          // WP-CLI로 siteurl 확인
+          const urlCheck = await execFn(`${PHP} ${WP_CLI} option get siteurl --allow-root --path=${wpPath} 2>/dev/null`)
+          const wpSiteUrl = urlCheck.stdout.trim().replace(/\/$/, '')
+          if (!wpSiteUrl.includes(siteHostname)) continue
 
-        // 플러그인 디렉토리 권한 먼저 수정
-        await nasExec(`chmod -R 755 ${wpPath}/wp-content/plugins 2>/dev/null; chown -R http:http ${wpPath}/wp-content/plugins 2>/dev/null; true`)
+          // 권한 수정
+          await execFn(`chmod -R 755 ${wpPath}/wp-content/plugins 2>/dev/null; chown -R http:http ${wpPath}/wp-content/plugins 2>/dev/null; true`)
 
-        const r = await nasExec(`${PHP} ${WP_CLI} plugin install ${plugin_slug} --activate --allow-root --path=${wpPath} 2>&1`)
-        const out = (r.stdout + ' ' + r.stderr).toLowerCase()
+          const r = await execFn(`${PHP} ${WP_CLI} plugin install ${plugin_slug} --activate --allow-root --path=${wpPath} 2>&1`)
+          const out = (r.stdout + ' ' + r.stderr).toLowerCase()
 
-        if (out.includes('success') || out.includes('activated') || out.includes('already installed') || r.code === 0) {
-          return NextResponse.json({ ok: true, message: `플러그인 설치 및 활성화 완료 (NAS WP-CLI: ${wpPath})` })
+          if (out.includes('success') || out.includes('activated') || out.includes('already installed') || r.code === 0) {
+            return NextResponse.json({ ok: true, message: `플러그인 설치 및 활성화 완료 (${nasLabel}: ${wpPath})` })
+          }
+          return NextResponse.json({ error: `WP-CLI 실패 (${nasLabel}): ${r.stdout || r.stderr}` }, { status: 500 })
         }
-        return NextResponse.json({ error: `NAS WP-CLI 실패: ${r.stdout || r.stderr}` }, { status: 500 })
-      }
-
-      return NextResponse.json({ error: `NAS에서 WordPress 경로를 찾을 수 없습니다 (시도: ${candidatePaths.join(', ')})` }, { status: 500 })
-    } catch (nasErr) {
-      // NAS SSH도 실패하면 원래 WP REST API 오류 반환
-      return NextResponse.json({ error: `WP REST API: ${wpApiErr} | NAS SSH: ${String(nasErr)}` }, { status: 500 })
+        return null // 이 NAS에서 못 찾음
+      } catch { return null }
     }
+
+    // hy64 먼저, 없으면 hy65(2days) 시도
+    const result = await tryNasInstall(nasExec, 'hy64') ?? await tryNasInstall(nas2daysExec, 'hy65/2days')
+    if (result) return result
+
+    return NextResponse.json({
+      error: `WP REST API: ${wpApiErr} | NAS: ${siteHostname} 에 해당하는 WordPress를 찾을 수 없습니다`,
+    }, { status: 500 })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
