@@ -106,7 +106,8 @@ export async function GET(req: NextRequest) {
     const data = await gscRes.json()
     const rows = ((data.rows || []) as { keys: string[]; clicks: number; impressions: number; ctr: number; position: number }[])
       .map(row => ({
-        page: row.keys[0],
+        // dimension=query → 'query' field; dimension=page → 'page' field
+        ...(dimension === 'query' ? { query: row.keys[0] } : { page: row.keys[0] }),
         clicks: row.clicks,
         impressions: row.impressions,
         ctr: Math.round(row.ctr * 1000) / 10,
