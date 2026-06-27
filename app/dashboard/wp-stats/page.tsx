@@ -285,7 +285,8 @@ export default function WpStatsPage() {
                       </tr></thead>
                       <tbody>
                         {gscRows.map((row, i) => {
-                          const path = row.page.replace(selected.site_url.replace(/\/$/, ''), '') || '/';
+                          const rawPath = row.page.replace(selected.site_url.replace(/\/$/, ''), '') || '/';
+                          const path = (() => { try { return decodeURIComponent(rawPath); } catch { return rawPath; } })();
                           const title = urlTitleMap.get(row.page.replace(/\/$/, ''));
                           return (
                             <tr key={i} className="border-t border-gray-50 hover:bg-blue-50/30 transition-colors">
@@ -336,7 +337,8 @@ export default function WpStatsPage() {
                     </tr></thead>
                     <tbody>
                       {gscRows.map((row, i) => {
-                        const path = row.page.replace(selected.site_url.replace(/\/$/, ''), '') || '/';
+                        const rawPath = row.page.replace(selected.site_url.replace(/\/$/, ''), '') || '/';
+                        const path = (() => { try { return decodeURIComponent(rawPath); } catch { return rawPath; } })();
                         const title = urlTitleMap.get(row.page.replace(/\/$/, ''));
                         return (
                           <tr key={i} className="border-t border-gray-50 hover:bg-blue-50/30 transition-colors">
