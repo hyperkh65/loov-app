@@ -30,14 +30,27 @@ export async function GET(req: NextRequest) {
   try {
     const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
 
-    // Check if post-views-counter plugin is active first
+    // Check if post-views-counter plugin is active
+    // Method 1: admin plugin endpoint (requires install_plugins capability)
     const pluginCheckRes = await wpFetch('/plugins/post-views-counter/post-views-counter')
-    const pluginActive = pluginCheckRes.ok && ((await pluginCheckRes.json().catch(() => ({}))) as Record<string, unknown>)?.status === 'active'
+    let pluginActive = pluginCheckRes.ok &&
+      ((await pluginCheckRes.json().catch(() => ({}))) as Record<string, unknown>)?.status === 'active'
 
-    // If plugin active: fetch top 25 by views (meta); otherwise fetch by date for URL mapping
+    // Method 2 (fallback): check if views-count REST field appears on posts
+    // Works even without install_plugins capability
+    if (!pluginActive) {
+      const probeRes = await wpFetch('/posts?per_page=1&_fields=id,views-count')
+      if (probeRes.ok) {
+        const probe = (await probeRes.json().catch(() => [])) as Record<string, unknown>[]
+        if (probe.length > 0 && 'views-count' in probe[0]) pluginActive = true
+      }
+    }
+
+    // PVC exposes view count as top-level REST field 'views-count' (not in meta)
+    // and supports orderby=post-views-counter since v1.3+
     const topQuery = pluginActive
-      ? '/posts?per_page=25&orderby=meta_value_num&meta_key=_pvc_posts&order=desc&_fields=id,title,date,link,comment_count,categories,meta'
-      : '/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,comment_count,categories,meta'
+      ? '/posts?per_page=25&orderby=post-views-counter&order=desc&_fields=id,title,date,link,categories,views-count'
+      : '/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,categories'
 
     const [countRes, catRes, topRes, monthlyRes] = await Promise.all([
       wpFetch('/posts?per_page=1&_fields=id'),
@@ -52,31 +65,26 @@ export async function GET(req: NextRequest) {
     const topPostsRaw: Record<string, unknown>[] = topRes.ok ? await topRes.json() : []
     const recentPosts: { id: number; date: string }[] = monthlyRes.ok ? await monthlyRes.json() : []
 
-    // Check for view data in meta (post-views-counter plugin fields)
-    const hasViewData = pluginActive || topPostsRaw.some(p => {
-      const meta = p.meta as Record<string, unknown> | undefined
-      return meta && (meta['views-count'] !== undefined || meta['_pvc_posts'] !== undefined)
-    })
+    const hasViewData = pluginActive
 
     const mapPost = (p: Record<string, unknown>) => {
-      const meta = p.meta as Record<string, unknown> | undefined
-      const views = meta?.['views-count'] ?? meta?.['_pvc_posts'] ?? null
+      // PVC exposes view count as top-level 'views-count' REST field (not inside meta)
+      const rawViews = p['views-count']
+      const views = typeof rawViews === 'number' ? rawViews : rawViews ? parseInt(String(rawViews)) : null
       return {
         id: p.id as number,
         title: ((p.title as { rendered?: string })?.rendered || String(p.title)).replace(/<[^>]+>/g, ''),
         date: p.date as string,
         link: p.link as string,
-        comment_count: (p.comment_count as number) || 0,
-        views: typeof views === 'number' ? views : views ? parseInt(String(views)) : null,
+        comment_count: 0,
+        views,
         categories: (p.categories as number[]) || [],
       }
     }
 
     const allPosts = topPostsRaw.map(mapPost)
-    // Sort: by views desc if plugin active, otherwise keep API order (by date)
-    const topPosts = pluginActive
-      ? allPosts.sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 25)
-      : allPosts.slice(0, 100) // return all for URL→title mapping in GSC tab
+    // When plugin active: API already sorted by views-counter; otherwise return all for GSC title mapping
+    const topPosts = pluginActive ? allPosts : allPosts.slice(0, 100)
 
     // Monthly distribution
     const monthly: Record<string, number> = {}
