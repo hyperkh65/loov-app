@@ -46,10 +46,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // PVC exposes view count as top-level REST field 'views-count' (not in meta)
-    // and supports orderby=post-views-counter since v1.3+
+    // PVC exposes view count as top-level REST field 'views-count'
+    // orderby=post-views-counter works on PVC v1.3+ but not all versions
+    // Fetch 100 posts by date, include views-count, sort client-side (safer fallback)
     const topQuery = pluginActive
-      ? '/posts?per_page=25&orderby=post-views-counter&order=desc&_fields=id,title,date,link,categories,views-count'
+      ? '/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,categories,views-count'
       : '/posts?per_page=100&orderby=date&order=desc&_fields=id,title,date,link,categories'
 
     const [countRes, catRes, topRes, monthlyRes] = await Promise.all([
@@ -65,10 +66,7 @@ export async function GET(req: NextRequest) {
     const topPostsRaw: Record<string, unknown>[] = topRes.ok ? await topRes.json() : []
     const recentPosts: { id: number; date: string }[] = monthlyRes.ok ? await monthlyRes.json() : []
 
-    const hasViewData = pluginActive
-
     const mapPost = (p: Record<string, unknown>) => {
-      // PVC exposes view count as top-level 'views-count' REST field (not inside meta)
       const rawViews = p['views-count']
       const views = typeof rawViews === 'number' ? rawViews : rawViews ? parseInt(String(rawViews)) : null
       return {
@@ -83,8 +81,13 @@ export async function GET(req: NextRequest) {
     }
 
     const allPosts = topPostsRaw.map(mapPost)
-    // When plugin active: API already sorted by views-counter; otherwise return all for GSC title mapping
-    const topPosts = pluginActive ? allPosts : allPosts.slice(0, 100)
+    // If plugin active: sort by views desc, take top 25
+    // If not: return all 100 for GSC URL→title mapping
+    const topPosts = pluginActive
+      ? allPosts.sort((a, b) => (b.views ?? 0) - (a.views ?? 0)).slice(0, 25)
+      : allPosts
+
+    const hasViewData = pluginActive && topPosts.some(p => (p.views ?? 0) > 0)
 
     // Monthly distribution
     const monthly: Record<string, number> = {}
