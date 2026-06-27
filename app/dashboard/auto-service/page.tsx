@@ -179,6 +179,11 @@ export default function AutoServicePage() {
   // WordPress 사이트 목록
   const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
+  // 네이버 카페
+  const [selNaverCafe, setSelNaverCafe] = useState(false);
+  const [navercafeMenuId, setNavercafeMenuId] = useState('');
+  const [navercafeMenus, setNavercafeMenus] = useState<{ menuId: number; menuName: string }[]>([]);
+  const [navercafeConnected, setNavercafeConnected] = useState(false);
 
   // 예약 발행 모달
   const [scheduleArticle, setScheduleArticle] = useState<Article | null>(null);
@@ -260,6 +265,18 @@ export default function AutoServicePage() {
     fetch('/api/wordpress/sites')
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setWpSites(d); });
+    // 네이버 카페 연결 상태 확인
+    fetch('/api/naver-cafe/connect')
+      .then(r => r.json())
+      .then(d => {
+        if (d?.connected && d?.oauth_connected) {
+          setNavercafeConnected(true);
+          if (Array.isArray(d.menu_list) && d.menu_list.length > 0) {
+            setNavercafeMenus(d.menu_list);
+            setNavercafeMenuId(String(d.menu_list[0].menuId));
+          }
+        }
+      }).catch(() => {});
     // 백링크 연결 상태 확인
     Promise.allSettled([
       fetch('/api/backlink/medium').then(r => r.json()),
@@ -875,6 +892,8 @@ export default function AutoServicePage() {
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
           backlink_platforms: selBacklink,
+          naver_cafe_menu_id: selNaverCafe && navercafeMenuId ? navercafeMenuId : undefined,
+          naver_cafe_open_yn: 'Y',
         }),
       });
       const text = await res.text();
@@ -2364,9 +2383,49 @@ export default function AutoServicePage() {
                   </label>
                 </div>
 
+                {/* 네이버 카페 발행 */}
+                <div className={`rounded-xl border p-3 transition-colors ${selNaverCafe && navercafeConnected ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                  {navercafeConnected ? (
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <button type="button" onClick={() => setSelNaverCafe(!selNaverCafe)}
+                          className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${selNaverCafe ? 'bg-green-500' : 'bg-gray-300'}`}>
+                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${selNaverCafe ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">☕ 네이버 카페 동시 발행</p>
+                          <p className="text-xs text-gray-400">블로그 글을 카페 게시판에 자동으로 함께 올립니다</p>
+                        </div>
+                      </label>
+                      {selNaverCafe && navercafeMenus.length > 0 && (
+                        <select
+                          value={navercafeMenuId}
+                          onChange={e => setNavercafeMenuId(e.target.value)}
+                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
+                        >
+                          {navercafeMenus.map(m => (
+                            <option key={m.menuId} value={String(m.menuId)}>{m.menuName}</option>
+                          ))}
+                        </select>
+                      )}
+                      {selNaverCafe && navercafeMenus.length === 0 && (
+                        <p className="text-xs text-amber-600">게시판 목록이 없습니다. <a href="/dashboard/naver-cafe" className="underline">카페 설정</a>에서 게시판을 추가하세요.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">☕ 네이버 카페</p>
+                        <p className="text-xs text-gray-400">OAuth 연결이 필요합니다</p>
+                      </div>
+                      <a href="/dashboard/naver-cafe" className="text-xs text-green-600 font-medium hover:underline">설정하기 →</a>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setPublishArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
-                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts)}
+                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts && !(selNaverCafe && navercafeMenuId))}
                     className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                     {publishing ? '발행 중...' : '🚀 발행하기'}
                   </button>
@@ -2377,6 +2436,7 @@ export default function AutoServicePage() {
                     {selSns.includes('instagram') && <p>📸 Instagram: 뉴스카드 생성 중 (~25초)</p>}
                     {selSns.includes('threads') && <p>🧵 Threads: 발행 후 링크 댓글 추가 (~30-60초)</p>}
                     {selBlog.includes('naver') && <p>🟢 네이버 블로그: 발행 중</p>}
+                    {selNaverCafe && navercafeMenuId && <p>☕ 네이버 카페: 발행 중</p>}
                     <p className="text-gray-400 mt-1">창을 닫지 마세요 — 서버에서 처리 중입니다</p>
                   </div>
                 )}
