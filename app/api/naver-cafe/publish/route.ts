@@ -1,5 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import iconv from 'iconv-lite';
+
+// 멀티파트 바디를 CP949 raw bytes로 직접 구성
+// 서버가 multipart raw bytes를 CP949로 읽음이 확인됨 (UTF-8 multipart → 蹂좎괶◆)
+// per-part charset 지정 없이 CP949 bytes 삽입 → 서버가 CP949로 정상 해석
+function buildMultipartCp949(params: [string, string][], boundary: string): Buffer {
+  const parts: Buffer[] = [];
+  for (const [key, value] of params) {
+    const header = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n`,
+      'ascii'
+    );
+    const encoded = key === 'openYn'
+      ? Buffer.from(value, 'ascii')
+      : iconv.encode(value, 'CP949');
+    parts.push(header, encoded, Buffer.from('\r\n', 'ascii'));
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`, 'ascii'));
+  return Buffer.concat(parts);
+}
 
 export const maxDuration = 30;
 
@@ -116,16 +136,20 @@ export async function POST(req: NextRequest) {
   if (naverImageUrl) textContent = `<img src="${naverImageUrl}"><br><br>${textContent}`;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
-  const form = new FormData();
-  form.append('subject', title);
-  form.append('content', textContent);
-  form.append('openYn', open_yn);
+  const boundary = `----NaverCafeBoundary${Date.now()}`;
+  const multipartBody = buildMultipartCp949([
+    ['subject', title],
+    ['content', textContent],
+    ['openYn', open_yn],
+  ], boundary);
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'Content-Length': String(multipartBody.byteLength),
     },
-    body: form,
+    body: multipartBody,
   });
 
   const rawText = await res.text();
