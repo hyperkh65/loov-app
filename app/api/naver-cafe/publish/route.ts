@@ -43,10 +43,10 @@ async function uploadImageToNaverCafe(
   imageUrl: string,
   clubId: string,
   accessToken: string
-): Promise<string | null> {
+): Promise<{ url: string | null; error?: string }> {
   try {
     const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(15_000) });
-    if (!imgRes.ok) return null;
+    if (!imgRes.ok) return { url: null, error: `이미지 다운로드 실패: ${imgRes.status}` };
     const imgBuf = await imgRes.arrayBuffer();
     const ct = imgRes.headers.get('content-type') || 'image/jpeg';
     const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : ct.includes('webp') ? 'webp' : 'jpg';
@@ -58,11 +58,13 @@ async function uploadImageToNaverCafe(
       body: form,
       signal: AbortSignal.timeout(20_000),
     });
-    if (!uploadRes.ok) return null;
-    const data = await uploadRes.json() as { message?: { result?: { imageUrl?: string } } };
-    return data.message?.result?.imageUrl || null;
-  } catch {
-    return null;
+    const rawText = await uploadRes.text();
+    if (!uploadRes.ok) return { url: null, error: `Naver 이미지 업로드 실패 ${uploadRes.status}: ${rawText.slice(0, 200)}` };
+    const data = JSON.parse(rawText) as { imageUrl?: string; message?: { result?: { imageUrl?: string; url?: string } } };
+    const url = data.imageUrl || data.message?.result?.imageUrl || data.message?.result?.url || null;
+    return { url, error: url ? undefined : `URL 파싱 실패: ${rawText.slice(0, 200)}` };
+  } catch (e) {
+    return { url: null, error: String(e) };
   }
 }
 
@@ -117,9 +119,11 @@ export async function POST(req: NextRequest) {
 
   // 이미지: Naver CDN 업로드 성공 시에만 포함 (외부 URL은 Naver가 403으로 거부)
   let imageHtml = '';
+  let imageUploadError: string | undefined;
   if (cover_image_url) {
-    const naverImageUrl = await uploadImageToNaverCafe(cover_image_url, String(conn.club_id), accessToken);
-    if (naverImageUrl) imageHtml = `<img src="${naverImageUrl}"><br><br>`;
+    const imgResult = await uploadImageToNaverCafe(cover_image_url, String(conn.club_id), accessToken);
+    if (imgResult.url) imageHtml = `<img src="${imgResult.url}"><br><br>`;
+    else imageUploadError = imgResult.error;
   }
 
   // HTML → plain text
@@ -181,5 +185,5 @@ export async function POST(req: NextRequest) {
     });
   } catch {}
 
-  return NextResponse.json({ ok: true, article_id: articleId, url: articleUrl });
+  return NextResponse.json({ ok: true, article_id: articleId, url: articleUrl, image_upload_error: imageUploadError });
 }
