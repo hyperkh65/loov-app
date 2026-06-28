@@ -115,10 +115,11 @@ export async function POST(req: NextRequest) {
   const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
 
-  // 이미지 업로드
-  let naverImageUrl: string | null = null;
+  // 이미지: Naver CDN 업로드 시도, 실패 시 원본 URL 직접 사용
+  let imageHtml = '';
   if (cover_image_url) {
-    naverImageUrl = await uploadImageToNaverCafe(cover_image_url, String(conn.club_id), accessToken);
+    const naverImageUrl = await uploadImageToNaverCafe(cover_image_url, String(conn.club_id), accessToken);
+    imageHtml = `<img src="${naverImageUrl || cover_image_url}"><br><br>`;
   }
 
   // HTML → plain text
@@ -132,8 +133,7 @@ export async function POST(req: NextRequest) {
 
   const excerpt = stripped.slice(0, 400) + (stripped.length > 400 ? '...' : '');
   const linkLine = blog_url ? `\n\n[원문 보기] ${blog_url}` : '';
-  let textContent = excerpt + linkLine;
-  if (naverImageUrl) textContent = `<img src="${naverImageUrl}"><br><br>${textContent}`;
+  const textContent = imageHtml + excerpt + linkLine;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
