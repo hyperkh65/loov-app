@@ -269,7 +269,7 @@ export default function AutoServicePage() {
     fetch('/api/naver-cafe/connect')
       .then(r => r.json())
       .then(d => {
-        if (d?.connected && d?.oauth_connected) {
+        if (d?.connected) {
           setNavercafeConnected(true);
           if (Array.isArray(d.menu_list) && d.menu_list.length > 0) {
             setNavercafeMenus(d.menu_list);
