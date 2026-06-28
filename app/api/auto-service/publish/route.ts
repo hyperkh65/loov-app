@@ -238,9 +238,15 @@ export async function POST(req: NextRequest) {
   // 네이버 카페 발행
   if (naver_cafe_menu_id) {
     try {
-      const naverBlogUrl = results.naver?.url
-        || results.blogger?.url
-        || Object.entries(results).find(([k, v]) => k.startsWith('wordpress_') && v.url)?.[1]?.url;
+      // 블로그 링크: 이번 발행 결과 → 기존 발행 이력 순으로 수집
+      const newBlogUrls = Object.entries(results)
+        .filter(([k, v]) => !k.startsWith('sns_') && !k.startsWith('naver_cafe') && v.success && v.url)
+        .map(([, v]) => v.url!);
+      const existingBlogUrls = Object.entries(article.published_urls || {})
+        .filter(([k]) => !k.startsWith('sns_') && !k.startsWith('naver_cafe'))
+        .map(([, v]) => v as string)
+        .filter(Boolean);
+      const cafeBlogUrl = results.naver?.url || newBlogUrls[0] || existingBlogUrls.find(u => u.includes('blog.naver.com')) || existingBlogUrls[0];
       const res = await fetch(`${baseUrl}/api/naver-cafe/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
@@ -250,7 +256,7 @@ export async function POST(req: NextRequest) {
           menu_id: naver_cafe_menu_id,
           open_yn: naver_cafe_open_yn,
           cover_image_url: article.representative_image_url || undefined,
-          blog_url: naverBlogUrl,
+          blog_url: cafeBlogUrl,
         }),
       });
       const data = await res.json();
