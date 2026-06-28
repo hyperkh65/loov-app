@@ -1,24 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import iconv from 'iconv-lite';
 
-// 멀티파트 바디를 CP949 raw bytes로 직접 구성
-// 서버가 multipart raw bytes를 CP949로 읽음이 확인됨 (UTF-8 multipart → 蹂좎괶◆)
-// per-part charset 지정 없이 CP949 bytes 삽입 → 서버가 CP949로 정상 해석
-function buildMultipartCp949(params: [string, string][], boundary: string): Blob {
-  const parts: Buffer[] = [];
-  for (const [key, value] of params) {
-    const header = Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n`,
-      'ascii'
-    );
-    const encoded = key === 'openYn'
-      ? Buffer.from(value, 'ascii')
-      : iconv.encode(value, 'CP949');
-    parts.push(header, encoded, Buffer.from('\r\n', 'ascii'));
+// Naver Cafe 페이지는 EUC-KR/CP949이나 서버가 UTF-8 바이트를 변환 없이 직접 출력하는 버그가 있음
+// UTF-8 한글 바이트(EA B0 80)가 CP949 페이지에서 蹂◆로 표시됨
+// 해결: 한글을 HTML 엔티티(&#44032;)로 인코딩 → ASCII로 저장 → HTML 파싱 시 한글 렌더링
+function toHtmlEntities(text: string): string {
+  let result = '';
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? char.charCodeAt(0);
+    if (code > 0x7E) {
+      result += `&#${code};`;
+    } else {
+      result += char;
+    }
   }
-  parts.push(Buffer.from(`--${boundary}--\r\n`, 'ascii'));
-  return new Blob([Buffer.concat(parts)], { type: `multipart/form-data; boundary=${boundary}` });
+  return result;
 }
 
 export const maxDuration = 30;
@@ -136,16 +132,17 @@ export async function POST(req: NextRequest) {
   if (naverImageUrl) textContent = `<img src="${naverImageUrl}"><br><br>${textContent}`;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
-  const boundary = `----NaverCafeBoundary${Date.now()}`;
-  const multipartBlob = buildMultipartCp949([
-    ['subject', title],
-    ['content', textContent],
-    ['openYn', open_yn],
-  ], boundary);
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: multipartBlob,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams([
+      ['subject', toHtmlEntities(title)],
+      ['content', toHtmlEntities(textContent)],
+      ['openYn', open_yn],
+    ]),
   });
 
   const rawText = await res.text();
