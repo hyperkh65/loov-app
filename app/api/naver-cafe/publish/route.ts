@@ -5,7 +5,7 @@ import iconv from 'iconv-lite';
 // 멀티파트 바디를 CP949 raw bytes로 직접 구성
 // 서버가 multipart raw bytes를 CP949로 읽음이 확인됨 (UTF-8 multipart → 蹂좎괶◆)
 // per-part charset 지정 없이 CP949 bytes 삽입 → 서버가 CP949로 정상 해석
-function buildMultipartCp949(params: [string, string][], boundary: string): Buffer {
+function buildMultipartCp949(params: [string, string][], boundary: string): Uint8Array {
   const parts: Buffer[] = [];
   for (const [key, value] of params) {
     const header = Buffer.from(
@@ -18,7 +18,7 @@ function buildMultipartCp949(params: [string, string][], boundary: string): Buff
     parts.push(header, encoded, Buffer.from('\r\n', 'ascii'));
   }
   parts.push(Buffer.from(`--${boundary}--\r\n`, 'ascii'));
-  return Buffer.concat(parts);
+  return new Uint8Array(Buffer.concat(parts));
 }
 
 export const maxDuration = 30;
@@ -147,7 +147,6 @@ export async function POST(req: NextRequest) {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      'Content-Length': String(multipartBody.byteLength),
     },
     body: multipartBody,
   });
