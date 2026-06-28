@@ -115,11 +115,11 @@ export async function POST(req: NextRequest) {
   const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
 
-  // 이미지: Naver CDN 업로드 시도, 실패 시 원본 URL 직접 사용
+  // 이미지: Naver CDN 업로드 성공 시에만 포함 (외부 URL은 Naver가 403으로 거부)
   let imageHtml = '';
   if (cover_image_url) {
     const naverImageUrl = await uploadImageToNaverCafe(cover_image_url, String(conn.club_id), accessToken);
-    imageHtml = `<img src="${naverImageUrl || cover_image_url}"><br><br>`;
+    if (naverImageUrl) imageHtml = `<img src="${naverImageUrl}"><br><br>`;
   }
 
   // HTML → plain text
