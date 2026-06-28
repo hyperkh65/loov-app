@@ -1,5 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import iconv from 'iconv-lite';
+
+// Naver Cafe API 서버는 charset 미지정 시 CP949로 폼 데이터를 디코딩
+// → CP949 퍼센트인코딩 + charset 헤더 없이 보내야 함
+// charset=euc-kr 지정 시 서버가 UTF-8로 디코딩해버리는 버그 있음
+function buildCp949Body(params: [string, string][]): string {
+  return params.map(([key, value]) => {
+    const encodedKey = encodeURIComponent(key);
+    const buf = iconv.encode(value, 'CP949');
+    let encodedValue = '';
+    for (let i = 0; i < buf.length; i++) {
+      const byte = buf[i];
+      if (
+        (byte >= 0x30 && byte <= 0x39) ||
+        (byte >= 0x41 && byte <= 0x5A) ||
+        (byte >= 0x61 && byte <= 0x7A) ||
+        byte === 0x2D || byte === 0x5F || byte === 0x2E || byte === 0x7E
+      ) {
+        encodedValue += String.fromCharCode(byte);
+      } else {
+        encodedValue += '%' + byte.toString(16).toUpperCase().padStart(2, '0');
+      }
+    }
+    return `${encodedKey}=${encodedValue}`;
+  }).join('&');
+}
 
 export const maxDuration = 30;
 
@@ -116,18 +142,17 @@ export async function POST(req: NextRequest) {
   if (naverImageUrl) textContent = `<img src="${naverImageUrl}"><br><br>${textContent}`;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
-  const bodyStr = new URLSearchParams([
-    ['subject', title],
-    ['content', textContent],
-    ['openYn', open_yn],
-  ]).toString();
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: bodyStr,
+    body: buildCp949Body([
+      ['subject', title],
+      ['content', textContent],
+      ['openYn', open_yn],
+    ]),
   });
 
   const rawText = await res.text();
