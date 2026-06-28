@@ -1,11 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import iconv from 'iconv-lite';
 
 export const maxDuration = 30;
 
-// 폼 값에서 구분자만 escape (Korean은 raw UTF-8로 전송)
-function escapeForm(str: string): string {
-  return str.replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D').replace(/\+/g, '%2B');
+// EUC-KR raw bytes로 form body 빌드 (percent-encoding 없이)
+function buildEucKrBody(fields: Array<[string, string]>): Buffer {
+  const parts: Buffer[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    if (i > 0) parts.push(Buffer.from('&'));
+    const [key, value] = fields[i];
+    parts.push(Buffer.from(`${key}=`));
+    const eucBuf = iconv.encode(value, 'euc-kr');
+    // ASCII 구분자(&, =, %)만 percent-escape, 나머지는 raw
+    const out: number[] = [];
+    for (let j = 0; j < eucBuf.length; j++) {
+      const b = eucBuf[j];
+      if (b === 0x26 || b === 0x3D || b === 0x25 || b === 0x2B) {
+        const h = b.toString(16).toUpperCase().padStart(2, '0');
+        out.push(0x25, h.charCodeAt(0), h.charCodeAt(1));
+      } else {
+        out.push(b);
+      }
+    }
+    parts.push(Buffer.from(out));
+  }
+  return Buffer.concat(parts);
 }
 
 async function refreshToken(token: string): Promise<{ access_token: string; expires_in: number } | null> {
@@ -115,14 +135,17 @@ export async function POST(req: NextRequest) {
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, '\n\n').trim();
 
-  // SNS 스타일: 요약 + 링크 (이모지 제거)
   const excerpt = stripped.slice(0, 400) + (stripped.length > 400 ? '...' : '');
   const linkLine = blog_url ? `\n\n[원문 보기] ${blog_url}` : '';
   let textContent = excerpt + linkLine;
   if (naverImageUrl) textContent = `<img src="${naverImageUrl}"><br><br>${textContent}`;
 
-  // raw UTF-8 form body (Korean percent-encode 안 함, 구분자만 escape)
-  const rawBody = `subject=${escapeForm(title)}&content=${escapeForm(textContent)}&openYn=${open_yn}`;
+  // EUC-KR raw bytes body 전송
+  const body = buildEucKrBody([
+    ['subject', title],
+    ['content', textContent],
+    ['openYn', open_yn],
+  ]);
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
@@ -131,7 +154,7 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: rawBody,
+    body,
   });
 
   const rawText = await res.text();
