@@ -5,7 +5,7 @@ import iconv from 'iconv-lite';
 // 멀티파트 바디를 CP949 raw bytes로 직접 구성
 // 서버가 multipart raw bytes를 CP949로 읽음이 확인됨 (UTF-8 multipart → 蹂좎괶◆)
 // per-part charset 지정 없이 CP949 bytes 삽입 → 서버가 CP949로 정상 해석
-function buildMultipartCp949(params: [string, string][], boundary: string): Uint8Array {
+function buildMultipartCp949(params: [string, string][], boundary: string): Blob {
   const parts: Buffer[] = [];
   for (const [key, value] of params) {
     const header = Buffer.from(
@@ -18,7 +18,7 @@ function buildMultipartCp949(params: [string, string][], boundary: string): Uint
     parts.push(header, encoded, Buffer.from('\r\n', 'ascii'));
   }
   parts.push(Buffer.from(`--${boundary}--\r\n`, 'ascii'));
-  return new Uint8Array(Buffer.concat(parts));
+  return new Blob([Buffer.concat(parts)], { type: `multipart/form-data; boundary=${boundary}` });
 }
 
 export const maxDuration = 30;
@@ -137,18 +137,15 @@ export async function POST(req: NextRequest) {
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const boundary = `----NaverCafeBoundary${Date.now()}`;
-  const multipartBody = buildMultipartCp949([
+  const multipartBlob = buildMultipartCp949([
     ['subject', title],
     ['content', textContent],
     ['openYn', open_yn],
   ], boundary);
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-    },
-    body: multipartBody,
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: multipartBlob,
   });
 
   const rawText = await res.text();
