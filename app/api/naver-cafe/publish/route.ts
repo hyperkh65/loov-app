@@ -9,6 +9,33 @@ function eucKrEncode(str: string): string {
   return out;
 }
 
+async function uploadImageToNaverCafe(
+  imageUrl: string,
+  clubId: string,
+  accessToken: string
+): Promise<string | null> {
+  try {
+    const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!imgRes.ok) return null;
+    const imgBuf = await imgRes.arrayBuffer();
+    const ct = imgRes.headers.get('content-type') || 'image/jpeg';
+    const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : ct.includes('webp') ? 'webp' : 'jpg';
+    const form = new FormData();
+    form.append('image', new Blob([imgBuf], { type: ct }), `image.${ext}`);
+    const uploadRes = await fetch(`https://openapi.naver.com/v1/cafe/${clubId}/image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!uploadRes.ok) return null;
+    const data = await uploadRes.json() as { message?: { result?: { imageUrl?: string } } };
+    return data.message?.result?.imageUrl || null;
+  } catch {
+    return null;
+  }
+}
+
 export const maxDuration = 30;
 
 async function refreshToken(token: string): Promise<{ access_token: string; expires_in: number } | null> {
@@ -44,7 +71,7 @@ export async function POST(req: NextRequest) {
     cover_image_url?: string;
     blog_url?: string;
   };
-  const { title, content, menu_id, open_yn = 'Y', blog_url } = body;
+  const { title, content, menu_id, open_yn = 'Y', cover_image_url, blog_url } = body;
   if (!title || !content) return NextResponse.json({ error: '제목과 내용 필요' }, { status: 400 });
 
   const { data: conn } = await supabase.from('naver_cafe_connections')
@@ -77,6 +104,12 @@ export async function POST(req: NextRequest) {
   const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
 
+  // 이미지 업로드
+  let naverImageUrl: string | null = null;
+  if (cover_image_url) {
+    naverImageUrl = await uploadImageToNaverCafe(cover_image_url, String(conn.club_id), accessToken);
+  }
+
   // HTML → plain text
   const stripped = content
     .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n')
@@ -86,13 +119,14 @@ export async function POST(req: NextRequest) {
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, '\n\n').trim();
 
-  // blog_url이 있으면 SNS 스타일: 요약 + 링크
-  const plainContent = blog_url
+  // SNS 스타일: 이미지 + 요약 + 링크
+  const textContent = blog_url
     ? [stripped.slice(0, 400) + (stripped.length > 400 ? '...' : ''), '', `📖 전문 보기 → ${blog_url}`].join('\n')
     : stripped;
+  const finalContent = naverImageUrl ? `<img src="${naverImageUrl}"><br><br>${textContent}` : textContent;
 
   // EUC-KR 인코딩으로 전송 (네이버 카페 서버가 EUC-KR 기대)
-  const body = `subject=${eucKrEncode(title)}&content=${eucKrEncode(plainContent)}&openYn=${open_yn}`;
+  const reqBody = `subject=${eucKrEncode(title)}&content=${eucKrEncode(finalContent)}&openYn=${open_yn}`;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
@@ -101,7 +135,7 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/x-www-form-urlencoded; charset=EUC-KR',
     },
-    body,
+    body: reqBody,
   });
 
   const rawText = await res.text();
