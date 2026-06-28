@@ -238,7 +238,9 @@ export async function POST(req: NextRequest) {
   // 네이버 카페 발행
   if (naver_cafe_menu_id) {
     try {
-      const naverBlogUrl = results.naver?.url;
+      const naverBlogUrl = results.naver?.url
+        || results.blogger?.url
+        || Object.entries(results).find(([k, v]) => k.startsWith('wordpress_') && v.url)?.[1]?.url;
       const res = await fetch(`${baseUrl}/api/naver-cafe/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
