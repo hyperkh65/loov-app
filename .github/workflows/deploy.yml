@@ -98,6 +98,8 @@ jobs:
           METERED_API_KEY=${{ secrets.METERED_API_KEY }}
           METERED_APP_NAME=${{ secrets.METERED_APP_NAME }}
           FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
+          NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
           ENVEOF
 
       - name: Notify — 전송 중
@@ -143,7 +145,6 @@ jobs:
               -p 3100:3000 \
               --add-host=host.docker.internal:host-gateway \
               -v "${DIST_DIR}:/app" \
-              -v "/var/packages/DNSServer/target/named/var/log:/nas-dns-log:ro" \
               -w /app \
               -e DEPLOY_SECRET="$DEPLOY_SECRET" \
               node:20-alpine \
@@ -244,6 +245,8 @@ jobs:
           METERED_API_KEY=${{ secrets.METERED_API_KEY }}
           METERED_APP_NAME=${{ secrets.METERED_APP_NAME }}
           FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
+          NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
           ENVEOF
 
       - name: Upload to hy65
