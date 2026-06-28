@@ -112,7 +112,12 @@ export async function POST(req: NextRequest) {
   try { resData = JSON.parse(rawText); } catch {}
 
   if (!res.ok || resData.errorCode) {
-    const errMsg = resData.errorMessage || `HTTP ${res.status}: ${rawText.slice(0, 200)}`;
+    let errMsg = resData.errorMessage || rawText.slice(0, 300);
+    if (res.status === 403) {
+      errMsg = `권한 없음(403) — 네이버 개발자센터에서 앱에 '카페' API를 추가하고 OAuth를 재연결하세요. Naver 응답: ${rawText.slice(0, 200)}`;
+    } else if (res.status === 401) {
+      errMsg = `인증 만료(401) — 설정 탭에서 OAuth를 재연결하세요.`;
+    }
     return NextResponse.json({ error: `카페 발행 실패: ${errMsg}` }, { status: 400 });
   }
 
