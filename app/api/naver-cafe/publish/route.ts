@@ -133,9 +133,7 @@ export async function POST(req: NextRequest) {
   try { resData = JSON.parse(rawText); } catch {}
 
   if (!res.ok || resData.errorCode) {
-    let errMsg = resData.errorMessage || rawText.slice(0, 300);
-    if (res.status === 403) errMsg = `권한 없음(403) — OAuth 재연결 필요. Naver: ${rawText.slice(0, 200)}`;
-    else if (res.status === 401) errMsg = `인증 만료(401) — 설정 탭에서 OAuth 재연결하세요.`;
+    const errMsg = `HTTP ${res.status} | errorCode: ${resData.errorCode || 'none'} | ${resData.errorMessage || rawText.slice(0, 300)}`;
     return NextResponse.json({ error: `카페 발행 실패: ${errMsg}` }, { status: 400 });
   }
 
