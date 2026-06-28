@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     userId = user.id;
   }
 
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [] } = await req.json();
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = await req.json();
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -232,6 +232,29 @@ export async function POST(req: NextRequest) {
       }
     } catch (err) {
       results[platform] = { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // 네이버 카페 발행
+  if (naver_cafe_menu_id) {
+    try {
+      const naverBlogUrl = results.naver?.url;
+      const res = await fetch(`${baseUrl}/api/naver-cafe/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+        body: JSON.stringify({
+          title: article.title,
+          content: article.content,
+          menu_id: naver_cafe_menu_id,
+          open_yn: naver_cafe_open_yn,
+          cover_image_url: article.representative_image_url || undefined,
+          blog_url: naverBlogUrl,
+        }),
+      });
+      const data = await res.json();
+      results.naver_cafe = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
+    } catch (err) {
+      results.naver_cafe = { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
