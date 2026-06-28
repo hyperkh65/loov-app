@@ -881,7 +881,7 @@ export default function AutoServicePage() {
   const doPublish = async () => {
     if (!publishArticle) return;
     setPublishing(true);
-    setPublishResult({});
+    setPublishResult(null);
     try {
       const res = await fetch('/api/auto-service/publish', {
         method: 'POST',
@@ -2444,6 +2444,9 @@ export default function AutoServicePage() {
             ) : (
               <div className="p-4 space-y-3">
                 <p className="font-medium text-gray-800">발행 결과</p>
+                {Object.entries(publishResult).length === 0 && (
+                  <p className="text-sm text-gray-400">선택된 플랫폼이 없거나 결과가 없습니다.</p>
+                )}
                 {Object.entries(publishResult).map(([platform, result]) => {
                   const errMsg = result.error || '';
                   const friendlyError = errMsg.includes('CreditsDepeted') || errMsg.includes('credits')
