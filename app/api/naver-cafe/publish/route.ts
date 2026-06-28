@@ -5,7 +5,7 @@ import iconv from 'iconv-lite';
 export const maxDuration = 30;
 
 // EUC-KR raw bytes로 form body 빌드 (percent-encoding 없이)
-function buildEucKrBody(fields: Array<[string, string]>): Buffer {
+function buildEucKrBody(fields: Array<[string, string]>): Uint8Array {
   const parts: Buffer[] = [];
   for (let i = 0; i < fields.length; i++) {
     if (i > 0) parts.push(Buffer.from('&'));
@@ -25,7 +25,8 @@ function buildEucKrBody(fields: Array<[string, string]>): Buffer {
     }
     parts.push(Buffer.from(out));
   }
-  return Buffer.concat(parts);
+  const buf = Buffer.concat(parts);
+  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
 }
 
 async function refreshToken(token: string): Promise<{ access_token: string; expires_in: number } | null> {
