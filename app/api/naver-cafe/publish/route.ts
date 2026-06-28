@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import iconv from 'iconv-lite';
+
+function eucKrEncode(str: string): string {
+  const buf = iconv.encode(str, 'euc-kr');
+  let out = '';
+  for (let i = 0; i < buf.length; i++) out += '%' + buf[i].toString(16).toUpperCase().padStart(2, '0');
+  return out;
+}
 
 export const maxDuration = 30;
 
@@ -83,20 +91,17 @@ export async function POST(req: NextRequest) {
     ? [stripped.slice(0, 400) + (stripped.length > 400 ? '...' : ''), '', `📖 전문 보기 → ${blog_url}`].join('\n')
     : stripped;
 
-  // URLSearchParams 사용 (인코딩 깨짐 방지)
-  const params = new URLSearchParams();
-  params.append('subject', title);
-  params.append('content', plainContent);
-  params.append('openYn', open_yn);
+  // EUC-KR 인코딩으로 전송 (네이버 카페 서버가 EUC-KR 기대)
+  const body = `subject=${eucKrEncode(title)}&content=${eucKrEncode(plainContent)}&openYn=${open_yn}`;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/x-www-form-urlencoded; charset=EUC-KR',
     },
-    body: params.toString(),
+    body,
   });
 
   const rawText = await res.text();
