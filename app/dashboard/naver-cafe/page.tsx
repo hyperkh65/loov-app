@@ -581,9 +581,14 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
       {/* 글쓰기 탭 */}
       {tab === 'write' && (
         <div className="space-y-4">
-          {!conn.oauth_connected && (
+          {!conn.connected && (
             <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-700">
               ⚠️ 설정 탭에서 OAuth 연결이 필요합니다.
+            </div>
+          )}
+          {conn.connected && !conn.oauth_connected && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
+              ℹ️ 토큰이 만료됐습니다. 발행 시 자동으로 갱신됩니다. 갱신 실패 시 설정 탭에서 재연결하세요.
             </div>
           )}
 
@@ -755,7 +760,7 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
 
             <button
               onClick={doPublish}
-              disabled={publishing || !conn.oauth_connected || !title || !content}
+              disabled={publishing || !conn.connected || !title || !content}
               className="w-full py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {publishing ? (
