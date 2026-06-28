@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import iconv from 'iconv-lite';
+
+function eucKrEncode(str: string): string {
+  const buf = iconv.encode(str, 'euc-kr');
+  let out = '';
+  for (let i = 0; i < buf.length; i++) out += '%' + buf[i].toString(16).toUpperCase().padStart(2, '0');
+  return out;
+}
 
 export const maxDuration = 600;
 
@@ -755,20 +763,17 @@ export async function POST(req: NextRequest) {
           article.focus_keyword ? `\n#${(article.focus_keyword as string).replace(/\s+/g, '')}` : '',
         ].filter(Boolean).join('\n').trim();
 
-        // URLSearchParams 사용 (인코딩 깨짐 방지)
-        const cafeParams = new URLSearchParams();
-        cafeParams.append('subject', cleanTitle);
-        cafeParams.append('content', cafeContent);
-        cafeParams.append('openYn', naver_cafe_open_yn);
+        // EUC-KR 인코딩으로 전송 (네이버 카페 서버가 EUC-KR 기대)
+        const cafeBody = `subject=${eucKrEncode(cleanTitle)}&content=${eucKrEncode(cafeContent)}&openYn=${naver_cafe_open_yn}`;
 
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
         const cafeRes = await fetch(cafeApiUrl, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=EUC-KR',
           },
-          body: cafeParams.toString(),
+          body: cafeBody,
           signal: AbortSignal.timeout(30_000),
         });
 
