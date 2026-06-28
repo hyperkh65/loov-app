@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
-import iconv from 'iconv-lite';
-
-function eucKrEncode(str: string): string {
-  const buf = iconv.encode(str, 'euc-kr');
-  let out = '';
-  for (let i = 0; i < buf.length; i++) out += '%' + buf[i].toString(16).toUpperCase().padStart(2, '0');
-  return out;
+function stripNonEucKr(str: string): string {
+  return str.replace(/[^ -가-힣ㄱ-ㅎㅏ-ㅣ -~]/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
 async function uploadImageToNaverCafe(imageUrl: string, clubId: string, accessToken: string): Promise<string | null> {
@@ -783,26 +778,25 @@ export async function POST(req: NextRequest) {
           ? await uploadImageToNaverCafe(String(article.representative_image_url), String(conn.club_id), accessToken)
           : null;
 
-        // SNS 스타일 본문: 이미지 + 요약 + 원문 링크
-        const cafeText = [
-          excerpt,
-          '',
-          blogUrl ? `📖 원문 보기 → ${blogUrl}` : '',
-          article.focus_keyword ? `\n#${(article.focus_keyword as string).replace(/\s+/g, '')}` : '',
-        ].filter(Boolean).join('\n').trim();
-        const cafeContent = cafeImageUrl ? `<img src="${cafeImageUrl}"><br><br>${cafeText}` : cafeText;
+        // EUC-KR 범위 밖 문자 제거 후 SNS 스타일 본문 구성
+        const safeTitle = stripNonEucKr(cleanTitle);
+        const safeExcerpt = stripNonEucKr(excerpt);
+        const safeLink = blogUrl ? `\n\n[원문 보기] ${blogUrl}` : '';
+        const keyword = article.focus_keyword ? `\n\n#${stripNonEucKr((article.focus_keyword as string).replace(/\s+/g, ''))}` : '';
+        let cafeContent = safeExcerpt + safeLink + keyword;
+        if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
-        // EUC-KR 인코딩으로 전송 (네이버 카페 서버가 EUC-KR 기대)
-        const cafeBody = `subject=${eucKrEncode(cleanTitle)}&content=${eucKrEncode(cafeContent)}&openYn=${naver_cafe_open_yn}`;
+        // multipart/form-data 전송 (Naver Cafe API 공식 방식)
+        const cafeForm = new FormData();
+        cafeForm.append('subject', safeTitle);
+        cafeForm.append('content', cafeContent);
+        cafeForm.append('openYn', naver_cafe_open_yn);
 
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
         const cafeRes = await fetch(cafeApiUrl, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/x-www-form-urlencoded; charset=EUC-KR',
-          },
-          body: cafeBody,
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: cafeForm,
           signal: AbortSignal.timeout(30_000),
         });
 
