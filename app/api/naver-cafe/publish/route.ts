@@ -92,17 +92,19 @@ export async function POST(req: NextRequest) {
 
   let accessToken: string = conn.access_token;
 
-  if (conn.token_expires_at && new Date(conn.token_expires_at) < new Date(Date.now() + 60_000)) {
-    if (conn.refresh_token) {
-      const refreshed = await refreshToken(conn.refresh_token);
-      if (refreshed) {
-        accessToken = refreshed.access_token;
-        await supabase.from('naver_cafe_connections').update({
-          access_token: refreshed.access_token,
-          token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-          updated_at: new Date().toISOString(),
-        }).eq('user_id', user.id);
-      }
+  // token_expires_at이 null이거나 만료 임박 시 refresh 시도
+  const needsRefresh = !conn.token_expires_at || new Date(conn.token_expires_at) < new Date(Date.now() + 60_000);
+  if (needsRefresh && conn.refresh_token) {
+    const refreshed = await refreshToken(conn.refresh_token);
+    if (refreshed) {
+      accessToken = refreshed.access_token;
+      await supabase.from('naver_cafe_connections').update({
+        access_token: refreshed.access_token,
+        token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', user.id);
+    } else if (needsRefresh && !conn.token_expires_at) {
+      return NextResponse.json({ error: '네이버 카페 토큰이 만료되었습니다. 설정에서 네이버 카페를 재연결해주세요.' }, { status: 401 });
     }
   }
 
@@ -151,7 +153,7 @@ export async function POST(req: NextRequest) {
 
   if (!res.ok || resData.errorCode) {
     const errCode = resData.errorCode || resData.message?.result?.code || 'none';
-    const errDetail = resData.errorMessage || resData.message?.result?.message || rawText.slice(0, 300);
+    const errDetail = resData.errorMessage || resData.message?.result?.message || rawText.slice(0, 600);
     const errMsg = `HTTP ${res.status} | errorCode: ${errCode} | ${errDetail}`;
     return NextResponse.json({ error: `카페 발행 실패: ${errMsg}` }, { status: 400 });
   }
