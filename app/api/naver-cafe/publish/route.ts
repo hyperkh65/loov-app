@@ -19,7 +19,7 @@ function toHtmlEntities(text: string): string {
 
 export const maxDuration = 30;
 
-async function refreshToken(token: string): Promise<{ access_token: string; expires_in: number } | null> {
+async function refreshToken(token: string): Promise<{ access_token: string; expires_in: number; refresh_token?: string } | null> {
   try {
     const res = await fetch('https://nid.naver.com/oauth2.0/token', {
       method: 'POST',
@@ -32,8 +32,12 @@ async function refreshToken(token: string): Promise<{ access_token: string; expi
       }),
     });
     if (!res.ok) return null;
-    const data = await res.json() as { access_token?: string; expires_in?: number };
-    return data.access_token ? { access_token: data.access_token, expires_in: data.expires_in || 3600 } : null;
+    const data = await res.json() as { access_token?: string; expires_in?: number; refresh_token?: string };
+    return data.access_token ? {
+      access_token: data.access_token,
+      expires_in: data.expires_in || 3600,
+      refresh_token: data.refresh_token,
+    } : null;
   } catch {
     return null;
   }
@@ -105,11 +109,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '네이버 카페 토큰 갱신 실패 — 설정에서 네이버 카페를 재연결해주세요.' }, { status: 401 });
     }
     accessToken = refreshed.access_token;
-    await supabase.from('naver_cafe_connections').update({
+    const updatePayload: Record<string, string> = {
       access_token: refreshed.access_token,
       token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
       updated_at: new Date().toISOString(),
-    }).eq('user_id', user.id);
+    };
+    if (refreshed.refresh_token) updatePayload.refresh_token = refreshed.refresh_token;
+    await supabase.from('naver_cafe_connections').update(updatePayload).eq('user_id', user.id);
   }
 
   if (!accessToken) return NextResponse.json({ error: 'OAuth 토큰 없음. 재연결 필요' }, { status: 400 });
@@ -159,9 +165,9 @@ export async function POST(req: NextRequest) {
 
   if (!res.ok || resData.errorCode) {
     const errCode = resData.errorCode || resData.message?.result?.code || 'none';
-    const errDetail = resData.errorMessage || resData.message?.result?.message || '';
-    const errMsg = `HTTP ${res.status} | errorCode: ${errCode}${errDetail ? ' | ' + errDetail : ''}`;
-    return NextResponse.json({ error: `카페 발행 실패: ${errMsg}`, raw: rawText }, { status: 400 });
+    const errDetail = resData.errorMessage || resData.message?.result?.message || rawText.slice(0, 500);
+    const errMsg = `HTTP ${res.status} | errorCode: ${errCode} | ${errDetail}`;
+    return NextResponse.json({ error: `카페 발행 실패: ${errMsg}` }, { status: 400 });
   }
 
   const articleId = resData.message?.result?.articleId;
