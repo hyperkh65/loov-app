@@ -1,31 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import iconv from 'iconv-lite';
-
-// Naver Cafe API는 EUC-KR 인코딩을 요구함
-// URLSearchParams(UTF-8) 사용 시 ◆ 깨짐, raw EUC-KR bytes 사용 시 占쏙옙 깨짐
-// EUC-KR 바이트를 퍼센트 인코딩한 문자열을 보내야 정상 표시됨
-function buildEucKrBody(params: [string, string][]): string {
-  return params.map(([key, value]) => {
-    const encodedKey = encodeURIComponent(key);
-    const buf = iconv.encode(value, 'EUC-KR');
-    let encodedValue = '';
-    for (let i = 0; i < buf.length; i++) {
-      const byte = buf[i];
-      if (
-        (byte >= 0x30 && byte <= 0x39) ||
-        (byte >= 0x41 && byte <= 0x5A) ||
-        (byte >= 0x61 && byte <= 0x7A) ||
-        byte === 0x2D || byte === 0x5F || byte === 0x2E || byte === 0x7E
-      ) {
-        encodedValue += String.fromCharCode(byte);
-      } else {
-        encodedValue += '%' + byte.toString(16).toUpperCase().padStart(2, '0');
-      }
-    }
-    return `${encodedKey}=${encodedValue}`;
-  }).join('&');
-}
 
 export const maxDuration = 30;
 
@@ -142,17 +116,18 @@ export async function POST(req: NextRequest) {
   if (naverImageUrl) textContent = `<img src="${naverImageUrl}"><br><br>${textContent}`;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
+  const bodyStr = new URLSearchParams([
+    ['subject', title],
+    ['content', textContent],
+    ['openYn', open_yn],
+  ]).toString();
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/x-www-form-urlencoded; charset=euc-kr',
+      'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
     },
-    body: buildEucKrBody([
-      ['subject', title],
-      ['content', textContent],
-      ['openYn', open_yn],
-    ]),
+    body: bodyStr,
   });
 
   const rawText = await res.text();
