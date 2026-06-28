@@ -3,7 +3,7 @@ import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import iconv from 'iconv-lite';
-function buildEucKrBody(fields: Array<[string, string]>): Uint8Array {
+function buildEucKrBody(fields: Array<[string, string]>): ArrayBuffer {
   const parts: Buffer[] = [];
   for (let i = 0; i < fields.length; i++) {
     if (i > 0) parts.push(Buffer.from('&'));
@@ -23,7 +23,9 @@ function buildEucKrBody(fields: Array<[string, string]>): Uint8Array {
     parts.push(Buffer.from(out));
   }
   const buf = Buffer.concat(parts);
-  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  const ab = new ArrayBuffer(buf.byteLength);
+  new Uint8Array(ab).set(buf);
+  return ab;
 }
 
 async function uploadImageToNaverCafe(imageUrl: string, clubId: string, accessToken: string): Promise<string | null> {
