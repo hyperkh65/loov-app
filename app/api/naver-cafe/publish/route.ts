@@ -34,8 +34,9 @@ export async function POST(req: NextRequest) {
     menu_id?: string;
     open_yn?: string;
     cover_image_url?: string;
+    blog_url?: string;
   };
-  const { title, content, menu_id, open_yn = 'Y', cover_image_url } = body;
+  const { title, content, menu_id, open_yn = 'Y', blog_url } = body;
   if (!title || !content) return NextResponse.json({ error: '제목과 내용 필요' }, { status: 400 });
 
   const { data: conn } = await supabase.from('naver_cafe_connections')
@@ -68,43 +69,34 @@ export async function POST(req: NextRequest) {
   const targetMenuId = menu_id || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) return NextResponse.json({ error: '게시판을 선택하거나 설정에서 게시판을 추가하세요' }, { status: 400 });
 
-  // HTML 태그 제거 → plain text (네이버 카페 API는 HTML 미지원)
-  const plainContent = content
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<h[1-3][^>]*>/gi, '\n## ')
-    .replace(/<\/h[1-3]>/gi, '\n')
+  // HTML → plain text
+  const stripped = content
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n')
+    .replace(/<h[1-3][^>]*>/gi, '\n').replace(/<\/h[1-3]>/gi, '\n')
     .replace(/<li>/gi, '\n• ').replace(/<\/li>/gi, '')
     .replace(/<[^>]+>/g, '')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, '\n\n').trim();
 
-  const form = new FormData();
-  form.append('subject', title);
-  form.append('content', plainContent);
-  form.append('openYn', open_yn);
+  // blog_url이 있으면 SNS 스타일: 요약 + 링크
+  const plainContent = blog_url
+    ? [stripped.slice(0, 400) + (stripped.length > 400 ? '...' : ''), '', `📖 전문 보기 → ${blog_url}`].join('\n')
+    : stripped;
 
-  // 커버 이미지를 서버에서 fetch → attach 파일로 첨부
-  if (cover_image_url) {
-    try {
-      const imgRes = await fetch(cover_image_url, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (imgRes.ok) {
-        const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-        const buffer = await imgRes.arrayBuffer();
-        const ext = contentType.includes('png') ? 'png' : contentType.includes('gif') ? 'gif' : 'jpg';
-        form.append('attach', new Blob([buffer], { type: contentType }), `cover.${ext}`);
-      }
-    } catch { /* 이미지 첨부 실패 무시 */ }
-  }
+  // URLSearchParams 사용 (인코딩 깨짐 방지)
+  const params = new URLSearchParams();
+  params.append('subject', title);
+  params.append('content', plainContent);
+  params.append('openYn', open_yn);
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: form,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
   });
 
   const rawText = await res.text();
