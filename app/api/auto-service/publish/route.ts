@@ -11,6 +11,29 @@ function eucKrEncode(str: string): string {
   return out;
 }
 
+async function uploadImageToNaverCafe(imageUrl: string, clubId: string, accessToken: string): Promise<string | null> {
+  try {
+    const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!imgRes.ok) return null;
+    const imgBuf = await imgRes.arrayBuffer();
+    const ct = imgRes.headers.get('content-type') || 'image/jpeg';
+    const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : ct.includes('webp') ? 'webp' : 'jpg';
+    const form = new FormData();
+    form.append('image', new Blob([imgBuf], { type: ct }), `image.${ext}`);
+    const uploadRes = await fetch(`https://openapi.naver.com/v1/cafe/${clubId}/image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!uploadRes.ok) return null;
+    const data = await uploadRes.json() as { message?: { result?: { imageUrl?: string } } };
+    return data.message?.result?.imageUrl || null;
+  } catch {
+    return null;
+  }
+}
+
 export const maxDuration = 600;
 
 function toImageSlug(title: string): string {
@@ -755,13 +778,19 @@ export async function POST(req: NextRequest) {
           || Object.values(results).find(r => r.success && r.url)?.url
           || (Object.values(article.published_urls || {}).find(Boolean) as string | undefined);
 
-        // SNS 스타일 본문: 요약 + 원문 링크
-        const cafeContent = [
+        // 대표이미지 업로드
+        const cafeImageUrl = article.representative_image_url
+          ? await uploadImageToNaverCafe(String(article.representative_image_url), String(conn.club_id), accessToken)
+          : null;
+
+        // SNS 스타일 본문: 이미지 + 요약 + 원문 링크
+        const cafeText = [
           excerpt,
           '',
           blogUrl ? `📖 원문 보기 → ${blogUrl}` : '',
           article.focus_keyword ? `\n#${(article.focus_keyword as string).replace(/\s+/g, '')}` : '',
         ].filter(Boolean).join('\n').trim();
+        const cafeContent = cafeImageUrl ? `<img src="${cafeImageUrl}"><br><br>${cafeText}` : cafeText;
 
         // EUC-KR 인코딩으로 전송 (네이버 카페 서버가 EUC-KR 기대)
         const cafeBody = `subject=${eucKrEncode(cleanTitle)}&content=${eucKrEncode(cafeContent)}&openYn=${naver_cafe_open_yn}`;
