@@ -729,39 +729,46 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const plainContent = (article.content || '')
-          .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n')
-          .replace(/<h[1-3][^>]*>/gi, '\n## ').replace(/<\/h[1-3]>/gi, '\n')
-          .replace(/<li>/gi, '\n• ').replace(/<\/li>/gi, '')
+        // 제목 HTML 엔티티 제거
+        const cleanTitle = (article.title || '')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
+          .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(parseInt(n)))
+          .replace(/<[^>]+>/g, '').trim();
+
+        // 본문 → 짧은 요약 추출
+        const rawText = (article.content || '')
           .replace(/<[^>]+>/g, '')
           .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
           .replace(/\n{3,}/g, '\n\n').trim();
+        const excerpt = rawText.slice(0, 400) + (rawText.length > 400 ? '...' : '');
 
-        const cafeForm = new FormData();
-        cafeForm.append('subject', article.title);
-        cafeForm.append('content', plainContent);
-        cafeForm.append('openYn', naver_cafe_open_yn);
+        // 발행된 블로그 URL (네이버 블로그 우선)
+        const blogUrl = results.naver?.url || results.blogger?.url
+          || Object.values(results).find(r => r.success && r.url)?.url
+          || (Object.values(article.published_urls || {}).find(Boolean) as string | undefined);
 
-        if (article.representative_image_url) {
-          try {
-            const imgRes = await fetch(article.representative_image_url, {
-              headers: { 'User-Agent': 'Mozilla/5.0' },
-              signal: AbortSignal.timeout(10000),
-            });
-            if (imgRes.ok) {
-              const ct = imgRes.headers.get('content-type') || 'image/jpeg';
-              const buf = await imgRes.arrayBuffer();
-              const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : 'jpg';
-              cafeForm.append('attach', new Blob([buf], { type: ct }), `cover.${ext}`);
-            }
-          } catch {}
-        }
+        // SNS 스타일 본문: 요약 + 원문 링크
+        const cafeContent = [
+          excerpt,
+          '',
+          blogUrl ? `📖 원문 보기 → ${blogUrl}` : '',
+          article.focus_keyword ? `\n#${(article.focus_keyword as string).replace(/\s+/g, '')}` : '',
+        ].filter(Boolean).join('\n').trim();
+
+        // URLSearchParams 사용 (인코딩 깨짐 방지)
+        const cafeParams = new URLSearchParams();
+        cafeParams.append('subject', cleanTitle);
+        cafeParams.append('content', cafeContent);
+        cafeParams.append('openYn', naver_cafe_open_yn);
 
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
         const cafeRes = await fetch(cafeApiUrl, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
-          body: cafeForm,
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: cafeParams.toString(),
           signal: AbortSignal.timeout(30_000),
         });
 
