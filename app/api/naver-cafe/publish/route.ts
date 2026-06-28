@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams([
-      ['subject', title],
+      ['subject', toHtmlEntities(title)],
       ['content', toHtmlEntities(textContent)],
       ['openYn', open_yn],
     ]),
