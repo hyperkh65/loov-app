@@ -139,18 +139,20 @@ export async function POST(req: NextRequest) {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams([
-      ['subject', title],
+      ['subject', toHtmlEntities(title)],
       ['content', toHtmlEntities(textContent)],
       ['openYn', open_yn],
     ]),
   });
 
   const rawText = await res.text();
-  let resData: { message?: { result?: { articleId?: number } }; errorCode?: string; errorMessage?: string } = {};
+  let resData: { message?: { result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
   try { resData = JSON.parse(rawText); } catch {}
 
   if (!res.ok || resData.errorCode) {
-    const errMsg = `HTTP ${res.status} | errorCode: ${resData.errorCode || 'none'} | ${resData.errorMessage || rawText.slice(0, 300)}`;
+    const errCode = resData.errorCode || resData.message?.result?.code || 'none';
+    const errDetail = resData.errorMessage || resData.message?.result?.message || rawText.slice(0, 300);
+    const errMsg = `HTTP ${res.status} | errorCode: ${errCode} | ${errDetail}`;
     return NextResponse.json({ error: `카페 발행 실패: ${errMsg}` }, { status: 400 });
   }
 
