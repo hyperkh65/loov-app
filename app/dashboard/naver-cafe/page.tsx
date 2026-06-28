@@ -89,6 +89,7 @@ export default function NaverCafePage() {
   // write
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [blogUrl, setBlogUrl] = useState('');
   const [menuId, setMenuId] = useState('');
   const [openYn, setOpenYn] = useState<'Y' | 'N'>('Y');
   const [attachFiles, setAttachFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
@@ -326,7 +327,7 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
       const res = await fetch('/api/naver-cafe/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, cover_image_url: coverImageUrl || undefined }),
+        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, cover_image_url: coverImageUrl || undefined, blog_url: blogUrl || undefined }),
       });
       const data = await res.json();
       setPublishResult(data);
@@ -698,6 +699,17 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
                 rows={14}
                 placeholder="글 내용을 입력하세요. HTML 태그 사용 가능합니다."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none font-mono"
+              />
+            </div>
+
+            {/* 블로그 원문 링크 */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">📖 블로그 원문 링크 (선택 — 입력 시 SNS 스타일로 요약+링크 발행)</label>
+              <input
+                value={blogUrl}
+                onChange={e => setBlogUrl(e.target.value)}
+                placeholder="https://blog.naver.com/... 또는 WordPress 글 URL"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
               />
             </div>
 
