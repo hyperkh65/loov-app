@@ -2,8 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
-function escapeForm(str: string): string {
-  return str.replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D').replace(/\+/g, '%2B');
+import iconv from 'iconv-lite';
+function buildEucKrBody(fields: Array<[string, string]>): Buffer {
+  const parts: Buffer[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    if (i > 0) parts.push(Buffer.from('&'));
+    const [key, value] = fields[i];
+    parts.push(Buffer.from(`${key}=`));
+    const eucBuf = iconv.encode(value, 'euc-kr');
+    const out: number[] = [];
+    for (let j = 0; j < eucBuf.length; j++) {
+      const b = eucBuf[j];
+      if (b === 0x26 || b === 0x3D || b === 0x25 || b === 0x2B) {
+        const h = b.toString(16).toUpperCase().padStart(2, '0');
+        out.push(0x25, h.charCodeAt(0), h.charCodeAt(1));
+      } else {
+        out.push(b);
+      }
+    }
+    parts.push(Buffer.from(out));
+  }
+  return Buffer.concat(parts);
 }
 
 async function uploadImageToNaverCafe(imageUrl: string, clubId: string, accessToken: string): Promise<string | null> {
@@ -784,8 +803,12 @@ export async function POST(req: NextRequest) {
         let cafeContent = excerpt + cafeLink + keyword;
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
-        // raw UTF-8 form body (Korean percent-encode 안 함, 구분자만 escape)
-        const cafeRawBody = `subject=${escapeForm(cleanTitle)}&content=${escapeForm(cafeContent)}&openYn=${naver_cafe_open_yn}`;
+        // EUC-KR raw bytes body 전송
+        const cafeBuf = buildEucKrBody([
+          ['subject', cleanTitle],
+          ['content', cafeContent],
+          ['openYn', naver_cafe_open_yn],
+        ]);
 
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
         const cafeRes = await fetch(cafeApiUrl, {
@@ -794,7 +817,7 @@ export async function POST(req: NextRequest) {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: cafeRawBody,
+          body: cafeBuf,
           signal: AbortSignal.timeout(30_000),
         });
 
