@@ -732,7 +732,7 @@ export async function POST(req: NextRequest) {
         // 제목 HTML 엔티티 제거
         const cleanTitle = (article.title || '')
           .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
-          .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(parseInt(n)))
+          .replace(/&#(\d+);/g, (_: string, n: string) => String.fromCharCode(parseInt(n)))
           .replace(/<[^>]+>/g, '').trim();
 
         // 본문 → 짧은 요약 추출
