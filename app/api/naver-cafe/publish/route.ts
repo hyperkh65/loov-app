@@ -1,35 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import iconv from 'iconv-lite';
 
 export const maxDuration = 30;
-
-// EUC-KR raw bytes로 form body 빌드 (percent-encoding 없이)
-function buildEucKrBody(fields: Array<[string, string]>): ArrayBuffer {
-  const parts: Buffer[] = [];
-  for (let i = 0; i < fields.length; i++) {
-    if (i > 0) parts.push(Buffer.from('&'));
-    const [key, value] = fields[i];
-    parts.push(Buffer.from(`${key}=`));
-    const eucBuf = iconv.encode(value, 'euc-kr');
-    // ASCII 구분자(&, =, %)만 percent-escape, 나머지는 raw
-    const out: number[] = [];
-    for (let j = 0; j < eucBuf.length; j++) {
-      const b = eucBuf[j];
-      if (b === 0x26 || b === 0x3D || b === 0x25 || b === 0x2B) {
-        const h = b.toString(16).toUpperCase().padStart(2, '0');
-        out.push(0x25, h.charCodeAt(0), h.charCodeAt(1));
-      } else {
-        out.push(b);
-      }
-    }
-    parts.push(Buffer.from(out));
-  }
-  const buf = Buffer.concat(parts);
-  const ab = new ArrayBuffer(buf.byteLength);
-  new Uint8Array(ab).set(buf);
-  return ab;
-}
 
 async function refreshToken(token: string): Promise<{ access_token: string; expires_in: number } | null> {
   try {
@@ -143,21 +115,17 @@ export async function POST(req: NextRequest) {
   let textContent = excerpt + linkLine;
   if (naverImageUrl) textContent = `<img src="${naverImageUrl}"><br><br>${textContent}`;
 
-  // EUC-KR raw bytes body 전송
-  const body = buildEucKrBody([
-    ['subject', title],
-    ['content', textContent],
-    ['openYn', open_yn],
-  ]);
-
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body,
+    body: new URLSearchParams([
+      ['subject', title],
+      ['content', textContent],
+      ['openYn', open_yn],
+    ]),
   });
 
   const rawText = await res.text();
