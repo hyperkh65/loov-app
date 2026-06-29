@@ -34,7 +34,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'blog_name과 tssession 필요' }, { status: 400 });
   }
 
-  const normalizedBlogName = blog_name.replace('.tistory.com', '').trim();
+  const normalizedBlogName = blog_name
+    .replace(/^https?:\/\//, '')
+    .replace(/\.tistory\.com\/?$/, '')
+    .replace(/\/$/, '')
+    .trim();
   const normalizedUrl = blog_url || `https://${normalizedBlogName}.tistory.com`;
 
   const { data, error } = await supabase
