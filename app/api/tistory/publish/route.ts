@@ -11,6 +11,9 @@ const TISTORY_POST_SCRIPT = `#!/usr/bin/env python3
 import sys, json, re
 import urllib.request, urllib.parse, urllib.error
 
+DQ = chr(34)
+SQ = chr(39)
+
 data = json.loads(sys.stdin.read())
 blog_name = data['blogName']
 title = data['title']
@@ -101,13 +104,15 @@ except Exception as e:
     errors.append('manage: ' + str(e))
 
 # JS 번들에서 API 경로 탐색
-js_urls = re.findall(r'src=["\']([^"\']+\.js[^"\']*)["\']', manage_html)
+js_src_pat = 'src=[' + DQ + SQ + ']([^' + DQ + SQ + ']+[.]js[^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
+js_urls = re.findall(js_src_pat, manage_html)
 api_hints = []
 for js_url in js_urls[:3]:
     try:
         full_url = js_url if js_url.startswith('http') else blog_url + js_url
         js_body, _, _ = http_get(full_url)
-        found = re.findall(r'["\'/](manage/api/[a-zA-Z0-9/_-]+)["\']', js_body)
+        api_pat = '[' + DQ + SQ + '/](manage/api/[a-zA-Z0-9/_-]+)[' + DQ + SQ + ']'
+        found = re.findall(api_pat, js_body)
         api_hints.extend(found[:5])
     except Exception:
         pass
