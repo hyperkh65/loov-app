@@ -179,80 +179,60 @@ try:
 except Exception as e:
     errors.append('form exc:' + str(e)[:40])
 
-# Step 2: JS 번들에서 실제 API 엔드포인트 탐색
-js_hints = []
-blog_no = ''
+# Step 2: Form POST (원래 동작하던 방식 복원)
 try:
-    # 블로그 숫자 ID 추출 (string ID → numeric ID)
-    info_html, _, _ = http_get('https://blog.naver.com/BlogInfo.naver?blogId=' + blog_id)
-    for pat in [r'blogNo[^0-9]*([0-9]{6,})', r'nblg_no[^0-9]*([0-9]{6,})', r'"blogId"\s*:\s*"?([0-9]{6,})"?']:
-        m = re.search(pat, info_html)
+    hidden = {}
+    input_re = '<input[^>]+type=[' + DQ + SQ + ']hidden[' + DQ + SQ + '][^>]*>'
+    name_re = 'name=[' + DQ + SQ + ']([^' + DQ + SQ + ']+)[' + DQ + SQ + ']'
+    value_re = 'value=[' + DQ + SQ + ']([^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
+    for inp in re.finditer(input_re, form_html, re.I):
+        nm = re.search(name_re, inp.group())
+        vm = re.search(value_re, inp.group())
+        if nm:
+            hidden[nm.group(1)] = vm.group(1) if vm else ''
+    post_data = {**hidden,
+        'blogId': blog_id, 'title': title, 'body': content,
+        'tag': ','.join(tags[:30]), 'categoryNo': str(category_no),
+        'isPublish': '1' if is_publish else '0', 'publishType': 'A' if is_publish else 'B',
+        'postWriteRootPath': 'BLOG', 'logNo': '0', 'postWriteFormType': 'default',
+    }
+    if csrf:
+        post_data['_csrf'] = csrf
+    form_bytes = urllib.parse.urlencode(post_data).encode('utf-8')
+    resp_body, final_url, status = http_post(
+        'https://blog.naver.com/PostWriteFormsave.naver', form_bytes,
+        {**make_headers(),
+         'Content-Type': 'application/x-www-form-urlencoded',
+         'Referer': 'https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id,
+         'Origin': 'https://blog.naver.com'})
+    if status in (401, 403):
+        out({'error': '인증 실패 (' + str(status) + ')', 'errorCode': 'AUTH'})
+    if 200 <= status < 300:
+        m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})(?:[^0-9/?#]|$)', final_url)
+        if not m:
+            m = re.search('logNo[=:][' + DQ + SQ + ' ]*([0-9]{5,})', resp_body)
         if m:
-            blog_no = m.group(1)
-            break
-    if blog_no:
-        errors.append('blogNo=' + blog_no)
-    # JS 번들 URL 추출
-    js_src_pat = 'src=[' + DQ + SQ + ']([^' + DQ + SQ + ']+[.]js[^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
-    js_urls = re.findall(js_src_pat, form_html)
-    errors.append('js_count=' + str(len(js_urls)))
-    for js_url in js_urls[:5]:
-        full_js = js_url if js_url.startswith('http') else 'https://blog.naver.com' + js_url
-        js_body, _, js_st = http_get(full_js)
-        if not js_body or js_st != 200:
-            continue
-        # 패턴1: /api/... 경로
-        found = re.findall(r'["\x60](/(?:api|blog/api|nwManager/api|blogapi)[/][a-zA-Z0-9/._-]{3,80})["\x60]', js_body)
-        js_hints.extend(found[:5])
-        # 패턴2: PostSave/PostWrite 류 .naver 엔드포인트
-        found2 = re.findall(r'Post(?:Write|Save|Publish)[A-Za-z0-9]*[.]naver', js_body)
-        js_hints.extend(found2[:3])
-        # 패턴3: naver.com 포함 경로
-        found3 = re.findall(r'naver[.]com(/[a-zA-Z][a-zA-Z0-9/_.-]{5,60}(?:post|write|save|entry)[a-zA-Z0-9/_.-]{0,30})', js_body, re.I)
-        js_hints.extend(found3[:3])
-    js_hints = list(dict.fromkeys(js_hints))[:8]
-    if js_hints:
-        errors.append('hints=' + ','.join(js_hints[:5]))
+            pid = m.group(1)
+            out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + pid})
+    errors.append('form=' + str(form_status) + ' hidden=' + str(len(hidden)) + ' save=' + str(status))
 except Exception as e:
-    errors.append('js exc:' + str(e)[:40])
+    errors.append('form exc:' + str(e)[:50])
 
-# Step 3: REST API (발견된 엔드포인트 + 후보군)
-rest_h = {**make_headers(),
-    'Content-Type': 'application/json;charset=UTF-8',
-    'X-Requested-With': 'XMLHttpRequest',
-    'Origin': 'https://blog.naver.com',
-    'Referer': 'https://blog.naver.com/' + blog_id,
-    'Accept': 'application/json',
-}
-if csrf:
-    rest_h['X-CSRF-TOKEN'] = csrf
-
-discovered = []
-for h in js_hints:
-    if any(k in h.lower() for k in ['post', 'write', 'save', 'entry']):
-        url = ('https://blog.naver.com' + h) if h.startswith('/') else h
-        discovered.append(url)
-
-base_endpoints = [
+# Step 3: REST API 폴백
+for api_url in [
     'https://blog.naver.com/api/v1/blogs/' + blog_id + '/posts',
     'https://blog.naver.com/api/v2/blogs/' + blog_id + '/posts',
-    'https://blog.naver.com/blog/api/v1/blogs/' + blog_id + '/posts',
-    'https://blog.naver.com/blog/api/v2/blogs/' + blog_id + '/posts',
     'https://m.blog.naver.com/api/v1/blogs/' + blog_id + '/posts',
-]
-if blog_no:
-    base_endpoints += [
-        'https://blog.naver.com/api/v1/blogs/' + blog_no + '/posts',
-        'https://blog.naver.com/blog/api/v1/blogs/' + blog_no + '/posts',
-        'https://m.blog.naver.com/api/v1/blogs/' + blog_no + '/posts',
-    ]
-
-payload = json.dumps({'title': title, 'contents': content, 'tags': tags[:30],
-    'isPublish': is_publish, 'categoryNo': category_no, 'isOpen': True}).encode('utf-8')
-
-for api_url in (discovered + base_endpoints):
+]:
     try:
-        body, final_url, status = http_post(api_url, payload, rest_h)
+        jdata = json.dumps({'title': title, 'contents': content, 'tags': tags[:30],
+            'isPublish': is_publish, 'categoryNo': category_no, 'isOpen': True}).encode('utf-8')
+        body, final_url, status = http_post(api_url, jdata, {**make_headers(),
+            'Content-Type': 'application/json;charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Origin': 'https://blog.naver.com',
+            'Referer': 'https://blog.naver.com/' + blog_id,
+            'Accept': 'application/json'})
         if status in (401, 403):
             out({'error': '인증 실패 (' + str(status) + ')', 'errorCode': 'AUTH'})
         if 200 <= status < 300:
@@ -262,15 +242,12 @@ for api_url in (discovered + base_endpoints):
                 out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + ('/' + pid if pid else '')})
             except Exception:
                 pass
-            m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})', final_url)
-            if m:
-                out({'postId': m.group(1), 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + m.group(1)})
-        errors.append(api_url.split('naver.com')[1][:30] + '->' + str(status))
+        errors.append(api_url.split('naver.com')[1] + '->' + str(status))
     except Exception as ex:
-        errors.append(api_url.split('naver.com')[1][:20] + ' exc:' + str(ex)[:20])
+        errors.append(api_url.split('naver.com')[1] + ' exc:' + str(ex)[:30])
 
 img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
-out({'error': ' | '.join(errors[:8]) + img_note, 'errorCode': 'UNKNOWN'})
+out({'error': ' | '.join(errors[:5]) + img_note, 'errorCode': 'UNKNOWN'})
 `;
 
 async function ensureNasScript(): Promise<void> {
