@@ -2462,7 +2462,7 @@ export default function AutoServicePage() {
 
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setPublishArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
-                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts && !(selNaverCafe && navercafeMenuId))}
+                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && selTistoryIds.length === 0 && !autoShorts && !(selNaverCafe && navercafeMenuId))}
                     className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                     {publishing ? '발행 중...' : '🚀 발행하기'}
                   </button>
