@@ -55,6 +55,7 @@ def out(result):
     sys.exit(0)
 
 errors = []
+img_errors = []  # 이미지 업로드 실패는 별도 관리 (발행 실패 원인에서 제외)
 
 def upload_image_to_naver(img_url):
     """외부 이미지를 다운로드해서 네이버 CDN에 업로드, 네이버 URL 반환"""
@@ -89,8 +90,9 @@ def upload_image_to_naver(img_url):
             'Accept': 'application/json, text/javascript, */*',
         }
         for up_url in [
+            'https://blog.naver.com/nwPostWriteAttachImageFromSave.naver',
+            'https://blog.naver.com/PostWriteImageUpload.naver',
             'https://blog.naver.com/UploadBlogAttachment.naver',
-            'https://blog.naver.com/PostFileUploadBySmartEditor.naver',
         ]:
             resp_body, _, status = http_post(up_url, body, up_headers)
             if 200 <= status < 300:
@@ -107,9 +109,9 @@ def upload_image_to_naver(img_url):
                 m = re.search(pstatic_pat, resp_body)
                 if m:
                     return m.group(0)
-            errors.append('img_upload ' + up_url.split('naver.com')[1] + ' ' + str(status) + ': ' + resp_body[:60])
+            img_errors.append(up_url.split('naver.com')[1] + ' ' + str(status))
     except Exception as e:
-        errors.append('img_dl: ' + str(e)[:80])
+        img_errors.append('dl: ' + str(e)[:60])
     return None
 
 def replace_image_urls(html):
@@ -193,7 +195,8 @@ for api_url in [
     except Exception as e:
         errors.append('REST exc: ' + str(e))
 
-out({'error': '발행 실패: ' + ' | '.join(errors), 'errorCode': 'UNKNOWN'})
+img_note = (' [img:' + ','.join(img_errors) + ']') if img_errors else ''
+out({'error': '발행 실패: ' + ' | '.join(errors) + img_note, 'errorCode': 'UNKNOWN'})
 `;
 
 async function ensureNasScript(): Promise<void> {
