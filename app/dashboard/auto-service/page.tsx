@@ -179,6 +179,9 @@ export default function AutoServicePage() {
   // WordPress 사이트 목록
   const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
+  // 티스토리
+  const [tistoryBlogs, setTistoryBlogs] = useState<{ id: string; blog_name: string; display_name: string; is_active: boolean }[]>([]);
+  const [selTistoryIds, setSelTistoryIds] = useState<string[]>([]);
   // 네이버 카페
   const [selNaverCafe, setSelNaverCafe] = useState(false);
   const [navercafeMenuId, setNavercafeMenuId] = useState('');
@@ -191,6 +194,7 @@ export default function AutoServicePage() {
   const [schedBlog, setSchedBlog] = useState<string[]>([]);
   const [schedSns, setSchedSns] = useState<string[]>([]);
   const [schedWpSiteIds, setSchedWpSiteIds] = useState<string[]>([]);
+  const [schedTistoryIds, setSchedTistoryIds] = useState<string[]>([]);
   const [scheduling, setScheduling] = useState(false);
 
   // localStorage에서 키 읽기 (서버로 전달용)
@@ -265,6 +269,10 @@ export default function AutoServicePage() {
     fetch('/api/wordpress/sites')
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setWpSites(d); });
+    // 티스토리 블로그 목록 로드
+    fetch('/api/tistory/connections')
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d)) setTistoryBlogs(d.filter((b: { is_active: boolean }) => b.is_active)); });
     // 네이버 카페 연결 상태 확인
     fetch('/api/naver-cafe/connect')
       .then(r => r.json())
@@ -799,6 +807,7 @@ export default function AutoServicePage() {
           blog_platforms: schedBlog,
           sns_platforms: schedSns,
           wp_site_ids: schedWpSiteIds,
+          tistory_blog_ids: schedTistoryIds,
         }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || '저장 실패'); }
@@ -891,6 +900,7 @@ export default function AutoServicePage() {
           blog_platforms: selBlog,
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
+          tistory_blog_ids: selTistoryIds,
           backlink_platforms: selBacklink,
           naver_cafe_menu_id: selNaverCafe && navercafeMenuId ? navercafeMenuId : undefined,
           naver_cafe_open_yn: 'Y',
@@ -2292,6 +2302,33 @@ export default function AutoServicePage() {
                         <span>{p.icon} {p.name}</span>
                       </label>
                     ))}
+                    {/* 티스토리 블로그 목록 */}
+                    {tistoryBlogs.filter(b => b.is_active).length > 0 ? (
+                      <div>
+                        <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🟠 티스토리 블로그 선택</div>
+                        {tistoryBlogs.filter(b => b.is_active).map(blog => (
+                          <label key={blog.id} className="flex items-center gap-3 p-3 border border-orange-200 rounded-lg cursor-pointer hover:bg-orange-50 mb-1.5">
+                            <input type="checkbox"
+                              checked={selTistoryIds.includes(blog.id)}
+                              onChange={() => {
+                                setSelTistoryIds(prev =>
+                                  prev.includes(blog.id) ? prev.filter(id => id !== blog.id) : [...prev, blog.id]
+                                );
+                              }}
+                              className="w-4 h-4" />
+                            <div>
+                              <div className="text-sm font-medium text-gray-800">{blog.display_name}</div>
+                              <div className="text-xs text-gray-400">{blog.blog_name}.tistory.com</div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 border border-gray-200">
+                        🟠 티스토리 블로그가 없습니다.{' '}
+                        <a href="/dashboard/tistory" className="text-orange-600 hover:underline">티스토리 관리</a>에서 블로그를 추가하세요.
+                      </div>
+                    )}
                     {/* WordPress 사이트 목록 */}
                     {wpSites.length > 0 ? (
                       <div>
@@ -2508,6 +2545,25 @@ export default function AutoServicePage() {
                       <span>{p.icon} {p.name}</span>
                     </label>
                   ))}
+                  {tistoryBlogs.filter(b => b.is_active).length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🟠 티스토리 블로그 선택</div>
+                      {tistoryBlogs.filter(b => b.is_active).map(blog => (
+                        <label key={blog.id} className="flex items-center gap-3 p-3 border border-orange-200 rounded-lg cursor-pointer hover:bg-orange-50 mb-1.5">
+                          <input type="checkbox"
+                            checked={schedTistoryIds.includes(blog.id)}
+                            onChange={() => setSchedTistoryIds(prev =>
+                              prev.includes(blog.id) ? prev.filter(id => id !== blog.id) : [...prev, blog.id]
+                            )}
+                            className="w-4 h-4" />
+                          <div>
+                            <div className="text-sm font-medium text-gray-800">{blog.display_name}</div>
+                            <div className="text-xs text-gray-400">{blog.blog_name}.tistory.com</div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                   {wpSites.length > 0 && (
                     <div>
                       <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🔵 WordPress 사이트 선택</div>
