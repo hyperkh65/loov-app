@@ -20,16 +20,17 @@ tags = data.get('tags', [])
 category = data.get('category', '0')
 blog_url = data.get('blogUrl', 'https://' + blog_name + '.tistory.com')
 
-ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 cookie = 'TSSESSION=' + tssession
 
 def make_headers(extra=None):
     h = {
         'Cookie': cookie,
         'User-Agent': ua,
-        'Accept': 'application/json, text/html, */*',
+        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
         'Accept-Language': 'ko-KR,ko;q=0.9',
-        'Origin': 'https://www.tistory.com',
+        'Origin': blog_url,
+        'Referer': blog_url,
     }
     if extra:
         h.update(extra)
@@ -38,7 +39,7 @@ def make_headers(extra=None):
 def http_get(url):
     req = urllib.request.Request(url, headers=make_headers())
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=20) as r:
             return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
     except urllib.error.HTTPError as e:
         return e.read().decode('utf-8', errors='replace'), url, e.code
@@ -60,59 +61,36 @@ def out(result):
     print(json.dumps(result, ensure_ascii=False))
     sys.exit(0)
 
+def is_login_page(url, html=''):
+    return ('accounts.kakao.com' in url or 'login' in url or
+            'kakaoAccount' in html or 'kakao_login' in html)
+
 errors = []
 
-# Method 1: Tistory Open API (TSSESSION as cookie)
+# 세션 유효성 사전 확인
 try:
-    api_url = 'https://www.tistory.com/apis/post/write'
-    params = {
-        'output': 'json',
-        'blogName': blog_name,
-        'title': title,
-        'content': content,
-        'tag': ','.join(tags[:10]),
-        'category': category,
-        'visibility': '20',
-        'acceptComment': '1',
-    }
-    form_bytes = urllib.parse.urlencode(params).encode('utf-8')
-    body, final_url, status = http_post(api_url, form_bytes, {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-        'Referer': 'https://www.tistory.com',
-    })
-    if status in (401, 403):
-        out({'error': '인증 실패 — TSSESSION 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-    if 200 <= status < 300:
-        try:
-            result = json.loads(body)
-            tistory = result.get('tistory', {})
-            if tistory.get('status') == '200':
-                item = tistory.get('item', {})
-                post_id = str(item.get('postId', ''))
-                post_url = item.get('url', '') or (blog_url + '/' + post_id)
-                out({'postId': post_id, 'postUrl': post_url})
-        except Exception:
-            pass
-        # URL에서 postId 추출 시도
-        m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
-        if m:
-            pid = m.group(1)
-            out({'postId': pid, 'postUrl': blog_url + '/' + pid})
-        errors.append('API 200 but no postId: ' + body[:200])
-    else:
-        errors.append('API ' + str(status) + ': ' + body[:150])
+    _, check_url, check_status = http_get(blog_url + '/manage/')
+    if is_login_page(check_url):
+        out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
+    if check_status in (401, 403):
+        out({'error': '인증 실패(403) — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
 except Exception as e:
-    errors.append('API exc: ' + str(e))
+    errors.append('auth check: ' + str(e))
 
-# Method 2: 관리자 페이지 폼 제출
+# 관리자 폼 제출
 try:
     manage_url = blog_url + '/manage/post/'
     html, _, _ = http_get(manage_url)
-    # CSRF 토큰 추출
+
+    if is_login_page('', html):
+        out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
+
     csrf = ''
-    m = re.search(r"""name=["']?_csrf["']?[^>]*value=["']?([a-zA-Z0-9_-]+)["']?""", html)
+    m = re.search(r"""name=["']?_csrf["']?[^>]*value=["']?([a-zA-Z0-9_\\-]+)["']?""", html)
     if not m:
-        m = re.search(r"""csrf[_-]?token["']?\s*[=:]\s*["']?([a-zA-Z0-9_-]+)""", html, re.I)
+        m = re.search(r"""csrf[_\\-]?token["']?\\s*[=:]\\s*["']?([a-zA-Z0-9_\\-]+)""", html, re.I)
+    if not m:
+        m = re.search(r'"csrf[_-]?token"\\s*:\\s*"([a-zA-Z0-9_\\-]+)"', html)
     if m:
         csrf = m.group(1)
 
@@ -123,6 +101,7 @@ try:
         'category': category,
         'visibility': '20',
         'acceptComment': '1',
+        'published': '1',
     }
     if csrf:
         post_params['_csrf'] = csrf
@@ -131,17 +110,30 @@ try:
     body, final_url, status = http_post(manage_url, form_bytes, {
         'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
         'Referer': manage_url,
+        'X-Requested-With': 'XMLHttpRequest',
     })
+
+    if is_login_page(final_url, body):
+        out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
+
     if status in (401, 403):
-        out({'error': '인증 실패 — TSSESSION 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-    if 200 <= status < 300 or status == 302:
+        out({'error': '인증 실패(' + str(status) + ') — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
+
+    if 200 <= status < 400:
         m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
         if m:
             pid = m.group(1)
             out({'postId': pid, 'postUrl': blog_url + '/' + pid})
-        errors.append('Form 200 but no postId: ' + body[:200])
+        try:
+            resp = json.loads(body)
+            pid = str(resp.get('postId', resp.get('id', '')))
+            if pid:
+                out({'postId': pid, 'postUrl': blog_url + '/' + pid})
+        except Exception:
+            pass
+        errors.append('Form OK status=' + str(status) + ' final=' + final_url + ' body=' + body[:200])
     else:
-        errors.append('Form ' + str(status) + ': ' + body[:150])
+        errors.append('Form ' + str(status) + ': csrf=' + csrf + ' body=' + body[:200])
 except Exception as e:
     errors.append('Form exc: ' + str(e))
 
