@@ -199,14 +199,23 @@ export async function POST(req: NextRequest) {
 
   let result: { postId?: string; postUrl?: string; error?: string; errorCode?: string };
   try {
-    const { stdout } = await nasExecWithStdin(`python3 ${NAS_SCRIPT_PATH}`, input);
-    result = JSON.parse(stdout.trim().split('\n').pop() || '{}');
+    const { stdout, stderr, code } = await nasExecWithStdin(`python3 ${NAS_SCRIPT_PATH}`, input);
+    const lastLine = stdout.trim().split('\n').pop() || '';
+    if (!lastLine) {
+      const errDetail = stderr ? stderr.slice(0, 300) : `exit code ${code}`;
+      return NextResponse.json({ error: `스크립트 출력 없음: ${errDetail}` }, { status: 500 });
+    }
+    try {
+      result = JSON.parse(lastLine);
+    } catch {
+      return NextResponse.json({ error: `JSON 파싱 실패: ${lastLine.slice(0, 200)}` }, { status: 500 });
+    }
   } catch (e) {
     return NextResponse.json({ error: `NAS 실행 오류: ${String(e)}` }, { status: 500 });
   }
 
   if (result.error || !result.postUrl) {
-    return NextResponse.json({ error: result.error || '발행 실패', errorCode: result.errorCode }, { status: 400 });
+    return NextResponse.json({ error: result.error || `발행 실패 (errorCode: ${result.errorCode || 'none'})`, errorCode: result.errorCode }, { status: 400 });
   }
 
   // 발행 이력 저장
