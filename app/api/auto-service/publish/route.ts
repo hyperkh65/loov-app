@@ -199,10 +199,11 @@ export async function POST(req: NextRequest) {
 
   if (tistory_blog_ids.length > 0) {
     blogTasks.push((async () => {
-      let tistoryQuery = supabase.from('tistory_connections').select('id, blog_name, blog_url').eq('is_active', true).in('id', tistory_blog_ids);
+      let tistoryQuery = supabase.from('tistory_connections').select('id, blog_name, blog_url, display_name').eq('is_active', true).in('id', tistory_blog_ids);
       if (userId) tistoryQuery = tistoryQuery.eq('user_id', userId);
       const { data: tistoryBlogs } = await tistoryQuery;
       await Promise.all((tistoryBlogs || []).map(blog => (async () => {
+        const key = `tistory_${blog.display_name || blog.blog_name}`;
         try {
           const res = await fetch(`${baseUrl}/api/tistory/publish`, {
             method: 'POST',
@@ -210,9 +211,9 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({ blog_id: blog.id, title: article.title, content: article.content, tags: article.focus_keyword ? [article.focus_keyword] : [] }),
           });
           const data = await res.json();
-          results[`tistory_${blog.blog_name}`] = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
+          results[key] = res.ok ? { success: true, url: data.url } : { success: false, error: data.error || '발행 실패' };
         } catch (err) {
-          results[`tistory_${blog.blog_name}`] = { success: false, error: String(err) };
+          results[key] = { success: false, error: String(err) };
         }
       })()));
     })());
