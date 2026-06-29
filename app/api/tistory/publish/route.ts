@@ -199,8 +199,8 @@ export async function POST(req: NextRequest) {
 
   let result: { postId?: string; postUrl?: string; error?: string; errorCode?: string };
   try {
-    const raw = await nasExecWithStdin(`python3 ${NAS_SCRIPT_PATH}`, input);
-    result = JSON.parse(raw.trim().split('\n').pop() || '{}');
+    const { stdout } = await nasExecWithStdin(`python3 ${NAS_SCRIPT_PATH}`, input);
+    result = JSON.parse(stdout.trim().split('\n').pop() || '{}');
   } catch (e) {
     return NextResponse.json({ error: `NAS 실행 오류: ${String(e)}` }, { status: 500 });
   }
