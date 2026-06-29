@@ -60,47 +60,54 @@ def upload_image_to_naver(img_url):
     """외부 이미지를 다운로드해서 네이버 CDN에 업로드, 네이버 URL 반환"""
     try:
         dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua, 'Referer': img_url})
-        with urllib.request.urlopen(dl_req, timeout=20) as r:
+        with urllib.request.urlopen(dl_req, timeout=15) as r:
             img_data = r.read()
             ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        if not img_data:
+            return None
         ext_map = {'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp'}
         ext = ext_map.get(ctype, 'jpg')
-        filename = re.sub(r'[^a-zA-Z0-9._-]', '_', img_url.split('/')[-1].split('?')[0]) or ('img.' + ext)
+        raw_name = img_url.split('/')[-1].split('?')[0]
+        filename = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name) if raw_name else ('img.' + ext)
         if '.' not in filename:
             filename += '.' + ext
         boundary = b'----LoovNaverBoundary20240101'
-        parts = []
-        parts += [b'--' + boundary, b'Content-Disposition: form-data; name="blogId"', b'', blog_id.encode()]
-        parts += [b'--' + boundary,
-                  ('Content-Disposition: form-data; name="attachImg"; filename="' + filename + '"').encode(),
-                  ('Content-Type: ' + ctype).encode(), b'', img_data]
-        parts.append(b'--' + boundary + b'--')
-        body = b'\\r\\n'.join(parts)
+        CRLF = b'\\r\\n'
+        file_extra = ('Content-Disposition: form-data; name="uploadFile"; filename="' + filename + '"').encode() + CRLF + ('Content-Type: ' + ctype).encode()
+        body = (b'--' + boundary + CRLF +
+                b'Content-Disposition: form-data; name="blogId"' + CRLF + CRLF +
+                blog_id.encode() + CRLF +
+                b'--' + boundary + CRLF +
+                file_extra + CRLF + CRLF +
+                img_data + CRLF +
+                b'--' + boundary + b'--' + CRLF)
         up_headers = {**make_headers(),
             'Content-Type': 'multipart/form-data; boundary=' + boundary.decode(),
             'Referer': 'https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id,
             'Origin': 'https://blog.naver.com',
             'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json, text/javascript, */*',
         }
         for up_url in [
-            'https://blog.naver.com/UploadMediaFile.naver',
-            'https://blog.naver.com/api/v1/blogs/' + blog_id + '/postfiles',
+            'https://blog.naver.com/UploadBlogAttachment.naver',
+            'https://blog.naver.com/PostFileUploadBySmartEditor.naver',
         ]:
             resp_body, _, status = http_post(up_url, body, up_headers)
             if 200 <= status < 300:
                 try:
                     rj = json.loads(resp_body)
                     naver_url = (rj.get('url') or rj.get('fileUrl') or rj.get('imageUrl') or
-                                 rj.get('attachUrl') or (rj.get('result') or {}).get('url') or '')
+                                 rj.get('attachUrl') or rj.get('uploadURL') or
+                                 (rj.get('result') or {}).get('url') or '')
                     if naver_url:
                         return naver_url
                 except Exception:
                     pass
-                pstatic_pat = 'https://[^' + DQ + SQ + '\\s]+pstatic\\.net[^' + DQ + SQ + '\\s]+'
+                pstatic_pat = 'https://[^' + DQ + SQ + '\\s]+pstatic[.]net[^' + DQ + SQ + '\\s]+'
                 m = re.search(pstatic_pat, resp_body)
                 if m:
                     return m.group(0)
-            errors.append('img_upload ' + up_url.split('naver.com')[1] + ' ' + str(status) + ': ' + resp_body[:80])
+            errors.append('img_upload ' + up_url.split('naver.com')[1] + ' ' + str(status) + ': ' + resp_body[:60])
     except Exception as e:
         errors.append('img_dl: ' + str(e)[:80])
     return None
