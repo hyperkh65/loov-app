@@ -6,9 +6,9 @@ import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 const NAS_SCRIPT_PATH = '/volume1/homes/urjent/naver_publish/post.py';
 
 // Python script that runs on NAS (home IP) to bypass Naver's cloud IP block
+// Uses SEOne API (RabbitWrite.naver) + blog.upphoto.naver.com for image upload
 const NAVER_POST_SCRIPT = `#!/usr/bin/env python3
-import sys, json, re
-import urllib.request, urllib.parse, urllib.error
+import sys, json, re, uuid, random, string, urllib.request, urllib.parse, urllib.error
 
 DQ = chr(34)
 SQ = chr(39)
@@ -20,172 +20,288 @@ nid_ses = data['nidSes']
 title = data['title']
 content = data['content']
 tags = data.get('tags', [])
-category_no = data.get('categoryNo', 0)
-is_publish = data.get('isPublish', True)
+category_no = int(data.get('categoryNo', 0) or 0)
+is_publish = bool(data.get('isPublish', True))
+upload_session_key = data.get('uploadSessionKey', '')
+naver_user_id = data.get('naverUserId', '')
 
-cookie = 'NID_AUT=' + nid_aut + '; NID_SES=' + nid_ses
-ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+BASE = 'https://blog.naver.com'
+ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+HDR = {
+    'Cookie': f'NID_AUT={nid_aut}; NID_SES={nid_ses}',
+    'User-Agent': ua,
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'ko-KR,ko;q=0.9',
+    'Referer': f'{BASE}/PostWriteForm.naver?blogId={blog_id}',
+    'Origin': BASE,
+    'X-Requested-With': 'XMLHttpRequest',
+}
 
-def make_headers(extra=None):
-    h = {'Cookie': cookie, 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9', 'Accept': 'application/json, text/html, */*'}
-    if extra:
-        h.update(extra)
-    return h
+def se_id():
+    return 'SE-' + str(uuid.uuid4())
 
-def http_get(url):
-    req = urllib.request.Request(url, headers=make_headers())
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
-    except Exception as e:
-        return '', url, 0
+def doc_id():
+    c = string.ascii_uppercase + string.digits
+    return '01' + ''.join(random.choices(c, k=24))
 
-def http_post(url, data_bytes, headers):
-    req = urllib.request.Request(url, data=data_bytes, headers=headers, method='POST')
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
-    except urllib.error.HTTPError as e:
-        return e.read().decode('utf-8', errors='replace'), url, e.code
-    except Exception as e:
-        return str(e), url, 0
+def strip_html(h):
+    return re.sub('<[^>]+>', '', h)
 
-def out(result):
-    print(json.dumps(result, ensure_ascii=False))
+def out(r):
+    print(json.dumps(r, ensure_ascii=False))
     sys.exit(0)
 
-errors = []
+img_errors = []
 
-def upload_image_to_naver(img_url):
-    """외부 이미지를 다운로드해서 네이버 CDN에 업로드, 네이버 URL 반환"""
+def upload_image(img_url):
+    if not upload_session_key or not naver_user_id:
+        return None
     try:
-        dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua, 'Referer': img_url})
-        with urllib.request.urlopen(dl_req, timeout=20) as r:
+        dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua})
+        with urllib.request.urlopen(dl_req, timeout=15) as r:
             img_data = r.read()
             ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
-        ext_map = {'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp'}
+        if not img_data:
+            return None
+        ext_map = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp'}
         ext = ext_map.get(ctype, 'jpg')
-        filename = re.sub(r'[^a-zA-Z0-9._-]', '_', img_url.split('/')[-1].split('?')[0]) or ('img.' + ext)
+        raw_name = img_url.split('/')[-1].split('?')[0]
+        filename = re.sub('[^a-zA-Z0-9._-]', '_', raw_name) if raw_name else ('img.' + ext)
         if '.' not in filename:
             filename += '.' + ext
-        boundary = b'----LoovNaverBoundary20240101'
-        parts = []
-        parts += [b'--' + boundary, b'Content-Disposition: form-data; name="blogId"', b'', blog_id.encode()]
-        parts += [b'--' + boundary,
-                  ('Content-Disposition: form-data; name="attachImg"; filename="' + filename + '"').encode(),
-                  ('Content-Type: ' + ctype).encode(), b'', img_data]
-        parts.append(b'--' + boundary + b'--')
-        body = b'\\r\\n'.join(parts)
-        up_headers = {**make_headers(),
-            'Content-Type': 'multipart/form-data; boundary=' + boundary.decode(),
-            'Referer': 'https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id,
-            'Origin': 'https://blog.naver.com',
-            'X-Requested-With': 'XMLHttpRequest',
+        up_url = f'https://blog.upphoto.naver.com/{upload_session_key}/simpleUpload/0?userId={naver_user_id}&extractExif=true&extractAnimatedCnt=false&extractAnimatedInfo=true&autorotate=true&extractDominantColor=false&type=&customQuery=&denyAnimatedImage=false&skipXcamFiltering=false'
+        boundary = uuid.uuid4().hex
+        body = (
+            f'--{boundary}\\r\\nContent-Disposition: form-data; name="image"; filename="{filename}"\\r\\nContent-Type: {ctype}\\r\\n\\r\\n'
+        ).encode() + img_data + f'\\r\\n--{boundary}--\\r\\n'.encode()
+        up_req = urllib.request.Request(up_url, data=body, headers={
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Cookie': f'NID_AUT={nid_aut}; NID_SES={nid_ses}',
+            'User-Agent': ua,
+            'Referer': f'{BASE}/PostWriteForm.naver?blogId={blog_id}',
+            'Origin': BASE,
+        }, method='POST')
+        with urllib.request.urlopen(up_req, timeout=20) as r:
+            resp = r.read().decode('utf-8', errors='replace')
+        url_m = re.search('<url>(.*?)</url>', resp)
+        path_m = re.search('<path>(.*?)</path>', resp)
+        w_m = re.search('<width>([0-9]+)</width>', resp)
+        h_m = re.search('<height>([0-9]+)</height>', resp)
+        if url_m:
+            cdn_url = 'https://postfiles.pstatic.net' + url_m.group(1)
+            path = path_m.group(1) if path_m else url_m.group(1)
+            w = int(w_m.group(1)) if w_m else 800
+            h = int(h_m.group(1)) if h_m else 600
+            return {'url': cdn_url, 'path': path, 'width': w, 'height': h, 'filename': filename}
+        img_errors.append('no_url:' + resp[:80])
+        return None
+    except Exception as e:
+        img_errors.append('up:' + str(e)[:60])
+        return None
+
+def make_image_component(src, alt=''):
+    info = None
+    if not ('pstatic.net' in src or 'naver.com' in src or src.startswith('data:')):
+        info = upload_image(src)
+    if info:
+        return {
+            'id': se_id(), 'layout': 'default', '@ctype': 'image',
+            'value': [{
+                'id': se_id(), '@ctype': 'imageUnit',
+                'src': info['url'], 'path': info['path'],
+                'width': info['width'], 'height': info['height'],
+                'originalWidth': info['width'], 'originalHeight': info['height'],
+                'fileName': info['filename'], 'imageType': 'JPEG',
+                'caption': {'id': se_id(), '@ctype': 'paragraph',
+                            'nodes': [{'id': se_id(), 'value': alt, '@ctype': 'textNode'}]} if alt else None,
+                'link': None, 'isLinked': False,
+            }],
         }
-        for up_url in [
-            'https://blog.naver.com/UploadMediaFile.naver',
-            'https://blog.naver.com/api/v1/blogs/' + blog_id + '/postfiles',
-        ]:
-            resp_body, _, status = http_post(up_url, body, up_headers)
-            if 200 <= status < 300:
-                try:
-                    rj = json.loads(resp_body)
-                    naver_url = (rj.get('url') or rj.get('fileUrl') or rj.get('imageUrl') or
-                                 rj.get('attachUrl') or (rj.get('result') or {}).get('url') or '')
-                    if naver_url:
-                        return naver_url
-                except Exception:
-                    pass
-                m = re.search(r'https://[^"\'\\s]+pstatic\\.net[^"\'\\s]+', resp_body)
-                if m:
-                    return m.group(0)
-            errors.append('img_upload ' + up_url.split('naver.com')[1] + ' ' + str(status) + ': ' + resp_body[:80])
-    except Exception as e:
-        errors.append('img_dl: ' + str(e)[:80])
-    return None
-
-def replace_image_urls(html):
-    """content 안의 외부 이미지 src를 네이버 CDN URL로 교체"""
-    src_pat = 'src=[' + DQ + SQ + '](https?://[^' + DQ + SQ + ']+)[' + DQ + SQ + r'\s]'
-    def replace_src(match):
-        tag = match.group(0)
-        sm = re.search(src_pat, tag, re.I)
-        if not sm:
-            return tag
-        src = sm.group(1)
-        if 'pstatic.net' in src or 'naver.com' in src or src.startswith('data:'):
-            return tag
-        naver_url = upload_image_to_naver(src)
-        if naver_url:
-            return tag.replace(sm.group(1), naver_url)
-        return tag
-    return re.sub(r'<img[^>]+>', replace_src, html, flags=re.I)
-
-content = replace_image_urls(content)
-
-# Method 1: PostWriteFormsave
-try:
-    form_html, _, _ = http_get('https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id)
-    hidden = {}
-    input_re = '<input[^>]+type=[' + DQ + SQ + ']hidden[' + DQ + SQ + '][^>]*>'
-    name_re = 'name=[' + DQ + SQ + ']([^' + DQ + SQ + ']+)[' + DQ + SQ + ']'
-    value_re = 'value=[' + DQ + SQ + ']([^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
-    for m in re.finditer(input_re, form_html, re.I):
-        nm = re.search(name_re, m.group())
-        vm = re.search(value_re, m.group())
-        if nm:
-            hidden[nm.group(1)] = vm.group(1) if vm else ''
-    post_data = {**hidden,
-        'blogId': blog_id, 'title': title, 'body': content,
-        'tag': ','.join(tags[:30]), 'categoryNo': str(category_no),
-        'isPublish': '1' if is_publish else '0', 'publishType': 'A' if is_publish else 'B',
-        'postWriteRootPath': 'BLOG', 'logNo': '0', 'postWriteFormType': 'default',
+    return {
+        'id': se_id(), 'layout': 'default', '@ctype': 'image',
+        'value': [{
+            'id': se_id(), '@ctype': 'imageUnit',
+            'src': src, 'width': 800, 'height': 600,
+            'originalWidth': 800, 'originalHeight': 600,
+            'caption': {'id': se_id(), '@ctype': 'paragraph',
+                        'nodes': [{'id': se_id(), 'value': alt, '@ctype': 'textNode'}]} if alt else None,
+            'link': None, 'isLinked': False,
+        }],
     }
-    form_bytes = urllib.parse.urlencode(post_data).encode('utf-8')
-    body, final_url, status = http_post('https://blog.naver.com/PostWriteFormsave.naver', form_bytes,
-        {**make_headers(), 'Content-Type': 'application/x-www-form-urlencoded',
-         'Referer': 'https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id,
-         'Origin': 'https://blog.naver.com'})
-    if status in (401, 403):
-        out({'error': '인증 실패 쿠키 재발급 필요', 'errorCode': 'AUTH'})
-    if 200 <= status < 300:
-        m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})(?:[^0-9/?#]|$)', final_url)
-        if not m:
-            logno_re = 'logNo[=:][' + DQ + SQ + ' ]*([0-9]{5,})'
-            postno_re = DQ + '(?:logNo|postNo)' + DQ + '[ ]*:[ ]*' + DQ + '?([0-9]{5,})' + DQ + '?'
-            m = re.search(logno_re, body) or re.search(postno_re, body)
-        if m:
-            pid = m.group(1)
-            out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + pid})
-    errors.append('Formsave ' + str(status) + ': ' + body[:150])
-except Exception as e:
-    errors.append('Formsave exc: ' + str(e))
 
-# Method 2: JSON REST API
-for api_url in [
-    'https://blog.naver.com/api/v1/blogs/' + blog_id + '/posts',
-    'https://blog.naver.com/api/v2/blogs/' + blog_id + '/posts',
-    'https://m.blog.naver.com/api/v1/blogs/' + blog_id + '/posts',
-]:
+def make_text_node(text):
+    return {
+        'id': se_id(),
+        'nodes': [{
+            'id': se_id(), 'value': text,
+            'style': {'fontColor': '#000000', 'fontFamily': 'nanumbareunhipi',
+                      'fontSizeCode': 'fs19', '@ctype': 'nodeStyle'},
+            '@ctype': 'textNode',
+        }],
+        '@ctype': 'paragraph',
+    }
+
+def make_heading_component(text, level=2):
+    ctype = 'heading2' if level == 2 else 'heading3'
+    return {
+        'id': se_id(), 'layout': 'default', '@ctype': ctype,
+        'value': [{
+            'id': se_id(), '@ctype': 'paragraph',
+            'nodes': [{'id': se_id(), 'value': text, '@ctype': 'textNode',
+                       'style': {'fontFamily': 'nanumbareunhipi', '@ctype': 'nodeStyle'}}],
+        }],
+    }
+
+def html_to_components(body_html):
+    components = []
+    chunks = re.split('(<figure.*?</figure>|<h2[^>]*>.*?</h2>|<h3[^>]*>.*?</h3>)', body_html, flags=re.DOTALL | re.I)
+    pending_texts = []
+
+    def flush_texts():
+        if not pending_texts:
+            return
+        paras = [t for t in pending_texts if t.strip()]
+        if paras:
+            components.append({
+                'id': se_id(), 'layout': 'default', '@ctype': 'text',
+                'value': [make_text_node(p) for p in paras],
+            })
+        pending_texts.clear()
+
+    for chunk in chunks:
+        cl = chunk.lower()
+        if cl.startswith('<figure'):
+            img_m = re.search('src=[' + DQ + SQ + '](https?://[^' + DQ + SQ + ']+)[' + DQ + SQ + ']', chunk, re.I)
+            alt_m = re.search('alt=[' + DQ + SQ + '](.*?)[' + DQ + SQ + ']', chunk, re.I)
+            if img_m:
+                flush_texts()
+                components.append(make_image_component(img_m.group(1), alt_m.group(1) if alt_m else ''))
+        elif cl.startswith('<h2'):
+            flush_texts()
+            text = strip_html(chunk).strip()
+            if text:
+                components.append(make_heading_component(text, level=2))
+        elif cl.startswith('<h3'):
+            flush_texts()
+            text = strip_html(chunk).strip()
+            if text:
+                components.append(make_heading_component(text, level=3))
+        else:
+            img_parts = re.split('(<img[^>]+>)', chunk, flags=re.I)
+            for part in img_parts:
+                if re.match('<img', part, re.I):
+                    img_m = re.search('src=[' + DQ + SQ + '](https?://[^' + DQ + SQ + ']+)[' + DQ + SQ + ']', part, re.I)
+                    alt_m = re.search('alt=[' + DQ + SQ + '](.*?)[' + DQ + SQ + ']', part, re.I)
+                    if img_m:
+                        flush_texts()
+                        components.append(make_image_component(img_m.group(1), alt_m.group(1) if alt_m else ''))
+                else:
+                    for p in re.split('<(?:p|br|div)[^>]*>', part):
+                        t = strip_html(p).strip()
+                        if t:
+                            pending_texts.append(t)
+
+    flush_texts()
+    return components
+
+def build_doc(title_text, body_html):
+    body_components = html_to_components(body_html)
+    if not body_components:
+        body_components = [{'id': se_id(), 'layout': 'default', '@ctype': 'text',
+                            'value': [make_text_node('(내용 없음)')]}]
+    return {'documentId': '', 'document': {
+        'version': '2.10.2', 'theme': 'default', 'language': 'ko-KR', 'id': doc_id(),
+        'components': [
+            {'id': se_id(), 'layout': 'default', '@ctype': 'documentTitle',
+             'title': [{'id': se_id(), '@ctype': 'paragraph', 'nodes': [{
+                 'id': se_id(), 'value': title_text, '@ctype': 'textNode',
+                 'style': {'fontFamily': 'nanumbareunhipi', '@ctype': 'nodeStyle'},
+             }]}], 'subTitle': None, 'align': 'left'},
+            *body_components,
+        ],
+    }}
+
+def http_get_json(url):
+    req = urllib.request.Request(url, headers=HDR)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        final_url = r.geturl()
+        if 'nid.naver.com' in final_url or 'nidlogin' in final_url:
+            out({'error': 'NID_AUT/NID_SES 만료 — 네이버 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
+        return json.loads(r.read().decode())
+
+def http_post_form(url, pairs):
+    body = urllib.parse.urlencode(pairs).encode('utf-8')
+    h = {**HDR, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'}
+    req = urllib.request.Request(url, data=body, headers=h, method='POST')
     try:
-        jdata = json.dumps({'title': title, 'contents': content, 'tags': tags[:30],
-            'isPublish': is_publish, 'categoryNo': category_no, 'isOpen': True}).encode('utf-8')
-        body, _, status = http_post(api_url, jdata, {**make_headers(),
-            'Content-Type': 'application/json;charset=UTF-8',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Origin': 'https://blog.naver.com',
-            'Referer': 'https://blog.naver.com/' + blog_id})
-        if 200 <= status < 300:
-            d = json.loads(body)
-            pid = str(d.get('logNo') or d.get('postId') or d.get('id') or d.get('no') or '')
-            out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + ('/' + pid if pid else '')})
-        if status in (401, 403):
-            out({'error': '인증 실패 (' + str(status) + ')', 'errorCode': 'AUTH'})
-        errors.append('REST ' + str(status) + ' ' + api_url.split('naver.com')[1])
-    except Exception as e:
-        errors.append('REST exc: ' + str(e))
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode()), r.status
+    except urllib.error.HTTPError as e:
+        return {'isSuccess': False, '_httpCode': e.code}, e.code
 
-out({'error': '발행 실패: ' + ' | '.join(errors), 'errorCode': 'UNKNOWN'})
+# 1. Get blog form configuration
+try:
+    mgr = http_get_json(f'{BASE}/PostWriteFormManagerOptions.naver?blogId={blog_id}')
+    if not mgr.get('isSuccess'):
+        raise ValueError('manager options failed: ' + str(mgr.get('result', '')))
+    fv = mgr['result']['formView']
+    cfg = dict(fv['postConfiguration'])
+    meta = dict(fv['postFormMeta'])
+    clv = fv.get('categoryListFormView', {})
+    default_category_id = clv.get('defaultCategoryId') or meta.get('categoryId') or 0
+    if not default_category_id:
+        cats = clv.get('categoryFormViewList', [])
+        default_category_id = cats[0].get('categoryNo', 0) if cats else 0
+except urllib.error.HTTPError as e:
+    if e.code in (401, 403):
+        out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+    out({'error': f'블로그 설정 로드 실패: HTTP {e.code}', 'errorCode': 'CONFIG_ERROR'})
+except SystemExit:
+    raise
+except Exception as e:
+    out({'error': f'블로그 설정 로드 실패: {e}', 'errorCode': 'CONFIG_ERROR'})
+
+# 2. Apply settings
+cfg['openType'] = 2 if is_publish else 1
+meta['categoryId'] = category_no if category_no and category_no > 0 else default_category_id
+meta['tags'] = ','.join(tags[:30]) if tags else None
+meta['logNo'] = None
+meta['prePostDate'] = None
+
+# 3. Build SEOne document (HTML → components, external images uploaded to Naver CDN)
+dm = build_doc(title, content)
+dm_str = json.dumps(dm, ensure_ascii=False)
+
+# 4. Publish via RabbitWrite (SEOne API)
+pop_params = {'configuration': cfg, 'populationMeta': meta}
+wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
+    ('documentModel', dm_str),
+    ('populationParams', json.dumps(pop_params, ensure_ascii=False)),
+    ('ugcMarketInfo', ''),
+    ('buyWithMyOwnMoneyInfo', ''),
+    ('mediaResources', '{}'),
+    ('blogId', blog_id),
+    ('productApiVersion', ''),
+    ('tokenId', ''),
+])
+
+if status in (401, 403):
+    out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+
+if wr.get('isSuccess'):
+    redirect = wr.get('result', {}).get('redirectUrl', '')
+    m = re.search('logNo=([0-9]+)', redirect)
+    log_no = m.group(1) if m else ''
+    img_note = (' [img_warn:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
+    out({'postId': log_no, 'postUrl': f'https://blog.naver.com/{blog_id}/{log_no}', 'imgNote': img_note})
+
+result = wr.get('result', {})
+ec = result.get('errorCode', 'UNKNOWN') if isinstance(result, dict) else str(result)
+if ec in ('LOGIN', 'AUTH', 'auth'):
+    out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+
+img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
+out({'error': f'발행 실패: {ec}{img_note}', 'errorCode': ec, 'raw': str(wr)[:300]})
 `;
 
 async function ensureNasScript(): Promise<void> {
@@ -201,6 +317,7 @@ async function postViaNas(params: {
   blogId: string; nidAut: string; nidSes: string;
   title: string; content: string; tags: string[];
   categoryNo: number; isPublish: boolean;
+  uploadSessionKey?: string; naverUserId?: string;
 }): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string }> {
   try {
     await ensureNasScript();
@@ -236,7 +353,7 @@ export async function POST(req: NextRequest) {
 
   const { data: conn } = await supabase
     .from('naver_connections')
-    .select('blog_id, nid_aut, nid_ses, access_token, refresh_token, token_expires_at')
+    .select('blog_id, nid_aut, nid_ses, access_token, refresh_token, token_expires_at, upload_session_key, naver_user_id')
     .eq('user_id', user.id)
     .single();
 
@@ -258,6 +375,8 @@ export async function POST(req: NextRequest) {
       tags,
       categoryNo,
       isPublish,
+      uploadSessionKey: conn.upload_session_key || '',
+      naverUserId: conn.naver_user_id || '',
     });
 
     if (nasResult.errorCode === 'AUTH') {
