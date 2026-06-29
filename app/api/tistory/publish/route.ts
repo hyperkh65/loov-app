@@ -65,79 +65,120 @@ def is_login_page(url, html=''):
     return ('accounts.kakao.com' in url or 'login' in url or
             'kakaoAccount' in html or 'kakao_login' in html)
 
+import http.cookiejar
 errors = []
 
-# 세션 유효성 사전 확인
+# 쿠키 자동 처리 opener 생성
+cj = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+opener.addheaders = [
+    ('User-Agent', ua),
+    ('Accept', 'text/html,application/xhtml+xml,*/*;q=0.8'),
+    ('Accept-Language', 'ko-KR,ko;q=0.9'),
+    ('Cookie', cookie),
+]
+urllib.request.install_opener(opener)
+
+def get_xsrf():
+    for c in cj:
+        if 'xsrf' in c.name.lower() or 'csrf' in c.name.lower():
+            return c.value
+    return ''
+
+# 세션 유효성 + XSRF 쿠키 획득
 try:
     _, check_url, check_status = http_get(blog_url + '/manage/')
     if is_login_page(check_url):
         out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
     if check_status in (401, 403):
-        out({'error': '인증 실패(403) — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
+        out({'error': '인증 실패(' + str(check_status) + ') — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
 except Exception as e:
     errors.append('auth check: ' + str(e))
 
-# 관리자 폼 제출
+# 신 에디터 페이지 로드하여 쿠키/토큰 획득
 try:
-    manage_url = blog_url + '/manage/post/'
-    html, _, _ = http_get(manage_url)
-
+    write_page_url = blog_url + '/manage/post/0'
+    html, _, _ = http_get(write_page_url)
     if is_login_page('', html):
         out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
+except Exception as e:
+    errors.append('write page: ' + str(e))
 
-    csrf = ''
-    m = re.search(r"""name=["']?_csrf["']?[^>]*value=["']?([a-zA-Z0-9_\\-]+)["']?""", html)
-    if not m:
-        m = re.search(r"""csrf[_\\-]?token["']?\\s*[=:]\\s*["']?([a-zA-Z0-9_\\-]+)""", html, re.I)
-    if not m:
-        m = re.search(r'"csrf[_-]?token"\\s*:\\s*"([a-zA-Z0-9_\\-]+)"', html)
-    if m:
-        csrf = m.group(1)
+xsrf = get_xsrf()
 
-    post_params = {
+# JSON API로 포스팅 시도 (신 에디터 내부 API)
+try:
+    api_endpoints = [
+        blog_url + '/manage/api/posts',
+        blog_url + '/manage/api/entry',
+        'https://www.tistory.com/manage/api/posts',
+    ]
+    post_json = json.dumps({
         'title': title,
         'content': content,
         'tag': ','.join(tags[:10]),
         'category': category,
-        'visibility': '20',
-        'acceptComment': '1',
-        'published': '1',
-    }
-    if csrf:
-        post_params['_csrf'] = csrf
-
-    form_bytes = urllib.parse.urlencode(post_params).encode('utf-8')
-    body, final_url, status = http_post(manage_url, form_bytes, {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-        'Referer': manage_url,
+        'visibility': 20,
+        'acceptComment': 1,
+        'published': 1,
+    }).encode('utf-8')
+    json_headers = {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Referer': blog_url + '/manage/',
         'X-Requested-With': 'XMLHttpRequest',
-    })
-
-    if is_login_page(final_url, body):
-        out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-
-    if status in (401, 403):
-        out({'error': '인증 실패(' + str(status) + ') — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
-
-    if 200 <= status < 400:
-        m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
-        if m:
-            pid = m.group(1)
-            out({'postId': pid, 'postUrl': blog_url + '/' + pid})
+        'Accept': 'application/json',
+    }
+    if xsrf:
+        json_headers['X-XSRF-TOKEN'] = xsrf
+    for ep in api_endpoints:
         try:
-            resp = json.loads(body)
-            pid = str(resp.get('postId', resp.get('id', '')))
-            if pid:
-                out({'postId': pid, 'postUrl': blog_url + '/' + pid})
-        except Exception:
-            pass
-        errors.append('Form OK status=' + str(status) + ' final=' + final_url + ' body=' + body[:200])
-    else:
-        errors.append('Form ' + str(status) + ': csrf=' + csrf + ' body=' + body[:200])
+            body, final_url, status = http_post(ep, post_json, json_headers)
+            if status in (401, 403):
+                out({'error': '인증 실패 — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
+            if 200 <= status < 400:
+                try:
+                    resp = json.loads(body)
+                    pid = str(resp.get('postId', resp.get('id', resp.get('data', {}).get('id', ''))))
+                    if pid:
+                        out({'postId': pid, 'postUrl': blog_url + '/' + pid})
+                except Exception:
+                    pass
+                m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
+                if m:
+                    out({'postId': m.group(1), 'postUrl': blog_url + '/' + m.group(1)})
+            errors.append('JSON ' + ep + ' -> ' + str(status) + ': ' + body[:100])
+        except Exception as ex:
+            errors.append('JSON exc ' + ep + ': ' + str(ex))
+except Exception as e:
+    errors.append('JSON block: ' + str(e))
+
+# 폼 방식도 시도 (구 에디터 호환)
+try:
+    post_params = {
+        'title': title, 'content': content,
+        'tag': ','.join(tags[:10]), 'category': category,
+        'visibility': '20', 'acceptComment': '1', 'published': '1',
+    }
+    if xsrf:
+        post_params['_csrf'] = xsrf
+    form_bytes = urllib.parse.urlencode(post_params).encode('utf-8')
+    for form_url in [blog_url + '/manage/post', blog_url + '/manage/entry/post']:
+        body, final_url, status = http_post(form_url, form_bytes, {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+            'Referer': blog_url + '/manage/',
+            'X-Requested-With': 'XMLHttpRequest',
+        })
+        if is_login_page(final_url, body):
+            out({'error': '인증 실패 — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
+        if 200 <= status < 400:
+            m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
+            if m:
+                out({'postId': m.group(1), 'postUrl': blog_url + '/' + m.group(1)})
+        errors.append('Form ' + form_url + ' -> ' + str(status) + ': ' + body[:100])
 except Exception as e:
     errors.append('Form exc: ' + str(e))
 
-out({'error': ' | '.join(errors), 'errorCode': 'UNKNOWN'})
+out({'error': 'xsrf=' + xsrf + ' | ' + ' | '.join(errors), 'errorCode': 'UNKNOWN'})
 `;
 
 async function ensureScript(): Promise<void> {
