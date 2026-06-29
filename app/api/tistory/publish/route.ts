@@ -110,9 +110,9 @@ try:
     html, _, _ = http_get(manage_url)
     # CSRF 토큰 추출
     csrf = ''
-    m = re.search(r'name=["\\'']?_csrf["\\'"]?[^>]*value=["\\'"]?([a-zA-Z0-9_-]+)["\\'"]?', html)
+    m = re.search(r"""name=["']?_csrf["']?[^>]*value=["']?([a-zA-Z0-9_-]+)["']?""", html)
     if not m:
-        m = re.search(r'csrf[_-]?token["\\'"]?\\s*[=:]\\s*["\\'"]?([a-zA-Z0-9_-]+)', html, re.I)
+        m = re.search(r"""csrf[_-]?token["']?\s*[=:]\s*["']?([a-zA-Z0-9_-]+)""", html, re.I)
     if m:
         csrf = m.group(1)
 
