@@ -96,7 +96,8 @@ def upload_image_to_naver(img_url):
                         return naver_url
                 except Exception:
                     pass
-                m = re.search(r'https://[^"\'\\s]+pstatic\\.net[^"\'\\s]+', resp_body)
+                pstatic_pat = 'https://[^' + DQ + SQ + '\\s]+pstatic\\.net[^' + DQ + SQ + '\\s]+'
+                m = re.search(pstatic_pat, resp_body)
                 if m:
                     return m.group(0)
             errors.append('img_upload ' + up_url.split('naver.com')[1] + ' ' + str(status) + ': ' + resp_body[:80])
