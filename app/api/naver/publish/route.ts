@@ -9,6 +9,7 @@ const NAS_SCRIPT_PATH = '/volume1/homes/urjent/naver_publish/post.py';
 const NAVER_POST_SCRIPT = `#!/usr/bin/env python3
 import sys, json, re
 import urllib.request, urllib.parse, urllib.error
+import http.cookiejar
 
 DQ = chr(34)
 SQ = chr(39)
@@ -23,11 +24,25 @@ tags = data.get('tags', [])
 category_no = data.get('categoryNo', 0)
 is_publish = data.get('isPublish', True)
 
-cookie = 'NID_AUT=' + nid_aut + '; NID_SES=' + nid_ses
-ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+# Cookie jar: 서버가 내려주는 CSRF 쿠키 등을 자동으로 캡처
+cj = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+urllib.request.install_opener(opener)
+
+def full_cookie():
+    extra = {c.name: c.value for c in cj}
+    merged = {'NID_AUT': nid_aut, 'NID_SES': nid_ses, **extra}
+    return '; '.join(k + '=' + v for k, v in merged.items())
 
 def make_headers(extra=None):
-    h = {'Cookie': cookie, 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9', 'Accept': 'application/json, text/html, */*'}
+    h = {
+        'Cookie': full_cookie(),
+        'User-Agent': ua,
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+    }
     if extra:
         h.update(extra)
     return h
@@ -37,8 +52,10 @@ def http_get(url):
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
+    except urllib.error.HTTPError as e:
+        return e.read().decode('utf-8', errors='replace'), url, e.code
     except Exception as e:
-        return '', url, 0
+        return str(e), url, 0
 
 def http_post(url, data_bytes, headers):
     req = urllib.request.Request(url, data=data_bytes, headers=headers, method='POST')
@@ -55,10 +72,9 @@ def out(result):
     sys.exit(0)
 
 errors = []
-img_errors = []  # 이미지 업로드 실패는 별도 관리 (발행 실패 원인에서 제외)
+img_errors = []
 
 def upload_image_to_naver(img_url):
-    """외부 이미지를 다운로드해서 네이버 CDN에 업로드, 네이버 URL 반환"""
     try:
         dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua, 'Referer': img_url})
         with urllib.request.urlopen(dl_req, timeout=15) as r:
@@ -105,7 +121,7 @@ def upload_image_to_naver(img_url):
                         return naver_url
                 except Exception:
                     pass
-                pstatic_pat = 'https://[^' + DQ + SQ + '\\s]+pstatic[.]net[^' + DQ + SQ + '\\s]+'
+                pstatic_pat = 'https://[^' + DQ + SQ + '\\\\s]+pstatic[.]net[^' + DQ + SQ + '\\\\s]+'
                 m = re.search(pstatic_pat, resp_body)
                 if m:
                     return m.group(0)
@@ -115,8 +131,7 @@ def upload_image_to_naver(img_url):
     return None
 
 def replace_image_urls(html):
-    """content 안의 외부 이미지 src를 네이버 CDN URL로 교체"""
-    src_pat = 'src=[' + DQ + SQ + '](https?://[^' + DQ + SQ + ']+)[' + DQ + SQ + r'\s]'
+    src_pat = 'src=[' + DQ + SQ + '](https?://[^' + DQ + SQ + ']+)[' + DQ + SQ + '\\\\s]'
     def replace_src(match):
         tag = match.group(0)
         sm = re.search(src_pat, tag, re.I)
@@ -133,77 +148,114 @@ def replace_image_urls(html):
 
 content = replace_image_urls(content)
 
-# 세션 유효성 확인
+# Step 1: 쓰기 페이지 로드 → CSRF 쿠키 캡처 + 페이지에서 CSRF 추출
+csrf = ''
+form_html = ''
 try:
-    sess_html, sess_url, sess_status = http_get('https://blog.naver.com/api/v1/blogs/' + blog_id)
-    if 'nid.naver.com' in sess_url or 'nidlogin' in sess_url:
+    form_html, form_url, form_status = http_get('https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id)
+    if 'nid.naver.com' in form_url or 'nidlogin' in form_url:
         out({'error': 'NID_AUT/NID_SES 만료 — 네이버 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-    errors.append('sess=' + str(sess_status))
+    if form_status in (401, 403):
+        out({'error': '인증 실패(' + str(form_status) + ') — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+    csrf_pats = [
+        r'["\']_csrf["\']\s*[,:]\s*["\']([^"\']{10,})["\']',
+        r'name=["\']_csrf["\'][^>]+value=["\']([^"\']{10,})["\']',
+        r'value=["\']([^"\']{10,})["\'][^>]+name=["\']_csrf["\']',
+        r'csrf[_-]token["\'\s:=]+["\']([a-zA-Z0-9/+_=-]{20,})["\']',
+        r'"csrf"\s*:\s*"([^"]{10,})"',
+    ]
+    for pat in csrf_pats:
+        m = re.search(pat, form_html, re.I)
+        if m:
+            csrf = m.group(1)
+            break
+    if not csrf:
+        for c in cj:
+            if 'csrf' in c.name.lower() or 'xsrf' in c.name.lower():
+                csrf = c.value
+                break
+    errors.append('form=' + str(form_status) + ' csrf=' + str(len(csrf)))
 except Exception as e:
-    errors.append('sess exc: ' + str(e)[:40])
+    errors.append('form exc:' + str(e)[:40])
 
-# 쓰기 페이지 JS에서 API 힌트 탐색
-api_hints = []
+# Step 2: Form POST (PostWriteFormsave.naver) — CSRF 포함
 try:
-    write_html, _, _ = http_get('https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id)
-    js_src_pat = 'src=[' + DQ + SQ + ']([^' + DQ + SQ + ']+[.]js[^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
-    js_urls = re.findall(js_src_pat, write_html)
-    for js_url in js_urls[:4]:
-        full_js = js_url if js_url.startswith('http') else 'https://blog.naver.com' + js_url
-        js_body, _, _ = http_get(full_js)
-        found = re.findall(r'(?:blog/api|/api/v[0-9]+)/blogs[/\w-]+posts', js_body)
-        api_hints.extend(found[:3])
-        found2 = re.findall(r'PostSave[A-Za-z0-9]*[.]naver', js_body)
-        api_hints.extend(found2[:2])
-    if api_hints:
-        errors.append('hints=' + str(list(set(api_hints))[:4]))
+    hidden = {}
+    input_re = '<input[^>]+type=[' + DQ + SQ + ']hidden[' + DQ + SQ + '][^>]*>'
+    name_re = 'name=[' + DQ + SQ + ']([^' + DQ + SQ + ']+)[' + DQ + SQ + ']'
+    value_re = 'value=[' + DQ + SQ + ']([^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
+    for inp in re.finditer(input_re, form_html, re.I):
+        nm = re.search(name_re, inp.group())
+        vm = re.search(value_re, inp.group())
+        if nm:
+            hidden[nm.group(1)] = vm.group(1) if vm else ''
+    post_data = {**hidden,
+        'blogId': blog_id, 'title': title, 'body': content,
+        'tag': ','.join(tags[:30]), 'categoryNo': str(category_no),
+        'isPublish': '1' if is_publish else '0', 'publishType': 'A' if is_publish else 'B',
+        'postWriteRootPath': 'BLOG', 'logNo': '0', 'postWriteFormType': 'default',
+    }
+    if csrf:
+        post_data['_csrf'] = csrf
+    form_bytes = urllib.parse.urlencode(post_data).encode('utf-8')
+    resp_body, final_url, status = http_post(
+        'https://blog.naver.com/PostWriteFormsave.naver', form_bytes,
+        {**make_headers(),
+         'Content-Type': 'application/x-www-form-urlencoded',
+         'Referer': 'https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id,
+         'Origin': 'https://blog.naver.com'})
+    if status in (401, 403):
+        out({'error': '인증 실패 (' + str(status) + ')', 'errorCode': 'AUTH'})
+    if 200 <= status < 300:
+        m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})(?:[^0-9/?#]|$)', final_url)
+        if not m:
+            m = re.search('logNo[=:][' + DQ + SQ + ' ]*([0-9]{5,})', resp_body)
+        if m:
+            pid = m.group(1)
+            out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + pid})
+    errors.append('Formsave ' + str(status) + ' url=' + final_url.split('naver.com')[-1][:25])
 except Exception as e:
-    errors.append('hints exc: ' + str(e)[:40])
+    errors.append('Formsave exc:' + str(e)[:40])
 
-# REST API 발행 시도 (여러 엔드포인트 + 페이로드 조합)
-rest_headers = {**make_headers(),
+# Step 3: REST API (CSRF 헤더 포함)
+rest_h = {**make_headers(),
     'Content-Type': 'application/json;charset=UTF-8',
     'X-Requested-With': 'XMLHttpRequest',
     'Origin': 'https://blog.naver.com',
     'Referer': 'https://blog.naver.com/' + blog_id,
+    'Accept': 'application/json',
 }
-payloads = [
-    {'title': title, 'contents': content, 'tags': tags[:30], 'isPublish': is_publish, 'categoryNo': category_no, 'isOpen': True},
-    {'title': title, 'body': content, 'tag': ','.join(tags[:30]), 'isPublish': is_publish, 'categoryNo': category_no},
-    {'blogId': blog_id, 'title': title, 'contents': content, 'tags': tags[:30], 'publishType': 'PUBLIC' if is_publish else 'DRAFT'},
-]
-discovered = ['https://blog.naver.com/' + h for h in api_hints if not h.startswith('http')]
-base_endpoints = [
+if csrf:
+    rest_h['X-CSRF-TOKEN'] = csrf
+
+for api_url in [
     'https://blog.naver.com/api/v1/blogs/' + blog_id + '/posts',
     'https://blog.naver.com/api/v2/blogs/' + blog_id + '/posts',
     'https://blog.naver.com/blog/api/v1/blogs/' + blog_id + '/posts',
     'https://m.blog.naver.com/api/v1/blogs/' + blog_id + '/posts',
-]
-for api_url in (discovered + base_endpoints):
-    for pl in payloads:
-        try:
-            jdata = json.dumps(pl).encode('utf-8')
-            body, final_url, status = http_post(api_url, jdata, rest_headers)
-            if status in (401, 403):
-                out({'error': '인증 실패 (' + str(status) + ') — NID_AUT/NID_SES 재발급 필요', 'errorCode': 'AUTH'})
-            if 200 <= status < 300:
-                try:
-                    d = json.loads(body)
-                    pid = str(d.get('logNo') or d.get('postId') or d.get('id') or d.get('no') or '')
-                    out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + ('/' + pid if pid else '')})
-                except Exception:
-                    pass
-                m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})', final_url)
-                if m:
-                    out({'postId': m.group(1), 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + m.group(1)})
-            errors.append(api_url.split('naver.com')[1] + '->' + str(status))
-            break  # 이 엔드포인트에서 한 페이로드만 시도 (non-auth 실패 시 다음 URL로)
-        except Exception as ex:
-            errors.append(api_url.split('naver.com')[1] + ' exc:' + str(ex)[:30])
-            break
+]:
+    try:
+        jdata = json.dumps({'title': title, 'contents': content, 'tags': tags[:30],
+            'isPublish': is_publish, 'categoryNo': category_no, 'isOpen': True}).encode('utf-8')
+        body, final_url, status = http_post(api_url, jdata, rest_h)
+        if status in (401, 403):
+            out({'error': '인증 실패 (' + str(status) + ')', 'errorCode': 'AUTH'})
+        if 200 <= status < 300:
+            try:
+                d = json.loads(body)
+                pid = str(d.get('logNo') or d.get('postId') or d.get('id') or d.get('no') or '')
+                out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + ('/' + pid if pid else '')})
+            except Exception:
+                pass
+            m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})', final_url)
+            if m:
+                out({'postId': m.group(1), 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + m.group(1)})
+        errors.append(api_url.split('naver.com')[1] + '->' + str(status))
+    except Exception as ex:
+        errors.append(api_url.split('naver.com')[1] + ' exc:' + str(ex)[:30])
 
 img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
-out({'error': '발행 실패: ' + ' | '.join(errors[:6]) + img_note, 'errorCode': 'UNKNOWN'})
+out({'error': ' | '.join(errors[:7]) + img_note, 'errorCode': 'UNKNOWN'})
 `;
 
 async function ensureNasScript(): Promise<void> {
