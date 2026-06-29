@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     userId = user.id;
   }
 
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = await req.json();
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = await req.json();
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -232,6 +232,38 @@ export async function POST(req: NextRequest) {
       }
     } catch (err) {
       results[platform] = { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // 티스토리 발행 (선택된 블로그 ID 목록)
+  if (tistory_blog_ids.length > 0) {
+    let tistoryQuery = supabase
+      .from('tistory_connections')
+      .select('id, blog_name, blog_url')
+      .eq('is_active', true)
+      .in('id', tistory_blog_ids);
+    if (userId) tistoryQuery = tistoryQuery.eq('user_id', userId);
+    const { data: tistoryBlogs } = await tistoryQuery;
+
+    for (const blog of (tistoryBlogs || [])) {
+      try {
+        const res = await fetch(`${baseUrl}/api/tistory/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+          body: JSON.stringify({
+            blog_id: blog.id,
+            title: article.title,
+            content: article.content,
+            tags: article.focus_keyword ? [article.focus_keyword] : [],
+          }),
+        });
+        const data = await res.json();
+        results[`tistory_${blog.blog_name}`] = res.ok
+          ? { success: true, url: data.url }
+          : { success: false, error: data.error };
+      } catch (err) {
+        results[`tistory_${blog.blog_name}`] = { success: false, error: String(err) };
+      }
     }
   }
 
