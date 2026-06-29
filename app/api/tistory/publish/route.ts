@@ -85,98 +85,79 @@ def get_xsrf():
             return c.value
     return ''
 
-# 세션 유효성 + XSRF 쿠키 획득
+def all_cookies():
+    return ', '.join(c.name + '=' + c.value[:10] for c in cj)
+
+# 세션 유효성 + 쿠키 수집
+manage_html = ''
 try:
-    _, check_url, check_status = http_get(blog_url + '/manage/')
+    manage_html, check_url, check_status = http_get(blog_url + '/manage/')
     if is_login_page(check_url):
         out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
     if check_status in (401, 403):
         out({'error': '인증 실패(' + str(check_status) + ') — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
+    errors.append('manage status=' + str(check_status) + ' cookies=[' + all_cookies() + ']')
 except Exception as e:
-    errors.append('auth check: ' + str(e))
+    errors.append('manage: ' + str(e))
 
-# 신 에디터 페이지 로드하여 쿠키/토큰 획득
-try:
-    write_page_url = blog_url + '/manage/post/0'
-    html, _, _ = http_get(write_page_url)
-    if is_login_page('', html):
-        out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-except Exception as e:
-    errors.append('write page: ' + str(e))
+# JS 번들에서 API 경로 탐색
+js_urls = re.findall(r'src=["\']([^"\']+\.js[^"\']*)["\']', manage_html)
+api_hints = []
+for js_url in js_urls[:3]:
+    try:
+        full_url = js_url if js_url.startswith('http') else blog_url + js_url
+        js_body, _, _ = http_get(full_url)
+        found = re.findall(r'["\'/](manage/api/[a-zA-Z0-9/_-]+)["\']', js_body)
+        api_hints.extend(found[:5])
+    except Exception:
+        pass
+if api_hints:
+    errors.append('api_hints=' + str(list(set(api_hints))[:5]))
 
 xsrf = get_xsrf()
 
-# JSON API로 포스팅 시도 (신 에디터 내부 API)
-try:
-    api_endpoints = [
-        blog_url + '/manage/api/posts',
-        blog_url + '/manage/api/entry',
-        'https://www.tistory.com/manage/api/posts',
-    ]
-    post_json = json.dumps({
-        'title': title,
-        'content': content,
-        'tag': ','.join(tags[:10]),
-        'category': category,
-        'visibility': 20,
-        'acceptComment': 1,
-        'published': 1,
-    }).encode('utf-8')
-    json_headers = {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Referer': blog_url + '/manage/',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Accept': 'application/json',
-    }
-    if xsrf:
-        json_headers['X-XSRF-TOKEN'] = xsrf
-    for ep in api_endpoints:
-        try:
-            body, final_url, status = http_post(ep, post_json, json_headers)
-            if status in (401, 403):
-                out({'error': '인증 실패 — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
-            if 200 <= status < 400:
-                try:
-                    resp = json.loads(body)
-                    pid = str(resp.get('postId', resp.get('id', resp.get('data', {}).get('id', ''))))
-                    if pid:
-                        out({'postId': pid, 'postUrl': blog_url + '/' + pid})
-                except Exception:
-                    pass
-                m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
-                if m:
-                    out({'postId': m.group(1), 'postUrl': blog_url + '/' + m.group(1)})
-            errors.append('JSON ' + ep + ' -> ' + str(status) + ': ' + body[:100])
-        except Exception as ex:
-            errors.append('JSON exc ' + ep + ': ' + str(ex))
-except Exception as e:
-    errors.append('JSON block: ' + str(e))
+# 후보 엔드포인트 시도
+post_json = json.dumps({
+    'title': title, 'content': content,
+    'tag': ','.join(tags[:10]), 'category': category,
+    'visibility': 20, 'acceptComment': 1, 'published': 1,
+}).encode('utf-8')
+json_h = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Referer': blog_url + '/manage/',
+    'X-Requested-With': 'XMLHttpRequest',
+    'Accept': 'application/json',
+}
+if xsrf:
+    json_h['X-XSRF-TOKEN'] = xsrf
 
-# 폼 방식도 시도 (구 에디터 호환)
-try:
-    post_params = {
-        'title': title, 'content': content,
-        'tag': ','.join(tags[:10]), 'category': category,
-        'visibility': '20', 'acceptComment': '1', 'published': '1',
-    }
-    if xsrf:
-        post_params['_csrf'] = xsrf
-    form_bytes = urllib.parse.urlencode(post_params).encode('utf-8')
-    for form_url in [blog_url + '/manage/post', blog_url + '/manage/entry/post']:
-        body, final_url, status = http_post(form_url, form_bytes, {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-            'Referer': blog_url + '/manage/',
-            'X-Requested-With': 'XMLHttpRequest',
-        })
-        if is_login_page(final_url, body):
+candidates = [
+    blog_url + '/manage/api/v1/post',
+    blog_url + '/manage/api/post',
+    blog_url + '/manage/api/posts',
+    blog_url + '/manage/api/entries',
+    blog_url + '/manage/api/entry',
+]
+
+for ep in candidates:
+    try:
+        body, final_url, status = http_post(ep, post_json, json_h)
+        if status in (401, 403):
             out({'error': '인증 실패 — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
         if 200 <= status < 400:
+            try:
+                resp = json.loads(body)
+                pid = str(resp.get('postId', resp.get('id', resp.get('data', {}).get('id', ''))))
+                if pid:
+                    out({'postId': pid, 'postUrl': blog_url + '/' + pid})
+            except Exception:
+                pass
             m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
             if m:
                 out({'postId': m.group(1), 'postUrl': blog_url + '/' + m.group(1)})
-        errors.append('Form ' + form_url + ' -> ' + str(status) + ': ' + body[:100])
-except Exception as e:
-    errors.append('Form exc: ' + str(e))
+        errors.append(ep.split('/manage/')[1] + '->' + str(status))
+    except Exception as ex:
+        errors.append(ep.split('/manage/')[1] + ' exc:' + str(ex)[:50])
 
 out({'error': 'xsrf=' + xsrf + ' | ' + ' | '.join(errors), 'errorCode': 'UNKNOWN'})
 `;
