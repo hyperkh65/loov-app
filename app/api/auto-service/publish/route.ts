@@ -99,7 +99,8 @@ export async function POST(req: NextRequest) {
   const { data: article, error: fetchErr } = await articleQuery.single();
   if (fetchErr || !article) return NextResponse.json({ error: '글을 찾을 수 없습니다' }, { status: 404 });
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get('host')}`;
+  // 내부 API 호출은 프록시 우회를 위해 localhost 직접 연결
+  const baseUrl = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get('host')}`;
   const results: Record<string, { success: boolean; url?: string; error?: string }> = {};
   const cookieHeader = req.headers.get('cookie') || '';
 
