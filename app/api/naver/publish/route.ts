@@ -10,6 +10,9 @@ const NAVER_POST_SCRIPT = `#!/usr/bin/env python3
 import sys, json, re
 import urllib.request, urllib.parse, urllib.error
 
+DQ = chr(34)
+SQ = chr(39)
+
 data = json.loads(sys.stdin.read())
 blog_id = data['blogId']
 nid_aut = data['nidAut']
@@ -53,13 +56,83 @@ def out(result):
 
 errors = []
 
+def upload_image_to_naver(img_url):
+    """외부 이미지를 다운로드해서 네이버 CDN에 업로드, 네이버 URL 반환"""
+    try:
+        dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua, 'Referer': img_url})
+        with urllib.request.urlopen(dl_req, timeout=20) as r:
+            img_data = r.read()
+            ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        ext_map = {'image/jpeg':'jpg','image/png':'png','image/gif':'gif','image/webp':'webp'}
+        ext = ext_map.get(ctype, 'jpg')
+        filename = re.sub(r'[^a-zA-Z0-9._-]', '_', img_url.split('/')[-1].split('?')[0]) or ('img.' + ext)
+        if '.' not in filename:
+            filename += '.' + ext
+        boundary = b'----LoovNaverBoundary20240101'
+        parts = []
+        parts += [b'--' + boundary, b'Content-Disposition: form-data; name="blogId"', b'', blog_id.encode()]
+        parts += [b'--' + boundary,
+                  ('Content-Disposition: form-data; name="attachImg"; filename="' + filename + '"').encode(),
+                  ('Content-Type: ' + ctype).encode(), b'', img_data]
+        parts.append(b'--' + boundary + b'--')
+        body = b'\\r\\n'.join(parts)
+        up_headers = {**make_headers(),
+            'Content-Type': 'multipart/form-data; boundary=' + boundary.decode(),
+            'Referer': 'https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id,
+            'Origin': 'https://blog.naver.com',
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+        for up_url in [
+            'https://blog.naver.com/UploadMediaFile.naver',
+            'https://blog.naver.com/api/v1/blogs/' + blog_id + '/postfiles',
+        ]:
+            resp_body, _, status = http_post(up_url, body, up_headers)
+            if 200 <= status < 300:
+                try:
+                    rj = json.loads(resp_body)
+                    naver_url = (rj.get('url') or rj.get('fileUrl') or rj.get('imageUrl') or
+                                 rj.get('attachUrl') or (rj.get('result') or {}).get('url') or '')
+                    if naver_url:
+                        return naver_url
+                except Exception:
+                    pass
+                m = re.search(r'https://[^"\'\\s]+pstatic\\.net[^"\'\\s]+', resp_body)
+                if m:
+                    return m.group(0)
+            errors.append('img_upload ' + up_url.split('naver.com')[1] + ' ' + str(status) + ': ' + resp_body[:80])
+    except Exception as e:
+        errors.append('img_dl: ' + str(e)[:80])
+    return None
+
+def replace_image_urls(html):
+    """content 안의 외부 이미지 src를 네이버 CDN URL로 교체"""
+    src_pat = 'src=[' + DQ + SQ + '](https?://[^' + DQ + SQ + ']+)[' + DQ + SQ + r'\s]'
+    def replace_src(match):
+        tag = match.group(0)
+        sm = re.search(src_pat, tag, re.I)
+        if not sm:
+            return tag
+        src = sm.group(1)
+        if 'pstatic.net' in src or 'naver.com' in src or src.startswith('data:'):
+            return tag
+        naver_url = upload_image_to_naver(src)
+        if naver_url:
+            return tag.replace(sm.group(1), naver_url)
+        return tag
+    return re.sub(r'<img[^>]+>', replace_src, html, flags=re.I)
+
+content = replace_image_urls(content)
+
 # Method 1: PostWriteFormsave
 try:
     form_html, _, _ = http_get('https://blog.naver.com/PostWriteForm.naver?blogId=' + blog_id)
     hidden = {}
-    for m in re.finditer(r'<input[^>]+type=["\']hidden["\'][^>]*>', form_html, re.I):
-        nm = re.search(r'name=["\']([^"\']+)["\']', m.group())
-        vm = re.search(r'value=["\']([^"\']*)["\']', m.group())
+    input_re = '<input[^>]+type=[' + DQ + SQ + ']hidden[' + DQ + SQ + '][^>]*>'
+    name_re = 'name=[' + DQ + SQ + ']([^' + DQ + SQ + ']+)[' + DQ + SQ + ']'
+    value_re = 'value=[' + DQ + SQ + ']([^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
+    for m in re.finditer(input_re, form_html, re.I):
+        nm = re.search(name_re, m.group())
+        vm = re.search(value_re, m.group())
         if nm:
             hidden[nm.group(1)] = vm.group(1) if vm else ''
     post_data = {**hidden,
@@ -78,7 +151,9 @@ try:
     if 200 <= status < 300:
         m = re.search(r'logNo=([0-9]+)', final_url) or re.search(r'/([0-9]{5,})(?:[^0-9/?#]|$)', final_url)
         if not m:
-            m = re.search(r'logNo[=:]["\' ]*([0-9]{5,})', body) or re.search(r'"(?:logNo|postNo)"[ ]*:[ ]*"?([0-9]{5,})"?', body)
+            logno_re = 'logNo[=:][' + DQ + SQ + ' ]*([0-9]{5,})'
+            postno_re = DQ + '(?:logNo|postNo)' + DQ + '[ ]*:[ ]*' + DQ + '?([0-9]{5,})' + DQ + '?'
+            m = re.search(logno_re, body) or re.search(postno_re, body)
         if m:
             pid = m.group(1)
             out({'postId': pid, 'postUrl': 'https://blog.naver.com/' + blog_id + '/' + pid})
@@ -114,11 +189,12 @@ out({'error': '발행 실패: ' + ' | '.join(errors), 'errorCode': 'UNKNOWN'})
 `;
 
 async function ensureNasScript(): Promise<void> {
-  const check = await nasExec(`test -f ${NAS_SCRIPT_PATH} && echo exists || echo missing`);
-  if (check.stdout.includes('missing') || check.code !== 0) {
-    await nasExec(`mkdir -p /volume1/homes/urjent/naver_publish`);
-    await nasExecWithStdin(`cat > ${NAS_SCRIPT_PATH} && chmod +x ${NAS_SCRIPT_PATH}`, NAVER_POST_SCRIPT);
-  }
+  try {
+    await nasExecWithStdin(
+      `mkdir -p $(dirname ${NAS_SCRIPT_PATH}) && cat > ${NAS_SCRIPT_PATH} && chmod +x ${NAS_SCRIPT_PATH}`,
+      NAVER_POST_SCRIPT,
+    );
+  } catch { /* ignore */ }
 }
 
 async function postViaNas(params: {
