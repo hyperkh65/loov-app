@@ -69,7 +69,7 @@ jobs:
           NEXT_PUBLIC_SERVICE_DOMAIN=service.loov.co.kr
           NEXT_PUBLIC_APP_URL=https://loov.co.kr
           NEXT_PUBLIC_MAIN_DOMAIN=loov.co.kr
-          INTERNAL_BASE_URL=http://localhost:3000
+          INTERNAL_BASE_URL=http://host.docker.internal:3100
           NAS_SSH_HOST=host.docker.internal
           NAS_SSH_PORT=22
           NAS_SSH_USER=${{ secrets.NAS_SSH_USER }}
@@ -217,7 +217,7 @@ jobs:
           NEXT_PUBLIC_APP_URL=https://loov.2days.kr
           NEXT_PUBLIC_MAIN_DOMAIN=loov.2days.kr
           NEXT_PUBLIC_SITE_URL=https://loov.2days.kr
-          INTERNAL_BASE_URL=http://localhost:3000
+          INTERNAL_BASE_URL=http://host.docker.internal:3100
           NAS_SSH_HOST=host.docker.internal
           NAS_SSH_PORT=22
           NAS_SSH_USER=urjent
