@@ -68,13 +68,14 @@ async function searchNaver(type: 'news' | 'blog', query: string) {
   } catch { return []; }
 }
 
-function buildPrompt(keyword: string, newsItems: {title:string;description:string}[], blogItems: {title:string;description:string}[], promptTemplate?: string | null): string {
+function buildPrompt(keyword: string, newsItems: {title:string;description:string;link?:string}[], blogItems: {title:string;description:string}[], promptTemplate?: string | null): string {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
-  const sources = [
-    ...newsItems.map((n, i) => `[뉴스${i+1}] ${n.title}\n${n.description}`),
-    ...blogItems.map((b, i) => `[블로그${i+1}] ${b.title}\n${b.description}`),
-  ].join('\n\n');
-  return applyPromptTemplate(promptTemplate || DEFAULT_BLOG_PROMPT_TEMPLATE, keyword, today, sources);
+  const sources = newsItems.map((n, i) => `[뉴스${i+1}] ${n.title}\n${n.description}`).join('\n\n');
+  const newsLinks = newsItems
+    .filter(n => n.link)
+    .map(n => `${n.title}||${n.link}`)
+    .join('@@');
+  return applyPromptTemplate(promptTemplate || DEFAULT_BLOG_PROMPT_TEMPLATE, keyword, today, sources, newsLinks);
 }
 
 async function searchInlineImages(query: string, count = 3): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
