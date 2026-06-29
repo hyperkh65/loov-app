@@ -3,7 +3,6 @@ import { createClient, createAdminClient } from '@/lib/supabase-server';
 
 export const maxDuration = 600;
 
-// WordPress: 이미지 URL → WP 미디어 업로드 → 미디어 ID/URL 반환
 async function uploadImageToWordpress(
   imageUrl: string,
   siteUrl: string,
@@ -16,7 +15,6 @@ async function uploadImageToWordpress(
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
     const ext = contentType.split('/')[1]?.split(';')[0]?.split('+')[0] || 'jpg';
     const filename = `auto_blog_${Date.now()}.${ext}`;
-
     const res = await fetch(`${siteUrl}/wp-json/wp/v2/media`, {
       method: 'POST',
       headers: {
@@ -33,7 +31,6 @@ async function uploadImageToWordpress(
   } catch { return null; }
 }
 
-// WP 카테고리/태그 이름 → ID 조회 (없으면 생성)
 async function resolveTermId(
   siteUrl: string,
   auth: string,
@@ -49,7 +46,6 @@ async function resolveTermId(
       const list = await search.json();
       if (list.length > 0) return list[0].id;
     }
-    // 없으면 생성
     const create = await fetch(`${siteUrl}/wp-json/wp/v2/${type}`, {
       method: 'POST',
       headers: { Authorization: auth, 'Content-Type': 'application/json' },
@@ -61,24 +57,12 @@ async function resolveTermId(
   return null;
 }
 
-// 콘텐츠 내 이미지를 WP 미디어로 병렬 업로드 후 URL 교체 (최대 5개)
-async function uploadContentImages(
-  content: string,
-  siteUrl: string,
-  auth: string,
-): Promise<string> {
+async function uploadContentImages(content: string, siteUrl: string, auth: string): Promise<string> {
   const imgRegex = /<img([^>]+)src="([^"]+)"([^>]*)>/gi;
   const matches = [...content.matchAll(imgRegex)];
-  const urlsToUpload = [...new Set(
-    matches.map(m => m[2]).filter(u => u.startsWith('http'))
-  )].slice(0, 5); // 최대 5개만 업로드
-
+  const urlsToUpload = [...new Set(matches.map(m => m[2]).filter(u => u.startsWith('http')))].slice(0, 5);
   if (urlsToUpload.length === 0) return content;
-
-  const results = await Promise.all(
-    urlsToUpload.map(url => uploadImageToWordpress(url, siteUrl, auth))
-  );
-
+  const results = await Promise.all(urlsToUpload.map(url => uploadImageToWordpress(url, siteUrl, auth)));
   let processed = content;
   urlsToUpload.forEach((originalUrl, i) => {
     if (results[i]) processed = processed.replaceAll(originalUrl, results[i]!.url);
@@ -87,10 +71,8 @@ async function uploadContentImages(
 }
 
 export async function POST(req: NextRequest) {
-  // CRON_SECRET bypass: GitHub Actions 예약 발행용
   const cronSecret = process.env.CRON_SECRET;
   const isCron = !!(cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`);
-
   const supabase = isCron ? await createAdminClient() : await createClient();
 
   let userId: string | undefined;
@@ -100,286 +82,249 @@ export async function POST(req: NextRequest) {
     userId = user.id;
   }
 
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = await req.json();
+  const {
+    article_id,
+    blog_platforms = [],
+    sns_platforms = [],
+    wp_site_ids = [],
+    tistory_blog_ids = [],
+    naver_cafe_menu_id,
+    naver_cafe_open_yn = 'Y',
+  } = await req.json();
+
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
-  let articleQuery = supabase
-    .from('bossai_auto_articles')
-    .select('*')
-    .eq('id', article_id);
+  let articleQuery = supabase.from('bossai_auto_articles').select('*').eq('id', article_id);
   if (userId) articleQuery = articleQuery.eq('user_id', userId);
   const { data: article, error: fetchErr } = await articleQuery.single();
-
   if (fetchErr || !article) return NextResponse.json({ error: '글을 찾을 수 없습니다' }, { status: 404 });
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get('host')}`;
   const results: Record<string, { success: boolean; url?: string; error?: string }> = {};
   const cookieHeader = req.headers.get('cookie') || '';
 
-  for (const platform of blog_platforms) {
-    try {
-      if (platform === 'naver') {
+  // ── Phase 1: 모든 블로그 플랫폼 병렬 실행 ───────────────────────────
+  const blogTasks: Promise<void>[] = [];
+
+  if (blog_platforms.includes('naver')) {
+    blogTasks.push((async () => {
+      try {
         const res = await fetch(`${baseUrl}/api/naver/publish`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({
-            title: article.title,
-            content: article.content,
-            tags: article.focus_keyword ? [article.focus_keyword] : [],
-          }),
+          body: JSON.stringify({ title: article.title, content: article.content, tags: article.focus_keyword ? [article.focus_keyword] : [] }),
         });
         const data = await res.json();
         results.naver = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
+      } catch (err) { results.naver = { success: false, error: String(err) }; }
+    })());
+  }
 
-      } else if (platform === 'blogger') {
+  if (blog_platforms.includes('blogger')) {
+    blogTasks.push((async () => {
+      try {
         const res = await fetch(`${baseUrl}/api/blogger/posts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({
-            title: article.title,
-            content: article.content,
-            labels: article.focus_keyword ? [article.focus_keyword] : [],
-          }),
+          body: JSON.stringify({ title: article.title, content: article.content, labels: article.focus_keyword ? [article.focus_keyword] : [] }),
         });
         const data = await res.json();
         results.blogger = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
-
-      } else if (platform === 'wordpress') {
-        // 선택된 사이트 ID로 조회, 없으면 사용자 전체 WP 사이트 조회
-        let sitesQuery = supabase
-          .from('wordpress_sites')
-          .select('id, site_name, site_url, wp_username, app_password');
-        if (userId) sitesQuery = sitesQuery.eq('user_id', userId);
-
-        if (wp_site_ids.length > 0) {
-          sitesQuery = sitesQuery.in('id', wp_site_ids);
-        }
-
-        const { data: sites } = await sitesQuery;
-
-        if (!sites?.length) {
-          results.wordpress = { success: false, error: 'WordPress 사이트가 등록되지 않았습니다. WordPress 관리에서 사이트를 추가하세요.' };
-          continue;
-        }
-
-        // 기본 카테고리 이름 (대시보드 설정에서 추후 변경 가능)
-        const DEFAULT_CATEGORY = 'Aboda';
-
-        for (const site of sites) {
-          const auth = 'Basic ' + Buffer.from(`${site.wp_username}:${site.app_password}`).toString('base64');
-          const siteKey = `wordpress_${site.site_name}`;
-
-          try {
-            // 1. 대표이미지(SVG 썸네일)를 WP 미디어로 먼저 업로드
-            let featuredMediaId: number | undefined;
-            if (article.representative_image_url) {
-              const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth);
-              if (thumb) featuredMediaId = thumb.id;
-            }
-
-            // 2. 본문 내 이미지를 WP 미디어로 업로드 + URL 교체
-            const wpContent = await uploadContentImages(article.content, site.site_url, auth);
-
-            // 3. 카테고리 "Aboda" 조회 또는 생성
-            const catId = await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
-
-            // 4. 태그: focus_keyword + 추가 키워드
-            const tagNames = [
-              article.focus_keyword,
-              article.keyword !== article.focus_keyword ? article.keyword : null,
-            ].filter(Boolean) as string[];
-            const tagIds: number[] = [];
-            for (const tagName of tagNames) {
-              const tid = await resolveTermId(site.site_url, auth, tagName, 'tags');
-              if (tid) tagIds.push(tid);
-            }
-
-            // 5. 포스트 발행
-            // slug: focus_keyword 기반으로 생성 (WordPress 자동 slug 잘림 방지)
-            const rawSlug = (article.focus_keyword || article.keyword || article.title)
-              .replace(/[,!?\.]/g, '')
-              .replace(/\s+/g, '-')
-              .toLowerCase()
-              .slice(0, 60);
-            const postBody: Record<string, unknown> = {
-              title: article.title,
-              content: wpContent,
-              status: 'publish',
-              slug: rawSlug,
-            };
-            if (featuredMediaId) postBody.featured_media = featuredMediaId;
-            if (catId) postBody.categories = [catId];
-            if (tagIds.length) postBody.tags = tagIds;
-
-            const res = await fetch(`${site.site_url}/wp-json/wp/v2/posts`, {
-              method: 'POST',
-              headers: { Authorization: auth, 'Content-Type': 'application/json' },
-              body: JSON.stringify(postBody),
-              signal: AbortSignal.timeout(120_000),
-            });
-
-            if (res.ok) {
-              const post = await res.json();
-              results[siteKey] = { success: true, url: post.link };
-            } else {
-              const errText = await res.text();
-              results[siteKey] = { success: false, error: `WP 오류(${res.status}): ${errText.slice(0, 200)}` };
-            }
-          } catch (siteErr) {
-            results[siteKey] = { success: false, error: siteErr instanceof Error ? siteErr.message : String(siteErr) };
-          }
-        }
-      }
-    } catch (err) {
-      results[platform] = { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
+      } catch (err) { results.blogger = { success: false, error: String(err) }; }
+    })());
   }
 
-  // 티스토리 발행 (선택된 블로그 ID 목록)
-  if (tistory_blog_ids.length > 0) {
-    let tistoryQuery = supabase
-      .from('tistory_connections')
-      .select('id, blog_name, blog_url')
-      .eq('is_active', true)
-      .in('id', tistory_blog_ids);
-    if (userId) tistoryQuery = tistoryQuery.eq('user_id', userId);
-    const { data: tistoryBlogs } = await tistoryQuery;
+  if (blog_platforms.includes('wordpress')) {
+    blogTasks.push((async () => {
+      let sitesQuery = supabase.from('wordpress_sites').select('id, site_name, site_url, wp_username, app_password');
+      if (userId) sitesQuery = sitesQuery.eq('user_id', userId);
+      if (wp_site_ids.length > 0) sitesQuery = sitesQuery.in('id', wp_site_ids);
+      const { data: sites } = await sitesQuery;
 
-    for (const blog of (tistoryBlogs || [])) {
+      if (!sites?.length) {
+        results.wordpress = { success: false, error: 'WordPress 사이트가 등록되지 않았습니다. WordPress 관리에서 사이트를 추가하세요.' };
+        return;
+      }
+
+      const DEFAULT_CATEGORY = 'Aboda';
+      await Promise.all(sites.map(site => (async () => {
+        const auth = 'Basic ' + Buffer.from(`${site.wp_username}:${site.app_password}`).toString('base64');
+        const siteKey = `wordpress_${site.site_name}`;
+        try {
+          let featuredMediaId: number | undefined;
+          if (article.representative_image_url) {
+            const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth);
+            if (thumb) featuredMediaId = thumb.id;
+          }
+          const wpContent = await uploadContentImages(article.content, site.site_url, auth);
+          const catId = await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
+          const tagNames = [
+            article.focus_keyword,
+            article.keyword !== article.focus_keyword ? article.keyword : null,
+          ].filter(Boolean) as string[];
+          const tagIds: number[] = [];
+          for (const tagName of tagNames) {
+            const tid = await resolveTermId(site.site_url, auth, tagName, 'tags');
+            if (tid) tagIds.push(tid);
+          }
+          const rawSlug = (article.focus_keyword || article.keyword || article.title)
+            .replace(/[,!?\.]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 60);
+          const postBody: Record<string, unknown> = {
+            title: article.title, content: wpContent, status: 'publish', slug: rawSlug,
+          };
+          if (featuredMediaId) postBody.featured_media = featuredMediaId;
+          if (catId) postBody.categories = [catId];
+          if (tagIds.length) postBody.tags = tagIds;
+
+          const res = await fetch(`${site.site_url}/wp-json/wp/v2/posts`, {
+            method: 'POST',
+            headers: { Authorization: auth, 'Content-Type': 'application/json' },
+            body: JSON.stringify(postBody),
+            signal: AbortSignal.timeout(120_000),
+          });
+          if (res.ok) {
+            const post = await res.json();
+            results[siteKey] = { success: true, url: post.link };
+          } else {
+            const errText = await res.text();
+            results[siteKey] = { success: false, error: `WP 오류(${res.status}): ${errText.slice(0, 200)}` };
+          }
+        } catch (siteErr) {
+          results[siteKey] = { success: false, error: siteErr instanceof Error ? siteErr.message : String(siteErr) };
+        }
+      })()));
+    })());
+  }
+
+  if (tistory_blog_ids.length > 0) {
+    blogTasks.push((async () => {
+      let tistoryQuery = supabase.from('tistory_connections').select('id, blog_name, blog_url').eq('is_active', true).in('id', tistory_blog_ids);
+      if (userId) tistoryQuery = tistoryQuery.eq('user_id', userId);
+      const { data: tistoryBlogs } = await tistoryQuery;
+      await Promise.all((tistoryBlogs || []).map(blog => (async () => {
+        try {
+          const res = await fetch(`${baseUrl}/api/tistory/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+            body: JSON.stringify({ blog_id: blog.id, title: article.title, content: article.content, tags: article.focus_keyword ? [article.focus_keyword] : [] }),
+          });
+          const data = await res.json();
+          results[`tistory_${blog.blog_name}`] = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
+        } catch (err) {
+          results[`tistory_${blog.blog_name}`] = { success: false, error: String(err) };
+        }
+      })()));
+    })());
+  }
+
+  await Promise.all(blogTasks);
+
+  // ── Phase 2: 네이버 카페 + SNS 병렬 실행 ───────────────────────────
+  const newBlogUrls = Object.entries(results)
+    .filter(([k, v]) => !k.startsWith('sns_') && !k.startsWith('naver_cafe') && v.success && v.url)
+    .map(([, v]) => v.url!);
+  const existingBlogUrls = Object.entries(article.published_urls || {})
+    .filter(([k]) => !k.startsWith('sns_') && !k.startsWith('naver_cafe'))
+    .map(([, v]) => v as string).filter(Boolean);
+  const allBlogUrls = [...new Set([...existingBlogUrls, ...newBlogUrls])];
+  const cafeBlogUrl = results.naver?.url || newBlogUrls[0] || existingBlogUrls.find(u => u.includes('blog.naver.com')) || existingBlogUrls[0];
+
+  await Promise.all([
+    // 네이버 카페
+    naver_cafe_menu_id ? (async () => {
       try {
-        const res = await fetch(`${baseUrl}/api/tistory/publish`, {
+        const res = await fetch(`${baseUrl}/api/naver-cafe/publish`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
           body: JSON.stringify({
-            blog_id: blog.id,
             title: article.title,
             content: article.content,
-            tags: article.focus_keyword ? [article.focus_keyword] : [],
+            menu_id: naver_cafe_menu_id,
+            open_yn: naver_cafe_open_yn,
+            cover_image_url: article.representative_image_url || undefined,
+            blog_url: cafeBlogUrl,
           }),
         });
         const data = await res.json();
-        results[`tistory_${blog.blog_name}`] = res.ok
-          ? { success: true, url: data.url }
-          : { success: false, error: data.error };
+        results.naver_cafe = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
       } catch (err) {
-        results[`tistory_${blog.blog_name}`] = { success: false, error: String(err) };
+        results.naver_cafe = { success: false, error: String(err) };
       }
-    }
-  }
+    })() : Promise.resolve(),
 
-  // 네이버 카페 발행
-  if (naver_cafe_menu_id) {
-    try {
-      // 블로그 링크: 이번 발행 결과 → 기존 발행 이력 순으로 수집
-      const newBlogUrls = Object.entries(results)
-        .filter(([k, v]) => !k.startsWith('sns_') && !k.startsWith('naver_cafe') && v.success && v.url)
-        .map(([, v]) => v.url!);
-      const existingBlogUrls = Object.entries(article.published_urls || {})
-        .filter(([k]) => !k.startsWith('sns_') && !k.startsWith('naver_cafe'))
-        .map(([, v]) => v as string)
-        .filter(Boolean);
-      const cafeBlogUrl = results.naver?.url || newBlogUrls[0] || existingBlogUrls.find(u => u.includes('blog.naver.com')) || existingBlogUrls[0];
-      const res = await fetch(`${baseUrl}/api/naver-cafe/publish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-        body: JSON.stringify({
-          title: article.title,
-          content: article.content,
-          menu_id: naver_cafe_menu_id,
-          open_yn: naver_cafe_open_yn,
-          cover_image_url: article.representative_image_url || undefined,
-          blog_url: cafeBlogUrl,
-        }),
-      });
-      const data = await res.json();
-      results.naver_cafe = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
-    } catch (err) {
-      results.naver_cafe = { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  }
-
-  // SNS 발행
-  if (sns_platforms.length > 0) {
-    try {
-      // 블로그 URL 수집: 현재 요청 결과 + 이미 DB에 저장된 기존 발행 URL 합산
-      const existingBlogUrls = Object.entries(article.published_urls || {})
-        .filter(([k]) => !k.startsWith('sns_'))
-        .map(([, v]) => v as string)
-        .filter(Boolean);
-      const newBlogUrls = Object.entries(results)
-        .filter(([k, v]) => !k.startsWith('sns_') && v.success && v.url)
-        .map(([, v]) => v.url!);
-      const blogUrls = [...new Set([...existingBlogUrls, ...newBlogUrls])];
-      const blogLinkText = blogUrls.length > 0 ? '\n\n🔗 ' + blogUrls.join('\n🔗 ') : '';
-
+    // SNS: Threads와 나머지 플랫폼을 동시 실행
+    sns_platforms.length > 0 ? (async () => {
+      const blogLinkText = allBlogUrls.length > 0 ? '\n\n🔗 ' + allBlogUrls.join('\n🔗 ') : '';
       const threadsIncluded = sns_platforms.includes('threads');
       const otherPlatforms = sns_platforms.filter((p: string) => p !== 'threads');
 
-      // Threads 외 플랫폼: 블로그 URL 포함하여 발행
-      if (otherPlatforms.length > 0) {
-        const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
-        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({
-            content: snsContent,
-            platforms: otherPlatforms,
-            media_urls: article.representative_image_url ? [article.representative_image_url] : [],
-          }),
-        });
-        const data = await res.json();
-        if (data.results) {
-          for (const r of data.results) {
-            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+      await Promise.all([
+        otherPlatforms.length > 0 ? (async () => {
+          try {
+            const snsContent = `${article.title}\n\n${article.meta_description || ''}${blogLinkText}`.trim();
+            const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+              body: JSON.stringify({
+                content: snsContent,
+                platforms: otherPlatforms,
+                media_urls: article.representative_image_url ? [article.representative_image_url] : [],
+              }),
+            });
+            const data = await res.json();
+            if (data.results) {
+              for (const r of data.results) {
+                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+              }
+            }
+          } catch (err) {
+            results.sns = { success: false, error: String(err) };
           }
-        }
-      }
+        })() : Promise.resolve(),
 
-      // Threads: 본문에 URL 없이 발행 → 블로그 URL은 댓글(reply)로 추가
-      if (threadsIncluded) {
-        const threadsContent = `${article.title}\n\n${article.meta_description || ''}`.trim();
-        const threadItems = blogUrls.length > 0
-          ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }]
-          : [];
-        const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({
-            content: threadsContent,
-            platforms: ['threads'],
-            media_urls: article.representative_image_url ? [article.representative_image_url] : [],
-            thread_items: threadItems,
-          }),
-        });
-        const data = await res.json();
-        if (data.results) {
-          for (const r of data.results) {
-            results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+        threadsIncluded ? (async () => {
+          try {
+            const threadsContent = `${article.title}\n\n${article.meta_description || ''}`.trim();
+            const threadItems = allBlogUrls.length > 0 ? [{ content: '🔗 ' + allBlogUrls.join('\n🔗 ') }] : [];
+            const res = await fetch(`${baseUrl}/api/sns/post-now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+              body: JSON.stringify({
+                content: threadsContent,
+                platforms: ['threads'],
+                media_urls: article.representative_image_url ? [article.representative_image_url] : [],
+                thread_items: threadItems,
+              }),
+            });
+            const data = await res.json();
+            if (data.results) {
+              for (const r of data.results) {
+                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+              }
+            }
+          } catch (err) {
+            results.sns_threads = { success: false, error: String(err) };
           }
-        }
-      }
-    } catch (err) {
-      results.sns = { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  }
+        })() : Promise.resolve(),
+      ]);
+    })() : Promise.resolve(),
+  ]);
 
+  // ── 결과 저장 ────────────────────────────────────────────────────────
   const anySuccess = Object.values(results).some(r => r.success);
   const publishedUrls: Record<string, string> = {};
   for (const [k, v] of Object.entries(results)) {
     if (v.success && v.url) publishedUrls[k] = v.url;
   }
 
-  const updateQuery = supabase
-    .from('bossai_auto_articles')
-    .update({
-      status: anySuccess ? 'published' : 'failed',
-      blog_platforms,
-      sns_platforms,
-      published_urls: publishedUrls,
-      published_at: anySuccess ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', article_id);
+  const updateQuery = supabase.from('bossai_auto_articles').update({
+    status: anySuccess ? 'published' : 'failed',
+    blog_platforms,
+    sns_platforms,
+    published_urls: publishedUrls,
+    published_at: anySuccess ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', article_id);
   await (userId ? updateQuery.eq('user_id', userId) : updateQuery);
 
   return NextResponse.json({ results, published_urls: publishedUrls });
