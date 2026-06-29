@@ -157,12 +157,13 @@ try:
         out({'error': 'NID_AUT/NID_SES 만료 — 네이버 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
     if form_status in (401, 403):
         out({'error': '인증 실패(' + str(form_status) + ') — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+    q = '[' + DQ + SQ + ']'
     csrf_pats = [
-        r'["\']_csrf["\']\s*[,:]\s*["\']([^"\']{10,})["\']',
-        r'name=["\']_csrf["\'][^>]+value=["\']([^"\']{10,})["\']',
-        r'value=["\']([^"\']{10,})["\'][^>]+name=["\']_csrf["\']',
-        r'csrf[_-]token["\'\s:=]+["\']([a-zA-Z0-9/+_=-]{20,})["\']',
-        r'"csrf"\s*:\s*"([^"]{10,})"',
+        q + '_csrf' + q + '\\s*[,:]\\s*' + q + '([^' + DQ + SQ + ']{10,})' + q,
+        'name=' + q + '_csrf' + q + '[^>]+value=' + q + '([^' + DQ + SQ + ']{10,})' + q,
+        'value=' + q + '([^' + DQ + SQ + ']{10,})' + q + '[^>]+name=' + q + '_csrf' + q,
+        'csrf[_-]token' + q + '[\\s:=]+' + q + '([a-zA-Z0-9/+_=-]{20,})' + q,
+        DQ + 'csrf' + DQ + '\\s*:\\s*' + DQ + '([^' + DQ + ']{10,})' + DQ,
     ]
     for pat in csrf_pats:
         m = re.search(pat, form_html, re.I)
