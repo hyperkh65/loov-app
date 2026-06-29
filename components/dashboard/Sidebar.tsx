@@ -62,6 +62,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/wordpress', icon: '📝', label: 'WordPress 발행' },
       { href: '/dashboard/wp-stats', icon: '📊', label: 'WordPress 통계' },
       { href: '/dashboard/wordpress/wp-to-sns', icon: '📤', label: 'WP글→SNS 발행' },
+      { href: '/dashboard/tistory',    icon: '🟠', label: '티스토리' },
       { href: '/dashboard/blogger',   icon: '📝', label: 'Google 블로거' },
       { href: '/dashboard/website',        icon: '🏢', label: '홈페이지 관리' },
       { href: '/dashboard/product-detail', icon: '📱', label: '상품 상세페이지' },
