@@ -284,6 +284,7 @@ try:
     if not mgr.get('isSuccess'):
         out({'error': 'manager options: ' + str(mgr.get('result', ''))[:100], 'errorCode': 'CONFIG_ERROR'})
     fv = mgr['result']['formView']
+    fv_keys = list(fv.keys())
     cfg = dict(fv['postConfiguration'])
     meta = dict(fv['postFormMeta'])
     clv = fv.get('categoryListFormView', {})
@@ -357,10 +358,7 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
-ck_note = ' ck=' + ','.join(extra_cookies.keys()) if extra_cookies else ' ck=none'
-nid_note = f' nid={nid_aut[:8]}'
-out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec} autosave={auto_save_dbg}{ck_note}{nid_note}{img_note}', 'errorCode': ec, 'raw': str(wr)[:400]})
+out({'error': f'DIAG nid={nid_aut[:10]} ck={",".join(extra_cookies.keys()) or "none"} fv_keys={fv_keys} as={auto_save_dbg} ec={ec}', 'errorCode': ec, 'raw': str(wr)[:300]})
 `;
 
 async function ensureNasScript(): Promise<void> {
