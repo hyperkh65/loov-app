@@ -359,7 +359,8 @@ if ec in ('LOGIN', 'AUTH', 'auth'):
 
 img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
 ck_note = ' ck=' + ','.join(extra_cookies.keys()) if extra_cookies else ' ck=none'
-out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec} autosave={auto_save_dbg}{ck_note}{img_note}', 'errorCode': ec, 'raw': str(wr)[:400]})
+nid_note = f' nid={nid_aut[:8]}'
+out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec} autosave={auto_save_dbg}{ck_note}{nid_note}{img_note}', 'errorCode': ec, 'raw': str(wr)[:400]})
 `;
 
 async function ensureNasScript(): Promise<void> {
