@@ -281,19 +281,23 @@ dm_str = json.dumps(dm, ensure_ascii=False)
 
 # 4. Auto-save first (RabbitAutoSaveWrite) — required before publish
 auto_save_no = None
+auto_save_dbg = 'skipped'
 try:
     save_params = {'configuration': cfg, 'populationMeta': meta}
-    sr, _ = http_post_form(f'{BASE}/RabbitAutoSaveWrite.naver', [
+    sr, sr_status = http_post_form(f'{BASE}/RabbitAutoSaveWrite.naver', [
         ('blogId', blog_id),
         ('documentModel', dm_str),
         ('populationParams', json.dumps(save_params, ensure_ascii=False)),
-        ('ugcMarketInfo', '{}'),
+        ('ugcMarketInfo', ''),
         ('mediaResources', '{}'),
     ])
     if sr.get('isSuccess'):
         auto_save_no = (sr.get('result') or {}).get('autoSaveNo')
-except Exception:
-    pass
+        auto_save_dbg = f'ok(no={auto_save_no})'
+    else:
+        auto_save_dbg = f'fail(st={sr_status} r={str(sr.get("result",""))[:60]})'
+except Exception as e:
+    auto_save_dbg = f'exc({str(e)[:60]})'
 
 # 5. Publish via RabbitWrite (SEOne API)
 meta_pub = {**meta}
@@ -325,9 +329,8 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-# blog_id 확인용 디버그 정보 포함
 img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
-out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec}{img_note}', 'errorCode': ec, 'raw': str(wr)[:200]})
+out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec} autosave={auto_save_dbg}{img_note}', 'errorCode': ec, 'raw': str(wr)[:400]})
 `;
 
 async function ensureNasScript(): Promise<void> {
