@@ -332,7 +332,7 @@ pop_params = {
     'postConfiguration': pop_cfg,
     'postFormMeta': pop_form_meta,
     'populationMeta': {'categoryId': effective_category_id},
-    'editorSource': '',
+    'editorSource': fv.get('editorSource', ''),
 }
 
 # 4. Auto-save (선택적)
@@ -386,8 +386,8 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-fv_extra_note = f' fvX={list(fv_extra.keys())}' if fv_extra else ''
-out({'error': f'DIAG nid={nid_aut[:10]} ck={",".join(extra_cookies.keys()) or "none"}{fv_extra_note} as={auto_save_dbg} ec={ec}', 'errorCode': ec, 'raw': str(wr)[:300]})
+es_val = repr(fv.get('editorSource', 'MISSING'))
+out({'error': f'ec={ec} as={auto_save_dbg} editorSource={es_val} raw={str(wr)[:200]}', 'errorCode': ec})
 `;
 
 async function ensureNasScript(): Promise<void> {
