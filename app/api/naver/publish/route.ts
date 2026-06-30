@@ -309,25 +309,17 @@ known_fv = {'categoryListFormView', 'postConfiguration', 'postFormMeta'}
 fv_extra = {k: fv[k] for k in fv_keys if k not in known_fv}
 
 # populationParams: post_seone.py 방식 (postConfiguration/postFormMeta 키 사용)
-pop_cfg = {
-    'openType': 2 if is_publish else 1,
-    'commentYn': cfg.get('commentYn', True),
-    'sympathyYn': cfg.get('sympathyYn', True),
-    'scrapType': cfg.get('scrapType', 2),
-    'searchYn': cfg.get('searchYn', True),
-    'outSideAllowYn': cfg.get('outSideAllowYn', True),
-    'twitterPostingYn': False,
-    'facebookPostingYn': False,
-    'cclYn': False,
-}
-pop_form_meta = {
-    'logNo': None,
-    'categoryId': effective_category_id,
-    'directorySeq': 0,
-    'tags': ','.join(tags[:30]) if tags else None,
-    'postWriteTimeType': 'now',
-    'noticePostYn': False,
-}
+# postConfiguration: 서버 값 그대로 + openType만 덮어씀
+pop_cfg = dict(fv['postConfiguration'])
+pop_cfg['openType'] = 2 if is_publish else 1
+
+# postFormMeta: 서버 값 그대로 + 필요한 필드만 덮어씀 (writeToken 등 숨겨진 필드 보존)
+pop_form_meta = dict(fv['postFormMeta'])
+pop_form_meta['categoryId'] = effective_category_id
+pop_form_meta['tags'] = ','.join(tags[:30]) if tags else pop_form_meta.get('tags')
+pop_form_meta['logNo'] = None
+pop_form_meta['prePostDate'] = None
+
 pop_params = {
     'postConfiguration': pop_cfg,
     'postFormMeta': pop_form_meta,
@@ -386,8 +378,9 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-es_val = repr(fv.get('editorSource', 'MISSING'))
-out({'error': f'ec={ec} as={auto_save_dbg} editorSource={es_val} raw={str(wr)[:200]}', 'errorCode': ec})
+fm_keys = list(pop_form_meta.keys())
+es_val = repr(fv.get('editorSource', ''))
+out({'error': f'ec={ec} es={es_val} fmk={fm_keys} as={auto_save_dbg} raw={str(wr)[:150]}', 'errorCode': ec})
 `;
 
 async function ensureNasScript(): Promise<void> {
