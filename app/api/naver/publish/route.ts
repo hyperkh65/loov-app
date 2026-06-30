@@ -219,19 +219,39 @@ def build_doc(title_text, body_html):
         ],
     }}
 
-jsession_id = None
+extra_cookies = {}
+
+def collect_set_cookies(r):
+    for sc in (r.headers.get_all('set-cookie') or []):
+        parts = sc.split(';')
+        if parts:
+            nv = parts[0].strip().split('=', 1)
+            if len(nv) == 2:
+                name = nv[0].strip()
+                if name not in ('NID_AUT', 'NID_SES'):
+                    extra_cookies[name] = nv[1].strip()
+
+def make_write_cookie():
+    parts = [f'NID_AUT={nid_aut}', f'NID_SES={nid_ses}']
+    for k, v in extra_cookies.items():
+        parts.append(f'{k}={v}')
+    return '; '.join(parts)
+
+# 세션 초기화: 쓰기 폼 방문으로 JSESSIONID 등 세션 쿠키 수집
+try:
+    _sr = urllib.request.Request(f'{BASE}/PostWriteForm.naver?blogId={blog_id}', headers=HDR)
+    with urllib.request.urlopen(_sr, timeout=15) as _r:
+        collect_set_cookies(_r)
+except Exception:
+    pass
 
 def http_get_json(url):
-    global jsession_id
     req = urllib.request.Request(url, headers=HDR)
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             final_url = r.geturl()
             body = r.read().decode('utf-8', errors='replace')
-            for sc in (r.headers.get_all('set-cookie') or []):
-                m = re.search(r'JSESSIONID=([^;]+)', sc, re.I)
-                if m:
-                    jsession_id = m.group(1)
+            collect_set_cookies(r)
         if 'nid.naver.com' in final_url or 'nidlogin' in final_url or 'login' in final_url.lower():
             out({'error': 'NID_AUT/NID_SES 만료 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
         if body.strip().startswith('<') or '<!DOCTYPE' in body[:100]:
@@ -242,18 +262,13 @@ def http_get_json(url):
             out({'error': '인증 실패', 'errorCode': 'AUTH'})
         raise
 
-def make_write_cookie():
-    c = f'NID_AUT={nid_aut}; NID_SES={nid_ses}'
-    if jsession_id:
-        c += f'; JSESSIONID={jsession_id}'
-    return c
-
 def http_post_form(url, pairs):
     body = urllib.parse.urlencode(pairs).encode('utf-8')
     h = {**HDR, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Cookie': make_write_cookie()}
     req = urllib.request.Request(url, data=body, headers=h, method='POST')
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
+            collect_set_cookies(r)
             resp_body = r.read().decode('utf-8', errors='replace')
             status = r.status
         try:
@@ -343,9 +358,8 @@ if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
 img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
-cfg_dbg = json.dumps(cfg, ensure_ascii=False)[:150]
-meta_dbg = json.dumps(meta, ensure_ascii=False)[:150]
-out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec} autosave={auto_save_dbg}{img_note}', 'errorCode': ec, 'raw': str(wr)[:400], 'cfg': cfg_dbg, 'meta': meta_dbg})
+ck_note = ' ck=' + ','.join(extra_cookies.keys()) if extra_cookies else ' ck=none'
+out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec} autosave={auto_save_dbg}{ck_note}{img_note}', 'errorCode': ec, 'raw': str(wr)[:400]})
 `;
 
 async function ensureNasScript(): Promise<void> {
