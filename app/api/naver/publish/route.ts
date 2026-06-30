@@ -159,9 +159,11 @@ def http_get_json(url):
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             final_url = r.geturl()
-            if 'nid.naver.com' in final_url or 'nidlogin' in final_url:
-                out({'error': 'NID_AUT/NID_SES 만료', 'errorCode': 'AUTH'})
             body = r.read().decode('utf-8', errors='replace')
+        if 'nid.naver.com' in final_url or 'nidlogin' in final_url or 'login' in final_url.lower():
+            out({'error': 'NID_AUT/NID_SES 만료 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+        if body.strip().startswith('<') or '<!DOCTYPE' in body[:100]:
+            out({'error': 'NID_AUT/NID_SES 만료 (HTML 응답) — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
         return json.loads(body)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
