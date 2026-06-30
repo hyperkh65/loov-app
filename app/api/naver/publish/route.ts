@@ -6,7 +6,7 @@ import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 const NAS_SCRIPT_PATH = '/volume1/homes/urjent/naver_publish/post.py';
 
 // Python script that runs on NAS (home IP) to bypass Naver's cloud IP block
-// Uses SEOne API (RabbitWrite.naver) for text posting
+// Uses SEOne API (RabbitWrite.naver) + blog.upphoto.naver.com for image upload
 const NAVER_POST_SCRIPT = `#!/usr/bin/env python3
 import sys, json, re, uuid, random, string, urllib.request, urllib.parse, urllib.error
 
@@ -22,6 +22,8 @@ content = data['content']
 tags = data.get('tags', [])
 category_no = int(data.get('categoryNo', 0) or 0)
 is_publish = bool(data.get('isPublish', True))
+upload_session_key = data.get('uploadSessionKey', '')
+naver_user_id = data.get('naverUserId', '')
 
 BASE = 'https://blog.naver.com'
 ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
@@ -49,7 +51,70 @@ def out(r):
     print(json.dumps(r, ensure_ascii=False))
     sys.exit(0)
 
+img_errors = []
+
+def upload_image(img_url):
+    if not upload_session_key or not naver_user_id:
+        return None
+    try:
+        dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua})
+        with urllib.request.urlopen(dl_req, timeout=15) as r:
+            img_data = r.read()
+            ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        if not img_data:
+            return None
+        ext_map = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp'}
+        ext = ext_map.get(ctype, 'jpg')
+        raw_name = img_url.split('/')[-1].split('?')[0]
+        filename = re.sub('[^a-zA-Z0-9._-]', '_', raw_name) if raw_name else ('img.' + ext)
+        if '.' not in filename:
+            filename += '.' + ext
+        up_url = f'https://blog.upphoto.naver.com/{upload_session_key}/simpleUpload/0?userId={naver_user_id}&extractExif=true&extractAnimatedCnt=false&extractAnimatedInfo=true&autorotate=true&extractDominantColor=false&type=&customQuery=&denyAnimatedImage=false&skipXcamFiltering=false'
+        boundary = uuid.uuid4().hex
+        body = (f'--{boundary}\\r\\nContent-Disposition: form-data; name="image"; filename="{filename}"\\r\\nContent-Type: {ctype}\\r\\n\\r\\n').encode() + img_data + f'\\r\\n--{boundary}--\\r\\n'.encode()
+        up_req = urllib.request.Request(up_url, data=body, headers={
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Cookie': f'NID_AUT={nid_aut}; NID_SES={nid_ses}',
+            'User-Agent': ua,
+            'Referer': f'{BASE}/PostWriteForm.naver?blogId={blog_id}',
+            'Origin': BASE,
+        }, method='POST')
+        with urllib.request.urlopen(up_req, timeout=20) as r:
+            resp = r.read().decode('utf-8', errors='replace')
+        url_m = re.search('<url>(.*?)</url>', resp)
+        path_m = re.search('<path>(.*?)</path>', resp)
+        w_m = re.search('<width>([0-9]+)</width>', resp)
+        h_m = re.search('<height>([0-9]+)</height>', resp)
+        if url_m:
+            cdn_url = 'https://postfiles.pstatic.net' + url_m.group(1)
+            path = path_m.group(1) if path_m else url_m.group(1)
+            w = int(w_m.group(1)) if w_m else 800
+            h = int(h_m.group(1)) if h_m else 600
+            return {'url': cdn_url, 'path': path, 'width': w, 'height': h, 'filename': filename}
+        img_errors.append('no_url:' + resp[:80])
+        return None
+    except Exception as e:
+        img_errors.append('up:' + str(e)[:60])
+        return None
+
 def make_image_component(src, alt=''):
+    info = None
+    if not ('pstatic.net' in src or 'naver.com' in src or src.startswith('data:')):
+        info = upload_image(src)
+    if info:
+        return {
+            'id': se_id(), 'layout': 'default', '@ctype': 'image',
+            'value': [{
+                'id': se_id(), '@ctype': 'imageUnit',
+                'src': info['url'], 'path': info['path'],
+                'width': info['width'], 'height': info['height'],
+                'originalWidth': info['width'], 'originalHeight': info['height'],
+                'fileName': info['filename'], 'imageType': 'JPEG',
+                'caption': {'id': se_id(), '@ctype': 'paragraph',
+                            'nodes': [{'id': se_id(), 'value': alt, '@ctype': 'textNode'}]} if alt else None,
+                'link': None, 'isLinked': False,
+            }],
+        }
     return {
         'id': se_id(), 'layout': 'default', '@ctype': 'image',
         'value': [{
@@ -204,7 +269,7 @@ except Exception as e:
     out({'error': f'config load fail: {e}', 'errorCode': 'CONFIG_ERROR'})
 
 # 2. Apply settings
-cfg['openType'] = 1  # 1=draft, 2=public (no privilege 우회용 임시 draft)
+cfg['openType'] = 2 if is_publish else 1
 meta['categoryId'] = category_no if category_no and category_no > 0 else default_category_id
 meta['tags'] = ','.join(tags[:30]) if tags else None
 meta['logNo'] = None
@@ -242,7 +307,8 @@ if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
 # blog_id 확인용 디버그 정보 포함
-out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec}', 'errorCode': ec, 'raw': str(wr)[:300]})
+img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
+out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec}{img_note}', 'errorCode': ec, 'raw': str(wr)[:200]})
 `;
 
 async function ensureNasScript(): Promise<void> {
@@ -258,6 +324,7 @@ async function postViaNas(params: {
   blogId: string; nidAut: string; nidSes: string;
   title: string; content: string; tags: string[];
   categoryNo: number; isPublish: boolean;
+  uploadSessionKey?: string; naverUserId?: string;
 }): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string }> {
   try {
     await ensureNasScript();
@@ -293,7 +360,7 @@ export async function POST(req: NextRequest) {
 
   const { data: conn } = await supabase
     .from('naver_connections')
-    .select('blog_id, nid_aut, nid_ses, access_token, refresh_token, token_expires_at')
+    .select('blog_id, nid_aut, nid_ses, access_token, refresh_token, token_expires_at, upload_session_key, naver_user_id')
     .eq('user_id', user.id)
     .single();
 
@@ -315,6 +382,8 @@ export async function POST(req: NextRequest) {
       tags,
       categoryNo,
       isPublish,
+      uploadSessionKey: conn.upload_session_key || '',
+      naverUserId: conn.naver_user_id || '',
     });
 
     if (nasResult.errorCode === 'AUTH') {
