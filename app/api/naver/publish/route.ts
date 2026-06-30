@@ -279,8 +279,27 @@ meta['prePostDate'] = None
 dm = build_doc(title, content)
 dm_str = json.dumps(dm, ensure_ascii=False)
 
-# 4. Publish via RabbitWrite (SEOne API)
-pop_params = {'configuration': cfg, 'populationMeta': meta}
+# 4. Auto-save first (RabbitAutoSaveWrite) — required before publish
+auto_save_no = None
+try:
+    save_params = {'configuration': cfg, 'populationMeta': meta}
+    sr, _ = http_post_form(f'{BASE}/RabbitAutoSaveWrite.naver', [
+        ('blogId', blog_id),
+        ('documentModel', dm_str),
+        ('populationParams', json.dumps(save_params, ensure_ascii=False)),
+        ('ugcMarketInfo', '{}'),
+        ('mediaResources', '{}'),
+    ])
+    if sr.get('isSuccess'):
+        auto_save_no = (sr.get('result') or {}).get('autoSaveNo')
+except Exception:
+    pass
+
+# 5. Publish via RabbitWrite (SEOne API)
+meta_pub = {**meta}
+if auto_save_no:
+    meta_pub['autoSaveNo'] = auto_save_no
+pop_params = {'configuration': cfg, 'populationMeta': meta_pub}
 wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
     ('documentModel', dm_str),
     ('populationParams', json.dumps(pop_params, ensure_ascii=False)),
