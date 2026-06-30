@@ -204,7 +204,7 @@ except Exception as e:
     out({'error': f'config load fail: {e}', 'errorCode': 'CONFIG_ERROR'})
 
 # 2. Apply settings
-cfg['openType'] = 2 if is_publish else 1
+cfg['openType'] = 1  # 1=draft, 2=public (no privilege 우회용 임시 draft)
 meta['categoryId'] = category_no if category_no and category_no > 0 else default_category_id
 meta['tags'] = ','.join(tags[:30]) if tags else None
 meta['logNo'] = None
@@ -241,7 +241,8 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-out({'error': f'RabbitWrite fail: status={status} ec={ec}', 'errorCode': ec, 'raw': str(wr)[:200]})
+# blog_id 확인용 디버그 정보 포함
+out({'error': f'RabbitWrite fail: blogId={blog_id} status={status} ec={ec}', 'errorCode': ec, 'raw': str(wr)[:300]})
 `;
 
 async function ensureNasScript(): Promise<void> {
