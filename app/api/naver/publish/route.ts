@@ -298,48 +298,73 @@ except Exception as e:
     out({'error': f'config load fail: {e}', 'errorCode': 'CONFIG_ERROR'})
 
 # 2. Apply settings
-cfg['openType'] = 2 if is_publish else 1
-meta['categoryId'] = category_no if category_no and category_no > 0 else default_category_id
-meta['tags'] = ','.join(tags[:30]) if tags else None
-meta['logNo'] = None
-meta['prePostDate'] = None
+effective_category_id = category_no if category_no and category_no > 0 else default_category_id
 
 # 3. Build SEOne document
 dm = build_doc(title, content)
 dm_str = json.dumps(dm, ensure_ascii=False)
 
-# 4. Auto-save first (RabbitAutoSaveWrite) — required before publish
+# fv에 알 수 없는 추가 키가 있으면 기록
+known_fv = {'categoryListFormView', 'postConfiguration', 'postFormMeta'}
+fv_extra = {k: fv[k] for k in fv_keys if k not in known_fv}
+
+# populationParams: post_seone.py 방식 (postConfiguration/postFormMeta 키 사용)
+pop_cfg = {
+    'openType': 2 if is_publish else 1,
+    'commentYn': cfg.get('commentYn', True),
+    'sympathyYn': cfg.get('sympathyYn', True),
+    'scrapType': cfg.get('scrapType', 2),
+    'searchYn': cfg.get('searchYn', True),
+    'outSideAllowYn': cfg.get('outSideAllowYn', True),
+    'twitterPostingYn': False,
+    'facebookPostingYn': False,
+    'cclYn': False,
+}
+pop_form_meta = {
+    'logNo': None,
+    'categoryId': effective_category_id,
+    'directorySeq': 0,
+    'tags': ','.join(tags[:30]) if tags else None,
+    'postWriteTimeType': 'now',
+    'noticePostYn': False,
+}
+pop_params = {
+    'postConfiguration': pop_cfg,
+    'postFormMeta': pop_form_meta,
+    'populationMeta': {'categoryId': effective_category_id},
+    'editorSource': '',
+}
+
+# 4. Auto-save (선택적)
 auto_save_no = None
-auto_save_dbg = 'skipped'
+auto_save_dbg = 'skip'
 try:
-    save_params = {'configuration': cfg, 'populationMeta': meta}
     sr, sr_status = http_post_form(f'{BASE}/RabbitAutoSaveWrite.naver', [
         ('blogId', blog_id),
         ('documentModel', dm_str),
-        ('populationParams', json.dumps(save_params, ensure_ascii=False)),
-        ('ugcMarketInfo', ''),
+        ('populationParams', json.dumps(pop_params, ensure_ascii=False)),
+        ('ugcMarketInfo', '{}'),
         ('mediaResources', '{}'),
     ])
     if sr.get('isSuccess'):
         auto_save_no = (sr.get('result') or {}).get('autoSaveNo')
-        auto_save_dbg = f'ok(no={auto_save_no})'
+        auto_save_dbg = f'ok({auto_save_no})'
     else:
-        auto_save_dbg = f'fail(st={sr_status} sr={str(sr)[:120]})'
+        auto_save_dbg = f'fail({str(sr)[:80]})'
 except Exception as e:
-    auto_save_dbg = f'exc({str(e)[:80]})'
+    auto_save_dbg = f'exc({str(e)[:50]})'
 
-# 5. Publish via RabbitWrite (SEOne API)
-meta_pub = {**meta}
+# 5. Publish via RabbitWrite
 if auto_save_no:
-    meta_pub['autoSaveNo'] = auto_save_no
-pop_params = {'configuration': cfg, 'populationMeta': meta_pub}
+    pop_params['populationMeta']['autoSaveNo'] = auto_save_no
+
 wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
+    ('blogId', blog_id),
     ('documentModel', dm_str),
     ('populationParams', json.dumps(pop_params, ensure_ascii=False)),
-    ('ugcMarketInfo', ''),
-    ('buyWithMyOwnMoneyInfo', ''),
+    ('ugcMarketInfo', '{}'),
+    ('buyWithMyOwnMoneyInfo', '{}'),
     ('mediaResources', '{}'),
-    ('blogId', blog_id),
     ('productApiVersion', ''),
     ('tokenId', ''),
 ])
@@ -348,9 +373,12 @@ if status in (401, 403):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
 if wr.get('isSuccess'):
-    redirect = (wr.get('result') or {}).get('redirectUrl', '')
-    m = re.search('logNo=([0-9]+)', redirect)
-    log_no = m.group(1) if m else ''
+    result_r = wr.get('result', {})
+    log_no = str(result_r.get('logNo', '')) if isinstance(result_r, dict) else ''
+    if not log_no:
+        redirect = result_r.get('redirectUrl', '') if isinstance(result_r, dict) else ''
+        m2 = re.search('logNo=([0-9]+)', redirect)
+        log_no = m2.group(1) if m2 else ''
     out({'postId': log_no, 'postUrl': f'https://blog.naver.com/{blog_id}/{log_no}'})
 
 result_val = wr.get('result', {})
@@ -358,7 +386,8 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-out({'error': f'DIAG nid={nid_aut[:10]} ck={",".join(extra_cookies.keys()) or "none"} fv_keys={fv_keys} as={auto_save_dbg} ec={ec}', 'errorCode': ec, 'raw': str(wr)[:300]})
+fv_extra_note = f' fvX={list(fv_extra.keys())}' if fv_extra else ''
+out({'error': f'DIAG nid={nid_aut[:10]} ck={",".join(extra_cookies.keys()) or "none"}{fv_extra_note} as={auto_save_dbg} ec={ec}', 'errorCode': ec, 'raw': str(wr)[:300]})
 `;
 
 async function ensureNasScript(): Promise<void> {
