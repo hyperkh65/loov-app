@@ -304,27 +304,38 @@ effective_category_id = category_no if category_no and category_no > 0 else defa
 dm = build_doc(title, content)
 dm_str = json.dumps(dm, ensure_ascii=False)
 
-# fv에 알 수 없는 추가 키가 있으면 기록
-known_fv = {'categoryListFormView', 'postConfiguration', 'postFormMeta'}
-fv_extra = {k: fv[k] for k in fv_keys if k not in known_fv}
+# Build populationParams using Redux/D8 key names:
+# 'configuration' (not postConfiguration), 'populationMeta' (not postFormMeta)
+cfg_raw = dict(fv['postConfiguration'])
+ccl_yn = cfg_raw.get('cclYn', False)
+configuration = {k: v for k, v in cfg_raw.items() if k not in ('commercialUsesYn', 'contentsModification')}
+if ccl_yn:
+    configuration['commercialUsesYn'] = cfg_raw.get('commercialUsesYn')
+    configuration['contentsModification'] = cfg_raw.get('contentsModification')
+configuration['openType'] = 2 if is_publish else 1
 
-# populationParams: post_seone.py 방식 (postConfiguration/postFormMeta 키 사용)
-# postConfiguration: 서버 값 그대로 + openType만 덮어씀
-pop_cfg = dict(fv['postConfiguration'])
-pop_cfg['openType'] = 2 if is_publish else 1
+pop_meta = dict(fv['postFormMeta'])
+pop_meta['categoryId'] = effective_category_id
+pop_meta['tags'] = ','.join(tags[:30]) if tags else pop_meta.get('tags')
+pop_meta['logNo'] = None
+pop_meta['prePostDate'] = None
+if not pop_meta.get('themeSourceCode'):
+    pop_meta.pop('themeSourceCode', None)
+if not pop_meta.get('bookThemeInfoPk'):
+    pop_meta.pop('bookThemeInfoPk', None)
 
-# postFormMeta: 서버 값 그대로 + 필요한 필드만 덮어씀 (writeToken 등 숨겨진 필드 보존)
-pop_form_meta = dict(fv['postFormMeta'])
-pop_form_meta['categoryId'] = effective_category_id
-pop_form_meta['tags'] = ','.join(tags[:30]) if tags else pop_form_meta.get('tags')
-pop_form_meta['logNo'] = None
-pop_form_meta['prePostDate'] = None
+media_resources = json.dumps({'image': [], 'video': [], 'file': []}, ensure_ascii=False)
 
-pop_params = {
-    'postConfiguration': pop_cfg,
-    'postFormMeta': pop_form_meta,
-    'populationMeta': {'categoryId': effective_category_id},
+# AutoSave populationParams includes editorSource
+pop_params_autosave = {
+    'configuration': configuration,
+    'populationMeta': pop_meta,
     'editorSource': fv.get('editorSource', ''),
+}
+# Write populationParams (no editorSource)
+pop_params_write = {
+    'configuration': configuration,
+    'populationMeta': pop_meta,
 }
 
 # 4. Auto-save (선택적)
@@ -334,9 +345,9 @@ try:
     sr, sr_status = http_post_form(f'{BASE}/RabbitAutoSaveWrite.naver', [
         ('blogId', blog_id),
         ('documentModel', dm_str),
-        ('populationParams', json.dumps(pop_params, ensure_ascii=False)),
-        ('ugcMarketInfo', '{}'),
-        ('mediaResources', '{}'),
+        ('populationParams', json.dumps(pop_params_autosave, ensure_ascii=False)),
+        ('mediaResources', media_resources),
+        ('productApiVersion', 'v1'),
     ])
     if sr.get('isSuccess'):
         auto_save_no = (sr.get('result') or {}).get('autoSaveNo')
@@ -347,18 +358,12 @@ except Exception as e:
     auto_save_dbg = f'exc({str(e)[:50]})'
 
 # 5. Publish via RabbitWrite
-if auto_save_no:
-    pop_params['populationMeta']['autoSaveNo'] = auto_save_no
-
 wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
     ('blogId', blog_id),
     ('documentModel', dm_str),
-    ('populationParams', json.dumps(pop_params, ensure_ascii=False)),
-    ('ugcMarketInfo', '{}'),
-    ('buyWithMyOwnMoneyInfo', '{}'),
-    ('mediaResources', '{}'),
-    ('productApiVersion', ''),
-    ('tokenId', ''),
+    ('populationParams', json.dumps(pop_params_write, ensure_ascii=False)),
+    ('mediaResources', media_resources),
+    ('productApiVersion', 'v1'),
 ])
 
 if status in (401, 403):
@@ -378,9 +383,7 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-fm_keys = list(pop_form_meta.keys())
-es_val = repr(fv.get('editorSource', ''))
-out({'error': f'ec={ec} es={es_val} fmk={fm_keys} as={auto_save_dbg} raw={str(wr)[:150]}', 'errorCode': ec})
+out({'error': f'ec={ec} as={auto_save_dbg} raw={str(wr)[:150]}', 'errorCode': ec})
 `;
 
 async function ensureNasScript(): Promise<void> {
