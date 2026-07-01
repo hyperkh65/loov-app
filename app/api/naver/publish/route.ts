@@ -71,9 +71,7 @@ def upload_image(img_url):
             filename += '.' + ext
         up_url = f'https://blog.upphoto.naver.com/{upload_session_key}/simpleUpload/0?userId={naver_user_id}&extractExif=true&extractAnimatedCnt=false&extractAnimatedInfo=true&autorotate=true&extractDominantColor=false&type=&customQuery=&denyAnimatedImage=false&skipXcamFiltering=false'
         boundary = uuid.uuid4().hex
-        body = (
-            f'--{boundary}\\r\\nContent-Disposition: form-data; name="image"; filename="{filename}"\\r\\nContent-Type: {ctype}\\r\\n\\r\\n'
-        ).encode() + img_data + f'\\r\\n--{boundary}--\\r\\n'.encode()
+        body = (f'--{boundary}\\r\\nContent-Disposition: form-data; name="image"; filename="{filename}"\\r\\nContent-Type: {ctype}\\r\\n\\r\\n').encode() + img_data + f'\\r\\n--{boundary}--\\r\\n'.encode()
         up_req = urllib.request.Request(up_url, data=body, headers={
             'Content-Type': f'multipart/form-data; boundary={boundary}',
             'Cookie': f'NID_AUT={nid_aut}; NID_SES={nid_ses}',
@@ -221,21 +219,62 @@ def build_doc(title_text, body_html):
         ],
     }}
 
+extra_cookies = {}
+
+def collect_set_cookies(r):
+    for sc in (r.headers.get_all('set-cookie') or []):
+        parts = sc.split(';')
+        if parts:
+            nv = parts[0].strip().split('=', 1)
+            if len(nv) == 2:
+                name = nv[0].strip()
+                if name not in ('NID_AUT', 'NID_SES'):
+                    extra_cookies[name] = nv[1].strip()
+
+def make_write_cookie():
+    parts = [f'NID_AUT={nid_aut}', f'NID_SES={nid_ses}']
+    for k, v in extra_cookies.items():
+        parts.append(f'{k}={v}')
+    return '; '.join(parts)
+
+# 세션 초기화: 쓰기 폼 방문으로 JSESSIONID 등 세션 쿠키 수집
+try:
+    _sr = urllib.request.Request(f'{BASE}/PostWriteForm.naver?blogId={blog_id}', headers=HDR)
+    with urllib.request.urlopen(_sr, timeout=15) as _r:
+        collect_set_cookies(_r)
+except Exception:
+    pass
+
 def http_get_json(url):
     req = urllib.request.Request(url, headers=HDR)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        final_url = r.geturl()
-        if 'nid.naver.com' in final_url or 'nidlogin' in final_url:
-            out({'error': 'NID_AUT/NID_SES 만료 — 네이버 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            final_url = r.geturl()
+            body = r.read().decode('utf-8', errors='replace')
+            collect_set_cookies(r)
+        if 'nid.naver.com' in final_url or 'nidlogin' in final_url or 'login' in final_url.lower():
+            out({'error': 'NID_AUT/NID_SES 만료 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+        if body.strip().startswith('<') or '<!DOCTYPE' in body[:100]:
+            out({'error': 'NID_AUT/NID_SES 만료 (HTML 응답) — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
+        return json.loads(body)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            out({'error': '인증 실패', 'errorCode': 'AUTH'})
+        raise
 
 def http_post_form(url, pairs):
     body = urllib.parse.urlencode(pairs).encode('utf-8')
-    h = {**HDR, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'}
+    h = {**HDR, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Cookie': make_write_cookie()}
     req = urllib.request.Request(url, data=body, headers=h, method='POST')
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read().decode()), r.status
+            collect_set_cookies(r)
+            resp_body = r.read().decode('utf-8', errors='replace')
+            status = r.status
+        try:
+            return json.loads(resp_body), status
+        except Exception:
+            return {'isSuccess': False, '_raw': resp_body[:200]}, status
     except urllib.error.HTTPError as e:
         return {'isSuccess': False, '_httpCode': e.code}, e.code
 
@@ -243,8 +282,9 @@ def http_post_form(url, pairs):
 try:
     mgr = http_get_json(f'{BASE}/PostWriteFormManagerOptions.naver?blogId={blog_id}')
     if not mgr.get('isSuccess'):
-        raise ValueError('manager options failed: ' + str(mgr.get('result', '')))
+        out({'error': 'manager options: ' + str(mgr.get('result', ''))[:100], 'errorCode': 'CONFIG_ERROR'})
     fv = mgr['result']['formView']
+    fv_keys = list(fv.keys())
     cfg = dict(fv['postConfiguration'])
     meta = dict(fv['postFormMeta'])
     clv = fv.get('categoryListFormView', {})
@@ -252,56 +292,98 @@ try:
     if not default_category_id:
         cats = clv.get('categoryFormViewList', [])
         default_category_id = cats[0].get('categoryNo', 0) if cats else 0
-except urllib.error.HTTPError as e:
-    if e.code in (401, 403):
-        out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
-    out({'error': f'블로그 설정 로드 실패: HTTP {e.code}', 'errorCode': 'CONFIG_ERROR'})
 except SystemExit:
     raise
 except Exception as e:
-    out({'error': f'블로그 설정 로드 실패: {e}', 'errorCode': 'CONFIG_ERROR'})
+    out({'error': f'config load fail: {e}', 'errorCode': 'CONFIG_ERROR'})
 
 # 2. Apply settings
-cfg['openType'] = 2 if is_publish else 1
-meta['categoryId'] = category_no if category_no and category_no > 0 else default_category_id
-meta['tags'] = ','.join(tags[:30]) if tags else None
-meta['logNo'] = None
-meta['prePostDate'] = None
+effective_category_id = category_no if category_no and category_no > 0 else default_category_id
 
-# 3. Build SEOne document (HTML → components, external images uploaded to Naver CDN)
+# 3. Build SEOne document
 dm = build_doc(title, content)
 dm_str = json.dumps(dm, ensure_ascii=False)
 
-# 4. Publish via RabbitWrite (SEOne API)
-pop_params = {'configuration': cfg, 'populationMeta': meta}
+# Build populationParams using Redux/D8 key names:
+# 'configuration' (not postConfiguration), 'populationMeta' (not postFormMeta)
+cfg_raw = dict(fv['postConfiguration'])
+ccl_yn = cfg_raw.get('cclYn', False)
+configuration = {k: v for k, v in cfg_raw.items() if k not in ('commercialUsesYn', 'contentsModification')}
+if ccl_yn:
+    configuration['commercialUsesYn'] = cfg_raw.get('commercialUsesYn')
+    configuration['contentsModification'] = cfg_raw.get('contentsModification')
+configuration['openType'] = 2 if is_publish else 1
+
+pop_meta = dict(fv['postFormMeta'])
+pop_meta['categoryId'] = effective_category_id
+pop_meta['tags'] = ','.join(tags[:30]) if tags else pop_meta.get('tags')
+pop_meta['logNo'] = None
+pop_meta['prePostDate'] = None
+if not pop_meta.get('themeSourceCode'):
+    pop_meta.pop('themeSourceCode', None)
+if not pop_meta.get('bookThemeInfoPk'):
+    pop_meta.pop('bookThemeInfoPk', None)
+
+media_resources = json.dumps({'image': [], 'video': [], 'file': []}, ensure_ascii=False)
+
+# AutoSave populationParams includes editorSource
+pop_params_autosave = {
+    'configuration': configuration,
+    'populationMeta': pop_meta,
+    'editorSource': fv.get('editorSource', ''),
+}
+# Write populationParams (no editorSource)
+pop_params_write = {
+    'configuration': configuration,
+    'populationMeta': pop_meta,
+}
+
+# 4. Auto-save (선택적)
+auto_save_no = None
+auto_save_dbg = 'skip'
+try:
+    sr, sr_status = http_post_form(f'{BASE}/RabbitAutoSaveWrite.naver', [
+        ('blogId', blog_id),
+        ('documentModel', dm_str),
+        ('populationParams', json.dumps(pop_params_autosave, ensure_ascii=False)),
+        ('mediaResources', media_resources),
+        ('productApiVersion', 'v1'),
+    ])
+    if sr.get('isSuccess'):
+        auto_save_no = (sr.get('result') or {}).get('autoSaveNo')
+        auto_save_dbg = f'ok({auto_save_no})'
+    else:
+        auto_save_dbg = f'fail({str(sr)[:80]})'
+except Exception as e:
+    auto_save_dbg = f'exc({str(e)[:50]})'
+
+# 5. Publish via RabbitWrite
 wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
-    ('documentModel', dm_str),
-    ('populationParams', json.dumps(pop_params, ensure_ascii=False)),
-    ('ugcMarketInfo', ''),
-    ('buyWithMyOwnMoneyInfo', ''),
-    ('mediaResources', '{}'),
     ('blogId', blog_id),
-    ('productApiVersion', ''),
-    ('tokenId', ''),
+    ('documentModel', dm_str),
+    ('populationParams', json.dumps(pop_params_write, ensure_ascii=False)),
+    ('mediaResources', media_resources),
+    ('productApiVersion', 'v1'),
 ])
 
 if status in (401, 403):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
 if wr.get('isSuccess'):
-    redirect = wr.get('result', {}).get('redirectUrl', '')
-    m = re.search('logNo=([0-9]+)', redirect)
-    log_no = m.group(1) if m else ''
-    img_note = (' [img_warn:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
-    out({'postId': log_no, 'postUrl': f'https://blog.naver.com/{blog_id}/{log_no}', 'imgNote': img_note})
+    result_r = wr.get('result', {})
+    log_no = str(result_r.get('logNo', '')) if isinstance(result_r, dict) else ''
+    if not log_no:
+        redirect = result_r.get('redirectUrl', '') if isinstance(result_r, dict) else ''
+        m2 = re.search('logNo=([0-9]+)', redirect)
+        log_no = m2.group(1) if m2 else ''
+    out({'postId': log_no, 'postUrl': f'https://blog.naver.com/{blog_id}/{log_no}'})
 
-result = wr.get('result', {})
-ec = result.get('errorCode', 'UNKNOWN') if isinstance(result, dict) else str(result)
+result_val = wr.get('result', {})
+ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else str(result_val)
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-img_note = (' [img:' + ','.join(img_errors[:3]) + ']') if img_errors else ''
-out({'error': f'발행 실패: {ec}{img_note}', 'errorCode': ec, 'raw': str(wr)[:300]})
+out({'error': f'ec={ec} as={auto_save_dbg} raw={str(wr)[:150]}', 'errorCode': ec})
 `;
 
 async function ensureNasScript(): Promise<void> {
