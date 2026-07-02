@@ -115,17 +115,9 @@ def make_image_component(src, alt=''):
                 'link': None, 'isLinked': False,
             }],
         }
-    return {
-        'id': se_id(), 'layout': 'default', '@ctype': 'image',
-        'value': [{
-            'id': se_id(), '@ctype': 'imageUnit',
-            'src': src, 'width': 800, 'height': 600,
-            'originalWidth': 800, 'originalHeight': 600,
-            'caption': {'id': se_id(), '@ctype': 'paragraph',
-                        'nodes': [{'id': se_id(), 'value': alt, '@ctype': 'textNode'}]} if alt else None,
-            'link': None, 'isLinked': False,
-        }],
-    }
+    # Cannot embed external images without uploading to Naver CDN (causes parse fail)
+    # Return None to skip; caller must handle None
+    return None
 
 def make_text_node(text):
     return {
@@ -174,7 +166,9 @@ def html_to_components(body_html):
             alt_m = re.search('alt=[' + DQ + SQ + '](.*?)[' + DQ + SQ + ']', chunk, re.I)
             if img_m:
                 flush_texts()
-                components.append(make_image_component(img_m.group(1), alt_m.group(1) if alt_m else ''))
+                img_comp = make_image_component(img_m.group(1), alt_m.group(1) if alt_m else '')
+                if img_comp:
+                    components.append(img_comp)
         elif cl.startswith('<h2'):
             flush_texts()
             text = strip_html(chunk).strip()
@@ -193,7 +187,9 @@ def html_to_components(body_html):
                     alt_m = re.search('alt=[' + DQ + SQ + '](.*?)[' + DQ + SQ + ']', part, re.I)
                     if img_m:
                         flush_texts()
-                        components.append(make_image_component(img_m.group(1), alt_m.group(1) if alt_m else ''))
+                        img_comp = make_image_component(img_m.group(1), alt_m.group(1) if alt_m else '')
+                        if img_comp:
+                            components.append(img_comp)
                 else:
                     for p in re.split('<(?:p|br|div)[^>]*>', part):
                         t = strip_html(p).strip()
