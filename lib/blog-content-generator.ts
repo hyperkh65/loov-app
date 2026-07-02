@@ -99,7 +99,12 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
         const data = await res.json();
         const hits = data.hits || [];
         if (hits.length > 0) {
-          const urls = hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+          const urls = hits.slice(0, count).map((h: { webformatURL: string; previewURL?: string }) => {
+            // previewURL is a stable CDN URL (cdn.pixabay.com); derive 640px version from it
+            // webformatURL uses pixabay.com/get/ signed URLs that expire
+            const preview = h.previewURL || '';
+            return preview ? preview.replace(/_\d+\./, '_640.') : h.webformatURL;
+          });
           return { displayUrls: urls, thumbUrl: urls[0] };
         }
       }
