@@ -57,7 +57,12 @@ def upload_image(img_url):
     if not upload_session_key or not naver_user_id:
         return None
     try:
-        dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua})
+        dl_headers = {'User-Agent': ua}
+        if 'pixabay.com' in img_url:
+            dl_headers['Referer'] = 'https://pixabay.com/'
+        elif 'pexels.com' in img_url:
+            dl_headers['Referer'] = 'https://www.pexels.com/'
+        dl_req = urllib.request.Request(img_url, headers=dl_headers)
         with urllib.request.urlopen(dl_req, timeout=15) as r:
             img_data = r.read()
             ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
