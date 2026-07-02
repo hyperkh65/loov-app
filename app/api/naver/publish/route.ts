@@ -140,13 +140,14 @@ def make_text_node(text):
     }
 
 def make_heading_component(text, level=2):
-    ctype = 'heading2' if level == 2 else 'heading3'
+    font_size = 'fs24' if level == 2 else 'fs19'
     return {
-        'id': se_id(), 'layout': 'default', '@ctype': ctype,
+        'id': se_id(), 'layout': 'default', '@ctype': 'text',
         'value': [{
             'id': se_id(), '@ctype': 'paragraph',
             'nodes': [{'id': se_id(), 'value': text, '@ctype': 'textNode',
-                       'style': {'fontFamily': 'nanumbareunhipi', '@ctype': 'nodeStyle'}}],
+                       'style': {'bold': True, 'fontFamily': 'nanumbareunhipi',
+                                 'fontSizeCode': font_size, '@ctype': 'nodeStyle'}}],
         }],
     }
 
