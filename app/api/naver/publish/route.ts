@@ -24,6 +24,7 @@ category_no = int(data.get('categoryNo', 0) or 0)
 is_publish = bool(data.get('isPublish', True))
 upload_session_key = data.get('uploadSessionKey', '')
 naver_user_id = data.get('naverUserId', '')
+preloaded_images = data.get('preloadedImages', {})
 
 BASE = 'https://blog.naver.com'
 ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
@@ -84,15 +85,17 @@ def upload_image(img_url):
     if not naver_user_id:
         return None
     try:
-        dl_headers = {'User-Agent': ua}
-        if 'pixabay.com' in img_url:
-            dl_headers['Referer'] = 'https://pixabay.com/'
-        elif 'pexels.com' in img_url:
-            dl_headers['Referer'] = 'https://www.pexels.com/'
-        dl_req = urllib.request.Request(img_url, headers=dl_headers)
-        with urllib.request.urlopen(dl_req, timeout=15) as r:
-            img_data = r.read()
-            ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        if img_url in preloaded_images:
+            import base64 as _b64
+            pre = preloaded_images[img_url]
+            img_data = _b64.b64decode(pre['data'])
+            ctype = pre.get('type', 'image/jpeg').split(';')[0].strip()
+        else:
+            dl_headers = {'User-Agent': ua}
+            dl_req = urllib.request.Request(img_url, headers=dl_headers)
+            with urllib.request.urlopen(dl_req, timeout=15) as r:
+                img_data = r.read()
+                ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
         if not img_data:
             return None
         session_key = get_upload_session_key()
@@ -431,6 +434,25 @@ async function ensureNasScript(): Promise<void> {
   } catch { /* ignore */ }
 }
 
+async function preloadImages(html: string): Promise<Record<string, { data: string; type: string }>> {
+  const imgUrls = [...html.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)].map(m => m[1]);
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36';
+  const result: Record<string, { data: string; type: string }> = {};
+  await Promise.all(imgUrls.map(async (url) => {
+    try {
+      const headers: Record<string, string> = { 'User-Agent': ua };
+      if (url.includes('pixabay.com')) headers['Referer'] = 'https://pixabay.com/';
+      else if (url.includes('pexels.com')) headers['Referer'] = 'https://www.pexels.com/';
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return;
+      const buf = await res.arrayBuffer();
+      const type = (res.headers.get('Content-Type') || 'image/jpeg').split(';')[0].trim();
+      result[url] = { data: Buffer.from(buf).toString('base64'), type };
+    } catch { /* skip */ }
+  }));
+  return result;
+}
+
 async function postViaNas(params: {
   blogId: string; nidAut: string; nidSes: string;
   title: string; content: string; tags: string[];
@@ -439,9 +461,10 @@ async function postViaNas(params: {
 }): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string }> {
   try {
     await ensureNasScript();
+    const preloadedImages = await preloadImages(params.content);
     const result = await nasExecWithStdin(
       `python3 ${NAS_SCRIPT_PATH}`,
-      JSON.stringify(params),
+      JSON.stringify({ ...params, preloadedImages }),
     );
     if (result.code !== 0 && !result.stdout) {
       return { error: `NAS 스크립트 오류: ${result.stderr}`, errorCode: 'UNKNOWN' };
