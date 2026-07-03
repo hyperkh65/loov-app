@@ -52,16 +52,52 @@ def out(r):
     sys.exit(0)
 
 img_errors = []
+_cached_session_key = None
 
-def upload_image(img_url):
-    if not upload_session_key or not naver_user_id:
+def get_upload_session_key():
+    global _cached_session_key
+    if _cached_session_key:
+        return _cached_session_key
+    if not naver_user_id:
         return None
     try:
-        dl_req = urllib.request.Request(img_url, headers={'User-Agent': ua})
+        key_url = f'https://section.blog.naver.com/api/blogs/{naver_user_id}/photo-infra-profile-session-key'
+        key_req = urllib.request.Request(key_url, headers={
+            'Cookie': f'NID_AUT={nid_aut}; NID_SES={nid_ses}',
+            'User-Agent': ua,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': f'{BASE}/PostWriteForm.naver?blogId={blog_id}',
+            'Origin': BASE,
+        })
+        with urllib.request.urlopen(key_req, timeout=10) as r:
+            resp = json.loads(r.read().decode('utf-8', errors='replace'))
+        key = resp.get('result') or ''
+        if key:
+            _cached_session_key = key
+        return key
+    except Exception as e:
+        img_errors.append('key:' + str(e)[:60])
+        return None
+
+def upload_image(img_url):
+    if not naver_user_id:
+        return None
+    try:
+        dl_headers = {'User-Agent': ua}
+        if 'pixabay.com' in img_url:
+            dl_headers['Referer'] = 'https://pixabay.com/'
+        elif 'pexels.com' in img_url:
+            dl_headers['Referer'] = 'https://www.pexels.com/'
+        dl_req = urllib.request.Request(img_url, headers=dl_headers)
         with urllib.request.urlopen(dl_req, timeout=15) as r:
             img_data = r.read()
             ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
         if not img_data:
+            return None
+        session_key = get_upload_session_key()
+        if not session_key:
+            img_errors.append('no_session_key')
             return None
         ext_map = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp'}
         ext = ext_map.get(ctype, 'jpg')
@@ -69,7 +105,7 @@ def upload_image(img_url):
         filename = re.sub('[^a-zA-Z0-9._-]', '_', raw_name) if raw_name else ('img.' + ext)
         if '.' not in filename:
             filename += '.' + ext
-        up_url = f'https://blog.upphoto.naver.com/{upload_session_key}/simpleUpload/0?userId={naver_user_id}&extractExif=true&extractAnimatedCnt=false&extractAnimatedInfo=true&autorotate=true&extractDominantColor=false&type=&customQuery=&denyAnimatedImage=false&skipXcamFiltering=false'
+        up_url = f'https://blog.upphoto.naver.com/{session_key}/simpleUpload/0?userId={naver_user_id}&extractExif=false&extractAnimatedCnt=false&extractAnimatedInfo=false&autorotate=false&extractDominantColor=false'
         boundary = uuid.uuid4().hex
         body = (f'--{boundary}\\r\\nContent-Disposition: form-data; name="image"; filename="{filename}"\\r\\nContent-Type: {ctype}\\r\\n\\r\\n').encode() + img_data + f'\\r\\n--{boundary}--\\r\\n'.encode()
         up_req = urllib.request.Request(up_url, data=body, headers={
@@ -115,17 +151,9 @@ def make_image_component(src, alt=''):
                 'link': None, 'isLinked': False,
             }],
         }
-    return {
-        'id': se_id(), 'layout': 'default', '@ctype': 'image',
-        'value': [{
-            'id': se_id(), '@ctype': 'imageUnit',
-            'src': src, 'width': 800, 'height': 600,
-            'originalWidth': 800, 'originalHeight': 600,
-            'caption': {'id': se_id(), '@ctype': 'paragraph',
-                        'nodes': [{'id': se_id(), 'value': alt, '@ctype': 'textNode'}]} if alt else None,
-            'link': None, 'isLinked': False,
-        }],
-    }
+    # Cannot embed external images without uploading to Naver CDN (causes parse fail)
+    # Return None to skip; caller must handle None
+    return None
 
 def make_text_node(text):
     return {
@@ -174,7 +202,9 @@ def html_to_components(body_html):
             alt_m = re.search('alt=[' + DQ + SQ + '](.*?)[' + DQ + SQ + ']', chunk, re.I)
             if img_m:
                 flush_texts()
-                components.append(make_image_component(img_m.group(1), alt_m.group(1) if alt_m else ''))
+                img_comp = make_image_component(img_m.group(1), alt_m.group(1) if alt_m else '')
+                if img_comp:
+                    components.append(img_comp)
         elif cl.startswith('<h2'):
             flush_texts()
             text = strip_html(chunk).strip()
@@ -193,7 +223,9 @@ def html_to_components(body_html):
                     alt_m = re.search('alt=[' + DQ + SQ + '](.*?)[' + DQ + SQ + ']', part, re.I)
                     if img_m:
                         flush_texts()
-                        components.append(make_image_component(img_m.group(1), alt_m.group(1) if alt_m else ''))
+                        img_comp = make_image_component(img_m.group(1), alt_m.group(1) if alt_m else '')
+                        if img_comp:
+                            components.append(img_comp)
                 else:
                     for p in re.split('<(?:p|br|div)[^>]*>', part):
                         t = strip_html(p).strip()
@@ -377,7 +409,7 @@ if wr.get('isSuccess'):
         redirect = result_r.get('redirectUrl', '') if isinstance(result_r, dict) else ''
         m2 = re.search('logNo=([0-9]+)', redirect)
         log_no = m2.group(1) if m2 else ''
-    out({'postId': log_no, 'postUrl': f'https://blog.naver.com/{blog_id}/{log_no}'})
+    out({'postId': log_no, 'postUrl': f'https://blog.naver.com/{blog_id}/{log_no}', 'imgErrors': img_errors})
 
 result_val = wr.get('result', {})
 ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else str(result_val)
