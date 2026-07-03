@@ -127,7 +127,10 @@ def upload_image(img_url):
             w = int(w_m.group(1)) if w_m else 800
             h = int(h_m.group(1)) if h_m else 600
             return {'url': cdn_url, 'path': path, 'width': w, 'height': h, 'filename': filename}
-        img_errors.append('no_url:' + resp[:80])
+        ec_m = re.search('<errorCode>(.*?)</errorCode>', resp)
+        em_m = re.search('<errorMessage>(.*?)</errorMessage>', resp)
+        ec_info = (ec_m.group(1) if ec_m else '') + '/' + (em_m.group(1) if em_m else '')
+        img_errors.append('no_url:ec=' + ec_info + ':' + resp[:120])
         return None
     except Exception as e:
         img_errors.append('up:' + str(e)[:60])
