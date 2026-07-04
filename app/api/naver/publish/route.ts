@@ -165,7 +165,8 @@ def make_image_component(src, alt=''):
                 'width': info['width'], 'height': info['height'],
                 'originalWidth': info['width'], 'originalHeight': info['height'],
                 'fileName': info['filename'], 'imageType': img_type,
-                'caption': None, 'link': None, 'isLinked': False,
+                'caption': {'id': se_id(), '@ctype': 'paragraph', 'nodes': []},
+                'link': None, 'isLinked': False,
             }],
         }
     return None
@@ -431,7 +432,7 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-out({'error': f'ec={ec} as={auto_save_dbg} raw={str(wr)[:150]}', 'errorCode': ec})
+out({'error': f'ec={ec} as={auto_save_dbg} raw={str(wr)[:400]}', 'errorCode': ec, 'imgErrors': img_errors})
 `;
 
 async function ensureNasScript(): Promise<void> {
@@ -548,8 +549,12 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ postId: nasResult.postId, postUrl: nasResult.postUrl, imgErrors: nasResult.imgErrors });
     }
-    // NAS 실패 시 아래 OAuth로 폴백
-    console.warn('[Naver] NAS publish failed, falling back to OAuth:', nasResult.error);
+    // parse fail 등 알려진 에러는 폴백 없이 반환 (OAuth/직접쿠키는 이미지 미지원)
+    // SSH 연결 실패(UNKNOWN)만 폴백 허용
+    if (nasResult.error && nasResult.errorCode && nasResult.errorCode !== 'UNKNOWN') {
+      return NextResponse.json({ error: nasResult.error, errorCode: nasResult.errorCode, imgErrors: nasResult.imgErrors }, { status: 500 });
+    }
+    console.warn('[Naver] NAS SSH error, falling back:', nasResult.error);
   }
 
   // ── 2순위: OAuth API (IP 무관하지만 권한 제한 있음) ──────────────────────────
