@@ -473,7 +473,7 @@ async function postViaNas(params: {
   title: string; content: string; tags: string[];
   categoryNo: number; isPublish: boolean;
   uploadSessionKey?: string; naverUserId?: string;
-}): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string; imgErrors?: string[] }> {
+}): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string; imgErrors?: string[]; _debug?: string }> {
   try {
     await ensureNasScript();
     const preloadedImages = await preloadImages(params.content);
