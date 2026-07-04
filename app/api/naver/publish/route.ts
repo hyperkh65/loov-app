@@ -458,7 +458,7 @@ async function postViaNas(params: {
   title: string; content: string; tags: string[];
   categoryNo: number; isPublish: boolean;
   uploadSessionKey?: string; naverUserId?: string;
-}): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string }> {
+}): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string; imgErrors?: string[] }> {
   try {
     await ensureNasScript();
     const preloadedImages = await preloadImages(params.content);
@@ -537,7 +537,7 @@ export async function POST(req: NextRequest) {
         notion_page_id: notionPageId,
         status,
       });
-      return NextResponse.json({ postId: nasResult.postId, postUrl: nasResult.postUrl });
+      return NextResponse.json({ postId: nasResult.postId, postUrl: nasResult.postUrl, imgErrors: nasResult.imgErrors });
     }
     // NAS 실패 시 아래 OAuth로 폴백
     console.warn('[Naver] NAS publish failed, falling back to OAuth:', nasResult.error);
