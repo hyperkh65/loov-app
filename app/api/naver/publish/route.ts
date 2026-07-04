@@ -127,11 +127,12 @@ def upload_image(img_url):
         w_m = re.search('<width>([0-9]+)</width>', resp)
         h_m = re.search('<height>([0-9]+)</height>', resp)
         if url_m:
-            cdn_url = 'https://postfiles.pstatic.net' + url_m.group(1)
-            path = path_m.group(1) if path_m else url_m.group(1)
+            url_val = url_m.group(1)
+            cdn_url = url_val if url_val.startswith('http') else 'https://postfiles.pstatic.net' + url_val
+            path_val = path_m.group(1) if path_m else url_val
             w = int(w_m.group(1)) if w_m else 800
             h = int(h_m.group(1)) if h_m else 600
-            return {'url': cdn_url, 'path': path, 'width': w, 'height': h, 'filename': filename}
+            return {'url': cdn_url, 'path': path_val, 'width': w, 'height': h, 'filename': filename}
         ec_m = re.search('<errorCode>(.*?)</errorCode>', resp)
         em_m = re.search('<errorMessage>(.*?)</errorMessage>', resp)
         ec_info = (ec_m.group(1) if ec_m else '') + '/' + (em_m.group(1) if em_m else '')
@@ -558,7 +559,7 @@ export async function POST(req: NextRequest) {
     // parse fail 등 알려진 에러는 폴백 없이 반환 (OAuth/직접쿠키는 이미지 미지원)
     // SSH 연결 실패(UNKNOWN)만 폴백 허용
     if (nasResult.error && nasResult.errorCode && nasResult.errorCode !== 'UNKNOWN') {
-      return NextResponse.json({ error: nasResult.error, errorCode: nasResult.errorCode, imgErrors: nasResult.imgErrors }, { status: 500 });
+      return NextResponse.json({ error: nasResult.error, errorCode: nasResult.errorCode, imgErrors: nasResult.imgErrors, _debug: nasResult._debug }, { status: 500 });
     }
     console.warn('[Naver] NAS SSH error, falling back:', nasResult.error);
   }
