@@ -167,7 +167,9 @@ def make_image_component(src, alt=''):
                 'width': info['width'], 'height': info['height'],
                 'originalWidth': info['width'], 'originalHeight': info['height'],
                 'fileName': info['filename'], 'imageType': img_type,
-                'caption': {'id': se_id(), '@ctype': 'paragraph', 'nodes': []},
+                'themeResourceStatus': 'NORMAL',
+                'isLinked': False, 'link': None,
+                'caption': None,
             }],
         }
     return None
@@ -559,7 +561,9 @@ export async function POST(req: NextRequest) {
     // parse fail 등 알려진 에러는 폴백 없이 반환 (OAuth/직접쿠키는 이미지 미지원)
     // SSH 연결 실패(UNKNOWN)만 폴백 허용
     if (nasResult.error && nasResult.errorCode && nasResult.errorCode !== 'UNKNOWN') {
-      return NextResponse.json({ error: nasResult.error, errorCode: nasResult.errorCode, imgErrors: nasResult.imgErrors, _debug: nasResult._debug }, { status: 500 });
+      if (nasResult._debug) console.error('[NaverPublish Debug]', nasResult._debug);
+      const debugHint = nasResult._debug ? '\n[Debug] ' + (nasResult._debug as string).slice(0, 300) : '';
+      return NextResponse.json({ error: nasResult.error + debugHint, errorCode: nasResult.errorCode, imgErrors: nasResult.imgErrors }, { status: 500 });
     }
     console.warn('[Naver] NAS SSH error, falling back:', nasResult.error);
   }
