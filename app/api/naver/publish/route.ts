@@ -24,6 +24,7 @@ category_no = int(data.get('categoryNo', 0) or 0)
 is_publish = bool(data.get('isPublish', True))
 upload_session_key = data.get('uploadSessionKey', '')
 naver_user_id = data.get('naverUserId', '')
+preloaded_images = data.get('preloadedImages', {})
 
 BASE = 'https://blog.naver.com'
 ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
@@ -52,6 +53,7 @@ def out(r):
     sys.exit(0)
 
 img_errors = []
+uploaded_images = []
 _cached_session_key = None
 
 def get_upload_session_key():
@@ -84,15 +86,17 @@ def upload_image(img_url):
     if not naver_user_id:
         return None
     try:
-        dl_headers = {'User-Agent': ua}
-        if 'pixabay.com' in img_url:
-            dl_headers['Referer'] = 'https://pixabay.com/'
-        elif 'pexels.com' in img_url:
-            dl_headers['Referer'] = 'https://www.pexels.com/'
-        dl_req = urllib.request.Request(img_url, headers=dl_headers)
-        with urllib.request.urlopen(dl_req, timeout=15) as r:
-            img_data = r.read()
-            ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        if img_url in preloaded_images:
+            import base64 as _b64
+            pre = preloaded_images[img_url]
+            img_data = _b64.b64decode(pre['data'])
+            ctype = pre.get('type', 'image/jpeg').split(';')[0].strip()
+        else:
+            dl_headers = {'User-Agent': ua}
+            dl_req = urllib.request.Request(img_url, headers=dl_headers)
+            with urllib.request.urlopen(dl_req, timeout=15) as r:
+                img_data = r.read()
+                ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
         if not img_data:
             return None
         session_key = get_upload_session_key()
@@ -117,17 +121,22 @@ def upload_image(img_url):
         }, method='POST')
         with urllib.request.urlopen(up_req, timeout=20) as r:
             resp = r.read().decode('utf-8', errors='replace')
+        sys.stderr.write(f'[UP_RESP] {resp[:400]}\\n')
         url_m = re.search('<url>(.*?)</url>', resp)
         path_m = re.search('<path>(.*?)</path>', resp)
         w_m = re.search('<width>([0-9]+)</width>', resp)
         h_m = re.search('<height>([0-9]+)</height>', resp)
         if url_m:
-            cdn_url = 'https://postfiles.pstatic.net' + url_m.group(1)
-            path = path_m.group(1) if path_m else url_m.group(1)
+            url_val = url_m.group(1)
+            cdn_url = url_val if url_val.startswith('http') else 'https://postfiles.pstatic.net' + url_val
+            path_val = (path_m.group(1) if path_m else url_val).lstrip('/')
             w = int(w_m.group(1)) if w_m else 800
             h = int(h_m.group(1)) if h_m else 600
-            return {'url': cdn_url, 'path': path, 'width': w, 'height': h, 'filename': filename}
-        img_errors.append('no_url:' + resp[:80])
+            return {'url': cdn_url, 'path': path_val, 'width': w, 'height': h, 'filename': filename}
+        ec_m = re.search('<errorCode>(.*?)</errorCode>', resp)
+        em_m = re.search('<errorMessage>(.*?)</errorMessage>', resp)
+        ec_info = (ec_m.group(1) if ec_m else '') + '/' + (em_m.group(1) if em_m else '')
+        img_errors.append('no_url:ec=' + ec_info + ':' + resp[:120])
         return None
     except Exception as e:
         img_errors.append('up:' + str(e)[:60])
@@ -138,21 +147,30 @@ def make_image_component(src, alt=''):
     if not ('pstatic.net' in src or 'naver.com' in src or src.startswith('data:')):
         info = upload_image(src)
     if info:
+        unit_id = se_id()
+        fn_lower = info['filename'].lower()
+        img_type = 'PNG' if fn_lower.endswith('.png') else 'GIF' if fn_lower.endswith('.gif') else 'WEBP' if fn_lower.endswith('.webp') else 'JPEG'
+        uploaded_images.append({
+            'id': unit_id,
+            'src': info['url'],
+            'path': info['path'],
+            'width': info['width'],
+            'height': info['height'],
+            'fileName': info['filename'],
+            'imageType': img_type,
+        })
         return {
             'id': se_id(), 'layout': 'default', '@ctype': 'image',
             'value': [{
-                'id': se_id(), '@ctype': 'imageUnit',
+                'id': unit_id, '@ctype': 'imageUnit',
                 'src': info['url'], 'path': info['path'],
                 'width': info['width'], 'height': info['height'],
                 'originalWidth': info['width'], 'originalHeight': info['height'],
-                'fileName': info['filename'], 'imageType': 'JPEG',
-                'caption': {'id': se_id(), '@ctype': 'paragraph',
-                            'nodes': [{'id': se_id(), 'value': alt, '@ctype': 'textNode'}]} if alt else None,
-                'link': None, 'isLinked': False,
+                'fileName': info['filename'], 'imageType': img_type,
+                'linkInfo': None,
+                'caption': None,
             }],
         }
-    # Cannot embed external images without uploading to Naver CDN (causes parse fail)
-    # Return None to skip; caller must handle None
     return None
 
 def make_text_node(text):
@@ -357,7 +375,7 @@ if not pop_meta.get('themeSourceCode'):
 if not pop_meta.get('bookThemeInfoPk'):
     pop_meta.pop('bookThemeInfoPk', None)
 
-media_resources = json.dumps({'image': [], 'video': [], 'file': []}, ensure_ascii=False)
+media_resources = json.dumps({'image': uploaded_images, 'video': [], 'file': []}, ensure_ascii=False)
 
 # AutoSave populationParams includes editorSource
 pop_params_autosave = {
@@ -391,6 +409,7 @@ except Exception as e:
     auto_save_dbg = f'exc({str(e)[:50]})'
 
 # 5. Publish via RabbitWrite
+sys.stderr.write(f'[WR_REQ] dm={dm_str[:300]} media={media_resources[:200]}\\n')
 wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
     ('blogId', blog_id),
     ('documentModel', dm_str),
@@ -398,6 +417,7 @@ wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
     ('mediaResources', media_resources),
     ('productApiVersion', 'v1'),
 ])
+sys.stderr.write(f'[WR_RESP] status={status} wr={str(wr)[:400]}\\n')
 
 if status in (401, 403):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
@@ -416,7 +436,7 @@ ec = result_val.get('errorCode', 'UNKNOWN') if isinstance(result_val, dict) else
 if ec in ('LOGIN', 'AUTH', 'auth'):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
 
-out({'error': f'ec={ec} as={auto_save_dbg} raw={str(wr)[:150]}', 'errorCode': ec})
+out({'error': f'ec={ec} as={auto_save_dbg} raw={str(wr)[:400]}', 'errorCode': ec, 'imgErrors': img_errors})
 `;
 
 async function ensureNasScript(): Promise<void> {
@@ -428,23 +448,47 @@ async function ensureNasScript(): Promise<void> {
   } catch { /* ignore */ }
 }
 
+async function preloadImages(html: string): Promise<Record<string, { data: string; type: string }>> {
+  const imgUrls = [...html.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)].map(m => m[1]);
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36';
+  const result: Record<string, { data: string; type: string }> = {};
+  await Promise.all(imgUrls.map(async (url) => {
+    try {
+      const headers: Record<string, string> = { 'User-Agent': ua };
+      if (url.includes('pixabay.com')) headers['Referer'] = 'https://pixabay.com/';
+      else if (url.includes('pexels.com')) headers['Referer'] = 'https://www.pexels.com/';
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return;
+      const buf = await res.arrayBuffer();
+      const type = (res.headers.get('Content-Type') || 'image/jpeg').split(';')[0].trim();
+      result[url] = { data: Buffer.from(buf).toString('base64'), type };
+    } catch { /* skip */ }
+  }));
+  return result;
+}
+
 async function postViaNas(params: {
   blogId: string; nidAut: string; nidSes: string;
   title: string; content: string; tags: string[];
   categoryNo: number; isPublish: boolean;
   uploadSessionKey?: string; naverUserId?: string;
-}): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string }> {
+}): Promise<{ postId?: string; postUrl?: string; error?: string; errorCode?: string; imgErrors?: string[]; _debug?: string }> {
   try {
     await ensureNasScript();
+    const preloadedImages = await preloadImages(params.content);
     const result = await nasExecWithStdin(
       `python3 ${NAS_SCRIPT_PATH}`,
-      JSON.stringify(params),
+      JSON.stringify({ ...params, preloadedImages }),
     );
     if (result.code !== 0 && !result.stdout) {
       return { error: `NAS 스크립트 오류: ${result.stderr}`, errorCode: 'UNKNOWN' };
     }
     const line = result.stdout.trim().split('\n').pop() || '{}';
-    return JSON.parse(line);
+    const parsed = JSON.parse(line);
+    if (result.stderr && (parsed.error || (parsed.imgErrors && parsed.imgErrors.length > 0))) {
+      parsed._debug = result.stderr.slice(-800);
+    }
+    return parsed;
   } catch (e) {
     return { error: `NAS SSH 오류: ${String(e)}`, errorCode: 'UNKNOWN' };
   }
@@ -511,10 +555,16 @@ export async function POST(req: NextRequest) {
         notion_page_id: notionPageId,
         status,
       });
-      return NextResponse.json({ postId: nasResult.postId, postUrl: nasResult.postUrl });
+      return NextResponse.json({ postId: nasResult.postId, postUrl: nasResult.postUrl, imgErrors: nasResult.imgErrors });
     }
-    // NAS 실패 시 아래 OAuth로 폴백
-    console.warn('[Naver] NAS publish failed, falling back to OAuth:', nasResult.error);
+    // parse fail 등 알려진 에러는 폴백 없이 반환 (OAuth/직접쿠키는 이미지 미지원)
+    // SSH 연결 실패(UNKNOWN)만 폴백 허용
+    if (nasResult.error && nasResult.errorCode && nasResult.errorCode !== 'UNKNOWN') {
+      if (nasResult._debug) console.error('[NaverPublish Debug]', nasResult._debug);
+      const debugHint = nasResult._debug ? '\n[Debug] ' + (nasResult._debug as string).slice(0, 300) : '';
+      return NextResponse.json({ error: nasResult.error + debugHint, errorCode: nasResult.errorCode, imgErrors: nasResult.imgErrors }, { status: 500 });
+    }
+    console.warn('[Naver] NAS SSH error, falling back:', nasResult.error);
   }
 
   // ── 2순위: OAuth API (IP 무관하지만 권한 제한 있음) ──────────────────────────
