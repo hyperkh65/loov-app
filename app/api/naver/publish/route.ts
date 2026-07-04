@@ -121,6 +121,7 @@ def upload_image(img_url):
         }, method='POST')
         with urllib.request.urlopen(up_req, timeout=20) as r:
             resp = r.read().decode('utf-8', errors='replace')
+        sys.stderr.write(f'[UP_RESP] {resp[:400]}\\n')
         url_m = re.search('<url>(.*?)</url>', resp)
         path_m = re.search('<path>(.*?)</path>', resp)
         w_m = re.search('<width>([0-9]+)</width>', resp)
@@ -166,7 +167,6 @@ def make_image_component(src, alt=''):
                 'originalWidth': info['width'], 'originalHeight': info['height'],
                 'fileName': info['filename'], 'imageType': img_type,
                 'caption': {'id': se_id(), '@ctype': 'paragraph', 'nodes': []},
-                'link': None, 'isLinked': False,
             }],
         }
     return None
@@ -407,6 +407,7 @@ except Exception as e:
     auto_save_dbg = f'exc({str(e)[:50]})'
 
 # 5. Publish via RabbitWrite
+sys.stderr.write(f'[WR_REQ] dm={dm_str[:300]} media={media_resources[:200]}\\n')
 wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
     ('blogId', blog_id),
     ('documentModel', dm_str),
@@ -414,6 +415,7 @@ wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
     ('mediaResources', media_resources),
     ('productApiVersion', 'v1'),
 ])
+sys.stderr.write(f'[WR_RESP] status={status} wr={str(wr)[:400]}\\n')
 
 if status in (401, 403):
     out({'error': '인증 실패 — 쿠키 재발급 필요', 'errorCode': 'AUTH'})
@@ -480,7 +482,11 @@ async function postViaNas(params: {
       return { error: `NAS 스크립트 오류: ${result.stderr}`, errorCode: 'UNKNOWN' };
     }
     const line = result.stdout.trim().split('\n').pop() || '{}';
-    return JSON.parse(line);
+    const parsed = JSON.parse(line);
+    if (result.stderr && (parsed.error || (parsed.imgErrors && parsed.imgErrors.length > 0))) {
+      parsed._debug = result.stderr.slice(-800);
+    }
+    return parsed;
   } catch (e) {
     return { error: `NAS SSH 오류: ${String(e)}`, errorCode: 'UNKNOWN' };
   }
