@@ -129,7 +129,7 @@ def upload_image(img_url):
         if url_m:
             url_val = url_m.group(1)
             cdn_url = url_val if url_val.startswith('http') else 'https://postfiles.pstatic.net' + url_val
-            path_val = path_m.group(1) if path_m else url_val
+            path_val = (path_m.group(1) if path_m else url_val).lstrip('/')
             w = int(w_m.group(1)) if w_m else 800
             h = int(h_m.group(1)) if h_m else 600
             return {'url': cdn_url, 'path': path_val, 'width': w, 'height': h, 'filename': filename}
@@ -167,8 +167,7 @@ def make_image_component(src, alt=''):
                 'width': info['width'], 'height': info['height'],
                 'originalWidth': info['width'], 'originalHeight': info['height'],
                 'fileName': info['filename'], 'imageType': img_type,
-                'themeResourceStatus': 'NORMAL',
-                'isLinked': False, 'link': None,
+                'linkInfo': None,
                 'caption': None,
             }],
         }
