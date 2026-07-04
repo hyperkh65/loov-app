@@ -53,6 +53,7 @@ def out(r):
     sys.exit(0)
 
 img_errors = []
+uploaded_images = []
 _cached_session_key = None
 
 def get_upload_session_key():
@@ -144,21 +145,29 @@ def make_image_component(src, alt=''):
     if not ('pstatic.net' in src or 'naver.com' in src or src.startswith('data:')):
         info = upload_image(src)
     if info:
+        unit_id = se_id()
+        fn_lower = info['filename'].lower()
+        img_type = 'PNG' if fn_lower.endswith('.png') else 'GIF' if fn_lower.endswith('.gif') else 'WEBP' if fn_lower.endswith('.webp') else 'JPEG'
+        uploaded_images.append({
+            'id': unit_id,
+            'src': info['url'],
+            'path': info['path'],
+            'width': info['width'],
+            'height': info['height'],
+            'fileName': info['filename'],
+            'imageType': img_type,
+        })
         return {
             'id': se_id(), 'layout': 'default', '@ctype': 'image',
             'value': [{
-                'id': se_id(), '@ctype': 'imageUnit',
+                'id': unit_id, '@ctype': 'imageUnit',
                 'src': info['url'], 'path': info['path'],
                 'width': info['width'], 'height': info['height'],
                 'originalWidth': info['width'], 'originalHeight': info['height'],
-                'fileName': info['filename'], 'imageType': 'JPEG',
-                'caption': {'id': se_id(), '@ctype': 'paragraph',
-                            'nodes': [{'id': se_id(), 'value': alt, '@ctype': 'textNode'}]} if alt else None,
-                'link': None, 'isLinked': False,
+                'fileName': info['filename'], 'imageType': img_type,
+                'caption': None, 'link': None, 'isLinked': False,
             }],
         }
-    # Cannot embed external images without uploading to Naver CDN (causes parse fail)
-    # Return None to skip; caller must handle None
     return None
 
 def make_text_node(text):
@@ -363,7 +372,7 @@ if not pop_meta.get('themeSourceCode'):
 if not pop_meta.get('bookThemeInfoPk'):
     pop_meta.pop('bookThemeInfoPk', None)
 
-media_resources = json.dumps({'image': [], 'video': [], 'file': []}, ensure_ascii=False)
+media_resources = json.dumps({'image': uploaded_images, 'video': [], 'file': []}, ensure_ascii=False)
 
 # AutoSave populationParams includes editorSource
 pop_params_autosave = {
