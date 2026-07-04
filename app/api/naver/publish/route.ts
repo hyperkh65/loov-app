@@ -159,6 +159,8 @@ def make_image_component(src, alt=''):
             'fileName': info['filename'],
             'imageType': img_type,
         })
+        cap_para_id = se_id()
+        cap_node_id = se_id()
         return {
             'id': se_id(), 'layout': 'default', '@ctype': 'image',
             'value': [{
@@ -167,8 +169,8 @@ def make_image_component(src, alt=''):
                 'width': info['width'], 'height': info['height'],
                 'originalWidth': info['width'], 'originalHeight': info['height'],
                 'fileName': info['filename'], 'imageType': img_type,
-                'linkInfo': None,
-                'caption': None,
+                'linkInfo': {'linkUse': False, 'linkUrl': ''},
+                'caption': {'hidden': True, 'value': [{'id': cap_para_id, '@ctype': 'paragraph', 'nodes': [{'id': cap_node_id, '@ctype': 'textNode', 'value': ''}]}]},
             }],
         }
     return None
@@ -409,6 +411,9 @@ except Exception as e:
     auto_save_dbg = f'exc({str(e)[:50]})'
 
 # 5. Publish via RabbitWrite
+img_comps = [c for c in dm['document']['components'] if c.get('@ctype') == 'image']
+sys.stderr.write(f'[IMG_COMP] {json.dumps(img_comps, ensure_ascii=False)[:600]}\\n')
+sys.stderr.write(f'[MEDIA] {media_resources[:300]}\\n')
 sys.stderr.write(f'[WR_REQ] dm={dm_str[:300]} media={media_resources[:200]}\\n')
 wr, status = http_post_form(f'{BASE}/RabbitWrite.naver', [
     ('blogId', blog_id),
@@ -485,8 +490,8 @@ async function postViaNas(params: {
     }
     const line = result.stdout.trim().split('\n').pop() || '{}';
     const parsed = JSON.parse(line);
-    if (result.stderr && (parsed.error || (parsed.imgErrors && parsed.imgErrors.length > 0))) {
-      parsed._debug = result.stderr.slice(-800);
+    if (result.stderr) {
+      parsed._debug = result.stderr.slice(-1200);
     }
     return parsed;
   } catch (e) {
@@ -561,7 +566,7 @@ export async function POST(req: NextRequest) {
     // SSH 연결 실패(UNKNOWN)만 폴백 허용
     if (nasResult.error && nasResult.errorCode && nasResult.errorCode !== 'UNKNOWN') {
       if (nasResult._debug) console.error('[NaverPublish Debug]', nasResult._debug);
-      const debugHint = nasResult._debug ? '\n[Debug] ' + (nasResult._debug as string).slice(0, 300) : '';
+      const debugHint = nasResult._debug ? '\n[Debug] ' + (nasResult._debug as string).slice(0, 800) : '';
       return NextResponse.json({ error: nasResult.error + debugHint, errorCode: nasResult.errorCode, imgErrors: nasResult.imgErrors }, { status: 500 });
     }
     console.warn('[Naver] NAS SSH error, falling back:', nasResult.error);
