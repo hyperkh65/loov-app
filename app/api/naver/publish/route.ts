@@ -191,7 +191,7 @@ def make_image_component(src, alt=''):
                     'height': info['height'],
                     'fileSize': 0,
                     'fileName': info['filename'],
-                    'internalResource': True,
+                    'internalResource': False,
                     'represent': False,
                     'ai': False,
                 }]
