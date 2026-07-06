@@ -55,6 +55,31 @@ def out(r):
 img_errors = []
 uploaded_images = []
 _cached_session_key = None
+_cached_se_token = None
+
+def get_se_token():
+    global _cached_se_token
+    if _cached_se_token:
+        return _cached_se_token
+    try:
+        url = f'{BASE}/PostWriteFormSeOptions.naver?blogId={blog_id}'
+        req = urllib.request.Request(url, headers={
+            'Cookie': f'NID_AUT={nid_aut}; NID_SES={nid_ses}',
+            'User-Agent': ua,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': f'{BASE}/PostWriteForm.naver?blogId={blog_id}',
+            'Origin': BASE,
+        })
+        with urllib.request.urlopen(req, timeout=10) as r:
+            resp = json.loads(r.read().decode('utf-8', errors='replace'))
+        token = (resp.get('result') or {}).get('token') or ''
+        if token:
+            _cached_se_token = token
+        return token
+    except Exception as e:
+        img_errors.append('se_token:' + str(e)[:60])
+        return None
 
 def get_upload_session_key():
     global _cached_session_key
@@ -63,18 +88,22 @@ def get_upload_session_key():
     if not naver_user_id:
         return None
     try:
-        key_url = f'https://section.blog.naver.com/api/blogs/{naver_user_id}/photo-infra-profile-session-key'
+        se_token = get_se_token()
+        if not se_token:
+            img_errors.append('no_se_token')
+            return None
+        key_url = 'https://platform.editor.naver.com/api/blogpc001/v1/photo-uploader/session-key'
         key_req = urllib.request.Request(key_url, headers={
             'Cookie': f'NID_AUT={nid_aut}; NID_SES={nid_ses}',
             'User-Agent': ua,
             'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
+            'se-authorization': se_token,
             'Referer': f'{BASE}/PostWriteForm.naver?blogId={blog_id}',
             'Origin': BASE,
         })
         with urllib.request.urlopen(key_req, timeout=10) as r:
             resp = json.loads(r.read().decode('utf-8', errors='replace'))
-        key = resp.get('result') or ''
+        key = resp.get('sessionKey') or ''
         if key:
             _cached_session_key = key
         return key
@@ -128,7 +157,7 @@ def upload_image(img_url):
         h_m = re.search('<height>([0-9]+)</height>', resp)
         if url_m:
             url_val = url_m.group(1)
-            cdn_url = url_val if url_val.startswith('http') else 'https://postfiles.pstatic.net' + url_val
+            cdn_url = url_val if url_val.startswith('http') else 'https://blogfiles.pstatic.net' + url_val
             path_val = (path_m.group(1) if path_m else url_val).lstrip('/')
             w = int(w_m.group(1)) if w_m else 800
             h = int(h_m.group(1)) if h_m else 600
