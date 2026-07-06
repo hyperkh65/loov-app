@@ -147,31 +147,33 @@ def make_image_component(src, alt=''):
     if not ('pstatic.net' in src or 'naver.com' in src or src.startswith('data:')):
         info = upload_image(src)
     if info:
-        unit_id = se_id()
-        fn_lower = info['filename'].lower()
-        img_type = 'PNG' if fn_lower.endswith('.png') else 'GIF' if fn_lower.endswith('.gif') else 'WEBP' if fn_lower.endswith('.webp') else 'JPEG'
-        uploaded_images.append({
-            'id': unit_id,
+        cap_para_id = se_id()
+        cap_node_id = se_id()
+        uploaded_images.append(info['url'])
+        return {
+            'id': se_id(), 'layout': 'default', '@ctype': 'image',
             'src': info['url'],
             'path': info['path'],
             'width': info['width'],
             'height': info['height'],
+            'alt': alt or '',
             'fileName': info['filename'],
-            'imageType': img_type,
-        })
-        cap_para_id = se_id()
-        cap_node_id = se_id()
-        return {
-            'id': se_id(), 'layout': 'default', '@ctype': 'image',
-            'value': [{
-                'id': unit_id, '@ctype': 'imageUnit',
-                'src': info['url'], 'path': info['path'],
-                'width': info['width'], 'height': info['height'],
-                'originalWidth': info['width'], 'originalHeight': info['height'],
-                'fileName': info['filename'], 'imageType': img_type,
-                'linkInfo': {'linkUse': False, 'linkUrl': ''},
-                'caption': {'hidden': True, 'value': [{'id': cap_para_id, '@ctype': 'paragraph', 'nodes': [{'id': cap_node_id, '@ctype': 'textNode', 'value': ''}]}]},
-            }],
+            'fileSize': None,
+            'internalResource': True,
+            'represent': False,
+            'phase': 'DONE',
+            'contentMode': 'default',
+            'align': 'center',
+            'caption': {'hidden': True, 'value': [{'id': cap_para_id, '@ctype': 'paragraph', 'nodes': [{'id': cap_node_id, '@ctype': 'textNode', 'value': ''}]}]},
+            'place': None,
+            'location': None,
+            'link': {'linkUse': False, 'linkUrl': ''},
+            'widthPercentage': 100,
+            'format': None,
+            'displayFormat': None,
+            'mediaTags': None,
+            'mediaMeta': None,
+            'origin': None,
         }
     return None
 
@@ -377,7 +379,7 @@ if not pop_meta.get('themeSourceCode'):
 if not pop_meta.get('bookThemeInfoPk'):
     pop_meta.pop('bookThemeInfoPk', None)
 
-media_resources = json.dumps({'image': uploaded_images, 'video': [], 'file': []}, ensure_ascii=False)
+media_resources = json.dumps({'image': [u.split('?')[0] for u in uploaded_images], 'video': [], 'file': []}, ensure_ascii=False)
 
 # AutoSave populationParams includes editorSource
 pop_params_autosave = {
