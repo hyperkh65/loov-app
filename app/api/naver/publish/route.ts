@@ -147,33 +147,26 @@ def make_image_component(src, alt=''):
     if not ('pstatic.net' in src or 'naver.com' in src or src.startswith('data:')):
         info = upload_image(src)
     if info:
-        cap_para_id = se_id()
-        cap_node_id = se_id()
         uploaded_images.append(info['url'])
+        img_domain = info['url'].split('/')[2] if info['url'].startswith('http') else 'postfiles.pstatic.net'
         return {
-            'id': se_id(), 'layout': 'default', '@ctype': 'image',
-            'src': info['url'],
-            'path': info['path'],
-            'width': info['width'],
-            'height': info['height'],
-            'alt': alt or '',
-            'fileName': info['filename'],
-            'fileSize': None,
-            'internalResource': True,
-            'represent': False,
-            'phase': 'DONE',
-            'contentMode': 'default',
-            'align': 'center',
-            'caption': {'hidden': True, 'value': [{'id': cap_para_id, '@ctype': 'paragraph', 'nodes': [{'id': cap_node_id, '@ctype': 'textNode', 'value': ''}]}]},
-            'place': None,
-            'location': None,
-            'link': {'linkUse': False, 'linkUrl': ''},
-            'widthPercentage': 100,
-            'format': None,
-            'displayFormat': None,
-            'mediaTags': None,
-            'mediaMeta': None,
-            'origin': None,
+            'id': se_id(), 'layout': 'default', '@ctype': 'text',
+            'value': [{
+                'id': se_id(), '@ctype': 'paragraph',
+                'nodes': [{
+                    'id': se_id(), '@ctype': 'imageNode',
+                    'src': info['url'],
+                    'path': info['path'],
+                    'domain': img_domain,
+                    'width': info['width'],
+                    'height': info['height'],
+                    'fileSize': 0,
+                    'fileName': info['filename'],
+                    'internalResource': True,
+                    'represent': False,
+                    'ai': False,
+                }]
+            }]
         }
     return None
 
