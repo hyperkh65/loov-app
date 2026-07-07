@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const body = await req.json();
-  const { enabled, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, sns_caption_model, prompt_template, naver_auto_publish } = body;
+  const { enabled, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, sns_caption_model, prompt_template, naver_auto_publish, tistory_auto_publish } = body;
 
   const upsertData: Record<string, unknown> = {
     user_id: user.id,
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
 
   if (prompt_template !== undefined) upsertData.prompt_template = prompt_template || null;
   if (naver_auto_publish !== undefined) upsertData.naver_auto_publish = !!naver_auto_publish;
+  if (tistory_auto_publish !== undefined) upsertData.tistory_auto_publish = !!tistory_auto_publish;
 
   const { data, error } = await supabase
     .from('bossai_auto_settings')
