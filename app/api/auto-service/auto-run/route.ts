@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
+import { uploadToR2, r2Available } from '@/lib/r2-storage';
 
 export const maxDuration = 300;
 
@@ -241,9 +242,32 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 - HTML 태그 외 마크다운, 설명문, 대괄호 최종 출력에 절대 포함 금지`;
 }
 
+async function downloadAndUploadToR2(urls: string[]): Promise<string[]> {
+  if (!r2Available()) return urls;
+  const results: string[] = [];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) { results.push(url); continue; }
+      const buf = Buffer.from(await res.arrayBuffer());
+      const ct = res.headers.get('content-type') || 'image/jpeg';
+      const ext = ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : ct.includes('gif') ? 'gif' : 'jpg';
+      const key = `blog-images/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const r2Url = await uploadToR2(key, buf, ct);
+      results.push(r2Url);
+    } catch {
+      results.push(url); // 실패 시 원본 유지
+    }
+  }
+  return results;
+}
+
 async function searchInlineImages(query: string, count = 3): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
   // 1순위: 네이버 이미지 검색
-  // displayUrls: item.link (원본, 브라우저 로드용)
+  // displayUrls: R2에 업로드된 URL (원본 외부링크 대신)
   // thumbUrl: item.thumbnail (CDN URL, 서버 fetch 가능 → 대표이미지 배경용)
   const [naverClientId, naverClientSecret] = await Promise.all([getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET')]);
   if (naverClientId && naverClientSecret) {
@@ -256,10 +280,9 @@ async function searchInlineImages(query: string, count = 3): Promise<{ displayUr
         const data = await res.json();
         const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
         if (items.length > 0) {
-          return {
-            displayUrls: items.slice(0, count).map((item: { link: string }) => item.link),
-            thumbUrl: items[0].thumbnail as string | undefined,
-          };
+          const rawUrls = items.slice(0, count).map((item: { link: string }) => item.link);
+          const displayUrls = await downloadAndUploadToR2(rawUrls);
+          return { displayUrls, thumbUrl: items[0].thumbnail as string | undefined };
         }
       }
     } catch { /* fallthrough */ }
@@ -278,8 +301,9 @@ async function searchInlineImages(query: string, count = 3): Promise<{ displayUr
         const data = await res.json();
         const items = data.items || [];
         if (items.length > 0) {
-          const urls = items.slice(0, count).map((item: { link: string }) => item.link);
-          return { displayUrls: urls, thumbUrl: urls[0] };
+          const rawUrls = items.slice(0, count).map((item: { link: string }) => item.link);
+          const displayUrls = await downloadAndUploadToR2(rawUrls);
+          return { displayUrls, thumbUrl: rawUrls[0] };
         }
       }
     } catch { /* fallthrough */ }
@@ -295,8 +319,9 @@ async function searchInlineImages(query: string, count = 3): Promise<{ displayUr
         const data = await res.json();
         const hits = data.hits || [];
         if (hits.length > 0) {
-          const urls = hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
-          return { displayUrls: urls, thumbUrl: urls[0] };
+          const rawUrls = hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+          const displayUrls = await downloadAndUploadToR2(rawUrls);
+          return { displayUrls, thumbUrl: rawUrls[0] };
         }
       }
     } catch { /* skip */ }
