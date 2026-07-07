@@ -3,7 +3,6 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
-import { removeCitationPhrases } from '@/lib/auto-blog-prompt';
 
 export const maxDuration = 300;
 
@@ -119,11 +118,6 @@ function buildPrompt(keyword: string, news: {title:string;description:string}[],
 - 자료에 없는 내용을 억지로 지어내지 말 것
 - 자료가 사건/사고라면 안전, 원인, 피해, 대응 관점으로 서술
 - 자료가 제품/서비스라면 실사용 관점으로 서술
-
-【출처 표기 절대 금지 - 위반 시 응답 무효】
-- "블로그 자료에 따르면", "뉴스에 따르면", "자료에 따르면", "보도에 따르면", "전문가에 따르면", "한 매체에 따르면", "외신에 따르면", "연구에 따르면" 등 출처 언급 표현 절대 사용 금지
-- 자료의 내용을 직접 사실처럼 서술할 것 (예: "A는 B를 기록했다" O / "자료에 따르면 A는 B를 기록했다" X)
-- 독자 입장에서 직접 알 수 있는 사실처럼 자연스럽게 서술
 
 【문체 원칙】
 - 친근하고 읽기 쉬운 구어체 혼용, 딱딱한 공문체 금지
@@ -324,13 +318,11 @@ function injectTitleIntoH3(content: string, title: string): string {
 
 function insertRepresentativeImageIntoContent(content: string, imageUrl: string, title: string): string {
   const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const repImg = `<figure style="text-align:center;margin:0 auto 28px;">`
+  const repImg = `\n<figure style="text-align:center;margin:20px auto;">`
     + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
     + `style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
     + `</figure>\n`;
-  const firstH2 = content.search(/<h2/i);
-  if (firstH2 > 0) return content.slice(0, firstH2) + repImg + content.slice(firstH2);
-  return repImg + content;
+  return content.replace(/(<\/h3>)/, `$1${repImg}`);
 }
 
 function insertImagesIntoContent(content: string, imageUrls: string[], keyword: string): string {
@@ -346,8 +338,10 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
   };
 
   let imgIdx = 0;
+  let h2Count = 0;
   return content.replace(/(<h2[^>]*>[\s\S]*?<\/h2>)/gi, (match) => {
-    if (imgIdx < imageUrls.length) {
+    h2Count++;
+    if (h2Count % 2 === 1 && imgIdx < imageUrls.length) {
       const sectionTitle = extractH2Title(match);
       return match + imgHtml(imageUrls[imgIdx++], sectionTitle);
     }
@@ -375,8 +369,6 @@ function parseAiOutput(raw: string) {
   const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
-  // 출처 표기 문구 제거 (프롬프트 지시에도 간혹 생성되는 경우 대비)
-  content = removeCitationPhrases(content);
   return { title, meta_description, content };
 }
 
@@ -499,7 +491,7 @@ export async function GET(req: NextRequest) {
   // 자동실행 활성화된 모든 사용자 조회
   const { data: settings, error: settingsErr } = await supabase
     .from('bossai_auto_settings')
-    .select('user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish')
+    .select('user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish, tistory_auto_publish')
     .eq('enabled', true);
 
   if (settingsErr || !settings?.length) {
@@ -512,9 +504,10 @@ export async function GET(req: NextRequest) {
   const summary: { userId: string; generated: number; keywords: string[] }[] = [];
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+  const cronSecret = process.env.CRON_SECRET;
 
   for (const setting of settings) {
-    const { user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish } = setting;
+    const { user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish, tistory_auto_publish } = setting;
 
     // 사용자 커스텀 키워드 우선, 없으면 트렌딩 키워드 사용
     const keywordsToUse = (custom_keywords?.length > 0 ? custom_keywords : trendKeywords).slice(0, max_per_run * 2);
@@ -563,6 +556,49 @@ export async function GET(req: NextRequest) {
             console.error(`[auto-run] 네이버 발행 실패 (${keyword}):`, pubErr instanceof Error ? pubErr.message : pubErr);
           }
         }
+
+        // 티스토리 자동 발행
+        if (tistory_auto_publish && result.articleId && cronSecret) {
+          try {
+            const { data: article } = await supabase
+              .from('bossai_auto_articles')
+              .select('title, content, focus_keyword')
+              .eq('id', result.articleId)
+              .single();
+            if (article) {
+              const { data: tistoryConns } = await supabase
+                .from('tistory_connections')
+                .select('id')
+                .eq('user_id', user_id)
+                .eq('is_active', true)
+                .limit(1);
+              const tConn = tistoryConns?.[0];
+              if (tConn) {
+                const pubRes = await fetch(`${appUrl}/api/tistory/publish`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cronSecret}` },
+                  body: JSON.stringify({
+                    blog_id: tConn.id,
+                    title: article.title,
+                    content: article.content,
+                    tags: article.focus_keyword ? [article.focus_keyword] : [],
+                  }),
+                });
+                if (pubRes.ok) {
+                  const pubData = await pubRes.json();
+                  await supabase.from('bossai_auto_articles').update({
+                    status: 'published',
+                    blog_platforms: ['tistory'],
+                    published_urls: { tistory: pubData.url || '' },
+                    published_at: new Date().toISOString(),
+                  }).eq('id', result.articleId);
+                }
+              }
+            }
+          } catch (pubErr) {
+            console.error(`[auto-run] 티스토리 발행 실패 (${keyword}):`, pubErr instanceof Error ? pubErr.message : pubErr);
+          }
+        }
       }
     }
 
@@ -600,7 +636,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, naver_auto_publish: naverAutoPub } = await req.json();
+  const { keywords: customKws, ai_model = 'qwen3', max = 3, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, naver_auto_publish: naverAutoPub, tistory_auto_publish: tistoryAutoPub } = await req.json();
   const adminSupabase = createAdminClient();
 
   const encoder = new TextEncoder();
@@ -667,6 +703,54 @@ export async function POST(req: NextRequest) {
                 }
               } catch (pubErr) {
                 send({ type: 'naver_error', keyword, reason: pubErr instanceof Error ? pubErr.message : String(pubErr) });
+              }
+            }
+
+            // 티스토리 자동 발행
+            if (tistoryAutoPub && result.articleId && process.env.CRON_SECRET) {
+              try {
+                const { data: article } = await adminSupabase
+                  .from('bossai_auto_articles')
+                  .select('title, content, focus_keyword')
+                  .eq('id', result.articleId)
+                  .single();
+                if (article) {
+                  const { data: tistoryConns } = await adminSupabase
+                    .from('tistory_connections')
+                    .select('id')
+                    .eq('user_id', user!.id)
+                    .eq('is_active', true)
+                    .limit(1);
+                  const tConn = tistoryConns?.[0];
+                  if (tConn) {
+                    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+                    const pubRes = await fetch(`${baseUrl}/api/tistory/publish`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CRON_SECRET}` },
+                      body: JSON.stringify({
+                        blog_id: tConn.id,
+                        title: article.title,
+                        content: article.content,
+                        tags: article.focus_keyword ? [article.focus_keyword] : [],
+                      }),
+                    });
+                    if (pubRes.ok) {
+                      const pubData = await pubRes.json();
+                      await adminSupabase.from('bossai_auto_articles').update({
+                        status: 'published',
+                        blog_platforms: ['tistory'],
+                        published_urls: { tistory: pubData.url || '' },
+                        published_at: new Date().toISOString(),
+                      }).eq('id', result.articleId);
+                      send({ type: 'tistory_published', keyword, url: pubData.url });
+                    } else {
+                      const errData = await pubRes.json().catch(() => ({}));
+                      send({ type: 'tistory_error', keyword, reason: errData.error || '발행 실패' });
+                    }
+                  }
+                }
+              } catch (pubErr) {
+                send({ type: 'tistory_error', keyword, reason: pubErr instanceof Error ? pubErr.message : String(pubErr) });
               }
             }
           } else if (result.reason && !result.reason.includes('중복')) {
