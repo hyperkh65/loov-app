@@ -8,11 +8,8 @@ const NAS_SCRIPT_PATH = '/volume1/homes/urjent/tistory_publish/post.py';
 
 // NAS에 티스토리 발행 스크립트 업로드 (최초 1회)
 const TISTORY_POST_SCRIPT = `#!/usr/bin/env python3
-import sys, json, re
+import sys, json, re, http.cookiejar
 import urllib.request, urllib.parse, urllib.error
-
-DQ = chr(34)
-SQ = chr(39)
 
 data = json.loads(sys.stdin.read())
 blog_name = data['blogName']
@@ -20,27 +17,42 @@ title = data['title']
 content = data['content']
 tssession = data['tssession']
 tags = data.get('tags', [])
-category = data.get('category', '0')
-blog_url = data.get('blogUrl', 'https://' + blog_name + '.tistory.com')
+category_id = int(data.get('category', 0) or 0)
+blog_url = data.get('blogUrl', 'https://' + blog_name + '.tistory.com').rstrip('/')
 
-ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-cookie = 'TSSESSION=' + tssession
+ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
 
-def make_headers(extra=None):
-    h = {
-        'Cookie': cookie,
+def out(r):
+    print(json.dumps(r, ensure_ascii=False))
+    sys.exit(0)
+
+# 쿠키 jar에 TSSESSION 주입
+cj = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+urllib.request.install_opener(opener)
+
+# TSSESSION 수동 주입
+import http.cookiejar as hcj
+ck = hcj.Cookie(
+    version=0, name='TSSESSION', value=tssession,
+    port=None, port_specified=False,
+    domain='.tistory.com', domain_specified=True, domain_initial_dot=True,
+    path='/', path_specified=True,
+    secure=False, expires=None, discard=True,
+    comment=None, comment_url=None, rest={},
+)
+cj.set_cookie(ck)
+
+def base_headers(referer=None):
+    return {
         'User-Agent': ua,
-        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.9',
         'Accept-Language': 'ko-KR,ko;q=0.9',
-        'Origin': blog_url,
-        'Referer': blog_url,
+        'Referer': referer or blog_url + '/manage/',
     }
-    if extra:
-        h.update(extra)
-    return h
 
 def http_get(url):
-    req = urllib.request.Request(url, headers=make_headers())
+    req = urllib.request.Request(url, headers=base_headers(url))
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
@@ -49,9 +61,18 @@ def http_get(url):
     except Exception as e:
         return str(e), url, 0
 
-def http_post(url, data_bytes, extra_headers=None):
-    h = make_headers(extra_headers)
-    req = urllib.request.Request(url, data=data_bytes, headers=h, method='POST')
+def http_post_json(url, payload, xsrf=''):
+    body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    h = {
+        **base_headers(),
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json, text/plain, */*',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': blog_url,
+    }
+    if xsrf:
+        h['X-XSRF-TOKEN'] = xsrf
+    req = urllib.request.Request(url, data=body, headers=h, method='POST')
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
@@ -60,111 +81,70 @@ def http_post(url, data_bytes, extra_headers=None):
     except Exception as e:
         return str(e), url, 0
 
-def out(result):
-    print(json.dumps(result, ensure_ascii=False))
-    sys.exit(0)
+# 1. /manage/ 방문해서 세션 쿠키 + XSRF 수집
+manage_html, manage_url, manage_status = http_get(blog_url + '/manage/')
+if 'accounts.kakao.com' in manage_url or 'tistory.com/auth' in manage_url or manage_status in (401, 403):
+    out({'error': 'TSSESSION 만료 — 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
 
-def is_login_page(url, html=''):
-    return ('accounts.kakao.com' in url or 'login' in url or
-            'kakaoAccount' in html or 'kakao_login' in html)
+# XSRF 토큰 추출 (쿠키에서)
+xsrf = ''
+for c in cj:
+    if c.name.upper() in ('XSRF-TOKEN', 'XSRF_TOKEN', '_XSRF'):
+        xsrf = urllib.parse.unquote(c.value)
+        break
+if not xsrf:
+    m = re.search(r'[Xx]-[Xx][Ss][Rr][Ff]-[Tt][Oo][Kk][Ee][Nn["\']\\s*:\\s*["\']([^"\']+)', manage_html)
+    if m:
+        xsrf = m.group(1)
 
-import http.cookiejar
-errors = []
+errors = ['manage=' + str(manage_status) + ' xsrf=' + (xsrf[:10] if xsrf else 'none')]
 
-# 쿠키 자동 처리 opener 생성
-cj = http.cookiejar.CookieJar()
-opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-opener.addheaders = [
-    ('User-Agent', ua),
-    ('Accept', 'text/html,application/xhtml+xml,*/*;q=0.8'),
-    ('Accept-Language', 'ko-KR,ko;q=0.9'),
-    ('Cookie', cookie),
-]
-urllib.request.install_opener(opener)
-
-def get_xsrf():
-    for c in cj:
-        if 'xsrf' in c.name.lower() or 'csrf' in c.name.lower():
-            return c.value
-    return ''
-
-def all_cookies():
-    return ', '.join(c.name + '=' + c.value[:10] for c in cj)
-
-# 세션 유효성 + 쿠키 수집
-manage_html = ''
-try:
-    manage_html, check_url, check_status = http_get(blog_url + '/manage/')
-    if is_login_page(check_url):
-        out({'error': '인증 실패 — TSSESSION 만료. 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-    if check_status in (401, 403):
-        out({'error': '인증 실패(' + str(check_status) + ') — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
-    errors.append('manage status=' + str(check_status) + ' cookies=[' + all_cookies() + ']')
-except Exception as e:
-    errors.append('manage: ' + str(e))
-
-# JS 번들에서 API 경로 탐색
-js_src_pat = 'src=[' + DQ + SQ + ']([^' + DQ + SQ + ']+[.]js[^' + DQ + SQ + ']*)[' + DQ + SQ + ']'
-js_urls = re.findall(js_src_pat, manage_html)
-api_hints = []
-for js_url in js_urls[:3]:
-    try:
-        full_url = js_url if js_url.startswith('http') else blog_url + js_url
-        js_body, _, _ = http_get(full_url)
-        api_pat = '[' + DQ + SQ + '/](manage/api/[a-zA-Z0-9/_-]+)[' + DQ + SQ + ']'
-        found = re.findall(api_pat, js_body)
-        api_hints.extend(found[:5])
-    except Exception:
-        pass
-if api_hints:
-    errors.append('api_hints=' + str(list(set(api_hints))[:5]))
-
-xsrf = get_xsrf()
-
-# 후보 엔드포인트 시도
-post_json = json.dumps({
-    'title': title, 'content': content,
-    'tag': ','.join(tags[:10]), 'category': category,
-    'visibility': 20, 'acceptComment': 1, 'published': 1,
-}).encode('utf-8')
-json_h = {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Referer': blog_url + '/manage/',
-    'X-Requested-With': 'XMLHttpRequest',
-    'Accept': 'application/json',
+# 2. 발행 payload
+payload = {
+    'title': title,
+    'content': content,
+    'visibility': 20,
+    'categoryId': category_id,
+    'tag': ','.join(tags[:10]),
+    'acceptComment': 1,
+    'published': 1,
 }
-if xsrf:
-    json_h['X-XSRF-TOKEN'] = xsrf
 
-candidates = [
+# 3. 엔드포인트 순서대로 시도
+endpoints = [
     blog_url + '/manage/api/v1/post',
     blog_url + '/manage/api/post',
-    blog_url + '/manage/api/posts',
-    blog_url + '/manage/api/entries',
-    blog_url + '/manage/api/entry',
+    'https://www.tistory.com/apis/post/write',
 ]
 
-for ep in candidates:
+for ep in endpoints:
     try:
-        body, final_url, status = http_post(ep, post_json, json_h)
+        body, final_url, status = http_post_json(ep, payload, xsrf)
         if status in (401, 403):
-            out({'error': '인증 실패 — TSSESSION을 다시 발급하세요', 'errorCode': 'AUTH'})
+            out({'error': 'TSSESSION 만료 — 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
         if 200 <= status < 400:
             try:
                 resp = json.loads(body)
-                pid = str(resp.get('postId', resp.get('id', resp.get('data', {}).get('id', ''))))
-                if pid:
+                pid = str(
+                    resp.get('postId') or
+                    resp.get('id') or
+                    (resp.get('data') or {}).get('id') or
+                    (resp.get('tistory') or {}).get('postId') or ''
+                )
+                if pid and pid != 'None':
                     out({'postId': pid, 'postUrl': blog_url + '/' + pid})
             except Exception:
                 pass
             m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
             if m:
                 out({'postId': m.group(1), 'postUrl': blog_url + '/' + m.group(1)})
-        errors.append(ep.split('/manage/')[1] + '->' + str(status))
+            errors.append(ep + '->' + str(status) + ':' + body[:100])
+        else:
+            errors.append(ep + '->' + str(status) + ':' + body[:80])
     except Exception as ex:
-        errors.append(ep.split('/manage/')[1] + ' exc:' + str(ex)[:50])
+        errors.append(ep + ' exc:' + str(ex)[:60])
 
-out({'error': 'xsrf=' + xsrf + ' | ' + ' | '.join(errors), 'errorCode': 'UNKNOWN'})
+out({'error': ' | '.join(errors), 'errorCode': 'UNKNOWN'})
 `;
 
 async function ensureScript(): Promise<void> {
