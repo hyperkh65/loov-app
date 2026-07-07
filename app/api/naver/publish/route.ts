@@ -223,6 +223,15 @@ def make_heading_component(text, level=2):
         }],
     }
 
+def make_spacer():
+    return {
+        'id': se_id(), 'layout': 'default', '@ctype': 'text',
+        'value': [{'id': se_id(), '@ctype': 'paragraph', 'nodes': [
+            {'id': se_id(), 'value': ' ', '@ctype': 'textNode',
+             'style': {'fontFamily': 'nanumbareunhipi', 'fontSizeCode': 'fs19', '@ctype': 'nodeStyle'}},
+        ]}],
+    }
+
 def html_to_components(body_html):
     components = []
     chunks = re.split('(<figure.*?</figure>|<h2[^>]*>.*?</h2>|<h3[^>]*>.*?</h3>)', body_html, flags=re.DOTALL | re.I)
@@ -261,12 +270,18 @@ def html_to_components(body_html):
             flush_texts()
             text = strip_html(chunk).strip()
             if text:
+                if components:
+                    components.append(make_spacer())
                 components.append(make_heading_component(text, level=2))
+                components.append(make_spacer())
         elif cl.startswith('<h3'):
             flush_texts()
             text = strip_html(chunk).strip()
             if text:
+                if components:
+                    components.append(make_spacer())
                 components.append(make_heading_component(text, level=3))
+                components.append(make_spacer())
         else:
             img_parts = re.split('(<img[^>]+>)', chunk, flags=re.I)
             for part in img_parts:
