@@ -7,8 +7,8 @@ export const maxDuration = 60;
 const NAS_SCRIPT_PATH = '/volume1/homes/urjent/tistory_publish/post.py';
 
 const TISTORY_POST_SCRIPT = `#!/usr/bin/env python3
-import sys, json, re, http.cookiejar
-import urllib.request, urllib.parse, urllib.error
+import sys, json, http.cookiejar
+import urllib.request, urllib.error
 
 data = json.loads(sys.stdin.read())
 blog_name = data['blogName']
@@ -25,32 +25,19 @@ def out(r):
     print(json.dumps(r, ensure_ascii=False))
     sys.exit(0)
 
-# 쿠키 jar에 TSSESSION 주입
 cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 urllib.request.install_opener(opener)
 
 import http.cookiejar as hcj
-ck = hcj.Cookie(
-    version=0, name='TSSESSION', value=tssession,
-    port=None, port_specified=False,
-    domain='.tistory.com', domain_specified=True, domain_initial_dot=True,
-    path='/', path_specified=True,
-    secure=False, expires=None, discard=True,
-    comment=None, comment_url=None, rest={},
-)
+ck = hcj.Cookie(0, 'TSSESSION', tssession, None, False, '.tistory.com', True, True, '/', True, False, None, True, None, None, {})
 cj.set_cookie(ck)
 
-def base_headers(referer=None):
-    return {
-        'User-Agent': ua,
-        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.9',
-        'Accept-Language': 'ko-KR,ko;q=0.9',
+def http_get(url, referer=None):
+    req = urllib.request.Request(url, headers={
+        'User-Agent': ua, 'Accept': 'text/html,*/*', 'Accept-Language': 'ko-KR,ko;q=0.9',
         'Referer': referer or blog_url + '/manage/',
-    }
-
-def http_get(url):
-    req = urllib.request.Request(url, headers=base_headers(url))
+    })
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
@@ -59,94 +46,58 @@ def http_get(url):
     except Exception as e:
         return str(e), url, 0
 
-def http_post_json(url, payload, xsrf=''):
+def http_post_json(url, payload, referer=None):
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     h = {
-        **base_headers(),
-        'Content-Type': 'application/json; charset=utf-8',
+        'User-Agent': ua,
         'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Content-Type': 'application/json; charset=utf-8',
         'X-Requested-With': 'XMLHttpRequest',
         'Origin': blog_url,
+        'Referer': referer or blog_url + '/manage/newpost/',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Dest': 'empty',
     }
-    if xsrf:
-        h['X-XSRF-TOKEN'] = xsrf
     req = urllib.request.Request(url, data=body, headers=h, method='POST')
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read().decode('utf-8', errors='replace'), r.geturl(), r.status
+            return r.read().decode('utf-8', errors='replace'), r.status
     except urllib.error.HTTPError as e:
-        return e.read().decode('utf-8', errors='replace'), url, e.code
+        return e.read().decode('utf-8', errors='replace'), e.code
     except Exception as e:
-        return str(e), url, 0
+        return str(e), 0
 
-# 1. /manage/ 방문해서 세션 쿠키 + XSRF 수집
-manage_html, manage_url, manage_status = http_get(blog_url + '/manage/')
+# 1. 세션 확인
+_, manage_url, manage_status = http_get(blog_url + '/manage/')
 if 'accounts.kakao.com' in manage_url or 'tistory.com/auth' in manage_url or manage_status in (401, 403):
     out({'error': 'TSSESSION 만료 — 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
 
-# XSRF 토큰 추출 (쿠키에서 먼저)
-xsrf = ''
-for c in cj:
-    if c.name.upper().replace('-', '_') in ('XSRF_TOKEN', '_XSRF', 'CSRF_TOKEN'):
-        xsrf = urllib.parse.unquote(c.value)
-        break
-if not xsrf:
-    # HTML에서 추출 시도 (JSON meta 또는 input hidden)
-    m = re.search(r'["\']X-XSRF-TOKEN["\']\s*:\s*["\']([^"\']+)', manage_html, re.IGNORECASE)
-    if not m:
-        m = re.search(r'name=["\']_token["\'][^>]*value=["\']([^"\']+)', manage_html, re.IGNORECASE)
-    if not m:
-        m = re.search(r'value=["\']([^"\']+)["\'][^>]*name=["\']_token["\']', manage_html, re.IGNORECASE)
-    if m:
-        xsrf = m.group(1)
+# 2. 에디터 초기화 (드래프트 저장에 필요)
+http_get(blog_url + '/manage/newpost/', referer=blog_url + '/manage/')
 
-errors = ['manage=' + str(manage_status) + ' xsrf=' + (xsrf[:10] if xsrf else 'none')]
-
-# 2. 발행 payload
+# 3. 임시저장
 payload = {
     'title': title,
     'content': content,
-    'visibility': 20,
+    'tags': ','.join(tags[:10]),
     'categoryId': category_id,
-    'tag': ','.join(tags[:10]),
-    'acceptComment': 1,
-    'published': 1,
+    'thumbnail': None,
+    'totalWritingTimeMs': 5000,
 }
+body, status = http_post_json(blog_url + '/manage/drafts', payload)
 
-# 3. 내부 관리 API 엔드포인트만 시도 (OAuth 전용 공개 API 제외)
-endpoints = [
-    blog_url + '/manage/api/v1/post',
-    blog_url + '/manage/api/post',
-]
-
-for ep in endpoints:
+if status == 200:
     try:
-        body, final_url, status = http_post_json(ep, payload, xsrf)
-        if status in (401, 403):
-            out({'error': 'TSSESSION 만료 — 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
-        if 200 <= status < 400:
-            try:
-                resp = json.loads(body)
-                pid = str(
-                    resp.get('postId') or
-                    resp.get('id') or
-                    (resp.get('data') or {}).get('id') or
-                    (resp.get('tistory') or {}).get('postId') or ''
-                )
-                if pid and pid != 'None':
-                    out({'postId': pid, 'postUrl': blog_url + '/' + pid})
-            except Exception:
-                pass
-            m = re.search(r'/([0-9]+)(?:[^0-9]|$)', final_url)
-            if m:
-                out({'postId': m.group(1), 'postUrl': blog_url + '/' + m.group(1)})
-            errors.append(ep + '->' + str(status) + ':' + body[:100])
-        else:
-            errors.append(ep + '->' + str(status) + ':' + body[:80])
-    except Exception as ex:
-        errors.append(ep + ' exc:' + str(ex)[:60])
+        resp = json.loads(body)
+        if resp.get('success'):
+            seq = resp['draft']['sequence']
+            out({'draftSequence': seq, 'draftUrl': blog_url + '/manage/newpost/'})
+    except Exception:
+        pass
 
-out({'error': ' | '.join(errors), 'errorCode': 'UNKNOWN'})
+out({'error': f'임시저장 실패 (status={status}): {body[:200]}', 'errorCode': 'DRAFT_FAIL'})
 `;
 
 async function ensureScript(): Promise<void> {
@@ -227,7 +178,7 @@ async function handlePublish(
     category: '0',
   });
 
-  let result: { postId?: string; postUrl?: string; error?: string; errorCode?: string };
+  let result: { draftSequence?: number; draftUrl?: string; error?: string; errorCode?: string };
   try {
     const { stdout, stderr, code } = await nasExecWithStdin(`python3 ${NAS_SCRIPT_PATH}`, input);
     const lastLine = stdout.trim().split('\n').pop() || '';
@@ -244,8 +195,8 @@ async function handlePublish(
     return NextResponse.json({ error: `NAS 실행 오류: ${String(e)}` }, { status: 500 });
   }
 
-  if (result.error || !result.postUrl) {
-    return NextResponse.json({ error: result.error || `발행 실패 (errorCode: ${result.errorCode || 'none'})`, errorCode: result.errorCode }, { status: 400 });
+  if (result.error || !result.draftUrl) {
+    return NextResponse.json({ error: result.error || `임시저장 실패 (errorCode: ${result.errorCode || 'none'})`, errorCode: result.errorCode }, { status: 400 });
   }
 
   try {
@@ -253,8 +204,8 @@ async function handlePublish(
       user_id: userId,
       blog_id: conn.id,
       blog_name: conn.blog_name,
-      post_id: result.postId || null,
-      post_url: result.postUrl,
+      post_id: String(result.draftSequence || ''),
+      post_url: result.draftUrl,
       title,
     });
   } catch { /* ignore */ }
@@ -263,5 +214,5 @@ async function handlePublish(
     .update({ last_tested_at: new Date().toISOString() })
     .eq('id', blogId);
 
-  return NextResponse.json({ ok: true, url: result.postUrl, post_id: result.postId });
+  return NextResponse.json({ ok: true, url: result.draftUrl, draft_sequence: result.draftSequence, isDraft: true });
 }
