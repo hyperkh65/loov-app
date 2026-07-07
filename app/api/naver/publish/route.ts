@@ -232,10 +232,10 @@ def html_to_components(body_html):
         if not pending_texts:
             return
         paras = [t for t in pending_texts if t.strip()]
-        if paras:
+        for p in paras:
             components.append({
                 'id': se_id(), 'layout': 'default', '@ctype': 'text',
-                'value': [make_text_node(p) for p in paras],
+                'value': [make_text_node(p)],
             })
         pending_texts.clear()
 
