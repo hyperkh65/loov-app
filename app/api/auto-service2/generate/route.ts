@@ -4,7 +4,6 @@ import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
-import { removeCitationPhrases } from '@/lib/auto-blog-prompt';
 
 export const maxDuration = 300;
 
@@ -236,27 +235,27 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
 <div style="margin:22px 0 0;">
 <div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q1. [정의/개요 관련 질문 — "~는 무엇인가요?" 또는 "~가 왜 이렇게 화제인가요?" 형식. 참고자료 기반]</div>
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">1. [정의/개요 관련 질문 — "~는 무엇인가요?" 또는 "~가 왜 이렇게 화제인가요?" 형식. 참고자료 기반]</div>
 <div style="color:#555;">[구체적이고 정확한 답변 2-3문장. 수치나 사실 포함]</div>
 </div>
 <div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q2. [원인/이유 관련 질문 — "왜 ~한 건가요?" 또는 "어떻게 ~가 됐나요?" 형식. Q1과 완전히 다른 각도]</div>
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">2. [원인/이유 관련 질문 — "왜 ~한 건가요?" 또는 "어떻게 ~가 됐나요?" 형식. Q1과 완전히 다른 각도]</div>
 <div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
 <div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q3. [방법/절차 관련 질문 — "어떻게 ~하면 되나요?" 또는 "뭘 확인해야 하나요?" 형식. Q1·Q2와 완전히 다른 각도]</div>
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">3. [방법/절차 관련 질문 — "어떻게 ~하면 되나요?" 또는 "뭘 확인해야 하나요?" 형식. Q1·Q2와 완전히 다른 각도]</div>
 <div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
 <div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q4. [비교/차이 관련 질문 — "~와 ~의 차이는?" 또는 "어느 쪽이 더 낫나요?" 형식. 앞 질문들과 완전히 다른 각도]</div>
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">4. [비교/차이 관련 질문 — "~와 ~의 차이는?" 또는 "어느 쪽이 더 낫나요?" 형식. 앞 질문들과 완전히 다른 각도]</div>
 <div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
 <div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q5. [주의사항/리스크 관련 질문 — "~할 때 조심할 점은?" 또는 "단점이나 한계는?" 형식. 앞 질문들과 완전히 다른 각도]</div>
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">5. [주의사항/리스크 관련 질문 — "~할 때 조심할 점은?" 또는 "단점이나 한계는?" 형식. 앞 질문들과 완전히 다른 각도]</div>
 <div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
 <div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q6. [전망/추천 관련 질문 — "앞으로 ~는 어떻게 될까요?" 또는 "결론적으로 추천한다면?" 형식. 앞 5개와 완전히 다른 각도]</div>
+<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">6. [전망/추천 관련 질문 — "앞으로 ~는 어떻게 될까요?" 또는 "결론적으로 추천한다면?" 형식. 앞 5개와 완전히 다른 각도]</div>
 <div style="color:#555;">[구체적이고 정확한 답변 2-3문장]</div>
 </div>
 </div>
@@ -423,7 +422,6 @@ function parseAiOutput(raw: string) {
   // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
-  content = removeCitationPhrases(content);
 
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
