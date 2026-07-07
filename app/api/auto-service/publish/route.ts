@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
         const { data: tistoryConns } = await supabase
           .from('tistory_connections')
           .select('id, blog_name, blog_url')
-          .eq('user_id', user.id)
+          .eq('user_id', userId!)
           .eq('is_active', true)
           .limit(1);
         const tConn = tistoryConns?.[0];
