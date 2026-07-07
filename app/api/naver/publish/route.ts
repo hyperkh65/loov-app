@@ -240,7 +240,10 @@ def html_to_components(body_html):
             if i < len(paras) - 1:
                 components.append({
                     'id': se_id(), 'layout': 'default', '@ctype': 'text',
-                    'value': [{'id': se_id(), '@ctype': 'paragraph', 'nodes': []}],
+                    'value': [{'id': se_id(), '@ctype': 'paragraph', 'nodes': [
+                        {'id': se_id(), 'value': ' ', '@ctype': 'textNode',
+                         'style': {'fontFamily': 'nanumbareunhipi', 'fontSizeCode': 'fs19', '@ctype': 'nodeStyle'}},
+                    ]}],
                 })
         pending_texts.clear()
 
