@@ -17,13 +17,12 @@ export default function TistoryPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [testingId, setTestingId] = useState<string | null>(null);
 
-  // 추가 폼
   const [formBlogName, setFormBlogName] = useState('');
   const [formDisplayName, setFormDisplayName] = useState('');
   const [formTssession, setFormTssession] = useState('');
 
-  // 편집
   const [editId, setEditId] = useState<string | null>(null);
   const [editTssession, setEditTssession] = useState('');
 
@@ -36,7 +35,7 @@ export default function TistoryPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3000); };
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 4000); };
 
   const handleAdd = async () => {
     if (!formBlogName || !formTssession) return flash('블로그명과 TSSESSION을 입력하세요');
@@ -94,12 +93,35 @@ export default function TistoryPage() {
     load();
   };
 
+  const handleTest = async (blog: TistoryBlog) => {
+    setTestingId(blog.id);
+    try {
+      const res = await fetch('/api/tistory/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blog_id: blog.id }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        flash(`✅ ${blog.display_name} — TSSESSION 유효 (관리 페이지 접근 성공)`);
+      } else {
+        flash(`❌ ${blog.display_name} — ${data.reason || '연결 실패'}`);
+      }
+    } catch (e) {
+      flash('❌ 테스트 오류: ' + String(e));
+    } finally {
+      setTestingId(null);
+    }
+  };
+
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">티스토리 블로그 관리</h1>
 
       {msg && (
-        <div className="p-3 rounded bg-blue-50 text-blue-800 text-sm">{msg}</div>
+        <div className={`p-3 rounded text-sm ${msg.startsWith('✅') ? 'bg-green-50 text-green-800' : msg.startsWith('❌') ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
+          {msg}
+        </div>
       )}
 
       {/* TSSESSION 안내 */}
@@ -110,6 +132,40 @@ export default function TistoryPage() {
           <li>F12 → Application → Cookies → www.tistory.com</li>
           <li><code className="bg-amber-100 px-1 rounded">TSSESSION</code> 값 복사</li>
         </ol>
+        <p className="text-amber-600 text-xs mt-1">※ 추가 후 반드시 <strong>연결 테스트</strong> 버튼으로 쿠키 유효성을 확인하세요.</p>
+      </div>
+
+      {/* Supabase 테이블 안내 */}
+      <div className="p-4 bg-gray-50 border border-gray-200 rounded text-sm">
+        <p className="font-semibold text-gray-700 mb-2">Supabase 테이블 설정 (최초 1회)</p>
+        <pre className="text-xs bg-white border rounded p-3 overflow-x-auto text-gray-600">{`-- Supabase SQL Editor에서 실행
+CREATE TABLE IF NOT EXISTS tistory_connections (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  blog_name text NOT NULL,
+  blog_url text NOT NULL,
+  display_name text,
+  tssession text NOT NULL,
+  is_active boolean DEFAULT true,
+  last_tested_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE(user_id, blog_name)
+);
+
+CREATE TABLE IF NOT EXISTS tistory_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  blog_id uuid REFERENCES tistory_connections,
+  blog_name text,
+  post_id text,
+  post_url text,
+  title text,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE bossai_auto_settings
+  ADD COLUMN IF NOT EXISTS tistory_auto_publish boolean DEFAULT false;`}</pre>
       </div>
 
       {/* 블로그 추가 */}
@@ -169,7 +225,14 @@ export default function TistoryPage() {
                   <a href={blog.blog_url} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-blue-500 hover:underline">{blog.blog_url}</a>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap justify-end">
+                  <button
+                    onClick={() => handleTest(blog)}
+                    disabled={testingId === blog.id}
+                    className="text-xs px-3 py-1 rounded border border-orange-300 text-orange-600 hover:bg-orange-50 disabled:opacity-50"
+                  >
+                    {testingId === blog.id ? '테스트 중...' : '연결 테스트'}
+                  </button>
                   <button
                     onClick={() => handleToggle(blog)}
                     className={`text-xs px-3 py-1 rounded border ${blog.is_active ? 'border-green-400 text-green-600' : 'border-gray-300 text-gray-400'}`}
