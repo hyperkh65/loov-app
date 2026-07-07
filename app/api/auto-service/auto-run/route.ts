@@ -578,6 +578,7 @@ export async function GET(req: NextRequest) {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cronSecret}` },
                   body: JSON.stringify({
+                    user_id,
                     blog_id: tConn.id,
                     title: article.title,
                     content: article.content,
@@ -728,6 +729,7 @@ export async function POST(req: NextRequest) {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CRON_SECRET}` },
                       body: JSON.stringify({
+                        user_id: user!.id,
                         blog_id: tConn.id,
                         title: article.title,
                         content: article.content,
