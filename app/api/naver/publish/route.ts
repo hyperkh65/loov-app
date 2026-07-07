@@ -232,11 +232,16 @@ def html_to_components(body_html):
         if not pending_texts:
             return
         paras = [t for t in pending_texts if t.strip()]
-        for p in paras:
+        for i, p in enumerate(paras):
             components.append({
                 'id': se_id(), 'layout': 'default', '@ctype': 'text',
                 'value': [make_text_node(p)],
             })
+            if i < len(paras) - 1:
+                components.append({
+                    'id': se_id(), 'layout': 'default', '@ctype': 'text',
+                    'value': [{'id': se_id(), '@ctype': 'paragraph', 'nodes': []}],
+                })
         pending_texts.clear()
 
     for chunk in chunks:
