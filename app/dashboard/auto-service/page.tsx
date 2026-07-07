@@ -2491,9 +2491,12 @@ export default function AutoServicePage() {
                     : errMsg.includes('1008') || (errMsg.includes('Unauthorized') && errMsg.includes('Tumblr'))
                     ? 'Tumblr 인증 실패 — 설정 페이지에서 OAuth 키 4개 재확인'
                     : errMsg.length > 100 ? errMsg.slice(0, 100) + '…' : errMsg;
+                  const platformLabel = platform.startsWith('tistory_')
+                    ? (tistoryBlogs.find(b => b.id === platform.replace('tistory_', ''))?.display_name || '티스토리') + ' (임시저장)'
+                    : platform;
                   return (
                   <div key={platform} className={`flex items-start justify-between p-3 rounded-lg ${result.success ? 'bg-green-50' : 'bg-red-50'}`}>
-                    <span className="text-sm font-medium shrink-0 mr-2">{platform}</span>
+                    <span className="text-sm font-medium shrink-0 mr-2">{platformLabel}</span>
                     {result.success ? (
                       <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span className="text-green-600 text-sm">✅ 성공</span>
