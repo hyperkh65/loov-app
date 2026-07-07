@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { nasExecWithStdin } from '@/lib/nas-ssh';
 
 export const maxDuration = 60;
 
 const NAS_SCRIPT_PATH = '/volume1/homes/urjent/tistory_publish/post.py';
 
-// NAS에 티스토리 발행 스크립트 업로드 (최초 1회)
 const TISTORY_POST_SCRIPT = `#!/usr/bin/env python3
 import sys, json, re, http.cookiejar
 import urllib.request, urllib.parse, urllib.error
@@ -31,7 +30,6 @@ cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 urllib.request.install_opener(opener)
 
-# TSSESSION 수동 주입
 import http.cookiejar as hcj
 ck = hcj.Cookie(
     version=0, name='TSSESSION', value=tssession,
@@ -86,14 +84,19 @@ manage_html, manage_url, manage_status = http_get(blog_url + '/manage/')
 if 'accounts.kakao.com' in manage_url or 'tistory.com/auth' in manage_url or manage_status in (401, 403):
     out({'error': 'TSSESSION 만료 — 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
 
-# XSRF 토큰 추출 (쿠키에서)
+# XSRF 토큰 추출 (쿠키에서 먼저)
 xsrf = ''
 for c in cj:
-    if c.name.upper() in ('XSRF-TOKEN', 'XSRF_TOKEN', '_XSRF'):
+    if c.name.upper().replace('-', '_') in ('XSRF_TOKEN', '_XSRF', 'CSRF_TOKEN'):
         xsrf = urllib.parse.unquote(c.value)
         break
 if not xsrf:
-    m = re.search(r'[Xx]-[Xx][Ss][Rr][Ff]-[Tt][Oo][Kk][Ee][Nn["\']\\s*:\\s*["\']([^"\']+)', manage_html)
+    # HTML에서 추출 시도 (JSON meta 또는 input hidden)
+    m = re.search(r'["\']X-XSRF-TOKEN["\']\s*:\s*["\']([^"\']+)', manage_html, re.IGNORECASE)
+    if not m:
+        m = re.search(r'name=["\']_token["\'][^>]*value=["\']([^"\']+)', manage_html, re.IGNORECASE)
+    if not m:
+        m = re.search(r'value=["\']([^"\']+)["\'][^>]*name=["\']_token["\']', manage_html, re.IGNORECASE)
     if m:
         xsrf = m.group(1)
 
@@ -110,11 +113,10 @@ payload = {
     'published': 1,
 }
 
-# 3. 엔드포인트 순서대로 시도
+# 3. 내부 관리 API 엔드포인트만 시도 (OAuth 전용 공개 API 제외)
 endpoints = [
     blog_url + '/manage/api/v1/post',
     blog_url + '/manage/api/post',
-    'https://www.tistory.com/apis/post/write',
 ]
 
 for ep in endpoints:
@@ -157,35 +159,64 @@ async function ensureScript(): Promise<void> {
 }
 
 export async function POST(req: NextRequest) {
+  // 내부(cron) 인증 지원: Authorization: Bearer <CRON_SECRET> + body에 user_id 포함
+  const authHeader = req.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
+  const isInternal = cronSecret && authHeader === `Bearer ${cronSecret}`;
+
+  let userId: string;
+
+  if (isInternal) {
+    const body = await req.json() as {
+      user_id: string;
+      blog_id: string;
+      title: string;
+      content: string;
+      tags?: string[];
+    };
+    if (!body.user_id) return NextResponse.json({ error: 'user_id 필요 (내부 호출)' }, { status: 400 });
+    userId = body.user_id;
+    return handlePublish(userId, body.blog_id, body.title, body.content, body.tags ?? [], true);
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { blog_id, title, content, tags = [], blog_url } = await req.json() as {
+  const body = await req.json() as {
     blog_id: string;
     title: string;
     content: string;
     tags?: string[];
-    blog_url?: string;
   };
+  return handlePublish(user.id, body.blog_id, body.title, body.content, body.tags ?? [], false);
+}
 
-  if (!blog_id || !title || !content) {
+async function handlePublish(
+  userId: string,
+  blogId: string,
+  title: string,
+  content: string,
+  tags: string[],
+  isInternal: boolean,
+) {
+  if (!blogId || !title || !content) {
     return NextResponse.json({ error: 'blog_id, title, content 필요' }, { status: 400 });
   }
+
+  const supabase = createAdminClient();
 
   const { data: conn } = await supabase
     .from('tistory_connections')
     .select('*')
-    .eq('id', blog_id)
-    .eq('user_id', user.id)
+    .eq('id', blogId)
+    .eq('user_id', userId)
     .single();
 
   if (!conn) return NextResponse.json({ error: '티스토리 연결 없음' }, { status: 400 });
 
-  // NAS 스크립트 업로드 (없으면)
   await ensureScript();
 
-  // 스크립트 실행
   const input = JSON.stringify({
     blogName: conn.blog_name,
     blogUrl: conn.blog_url || `https://${conn.blog_name}.tistory.com`,
@@ -217,10 +248,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error || `발행 실패 (errorCode: ${result.errorCode || 'none'})`, errorCode: result.errorCode }, { status: 400 });
   }
 
-  // 발행 이력 저장
   try {
     await supabase.from('tistory_history').insert({
-      user_id: user.id,
+      user_id: userId,
       blog_id: conn.id,
       blog_name: conn.blog_name,
       post_id: result.postId || null,
@@ -229,10 +259,9 @@ export async function POST(req: NextRequest) {
     });
   } catch { /* ignore */ }
 
-  // last_tested_at 갱신
   await supabase.from('tistory_connections')
     .update({ last_tested_at: new Date().toISOString() })
-    .eq('id', blog_id);
+    .eq('id', blogId);
 
   return NextResponse.json({ ok: true, url: result.postUrl, post_id: result.postId });
 }
