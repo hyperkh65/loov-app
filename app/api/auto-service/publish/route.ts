@@ -253,9 +253,9 @@ export async function POST(req: NextRequest) {
   }
   // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
-  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[] };
+  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[] };
   try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [] } = body;
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [] } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -417,6 +417,31 @@ export async function POST(req: NextRequest) {
       }
     } catch (err) {
       results[platform] = { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // 티스토리 개별 블로그 발행
+  for (const blogId of tistory_blog_ids) {
+    const resultKey = `tistory_${blogId}`;
+    try {
+      const res = await fetch(`${baseUrl}/api/tistory/publish`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.CRON_SECRET}`,
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          blog_id: blogId,
+          title: article.title,
+          content: article.content,
+          tags: article.focus_keyword ? [article.focus_keyword] : [],
+        }),
+      });
+      const data = await res.json();
+      results[resultKey] = res.ok ? { success: true, url: data.url } : { success: false, error: data.error };
+    } catch (err) {
+      results[resultKey] = { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
