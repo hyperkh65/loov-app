@@ -25,6 +25,7 @@ function modelLabel(id: string): string {
 
 const BLOG_PLATFORMS = [
   { id: 'naver', name: '네이버 블로그', icon: '🟢' },
+  { id: 'tistory', name: '티스토리', icon: '🟠' },
   { id: 'blogger', name: 'Google 블로거', icon: '📝' },
   { id: 'wordpress', name: 'WordPress', icon: '🔵' },
 ];
@@ -72,6 +73,7 @@ interface AutoSettings {
   last_run_status: string | null;
   last_run_count: number;
   naver_auto_publish: boolean;
+  tistory_auto_publish: boolean;
 }
 
 const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
@@ -89,7 +91,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0, naver_auto_publish: false,
+    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0, naver_auto_publish: false, tistory_auto_publish: false,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -134,13 +136,6 @@ export default function AutoServicePage() {
   const [editTitle, setEditTitle] = useState('');
   const [editModel, setEditModel] = useState('qwen3');
   const [savingEdit, setSavingEdit] = useState(false);
-  // 찾기/바꾸기
-  const [findText, setFindText] = useState('');
-  const [replaceText, setReplaceText] = useState('');
-  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
-  const [findCount, setFindCount] = useState(0);
-  const [editorPreviewMode, setEditorPreviewMode] = useState(false);
-  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   // 이미지 편집
   const [imgSearchTab, setImgSearchTab] = useState<'naver' | 'google' | 'pixabay' | 'sns' | 'upload'>('naver');
   const [imgQuery, setImgQuery] = useState('');
@@ -162,6 +157,9 @@ export default function AutoServicePage() {
   const [thumbPreviewUrl, setThumbPreviewUrl] = useState('');
   const [thumbPreviewSaved, setThumbPreviewSaved] = useState(false);
   const thumbCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [pollinationsUrl, setPollinationsUrl] = useState('');
+  const [pollinationsLoading, setPollinationsLoading] = useState(false);
+  const [pollinationsImgLoaded, setPollinationsImgLoaded] = useState(false);
   const thumbFileInputRef = useRef<HTMLInputElement>(null);
 
   // 발행 모달
@@ -179,14 +177,6 @@ export default function AutoServicePage() {
   // WordPress 사이트 목록
   const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
-  // 티스토리
-  const [tistoryBlogs, setTistoryBlogs] = useState<{ id: string; blog_name: string; display_name: string; is_active: boolean }[]>([]);
-  const [selTistoryIds, setSelTistoryIds] = useState<string[]>([]);
-  // 네이버 카페
-  const [selNaverCafe, setSelNaverCafe] = useState(false);
-  const [navercafeMenuId, setNavercafeMenuId] = useState('');
-  const [navercafeMenus, setNavercafeMenus] = useState<{ menuId: number; menuName: string }[]>([]);
-  const [navercafeConnected, setNavercafeConnected] = useState(false);
 
   // 예약 발행 모달
   const [scheduleArticle, setScheduleArticle] = useState<Article | null>(null);
@@ -194,7 +184,6 @@ export default function AutoServicePage() {
   const [schedBlog, setSchedBlog] = useState<string[]>([]);
   const [schedSns, setSchedSns] = useState<string[]>([]);
   const [schedWpSiteIds, setSchedWpSiteIds] = useState<string[]>([]);
-  const [schedTistoryIds, setSchedTistoryIds] = useState<string[]>([]);
   const [scheduling, setScheduling] = useState(false);
 
   // localStorage에서 키 읽기 (서버로 전달용)
@@ -269,22 +258,6 @@ export default function AutoServicePage() {
     fetch('/api/wordpress/sites')
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setWpSites(d); });
-    // 티스토리 블로그 목록 로드
-    fetch('/api/tistory/connections')
-      .then(r => r.json())
-      .then(d => { if (Array.isArray(d)) setTistoryBlogs(d.filter((b: { is_active: boolean }) => b.is_active)); });
-    // 네이버 카페 연결 상태 확인
-    fetch('/api/naver-cafe/connect')
-      .then(r => r.json())
-      .then(d => {
-        if (d?.connected) {
-          setNavercafeConnected(true);
-          if (Array.isArray(d.menu_list) && d.menu_list.length > 0) {
-            setNavercafeMenus(d.menu_list);
-            setNavercafeMenuId(String(d.menu_list[0].menuId));
-          }
-        }
-      }).catch(() => {});
     // 백링크 연결 상태 확인
     Promise.allSettled([
       fetch('/api/backlink/medium').then(r => r.json()),
@@ -376,6 +349,7 @@ export default function AutoServicePage() {
           ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.use_openrouter ? 'openrouter' : autoSettings.ai_model,
           max: autoSettings.max_per_run,
           naver_auto_publish: autoSettings.naver_auto_publish,
+          tistory_auto_publish: autoSettings.tistory_auto_publish,
           ...getAiKeys(),
         }),
       });
@@ -489,6 +463,45 @@ export default function AutoServicePage() {
     setThumbSelectedBg('');
     setThumbPreviewUrl(article.representative_image_url || '');
     setThumbPreviewSaved(true);
+    setPollinationsUrl('');
+    setPollinationsLoading(false);
+    setPollinationsImgLoaded(false);
+  };
+
+  // ── Pollinations AI 이미지 생성 ──
+  const generatePollinationsImage = () => {
+    if (!previewArticle) return;
+    setPollinationsLoading(true);
+    setPollinationsImgLoaded(false);
+    const seed = Math.abs(previewArticle.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 99999;
+    const prompt = encodeURIComponent(
+      `${previewArticle.keyword} Korea realistic photography professional high quality`
+    );
+    const url = `https://image.pollinations.ai/prompt/${prompt}?width=1200&height=630&nologo=true&model=flux-realism&seed=${seed}`;
+    setPollinationsUrl(url);
+  };
+
+  const savePollinationsAsRepImage = async () => {
+    if (!pollinationsUrl || !previewArticle) return;
+    setThumbGenerating(true);
+    try {
+      const res = await fetch(pollinationsUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `pollinations_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const form = new FormData();
+      form.append('file', file);
+      form.append('article_id', previewArticle.id);
+      const uploadRes = await fetch('/api/auto-service/thumbnail', { method: 'PUT', body: form });
+      const data = await uploadRes.json();
+      if (data.url) {
+        setThumbRepUrl(data.url);
+        setThumbPreviewUrl(data.url);
+        setThumbPreviewSaved(true);
+        setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
+        await loadArticles();
+      }
+    } catch { /* ignore */ }
+    setThumbGenerating(false);
   };
 
   // ── 캔버스 썸네일 함수들 ──
@@ -633,38 +646,6 @@ export default function AutoServicePage() {
     setImgLoading(false);
   };
 
-  // 찾기/바꾸기 핸들러
-  const handleFindCount = (search: string, content: string) => {
-    if (!search) { setFindCount(0); return; }
-    const matches = content.split(search).length - 1;
-    setFindCount(matches);
-  };
-
-  const handleReplaceAll = () => {
-    if (!findText) return;
-    const count = editContent.split(findText).length - 1;
-    if (count === 0) return;
-    setEditContent(prev => prev.replaceAll(findText, replaceText));
-    setFindCount(0);
-    setFindText('');
-  };
-
-  const handleReplaceOne = () => {
-    if (!findText) return;
-    const idx = editContent.indexOf(findText);
-    if (idx === -1) return;
-    setEditContent(prev => prev.slice(0, idx) + replaceText + prev.slice(idx + findText.length));
-    handleFindCount(findText, editContent.slice(0, idx) + replaceText + editContent.slice(idx + findText.length));
-  };
-
-  const handleJumpToLine = (line: number) => {
-    if (!editTextareaRef.current) return;
-    const lines = editContent.split('\n');
-    const pos = lines.slice(0, line - 1).join('\n').length + (line > 1 ? 1 : 0);
-    editTextareaRef.current.setSelectionRange(pos, pos);
-    editTextareaRef.current.focus();
-  };
-
   // 이미지 교체 (editContent 내 src URL 변경)
   const replaceImage = (oldSrc: string, newUrl: string) => {
     setEditContent(prev => prev.replaceAll(oldSrc, newUrl));
@@ -807,7 +788,6 @@ export default function AutoServicePage() {
           blog_platforms: schedBlog,
           sns_platforms: schedSns,
           wp_site_ids: schedWpSiteIds,
-          tistory_blog_ids: schedTistoryIds,
         }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || '저장 실패'); }
@@ -890,7 +870,7 @@ export default function AutoServicePage() {
   const doPublish = async () => {
     if (!publishArticle) return;
     setPublishing(true);
-    setPublishResult(null);
+    setPublishResult({});
     try {
       const res = await fetch('/api/auto-service/publish', {
         method: 'POST',
@@ -900,10 +880,7 @@ export default function AutoServicePage() {
           blog_platforms: selBlog,
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
-          tistory_blog_ids: selTistoryIds,
           backlink_platforms: selBacklink,
-          naver_cafe_menu_id: selNaverCafe && navercafeMenuId ? navercafeMenuId : undefined,
-          naver_cafe_open_yn: 'Y',
         }),
       });
       const text = await res.text();
@@ -1111,6 +1088,22 @@ export default function AutoServicePage() {
                 className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.naver_auto_publish ? 'bg-green-500' : 'bg-gray-300'}`}
               >
                 <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.naver_auto_publish ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* 티스토리 자동 발행 토글 */}
+            <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl border border-orange-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">🟠 티스토리 블로그 자동 발행</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.tistory_auto_publish ? '글 생성 후 티스토리에 자동 발행됩니다' : '글 생성만 하고 발행은 수동으로 합니다'}
+                </p>
+              </div>
+              <button
+                onClick={() => saveSettings({ tistory_auto_publish: !autoSettings.tistory_auto_publish })}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.tistory_auto_publish ? 'bg-orange-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.tistory_auto_publish ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
 
@@ -1679,141 +1672,10 @@ export default function AutoServicePage() {
                     ))}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  {/* 에디터 툴바 */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <label className="text-xs font-medium text-gray-600">HTML 내용 직접 수정</label>
-                    <span className="text-[10px] text-gray-400">{editContent.replace(/<[^>]+>/g,'').length.toLocaleString()}자</span>
-                    <div className="flex-1" />
-                    <button
-                      onClick={() => setFindReplaceOpen(v => !v)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-colors ${findReplaceOpen ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                    >
-                      🔍 찾기/바꾸기
-                    </button>
-                    <button
-                      onClick={() => setEditorPreviewMode(v => !v)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-colors ${editorPreviewMode ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                    >
-                      {editorPreviewMode ? '✏️ 편집' : '👁️ 미리보기'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        const ta = editTextareaRef.current;
-                        if (!ta) return;
-                        ta.rows = ta.rows === 22 ? 45 : 22;
-                      }}
-                      className="text-[11px] px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium"
-                    >
-                      ↕️ 높이
-                    </button>
-                  </div>
-
-                  {/* 찾기/바꾸기 패널 */}
-                  {findReplaceOpen && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
-                      <div className="flex gap-2 items-center">
-                        <input
-                          value={findText}
-                          onChange={e => { setFindText(e.target.value); handleFindCount(e.target.value, editContent); }}
-                          placeholder="찾을 텍스트"
-                          className="flex-1 border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                        {findText && (
-                          <span className="text-[11px] text-blue-700 font-semibold whitespace-nowrap">
-                            {findCount}개
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex gap-2 items-center">
-                        <input
-                          value={replaceText}
-                          onChange={e => setReplaceText(e.target.value)}
-                          placeholder="바꿀 텍스트 (비우면 삭제)"
-                          className="flex-1 border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                        <button
-                          onClick={handleReplaceOne}
-                          disabled={!findText || findCount === 0}
-                          className="text-[11px] px-2.5 py-1.5 bg-white border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-40 font-medium whitespace-nowrap"
-                        >
-                          1개
-                        </button>
-                        <button
-                          onClick={handleReplaceAll}
-                          disabled={!findText || findCount === 0}
-                          className="text-[11px] px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-40 font-medium whitespace-nowrap"
-                        >
-                          전체 ({findCount})
-                        </button>
-                      </div>
-                      {/* 빠른 태그 삭제 버튼 */}
-                      <div className="flex gap-1.5 flex-wrap pt-1 border-t border-blue-100">
-                        <span className="text-[10px] text-blue-500 font-medium self-center">빠른 처리:</span>
-                        {[
-                          { label: 'style 속성 제거', find: / style="[^"]*"/g, rep: '' },
-                          { label: 'class 제거', find: / class="[^"]*"/g, rep: '' },
-                          { label: '<br/> → 줄바꿈', find: '<br/>', rep: '\n' },
-                          { label: '&amp; → &', find: '&amp;', rep: '&' },
-                        ].map(({ label, find, rep }) => (
-                          <button
-                            key={label}
-                            onClick={() => {
-                              if (find instanceof RegExp) {
-                                setEditContent(prev => prev.replace(find, rep));
-                              } else {
-                                const cnt = editContent.split(find as string).length - 1;
-                                if (cnt > 0) { setEditContent(prev => prev.replaceAll(find as string, rep)); }
-                              }
-                            }}
-                            className="text-[10px] px-2 py-1 bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50"
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 에디터 / 미리보기 */}
-                  {editorPreviewMode ? (
-                    <div
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 min-h-[400px] max-h-[70vh] overflow-y-auto text-sm bg-white prose prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ __html: editContent }}
-                    />
-                  ) : (
-                    <textarea
-                      ref={editTextareaRef}
-                      value={editContent}
-                      onChange={e => {
-                        setEditContent(e.target.value);
-                        if (findText) handleFindCount(findText, e.target.value);
-                      }}
-                      rows={22}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y leading-relaxed"
-                      spellCheck={false}
-                    />
-                  )}
-
-                  {/* 하단 정보 바 */}
-                  <div className="flex items-center gap-3 text-[10px] text-gray-400">
-                    <span>줄 수: {editContent.split('\n').length}</span>
-                    <span>글자: {editContent.length.toLocaleString()}</span>
-                    <span>태그 제외: {editContent.replace(/<[^>]+>/g,'').length.toLocaleString()}</span>
-                    <div className="flex-1" />
-                    <button
-                      onClick={() => { setEditContent(editContent.trim()); }}
-                      className="text-gray-400 hover:text-gray-600"
-                    >
-                      앞뒤 공백 제거
-                    </button>
-                    <button
-                      onClick={() => navigator.clipboard?.writeText(editContent)}
-                      className="text-gray-400 hover:text-gray-600"
-                    >
-                      전체 복사
-                    </button>
-                  </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">HTML 내용 직접 수정</label>
+                  <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                    rows={22} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y" />
                 </div>
               </div>
             )}
@@ -2013,6 +1875,46 @@ export default function AutoServicePage() {
                     )}
                     {thumbSelectedBg && thumbBgImages.length === 0 && (
                       <p className="text-xs text-green-600 mt-1">✅ 배경 이미지 선택됨</p>
+                    )}
+                  </div>
+
+                  {/* Pollinations AI 이미지 */}
+                  <div className="border border-purple-200 rounded-xl p-3 bg-purple-50">
+                    <p className="text-xs font-medium text-purple-700 mb-2">🎨 AI 이미지 생성 (Pollinations · 무료)</p>
+                    <button onClick={generatePollinationsImage} disabled={pollinationsLoading || thumbGenerating}
+                      className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 mb-2">
+                      {pollinationsLoading && !pollinationsImgLoaded ? '생성 중... (10~20초)' : '🎨 AI 이미지 생성'}
+                    </button>
+                    {pollinationsUrl && (
+                      <div className="space-y-2">
+                        <div className="relative w-full rounded-lg overflow-hidden bg-gray-100 aspect-[1200/630]">
+                          {!pollinationsImgLoaded && (
+                            <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
+                              이미지 생성 중...
+                            </div>
+                          )}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={pollinationsUrl}
+                            alt="AI 생성 이미지"
+                            className={`w-full h-full object-cover transition-opacity ${pollinationsImgLoaded ? 'opacity-100' : 'opacity-0'}`}
+                            onLoad={() => { setPollinationsImgLoaded(true); setPollinationsLoading(false); }}
+                            onError={() => { setPollinationsLoading(false); }}
+                          />
+                        </div>
+                        {pollinationsImgLoaded && (
+                          <div className="flex gap-2">
+                            <button onClick={() => { setThumbSelectedBg(pollinationsUrl); setThumbBgImages([]); }}
+                              className="flex-1 py-1.5 bg-white border border-purple-300 text-purple-700 text-xs rounded-lg hover:bg-purple-50">
+                              배경으로 사용
+                            </button>
+                            <button onClick={savePollinationsAsRepImage} disabled={thumbGenerating}
+                              className="flex-1 py-1.5 bg-purple-600 text-white text-xs rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                              {thumbGenerating ? '저장 중...' : '대표이미지로 저장'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
@@ -2302,33 +2204,6 @@ export default function AutoServicePage() {
                         <span>{p.icon} {p.name}</span>
                       </label>
                     ))}
-                    {/* 티스토리 블로그 목록 */}
-                    {tistoryBlogs.filter(b => b.is_active).length > 0 ? (
-                      <div>
-                        <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🟠 티스토리 블로그 선택</div>
-                        {tistoryBlogs.filter(b => b.is_active).map(blog => (
-                          <label key={blog.id} className="flex items-center gap-3 p-3 border border-orange-200 rounded-lg cursor-pointer hover:bg-orange-50 mb-1.5">
-                            <input type="checkbox"
-                              checked={selTistoryIds.includes(blog.id)}
-                              onChange={() => {
-                                setSelTistoryIds(prev =>
-                                  prev.includes(blog.id) ? prev.filter(id => id !== blog.id) : [...prev, blog.id]
-                                );
-                              }}
-                              className="w-4 h-4" />
-                            <div>
-                              <div className="text-sm font-medium text-gray-800">{blog.display_name}</div>
-                              <div className="text-xs text-gray-400">{blog.blog_name}.tistory.com</div>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 border border-gray-200">
-                        🟠 티스토리 블로그가 없습니다.{' '}
-                        <a href="/dashboard/tistory" className="text-orange-600 hover:underline">티스토리 관리</a>에서 블로그를 추가하세요.
-                      </div>
-                    )}
                     {/* WordPress 사이트 목록 */}
                     {wpSites.length > 0 ? (
                       <div>
@@ -2420,49 +2295,9 @@ export default function AutoServicePage() {
                   </label>
                 </div>
 
-                {/* 네이버 카페 발행 */}
-                <div className={`rounded-xl border p-3 transition-colors ${selNaverCafe && navercafeConnected ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
-                  {navercafeConnected ? (
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <button type="button" onClick={() => setSelNaverCafe(!selNaverCafe)}
-                          className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${selNaverCafe ? 'bg-green-500' : 'bg-gray-300'}`}>
-                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${selNaverCafe ? 'translate-x-5' : 'translate-x-0'}`} />
-                        </button>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">☕ 네이버 카페 동시 발행</p>
-                          <p className="text-xs text-gray-400">블로그 글을 카페 게시판에 자동으로 함께 올립니다</p>
-                        </div>
-                      </label>
-                      {selNaverCafe && navercafeMenus.length > 0 && (
-                        <select
-                          value={navercafeMenuId}
-                          onChange={e => setNavercafeMenuId(e.target.value)}
-                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
-                        >
-                          {navercafeMenus.map(m => (
-                            <option key={m.menuId} value={String(m.menuId)}>{m.menuName}</option>
-                          ))}
-                        </select>
-                      )}
-                      {selNaverCafe && navercafeMenus.length === 0 && (
-                        <p className="text-xs text-amber-600">게시판 목록이 없습니다. <a href="/dashboard/naver-cafe" className="underline">카페 설정</a>에서 게시판을 추가하세요.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">☕ 네이버 카페</p>
-                        <p className="text-xs text-gray-400">OAuth 연결이 필요합니다</p>
-                      </div>
-                      <a href="/dashboard/naver-cafe" className="text-xs text-green-600 font-medium hover:underline">설정하기 →</a>
-                    </div>
-                  )}
-                </div>
-
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setPublishArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
-                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && selTistoryIds.length === 0 && !autoShorts && !(selNaverCafe && navercafeMenuId))}
+                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts)}
                     className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                     {publishing ? '발행 중...' : '🚀 발행하기'}
                   </button>
@@ -2473,7 +2308,6 @@ export default function AutoServicePage() {
                     {selSns.includes('instagram') && <p>📸 Instagram: 뉴스카드 생성 중 (~25초)</p>}
                     {selSns.includes('threads') && <p>🧵 Threads: 발행 후 링크 댓글 추가 (~30-60초)</p>}
                     {selBlog.includes('naver') && <p>🟢 네이버 블로그: 발행 중</p>}
-                    {selNaverCafe && navercafeMenuId && <p>☕ 네이버 카페: 발행 중</p>}
                     <p className="text-gray-400 mt-1">창을 닫지 마세요 — 서버에서 처리 중입니다</p>
                   </div>
                 )}
@@ -2481,9 +2315,6 @@ export default function AutoServicePage() {
             ) : (
               <div className="p-4 space-y-3">
                 <p className="font-medium text-gray-800">발행 결과</p>
-                {Object.entries(publishResult).length === 0 && (
-                  <p className="text-sm text-gray-400">선택된 플랫폼이 없거나 결과가 없습니다.</p>
-                )}
                 {Object.entries(publishResult).map(([platform, result]) => {
                   const errMsg = result.error || '';
                   const friendlyError = errMsg.includes('CreditsDepeted') || errMsg.includes('credits')
@@ -2491,12 +2322,9 @@ export default function AutoServicePage() {
                     : errMsg.includes('1008') || (errMsg.includes('Unauthorized') && errMsg.includes('Tumblr'))
                     ? 'Tumblr 인증 실패 — 설정 페이지에서 OAuth 키 4개 재확인'
                     : errMsg.length > 100 ? errMsg.slice(0, 100) + '…' : errMsg;
-                  const platformLabel = platform.startsWith('tistory_')
-                    ? (tistoryBlogs.find(b => b.id === platform.replace('tistory_', ''))?.display_name || '티스토리') + ' (임시저장)'
-                    : platform;
                   return (
                   <div key={platform} className={`flex items-start justify-between p-3 rounded-lg ${result.success ? 'bg-green-50' : 'bg-red-50'}`}>
-                    <span className="text-sm font-medium shrink-0 mr-2">{platformLabel}</span>
+                    <span className="text-sm font-medium shrink-0 mr-2">{platform}</span>
                     {result.success ? (
                       <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span className="text-green-600 text-sm">✅ 성공</span>
@@ -2548,25 +2376,6 @@ export default function AutoServicePage() {
                       <span>{p.icon} {p.name}</span>
                     </label>
                   ))}
-                  {tistoryBlogs.filter(b => b.is_active).length > 0 && (
-                    <div>
-                      <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🟠 티스토리 블로그 선택</div>
-                      {tistoryBlogs.filter(b => b.is_active).map(blog => (
-                        <label key={blog.id} className="flex items-center gap-3 p-3 border border-orange-200 rounded-lg cursor-pointer hover:bg-orange-50 mb-1.5">
-                          <input type="checkbox"
-                            checked={schedTistoryIds.includes(blog.id)}
-                            onChange={() => setSchedTistoryIds(prev =>
-                              prev.includes(blog.id) ? prev.filter(id => id !== blog.id) : [...prev, blog.id]
-                            )}
-                            className="w-4 h-4" />
-                          <div>
-                            <div className="text-sm font-medium text-gray-800">{blog.display_name}</div>
-                            <div className="text-xs text-gray-400">{blog.blog_name}.tistory.com</div>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  )}
                   {wpSites.length > 0 && (
                     <div>
                       <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🔵 WordPress 사이트 선택</div>
