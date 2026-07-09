@@ -5,6 +5,27 @@ import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost
 
 export const maxDuration = 600;
 
+async function uploadImageToNaverCafe(imageUrl: string, clubId: string, accessToken: string): Promise<string | null> {
+  try {
+    const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!imgRes.ok) return null;
+    const imgBuf = await imgRes.arrayBuffer();
+    const ct = imgRes.headers.get('content-type') || 'image/jpeg';
+    const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : ct.includes('webp') ? 'webp' : 'jpg';
+    const form = new FormData();
+    form.append('image', new Blob([imgBuf], { type: ct }), `image.${ext}`);
+    const uploadRes = await fetch(`https://openapi.naver.com/v1/cafe/${clubId}/image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!uploadRes.ok) return null;
+    const data = await uploadRes.json() as { message?: { result?: { imageUrl?: string } } };
+    return data.message?.result?.imageUrl || null;
+  } catch { return null; }
+}
+
 function toImageSlug(title: string): string {
   const slug = title
     .toLowerCase()
@@ -253,9 +274,9 @@ export async function POST(req: NextRequest) {
   }
   // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
-  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[] };
+  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [] } = body;
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -738,6 +759,113 @@ export async function POST(req: NextRequest) {
         }
       })
     );
+  }
+
+  // ── 네이버 카페 발행 ──────────────────────────────────────────────────────────
+  if (naver_cafe_menu_id && userId) {
+    try {
+      const adminSupa = createAdminClient();
+      const { data: conn } = await adminSupa
+        .from('naver_cafe_connections')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (conn?.club_id && conn.access_token) {
+        let accessToken: string = conn.access_token;
+
+        if (conn.token_expires_at && new Date(conn.token_expires_at) < new Date(Date.now() + 60_000)) {
+          if (conn.refresh_token) {
+            const rfRes = await fetch('https://nid.naver.com/oauth2.0/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                grant_type: 'refresh_token',
+                client_id: process.env.NAVER_CLIENT_ID!,
+                client_secret: process.env.NAVER_CLIENT_SECRET!,
+                refresh_token: conn.refresh_token,
+              }),
+            });
+            if (rfRes.ok) {
+              const rfData = await rfRes.json() as { access_token?: string; expires_in?: number };
+              if (rfData.access_token) {
+                accessToken = rfData.access_token;
+                await adminSupa.from('naver_cafe_connections').update({
+                  access_token: rfData.access_token,
+                  token_expires_at: new Date(Date.now() + (rfData.expires_in || 3600) * 1000).toISOString(),
+                  updated_at: new Date().toISOString(),
+                }).eq('user_id', userId);
+              }
+            }
+          }
+        }
+
+        const cleanTitle = (article.title || '')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
+          .replace(/&#(\d+);/g, (_: string, n: string) => String.fromCharCode(parseInt(n)))
+          .replace(/<[^>]+>/g, '').trim();
+
+        const rawText = (article.content || '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
+          .replace(/\n{3,}/g, '\n\n').trim();
+        const excerpt = rawText.slice(0, 400) + (rawText.length > 400 ? '...' : '');
+
+        const blogUrl = results.naver?.url || results.tistory?.url || results.blogger?.url
+          || Object.values(results).find(r => r.success && r.url)?.url
+          || (Object.values(article.published_urls || {}).find(Boolean) as string | undefined);
+
+        const cafeImageUrl = article.representative_image_url
+          ? await uploadImageToNaverCafe(String(article.representative_image_url), String(conn.club_id), accessToken)
+          : null;
+
+        const cafeLink = blogUrl ? `\n\n[원문 보기] ${blogUrl}` : '';
+        const keyword = article.focus_keyword ? `\n\n#${(article.focus_keyword as string).replace(/\s+/g, '')}` : '';
+        let cafeContent = excerpt + cafeLink + keyword;
+        if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
+
+        const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
+        const cafeRes = await fetch(cafeApiUrl, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: new URLSearchParams([
+            ['subject', cleanTitle],
+            ['content', cafeContent],
+            ['openYn', naver_cafe_open_yn],
+          ]),
+          signal: AbortSignal.timeout(30_000),
+        });
+
+        const cafeRawText = await cafeRes.text();
+        let cafeData: { message?: { result?: { articleId?: number } }; errorCode?: string; errorMessage?: string } = {};
+        try { cafeData = JSON.parse(cafeRawText); } catch {}
+
+        if (cafeRes.ok && !cafeData.errorCode) {
+          const cafeArticleId = cafeData.message?.result?.articleId;
+          const cafeSlug = (conn.cafe_url as string | null) || (conn.club_id as string);
+          const cafeUrl = cafeArticleId ? `https://cafe.naver.com/${cafeSlug}/articles/${cafeArticleId}` : undefined;
+          try {
+            await adminSupa.from('naver_cafe_history').insert({
+              user_id: userId,
+              club_id: conn.club_id,
+              article_id: cafeArticleId ? String(cafeArticleId) : null,
+              article_url: cafeUrl || null,
+              title: article.title,
+              menu_id: String(naver_cafe_menu_id),
+              menu_name: (conn.menu_list as { menuId: number; menuName: string }[] | null)?.find(m => String(m.menuId) === String(naver_cafe_menu_id))?.menuName || null,
+              open_yn: naver_cafe_open_yn,
+            });
+          } catch {}
+          results.naver_cafe = { success: true, url: cafeUrl };
+        } else {
+          results.naver_cafe = { success: false, error: cafeData.errorMessage || `카페 발행 실패 (HTTP ${cafeRes.status})` };
+        }
+      } else {
+        results.naver_cafe = { success: false, error: '카페 연결 없음 또는 club_id 미설정' };
+      }
+    } catch (cafErr) {
+      results.naver_cafe = { success: false, error: cafErr instanceof Error ? cafErr.message : String(cafErr) };
+    }
   }
 
   const anySuccess = Object.values(results).some(r => r.success);
