@@ -24,7 +24,7 @@ function modelLabel(id: string): string {
 }
 
 const BLOG_PLATFORMS = [
-  { id: 'naver', name: '네이버 블로그', icon: '🟢' },
+  { id: 'tistory', name: '티스토리', icon: '🟠' },
   { id: 'blogger', name: 'Google 블로거', icon: '📝' },
   { id: 'wordpress', name: 'WordPress', icon: '🔵' },
 ];
@@ -72,6 +72,7 @@ interface AutoSettings {
   last_run_status: string | null;
   last_run_count: number;
   naver_auto_publish: boolean;
+  tistory_auto_publish: boolean;
 }
 
 const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
@@ -89,7 +90,7 @@ export default function AutoServicePage() {
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
     enabled: false, ai_model: 'qwen3.5', max_per_run: 3,
-    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0, naver_auto_publish: false,
+    custom_keywords: [], use_gpt: false, use_openrouter: false, sns_caption_model: 'llama3.3', prompt_template: null, last_run_at: null, last_run_status: null, last_run_count: 0, naver_auto_publish: false, tistory_auto_publish: false,
   });
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string; emoji: string; group: string; category?: string }[]>([
     { id: 'qwen3.5', name: 'Qwen 3.5', emoji: '🔮', group: 'ollama', category: 'medium' },
@@ -103,6 +104,11 @@ export default function AutoServicePage() {
   const [runningNow, setRunningNow] = useState(false);
   const [runResult, setRunResult] = useState<{ generated: number; keywords: string[]; errors?: { keyword: string; reason: string }[] } | null>(null);
   const [runProgress, setRunProgress] = useState<{ keyword: string; status: 'generating' | 'done' | 'error'; reason?: string }[]>([]);
+  const [dbRunProgress, setDbRunProgress] = useState<{
+    is_running: boolean; started_at: string | null; last_run_status: string | null;
+    last_run_count: number; articles: { keyword: string; status: string; title?: string }[];
+  } | null>(null);
+  const dbPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 수동 생성
   const [manualKeyword, setManualKeyword] = useState('');
@@ -155,6 +161,9 @@ export default function AutoServicePage() {
   const [thumbPreviewUrl, setThumbPreviewUrl] = useState('');
   const [thumbPreviewSaved, setThumbPreviewSaved] = useState(false);
   const thumbCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [pollinationsUrl, setPollinationsUrl] = useState('');
+  const [pollinationsLoading, setPollinationsLoading] = useState(false);
+  const [pollinationsImgLoaded, setPollinationsImgLoaded] = useState(false);
   const thumbFileInputRef = useRef<HTMLInputElement>(null);
 
   // 발행 모달
@@ -245,6 +254,47 @@ export default function AutoServicePage() {
   }, []);
 
   // 설정 로드
+  const fetchDbRunProgress = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auto-service/run-progress');
+      if (res.ok) {
+        const data = await res.json();
+        setDbRunProgress(data);
+        return data.is_running as boolean;
+      }
+    } catch { /* ignore */ }
+    return false;
+  }, []);
+
+  // DB 진행현황 폴링 관리
+  useEffect(() => {
+    fetchDbRunProgress().then(isRunning => {
+      if (isRunning && !dbPollRef.current) {
+        dbPollRef.current = setInterval(async () => {
+          const stillRunning = await fetchDbRunProgress();
+          if (!stillRunning && dbPollRef.current) {
+            clearInterval(dbPollRef.current);
+            dbPollRef.current = null;
+          }
+        }, 5000);
+      }
+    });
+    return () => { if (dbPollRef.current) { clearInterval(dbPollRef.current); dbPollRef.current = null; } };
+  }, [fetchDbRunProgress]);
+
+  // runningNow 상태 변화 시 DB 폴링 시작
+  useEffect(() => {
+    if (runningNow && !dbPollRef.current) {
+      dbPollRef.current = setInterval(async () => {
+        const stillRunning = await fetchDbRunProgress();
+        if (!stillRunning && !runningNow && dbPollRef.current) {
+          clearInterval(dbPollRef.current);
+          dbPollRef.current = null;
+        }
+      }, 5000);
+    }
+  }, [runningNow, fetchDbRunProgress]);
+
   useEffect(() => {
     fetch('/api/auto-service/settings')
       .then(r => r.json())
@@ -344,6 +394,7 @@ export default function AutoServicePage() {
           ai_model: autoSettings.use_gpt ? 'openai' : autoSettings.use_openrouter ? 'openrouter' : autoSettings.ai_model,
           max: autoSettings.max_per_run,
           naver_auto_publish: autoSettings.naver_auto_publish,
+          tistory_auto_publish: autoSettings.tistory_auto_publish,
           ...getAiKeys(),
         }),
       });
@@ -457,6 +508,45 @@ export default function AutoServicePage() {
     setThumbSelectedBg('');
     setThumbPreviewUrl(article.representative_image_url || '');
     setThumbPreviewSaved(true);
+    setPollinationsUrl('');
+    setPollinationsLoading(false);
+    setPollinationsImgLoaded(false);
+  };
+
+  // ── Pollinations AI 이미지 생성 ──
+  const generatePollinationsImage = () => {
+    if (!previewArticle) return;
+    setPollinationsLoading(true);
+    setPollinationsImgLoaded(false);
+    const seed = Math.abs(previewArticle.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 99999;
+    const prompt = encodeURIComponent(
+      `${previewArticle.keyword} Korea realistic photography professional high quality`
+    );
+    const url = `https://image.pollinations.ai/prompt/${prompt}?width=1200&height=630&nologo=true&model=flux-realism&seed=${seed}`;
+    setPollinationsUrl(url);
+  };
+
+  const savePollinationsAsRepImage = async () => {
+    if (!pollinationsUrl || !previewArticle) return;
+    setThumbGenerating(true);
+    try {
+      const res = await fetch(pollinationsUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `pollinations_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const form = new FormData();
+      form.append('file', file);
+      form.append('article_id', previewArticle.id);
+      const uploadRes = await fetch('/api/auto-service/thumbnail', { method: 'PUT', body: form });
+      const data = await uploadRes.json();
+      if (data.url) {
+        setThumbRepUrl(data.url);
+        setThumbPreviewUrl(data.url);
+        setThumbPreviewSaved(true);
+        setPreviewArticle(prev => prev ? { ...prev, representative_image_url: data.url } : null);
+        await loadArticles();
+      }
+    } catch { /* ignore */ }
+    setThumbGenerating(false);
   };
 
   // ── 캔버스 썸네일 함수들 ──
@@ -1046,6 +1136,22 @@ export default function AutoServicePage() {
               </button>
             </div>
 
+            {/* 티스토리 자동 발행 토글 */}
+            <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl border border-orange-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">🟠 티스토리 블로그 자동 발행</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSettings.tistory_auto_publish ? '글 생성 후 티스토리에 자동 발행됩니다' : '글 생성만 하고 발행은 수동으로 합니다'}
+                </p>
+              </div>
+              <button
+                onClick={() => saveSettings({ tistory_auto_publish: !autoSettings.tistory_auto_publish })}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${autoSettings.tistory_auto_publish ? 'bg-orange-500' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${autoSettings.tistory_auto_publish ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
             {/* AI 모델 (GPT·OpenRouter 꺼진 경우만 표시) */}
             {!autoSettings.use_gpt && !autoSettings.use_openrouter && (
             <div>
@@ -1232,23 +1338,45 @@ export default function AutoServicePage() {
             <h2 className="font-semibold text-gray-800 mb-3">지금 바로 실행</h2>
             <p className="text-sm text-gray-500 mb-4">스케줄을 기다리지 않고 지금 즉시 글을 생성합니다. 생성된 초안은 "초안 관리"에서 확인하고 승인 후 발행하세요.</p>
 
-            {/* 실시간 진행 상황 */}
-            {runningNow && runProgress.length > 0 && (
-              <div className="mb-4 p-3 bg-blue-50 rounded-xl space-y-1.5">
-                {runProgress.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    {p.status === 'generating' && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
-                    {p.status === 'done' && <span className="text-green-500 flex-shrink-0">✓</span>}
-                    {p.status === 'error' && <span className="text-red-500 flex-shrink-0">✗</span>}
-                    <span className={p.status === 'generating' ? 'text-blue-700 font-medium' : p.status === 'done' ? 'text-green-700' : 'text-red-600'}>
-                      {p.keyword}
-                      {p.status === 'generating' && ' — AI 글 생성 중...'}
-                      {p.status === 'error' && p.reason && ` — ${p.reason.slice(0, 60)}`}
-                    </span>
+            {/* 실시간 진행 상황 (SSE 스트림 + DB 영구 보존) */}
+            {(() => {
+              // SSE 스트림 중이면 SSE 데이터 우선, 아니면 DB 데이터 표시
+              const showSse = runningNow && runProgress.length > 0;
+              const showDb = !showSse && dbRunProgress && dbRunProgress.articles.length > 0;
+              if (!showSse && !showDb) return null;
+
+              const items: { keyword: string; status: 'generating' | 'done' | 'error'; reason?: string }[] = showSse
+                ? runProgress
+                : dbRunProgress!.articles.map(a => ({
+                    keyword: a.keyword,
+                    status: (a.status === 'draft' || a.status === 'published' ? 'done' : a.status === 'failed' ? 'error' : 'generating') as 'generating' | 'done' | 'error',
+                  }));
+
+              const isRunning = showSse || dbRunProgress?.is_running;
+              const bgColor = isRunning ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200';
+              const headerColor = isRunning ? 'text-blue-700' : 'text-gray-600';
+
+              return (
+                <div className={`mb-4 p-3 rounded-xl border space-y-1.5 ${bgColor}`}>
+                  <div className={`text-xs font-semibold mb-2 flex items-center gap-1.5 ${headerColor}`}>
+                    {isRunning && <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
+                    {isRunning ? '실행 중... (창을 닫아도 계속 진행됩니다)' : `마지막 실행 결과 (${dbRunProgress?.last_run_count ?? 0}개 생성)`}
                   </div>
-                ))}
-              </div>
-            )}
+                  {items.map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      {p.status === 'generating' && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                      {p.status === 'done' && <span className="text-green-500 flex-shrink-0">✓</span>}
+                      {p.status === 'error' && <span className="text-red-500 flex-shrink-0">✗</span>}
+                      <span className={p.status === 'generating' ? 'text-blue-700 font-medium' : p.status === 'done' ? 'text-green-700' : 'text-red-600'}>
+                        {p.keyword}
+                        {p.status === 'generating' && ' — AI 글 생성 중...'}
+                        {p.status === 'error' && p.reason ? ` — ${p.reason.slice(0, 60)}` : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {runResult && !runningNow && (
               <div className="mb-4 space-y-2">
@@ -1817,6 +1945,46 @@ export default function AutoServicePage() {
                     )}
                   </div>
 
+                  {/* Pollinations AI 이미지 */}
+                  <div className="border border-purple-200 rounded-xl p-3 bg-purple-50">
+                    <p className="text-xs font-medium text-purple-700 mb-2">🎨 AI 이미지 생성 (Pollinations · 무료)</p>
+                    <button onClick={generatePollinationsImage} disabled={pollinationsLoading || thumbGenerating}
+                      className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 mb-2">
+                      {pollinationsLoading && !pollinationsImgLoaded ? '생성 중... (10~20초)' : '🎨 AI 이미지 생성'}
+                    </button>
+                    {pollinationsUrl && (
+                      <div className="space-y-2">
+                        <div className="relative w-full rounded-lg overflow-hidden bg-gray-100 aspect-[1200/630]">
+                          {!pollinationsImgLoaded && (
+                            <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
+                              이미지 생성 중...
+                            </div>
+                          )}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={pollinationsUrl}
+                            alt="AI 생성 이미지"
+                            className={`w-full h-full object-cover transition-opacity ${pollinationsImgLoaded ? 'opacity-100' : 'opacity-0'}`}
+                            onLoad={() => { setPollinationsImgLoaded(true); setPollinationsLoading(false); }}
+                            onError={() => { setPollinationsLoading(false); }}
+                          />
+                        </div>
+                        {pollinationsImgLoaded && (
+                          <div className="flex gap-2">
+                            <button onClick={() => { setThumbSelectedBg(pollinationsUrl); setThumbBgImages([]); }}
+                              className="flex-1 py-1.5 bg-white border border-purple-300 text-purple-700 text-xs rounded-lg hover:bg-purple-50">
+                              배경으로 사용
+                            </button>
+                            <button onClick={savePollinationsAsRepImage} disabled={thumbGenerating}
+                              className="flex-1 py-1.5 bg-purple-600 text-white text-xs rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                              {thumbGenerating ? '저장 중...' : '대표이미지로 저장'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* 텍스트 입력 */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -2206,7 +2374,6 @@ export default function AutoServicePage() {
                     <p className="font-medium text-gray-700">⏳ 발행 처리 중...</p>
                     {selSns.includes('instagram') && <p>📸 Instagram: 뉴스카드 생성 중 (~25초)</p>}
                     {selSns.includes('threads') && <p>🧵 Threads: 발행 후 링크 댓글 추가 (~30-60초)</p>}
-                    {selBlog.includes('naver') && <p>🟢 네이버 블로그: 발행 중</p>}
                     <p className="text-gray-400 mt-1">창을 닫지 마세요 — 서버에서 처리 중입니다</p>
                   </div>
                 )}
