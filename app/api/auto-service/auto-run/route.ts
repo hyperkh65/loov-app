@@ -662,6 +662,13 @@ export async function POST(req: NextRequest) {
       try {
         send({ type: 'start' });
 
+        // 실행 시작 즉시 DB에 기록 (페이지 새로고침 시에도 진행중 표시)
+        await adminSupabase.from('bossai_auto_settings').upsert({
+          user_id: user!.id,
+          last_run_at: new Date().toISOString(),
+          last_run_status: 'running',
+        }, { onConflict: 'user_id' });
+
         const rawKeywords = customKws?.length > 0 ? customKws : await getTrendingKeywords();
         const keywordsToUse = rawKeywords.filter(isQualityKeyword).slice(0, max * 3);
         send({ type: 'keywords', keywords: keywordsToUse.slice(0, max) });
