@@ -24,6 +24,7 @@ function modelLabel(id: string): string {
 }
 
 const BLOG_PLATFORMS = [
+  { id: 'naver', name: '네이버 블로그', icon: '🟢' },
   { id: 'tistory', name: '티스토리', icon: '🟠' },
   { id: 'blogger', name: 'Google 블로거', icon: '📝' },
   { id: 'wordpress', name: 'WordPress', icon: '🔵' },
@@ -164,6 +165,7 @@ export default function AutoServicePage() {
   const [pollinationsUrl, setPollinationsUrl] = useState('');
   const [pollinationsLoading, setPollinationsLoading] = useState(false);
   const [pollinationsImgLoaded, setPollinationsImgLoaded] = useState(false);
+  const [pollinationsPrompt, setPollinationsPrompt] = useState('');
   const thumbFileInputRef = useRef<HTMLInputElement>(null);
 
   // 발행 모달
@@ -172,6 +174,9 @@ export default function AutoServicePage() {
   const [selSns, setSelSns] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
+  // 네이버 카페
+  const [naverCafeMenus, setNaverCafeMenus] = useState<{ menuId: number; menuName: string }[]>([]);
+  const [selNaverCafeMenuId, setSelNaverCafeMenuId] = useState<string>('');
   // 백링크 플랫폼
   const [selBacklink, setSelBacklink] = useState<string[]>([]);
   const [backlinkStatus, setBacklinkStatus] = useState<{ medium: boolean; tumblr: boolean; pinterest: boolean; linkedin: boolean }>({ medium: false, tumblr: false, pinterest: false, linkedin: false });
@@ -318,6 +323,10 @@ export default function AutoServicePage() {
       });
     });
     loadModels();
+    // 네이버 카페 메뉴 로드
+    fetch('/api/naver-cafe/menus')
+      .then(r => r.json())
+      .then((d: { menus?: { menuId: number; menuName: string }[] }) => { if (Array.isArray(d.menus)) setNaverCafeMenus(d.menus); });
   }, [loadModels]);
 
   const loadArticles = useCallback(async (status?: string) => {
@@ -511,6 +520,7 @@ export default function AutoServicePage() {
     setPollinationsUrl('');
     setPollinationsLoading(false);
     setPollinationsImgLoaded(false);
+    setPollinationsPrompt('');
   };
 
   // ── Pollinations AI 이미지 생성 ──
@@ -518,10 +528,11 @@ export default function AutoServicePage() {
     if (!previewArticle) return;
     setPollinationsLoading(true);
     setPollinationsImgLoaded(false);
-    const seed = Math.abs(previewArticle.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 99999;
-    const prompt = encodeURIComponent(
-      `${previewArticle.keyword} Korea realistic photography professional high quality`
-    );
+    const seed = Math.floor(Math.random() * 99999);
+    const basePrompt = pollinationsPrompt.trim()
+      ? pollinationsPrompt.trim()
+      : `${previewArticle.keyword} Korea realistic photography professional high quality`;
+    const prompt = encodeURIComponent(basePrompt);
     const url = `https://image.pollinations.ai/prompt/${prompt}?width=1200&height=630&nologo=true&model=flux-realism&seed=${seed}`;
     setPollinationsUrl(url);
   };
@@ -926,6 +937,7 @@ export default function AutoServicePage() {
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
           backlink_platforms: selBacklink,
+          ...(selNaverCafeMenuId ? { naver_cafe_menu_id: selNaverCafeMenuId } : {}),
         }),
       });
       const text = await res.text();
@@ -1948,6 +1960,13 @@ export default function AutoServicePage() {
                   {/* Pollinations AI 이미지 */}
                   <div className="border border-purple-200 rounded-xl p-3 bg-purple-50">
                     <p className="text-xs font-medium text-purple-700 mb-2">🎨 AI 이미지 생성 (Pollinations · 무료)</p>
+                    <textarea
+                      value={pollinationsPrompt}
+                      onChange={e => setPollinationsPrompt(e.target.value)}
+                      placeholder={previewArticle ? `기본: ${previewArticle.keyword} Korea realistic photography...` : '프롬프트 직접 입력 (비워두면 키워드 자동사용)'}
+                      rows={2}
+                      className="w-full text-xs border border-purple-300 rounded-lg px-2 py-1.5 mb-2 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700 placeholder-gray-400"
+                    />
                     <button onClick={generatePollinationsImage} disabled={pollinationsLoading || thumbGenerating}
                       className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 mb-2">
                       {pollinationsLoading && !pollinationsImgLoaded ? '생성 중... (10~20초)' : '🎨 AI 이미지 생성'}
@@ -2307,6 +2326,28 @@ export default function AutoServicePage() {
                     )}
                   </div>
                 </div>
+                {/* 네이버 카페 */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">네이버 카페 (선택)</label>
+                  {naverCafeMenus.length > 0 ? (
+                    <select
+                      value={selNaverCafeMenuId}
+                      onChange={e => setSelNaverCafeMenuId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                    >
+                      <option value="">— 발행 안 함 —</option>
+                      {naverCafeMenus.map(m => (
+                        <option key={m.menuId} value={String(m.menuId)}>{m.menuName}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 border border-gray-200">
+                      🟢 카페 메뉴가 없습니다.{' '}
+                      <a href="/dashboard/naver-cafe" className="text-green-600 hover:underline">네이버 카페 연결</a>에서 설정하세요.
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-2 block">SNS 연동 (선택)</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -2364,7 +2405,7 @@ export default function AutoServicePage() {
 
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setPublishArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
-                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts)}
+                  <button onClick={doPublish} disabled={publishing || (selBlog.length === 0 && selSns.length === 0 && !autoShorts && !selNaverCafeMenuId)}
                     className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                     {publishing ? '발행 중...' : '🚀 발행하기'}
                   </button>
@@ -2374,6 +2415,7 @@ export default function AutoServicePage() {
                     <p className="font-medium text-gray-700">⏳ 발행 처리 중...</p>
                     {selSns.includes('instagram') && <p>📸 Instagram: 뉴스카드 생성 중 (~25초)</p>}
                     {selSns.includes('threads') && <p>🧵 Threads: 발행 후 링크 댓글 추가 (~30-60초)</p>}
+                    {selNaverCafeMenuId && <p>🟢 네이버 카페: 발행 중</p>}
                     <p className="text-gray-400 mt-1">창을 닫지 마세요 — 서버에서 처리 중입니다</p>
                   </div>
                 )}
