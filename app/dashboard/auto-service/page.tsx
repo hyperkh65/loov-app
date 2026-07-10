@@ -165,6 +165,7 @@ export default function AutoServicePage() {
   const [pollinationsUrl, setPollinationsUrl] = useState('');
   const [pollinationsLoading, setPollinationsLoading] = useState(false);
   const [pollinationsImgLoaded, setPollinationsImgLoaded] = useState(false);
+  const [pollinationsPrompt, setPollinationsPrompt] = useState('');
   const thumbFileInputRef = useRef<HTMLInputElement>(null);
 
   // 발행 모달
@@ -519,6 +520,7 @@ export default function AutoServicePage() {
     setPollinationsUrl('');
     setPollinationsLoading(false);
     setPollinationsImgLoaded(false);
+    setPollinationsPrompt('');
   };
 
   // ── Pollinations AI 이미지 생성 ──
@@ -526,10 +528,11 @@ export default function AutoServicePage() {
     if (!previewArticle) return;
     setPollinationsLoading(true);
     setPollinationsImgLoaded(false);
-    const seed = Math.abs(previewArticle.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 99999;
-    const prompt = encodeURIComponent(
-      `${previewArticle.keyword} Korea realistic photography professional high quality`
-    );
+    const seed = Math.floor(Math.random() * 99999);
+    const basePrompt = pollinationsPrompt.trim()
+      ? pollinationsPrompt.trim()
+      : `${previewArticle.keyword} Korea realistic photography professional high quality`;
+    const prompt = encodeURIComponent(basePrompt);
     const url = `https://image.pollinations.ai/prompt/${prompt}?width=1200&height=630&nologo=true&model=flux-realism&seed=${seed}`;
     setPollinationsUrl(url);
   };
@@ -1957,6 +1960,13 @@ export default function AutoServicePage() {
                   {/* Pollinations AI 이미지 */}
                   <div className="border border-purple-200 rounded-xl p-3 bg-purple-50">
                     <p className="text-xs font-medium text-purple-700 mb-2">🎨 AI 이미지 생성 (Pollinations · 무료)</p>
+                    <textarea
+                      value={pollinationsPrompt}
+                      onChange={e => setPollinationsPrompt(e.target.value)}
+                      placeholder={previewArticle ? `기본: ${previewArticle.keyword} Korea realistic photography...` : '프롬프트 직접 입력 (비워두면 키워드 자동사용)'}
+                      rows={2}
+                      className="w-full text-xs border border-purple-300 rounded-lg px-2 py-1.5 mb-2 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700 placeholder-gray-400"
+                    />
                     <button onClick={generatePollinationsImage} disabled={pollinationsLoading || thumbGenerating}
                       className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 mb-2">
                       {pollinationsLoading && !pollinationsImgLoaded ? '생성 중... (10~20초)' : '🎨 AI 이미지 생성'}
