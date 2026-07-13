@@ -1347,82 +1347,14 @@ export default function AutoServicePage() {
 
           {/* 지금 바로 실행 */}
           <div className="bg-white rounded-2xl border border-gray-200 p-5">
-            <h2 className="font-semibold text-gray-800 mb-3">지금 바로 실행</h2>
-            <p className="text-sm text-gray-500 mb-4">스케줄을 기다리지 않고 지금 즉시 글을 생성합니다. 생성된 초안은 "초안 관리"에서 확인하고 승인 후 발행하세요.</p>
-
-            {/* 실시간 진행 상황 (SSE 스트림 + DB 영구 보존) */}
-            {(() => {
-              // SSE 스트림 중이면 SSE 데이터 우선, 아니면 DB 데이터 표시
-              const showSse = runningNow && runProgress.length > 0;
-              const showDb = !showSse && dbRunProgress && dbRunProgress.articles.length > 0;
-              if (!showSse && !showDb) return null;
-
-              const items: { keyword: string; status: 'generating' | 'done' | 'error'; reason?: string }[] = showSse
-                ? runProgress
-                : dbRunProgress!.articles.map(a => ({
-                    keyword: a.keyword,
-                    status: (a.status === 'draft' || a.status === 'published' ? 'done' : a.status === 'failed' ? 'error' : 'generating') as 'generating' | 'done' | 'error',
-                  }));
-
-              const isRunning = showSse || dbRunProgress?.is_running;
-              const bgColor = isRunning ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200';
-              const headerColor = isRunning ? 'text-blue-700' : 'text-gray-600';
-
-              return (
-                <div className={`mb-4 p-3 rounded-xl border space-y-1.5 ${bgColor}`}>
-                  <div className={`text-xs font-semibold mb-2 flex items-center gap-1.5 ${headerColor}`}>
-                    {isRunning && <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
-                    {isRunning ? '실행 중... (창을 닫아도 계속 진행됩니다)' : `마지막 실행 결과 (${dbRunProgress?.last_run_count ?? 0}개 생성)`}
-                  </div>
-                  {items.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      {p.status === 'generating' && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
-                      {p.status === 'done' && <span className="text-green-500 flex-shrink-0">✓</span>}
-                      {p.status === 'error' && <span className="text-red-500 flex-shrink-0">✗</span>}
-                      <span className={p.status === 'generating' ? 'text-blue-700 font-medium' : p.status === 'done' ? 'text-green-700' : 'text-red-600'}>
-                        {p.keyword}
-                        {p.status === 'generating' && ' — AI 글 생성 중...'}
-                        {p.status === 'error' && p.reason ? ` — ${p.reason.slice(0, 60)}` : null}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-
-            {runResult && !runningNow && (
-              <div className="mb-4 space-y-2">
-                {runResult.generated > 0 ? (
-                  <div className="p-3 rounded-xl text-sm bg-green-50 text-green-700">
-                    <strong>✅ {runResult.generated}개 글 생성 완료!</strong>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {runResult.keywords.map((kw, i) => <span key={i} className="text-xs bg-green-100 px-2 py-0.5 rounded">{kw}</span>)}
-                    </div>
-                  </div>
-                ) : runResult.errors && runResult.errors.length > 0 ? (
-                  <div className="p-3 rounded-xl text-sm bg-yellow-50 text-yellow-700">
-                    <strong>⚠️ 생성 실패</strong>
-                    <div className="mt-2 space-y-1">
-                      {runResult.errors.map((e, i) => (
-                        <div key={i} className="text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
-                          <span className="font-medium">키워드 &quot;{e.keyword}&quot;:</span> {e.reason}
-                        </div>
-                      ))}
-                      <p className="text-xs mt-2 text-gray-600">
-                        💡 <strong>설정 페이지 → API 키 관리</strong>에서 Gemini, Claude, OpenAI 키 중 하나를 저장하면 서버 자동 실행됩니다.
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
-
-            <button onClick={runNow} disabled={runningNow}
+            <h2 className="font-semibold text-gray-800 mb-1">지금 바로 실행</h2>
+            <p className="text-sm text-gray-500 mb-4">스케줄을 기다리지 않고 지금 즉시 글을 생성합니다. 생성 결과는 <button onClick={() => setTab('drafts')} className="text-blue-600 underline">초안 관리</button> 탭에서 확인하세요.</p>
+            <button onClick={() => { runNow(); setTab('drafts'); }} disabled={runningNow}
               className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-bold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2">
               {runningNow ? (
                 <>
                   <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                  <span>실행 중...</span>
+                  <span>실행 중... (초안 관리 탭에서 확인)</span>
                 </>
               ) : '🚀 지금 바로 실행'}
             </button>
@@ -1527,6 +1459,55 @@ export default function AutoServicePage() {
       {/* ===== 초안 관리 탭 ===== */}
       {tab === 'drafts' && (
         <div>
+          {/* 실행 진행상황 / 결과 */}
+          {(() => {
+            const showSse = runningNow && runProgress.length > 0;
+            const showDb = !showSse && dbRunProgress && dbRunProgress.articles.length > 0;
+            if (!showSse && !showDb) return null;
+
+            const items: { keyword: string; status: 'generating' | 'done' | 'error'; reason?: string }[] = showSse
+              ? runProgress
+              : dbRunProgress!.articles.map(a => ({
+                  keyword: a.keyword,
+                  status: (a.status === 'draft' || a.status === 'published' ? 'done' : a.status === 'failed' ? 'error' : 'generating') as 'generating' | 'done' | 'error',
+                }));
+
+            const isRunning = showSse || dbRunProgress?.is_running;
+
+            return (
+              <div className={`mb-4 p-4 rounded-2xl border ${isRunning ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                <div className={`text-sm font-semibold mb-2 flex items-center gap-2 ${isRunning ? 'text-blue-700' : 'text-gray-600'}`}>
+                  {isRunning && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
+                  {isRunning ? '실행 중... (창을 닫아도 계속 진행됩니다)' : `마지막 실행 결과 — ${dbRunProgress?.last_run_count ?? 0}개 생성`}
+                </div>
+                <div className="space-y-1.5">
+                  {items.map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      {p.status === 'generating' && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                      {p.status === 'done' && <span className="text-green-500 flex-shrink-0">✓</span>}
+                      {p.status === 'error' && <span className="text-red-500 flex-shrink-0">✗</span>}
+                      <span className={p.status === 'generating' ? 'text-blue-700 font-medium' : p.status === 'done' ? 'text-green-700' : 'text-red-600'}>
+                        {p.keyword}
+                        {p.status === 'generating' && ' — AI 글 생성 중...'}
+                        {p.status === 'error' && p.reason ? ` — ${p.reason.slice(0, 60)}` : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {runResult && !runningNow && runResult.errors && runResult.errors.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {runResult.errors.map((e, i) => (
+                      <div key={i} className="text-xs bg-red-50 text-red-700 p-2 rounded border border-red-200">
+                        <span className="font-medium">키워드 &quot;{e.keyword}&quot;:</span> {e.reason}
+                      </div>
+                    ))}
+                    <p className="text-xs mt-1 text-gray-500">💡 설정 페이지 → API 키 관리에서 Gemini, Claude, OpenAI 키 중 하나를 저장하면 서버 자동 실행됩니다.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-500">{articles.length}개의 초안</p>
             <button onClick={() => loadArticles()} disabled={loadingArticles}
