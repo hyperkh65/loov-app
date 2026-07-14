@@ -389,18 +389,7 @@ export async function POST(req: NextRequest) {
             // 3. 카테고리 "Aboda" 조회 또는 생성
             const catId = await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
 
-            // 4. 태그: focus_keyword + 추가 키워드
-            const tagNames = [
-              article.focus_keyword,
-              article.keyword !== article.focus_keyword ? article.keyword : null,
-            ].filter(Boolean) as string[];
-            const tagIds: number[] = [];
-            for (const tagName of tagNames) {
-              const tid = await resolveTermId(site.site_url, auth, tagName, 'tags');
-              if (tid) tagIds.push(tid);
-            }
-
-            // 5. 포스트 발행
+            // 4. 포스트 발행
             // slug: focus_keyword 기반으로 생성 (WordPress 자동 slug 잘림 방지)
             const rawSlug = (article.focus_keyword || article.keyword || article.title)
               .replace(/[,!?\.]/g, '')
@@ -421,7 +410,6 @@ export async function POST(req: NextRequest) {
             };
             if (featuredMediaId) postBody.featured_media = featuredMediaId;
             if (catId) postBody.categories = [catId];
-            if (tagIds.length) postBody.tags = tagIds;
 
             const res = await fetch(`${site.site_url}/wp-json/wp/v2/posts`, {
               method: 'POST',
