@@ -1478,7 +1478,10 @@ export default function AutoServicePage() {
               <div className={`mb-4 p-4 rounded-2xl border ${isRunning ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
                 <div className={`text-sm font-semibold mb-2 flex items-center gap-2 ${isRunning ? 'text-blue-700' : 'text-gray-600'}`}>
                   {isRunning && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
-                  {isRunning ? '실행 중... (창을 닫아도 계속 진행됩니다)' : `마지막 실행 결과 — ${dbRunProgress?.last_run_count ?? 0}개 생성`}
+                  <span className="flex-1">{isRunning ? '실행 중... (창을 닫아도 계속 진행됩니다)' : `마지막 실행 결과 — ${dbRunProgress?.last_run_count ?? 0}개 생성`}</span>
+                  {!isRunning && (
+                    <button onClick={() => { setDbRunProgress(null); setRunProgress([]); }} className="text-xs text-gray-400 hover:text-red-500 ml-auto">✕ 지우기</button>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   {items.map((p, i) => (

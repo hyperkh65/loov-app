@@ -407,11 +407,17 @@ export async function POST(req: NextRequest) {
               .replace(/\s+/g, '-')
               .toLowerCase()
               .slice(0, 60);
+            const focusKeyword = (article.focus_keyword || article.keyword || '').trim();
             const postBody: Record<string, unknown> = {
               title: article.title,
               content: wpContent,
               status: 'publish',
               slug: rawSlug,
+              meta: {
+                rank_math_focus_keyword: focusKeyword,
+                rank_math_title: article.title || '',
+                rank_math_description: article.meta_description || '',
+              },
             };
             if (featuredMediaId) postBody.featured_media = featuredMediaId;
             if (catId) postBody.categories = [catId];
