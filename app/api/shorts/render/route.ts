@@ -69,6 +69,31 @@ function escapeDrawtext(s: string): string {
   return s.replace(/[\\':]/g, '\\$&').replace(/\n/g, ' ');
 }
 
+// Ken Burns 효과별 FFmpeg vf 문자열 생성
+const KB_EFFECTS = ['zoom_in', 'zoom_out', 'pan_right', 'pan_left', 'pan_up'] as const;
+
+function getKenBurnsVf(sceneIndex: number, dur: number): string {
+  const effect = KB_EFFECTS[sceneIndex % KB_EFFECTS.length];
+  const fps = 24;
+  const frames = Math.round((dur + 4) * fps); // 여유 프레임
+  // prescale: 원본 이미지 → 1080x1920 center-crop → 2x upscale (zoompan 여유 공간 확보)
+  const prescale = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,scale=2160:3840';
+  const zout = `s=1080x1920:fps=${fps}:d=${frames}`;
+
+  switch (effect) {
+    case 'zoom_in':
+      return `${prescale},zoompan=z='min(1+0.35*on/${frames}\\,1.35)':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':${zout}`;
+    case 'zoom_out':
+      return `${prescale},zoompan=z='max(1.35-0.35*on/${frames}\\,1.0)':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':${zout}`;
+    case 'pan_right':
+      return `${prescale},zoompan=z=1.3:x='(iw-iw/1.3)*on/${frames}':y='(ih-ih/1.3)/2':${zout}`;
+    case 'pan_left':
+      return `${prescale},zoompan=z=1.3:x='(iw-iw/1.3)*(1-on/${frames})':y='(ih-ih/1.3)/2':${zout}`;
+    case 'pan_up':
+      return `${prescale},zoompan=z=1.3:x='(iw-iw/1.3)/2':y='(ih-ih/1.3)*on/${frames}':${zout}`;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -76,13 +101,14 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: '로그인 필요' }), { status: 401 });
   }
 
-  const { scenes, voice = 'ko-KR-SunHiNeural', rate = 10, title = 'Shorts', addSubtitles = true } =
+  const { scenes, voice = 'ko-KR-SunHiNeural', rate = 10, title = 'Shorts', addSubtitles = true, kenBurns = true } =
     await req.json() as {
       scenes: RenderScene[];
       voice?: string;
       rate?: number;
       title?: string;
       addSubtitles?: boolean;
+      kenBurns?: boolean;
     };
 
   if (!scenes?.length) {
@@ -147,29 +173,39 @@ export async function POST(req: NextRequest) {
           const dur = Math.max(1, s.duration);
           const subtitle = escapeDrawtext(s.subtitle || '');
 
-          const vfParts = [
-            'scale=1080:1920:force_original_aspect_ratio=increase',
-            'crop=1080:1920',
-          ];
-
-          if (addSubtitles && subtitle && fontPath) {
-            vfParts.push(
-              `drawtext=fontfile='${fontPath}':text='${subtitle}':fontsize=52:fontcolor=white:` +
-              `x=(w-text_w)/2:y=h-220:shadowcolor=black@0.8:shadowx=3:shadowy=3:` +
-              `box=1:boxcolor=black@0.55:boxborderw=18`
-            );
-          } else if (addSubtitles && subtitle) {
-            // 폰트 없으면 기본 폰트로 시도
-            vfParts.push(
-              `drawtext=text='${subtitle}':fontsize=46:fontcolor=white:` +
-              `x=(w-text_w)/2:y=h-220:shadowcolor=black@0.9:shadowx=3:shadowy=3`
-            );
+          let vfStr: string;
+          if (kenBurns) {
+            const kbBase = getKenBurnsVf(i, dur);
+            const subtitleFilter = addSubtitles && subtitle
+              ? fontPath
+                ? `,drawtext=fontfile='${fontPath}':text='${subtitle}':fontsize=58:fontcolor=white:x=(w-text_w)/2:y=h-200:shadowcolor=black@0.9:shadowx=4:shadowy=4:box=1:boxcolor=black@0.65:boxborderw=22`
+                : `,drawtext=text='${subtitle}':fontsize=52:fontcolor=white:x=(w-text_w)/2:y=h-200:shadowcolor=black@0.9:shadowx=4:shadowy=4`
+              : '';
+            vfStr = kbBase + subtitleFilter;
+          } else {
+            const vfParts = [
+              'scale=1080:1920:force_original_aspect_ratio=increase',
+              'crop=1080:1920',
+            ];
+            if (addSubtitles && subtitle && fontPath) {
+              vfParts.push(
+                `drawtext=fontfile='${fontPath}':text='${subtitle}':fontsize=52:fontcolor=white:` +
+                `x=(w-text_w)/2:y=h-220:shadowcolor=black@0.8:shadowx=3:shadowy=3:` +
+                `box=1:boxcolor=black@0.55:boxborderw=18`
+              );
+            } else if (addSubtitles && subtitle) {
+              vfParts.push(
+                `drawtext=text='${subtitle}':fontsize=46:fontcolor=white:` +
+                `x=(w-text_w)/2:y=h-220:shadowcolor=black@0.9:shadowx=3:shadowy=3`
+              );
+            }
+            vfStr = vfParts.join(',');
           }
 
           lines.push(
-            `${ffmpeg} -loop 1 -t ${dur} -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
-            `-vf "${vfParts.join(',')}" ` +
-            `-c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p ` +
+            `${ffmpeg} -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
+            `-vf "${vfStr}" ` +
+            `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p ` +
             `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>/dev/null`
           );
         }
