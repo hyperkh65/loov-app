@@ -69,14 +69,26 @@ export async function POST(req: NextRequest) {
     if (!res.ok) {
       const errText = await res.text().catch(() => 'unknown');
       console.error(`[jobs] generate failed for ${articleId}:`, errText);
+      let errMsg = '';
+      try { errMsg = JSON.parse(errText)?.error || errText; } catch { errMsg = errText; }
       await admin.from('bossai_auto_articles')
-        .update({ status: 'failed', title: `❌ 생성 실패 (${keyword})`, updated_at: new Date().toISOString() })
+        .update({
+          status: 'failed',
+          title: `❌ 생성 실패 (${keyword})`,
+          meta_description: errMsg.slice(0, 300),
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', articleId);
     }
   }).catch(async (err) => {
     console.error(`[jobs] generate error for ${articleId}:`, err);
     await admin.from('bossai_auto_articles')
-      .update({ status: 'failed', title: `❌ 생성 실패 (${keyword})`, updated_at: new Date().toISOString() })
+      .update({
+        status: 'failed',
+        title: `❌ 생성 실패 (${keyword})`,
+        meta_description: String(err).slice(0, 300),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', articleId);
   });
 

@@ -89,6 +89,7 @@ export default function NaverCafePage() {
   // write
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [blogUrl, setBlogUrl] = useState('');
   const [menuId, setMenuId] = useState('');
   const [openYn, setOpenYn] = useState<'Y' | 'N'>('Y');
   const [attachFiles, setAttachFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
@@ -326,7 +327,7 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
       const res = await fetch('/api/naver-cafe/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, cover_image_url: coverImageUrl || undefined }),
+        body: JSON.stringify({ title, content, menu_id: menuId || undefined, open_yn: openYn, cover_image_url: coverImageUrl || undefined, blog_url: blogUrl || undefined }),
       });
       const data = await res.json();
       setPublishResult(data);
@@ -580,9 +581,14 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
       {/* 글쓰기 탭 */}
       {tab === 'write' && (
         <div className="space-y-4">
-          {!conn.oauth_connected && (
+          {!conn.connected && (
             <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-700">
               ⚠️ 설정 탭에서 OAuth 연결이 필요합니다.
+            </div>
+          )}
+          {conn.connected && !conn.oauth_connected && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
+              ℹ️ 토큰이 만료됐습니다. 발행 시 자동으로 갱신됩니다. 갱신 실패 시 설정 탭에서 재연결하세요.
             </div>
           )}
 
@@ -701,6 +707,17 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
               />
             </div>
 
+            {/* 블로그 원문 링크 */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">📖 블로그 원문 링크 (선택 — 입력 시 SNS 스타일로 요약+링크 발행)</label>
+              <input
+                value={blogUrl}
+                onChange={e => setBlogUrl(e.target.value)}
+                placeholder="https://blog.naver.com/... 또는 WordPress 글 URL"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
+              />
+            </div>
+
             {/* 파일/이미지 첨부 */}
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1 block">파일/이미지 첨부 (최대 5개)</label>
@@ -743,7 +760,7 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
 
             <button
               onClick={doPublish}
-              disabled={publishing || !conn.oauth_connected || !title || !content}
+              disabled={publishing || !conn.connected || !title || !content}
               className="w-full py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {publishing ? (

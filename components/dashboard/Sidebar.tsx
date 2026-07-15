@@ -64,6 +64,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/blogger',   icon: '📝', label: 'Google 블로거' },
       { href: '/dashboard/naver',     icon: '🟢', label: '네이버 블로그' },
       { href: '/dashboard/naver-cafe', icon: '☕', label: '네이버 카페' },
+      { href: '/dashboard/tistory',   icon: '🟠', label: '티스토리 블로그' },
       { href: '/dashboard/website',        icon: '🏢', label: '홈페이지 관리' },
       { href: '/dashboard/product-detail', icon: '📱', label: '상품 상세페이지' },
     ],

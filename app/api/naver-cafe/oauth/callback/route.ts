@@ -61,9 +61,18 @@ export async function GET(req: NextRequest) {
 
   const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
   const supabase = await createAdminClient();
+
+  // club_id가 없으면 기존 DB 값 유지
+  let finalClubId = clubId;
+  if (!finalClubId) {
+    const { data: existing } = await supabase.from('naver_cafe_connections')
+      .select('club_id').eq('user_id', userId).single();
+    finalClubId = (existing?.club_id as string | null) || '';
+  }
+
   const { error: dbError } = await supabase.from('naver_cafe_connections').upsert({
     user_id: userId,
-    club_id: clubId,
+    club_id: finalClubId,
     member_id: memberId,
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token || '',
