@@ -13,6 +13,8 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_BASE_URL || 'https://loov.co.kr'}/api/google/callback`;
 
+  const returnTo = req.nextUrl.searchParams.get('return_to') || '';
+
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -21,12 +23,17 @@ export async function GET(req: NextRequest) {
       'https://www.googleapis.com/auth/calendar',
       'https://www.googleapis.com/auth/calendar.events',
       'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/webmasters.readonly',
     ].join(' '),
     access_type: 'offline',
     prompt: 'consent',
-    state: user.id, // 사용자 ID를 state에 포함
+    state: user.id,
   });
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-  return NextResponse.redirect(authUrl);
+  const res = NextResponse.redirect(authUrl);
+  if (returnTo) {
+    res.cookies.set('google_return_to', returnTo, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  }
+  return res;
 }

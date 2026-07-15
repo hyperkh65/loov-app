@@ -49,6 +49,42 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(data);
 }
 
+export async function PATCH(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+
+  const { id, site_name, site_url, wp_username, app_password } = await req.json();
+  if (!id) return NextResponse.json({ error: 'id 필요' }, { status: 400 });
+
+  const cleanUrl = (site_url || '').replace(/\/$/, '');
+
+  // app_password 입력된 경우만 연결 테스트
+  if (app_password) {
+    try {
+      const auth = 'Basic ' + Buffer.from(`${wp_username}:${app_password}`).toString('base64');
+      const test = await fetch(`${cleanUrl}/wp-json/wp/v2/users/me`, { headers: { Authorization: auth } });
+      if (!test.ok) return NextResponse.json({ error: `WP 연결 실패 (${test.status}) - URL·계정·앱비밀번호 확인` }, { status: 400 });
+    } catch {
+      return NextResponse.json({ error: 'WP 사이트에 연결할 수 없습니다' }, { status: 400 });
+    }
+  }
+
+  const updates: Record<string, string> = {};
+  if (site_name) updates.site_name = site_name;
+  if (site_url) updates.site_url = cleanUrl;
+  if (wp_username) updates.wp_username = wp_username;
+  if (app_password) updates.app_password = app_password;
+
+  const { data, error } = await supabase.from('wordpress_sites')
+    .update(updates)
+    .eq('id', id).eq('user_id', user.id)
+    .select('id, site_name, site_url, wp_username, is_active, created_at').single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
+}
+
 export async function DELETE(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

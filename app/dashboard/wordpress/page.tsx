@@ -297,6 +297,10 @@ export default function WordPressPage() {
   const [addingSite, setAddingSite] = useState(false);
   const [siteForm, setSiteForm] = useState({ site_name: '', site_url: '', wp_username: '', app_password: '' });
   const [siteMsg, setSiteMsg] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ site_name: '', site_url: '', wp_username: '', app_password: '' });
+  const [editMsg, setEditMsg] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // 노션
   const [notionForm, setNotionForm] = useState({ integration_token: '', database_id: '', status_property: 'Status', openai_api_key: '', rewrite_prompt: '' });
@@ -549,6 +553,21 @@ export default function WordPressPage() {
     setAddingSite(false);
   };
   const handleDeleteSite = async (id: string) => { await fetch('/api/wordpress/sites', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }); setSites((p) => p.filter((s) => s.id !== id)); };
+
+  const handleEditSite = (s: WpSite) => {
+    setEditingId(s.id);
+    setEditForm({ site_name: s.site_name, site_url: s.site_url, wp_username: s.wp_username, app_password: '' });
+    setEditMsg('');
+  };
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    setSavingEdit(true); setEditMsg('');
+    const r = await fetch('/api/wordpress/sites', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editingId, ...editForm }) });
+    const d = await r.json();
+    if (r.ok) { setSites((p) => p.map((s) => s.id === editingId ? { ...s, ...d } : s)); setEditingId(null); setEditMsg(''); }
+    else setEditMsg(`⚠️ ${d.error}`);
+    setSavingEdit(false);
+  };
 
   const handleNotionConnect = async () => {
     setNotionMsg('');
@@ -850,10 +869,28 @@ export default function WordPressPage() {
               {sites.length===0 ? <div className="p-6 text-center text-sm text-gray-400">등록된 사이트가 없습니다</div> : (
                 <div className="divide-y divide-gray-50">
                   {sites.map((s) => (
-                    <div key={s.id} className="flex items-center gap-4 px-5 py-4">
-                      <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center text-sm flex-shrink-0">🌐</div>
-                      <div className="flex-1 min-w-0"><p className="text-sm font-bold text-gray-800">{s.site_name}</p><p className="text-xs text-gray-400 truncate">{s.site_url}</p><p className="text-xs text-gray-400">@{s.wp_username}</p></div>
-                      <button onClick={() => handleDeleteSite(s.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">삭제</button>
+                    <div key={s.id} className="px-5 py-4">
+                      {editingId === s.id ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-sm font-bold text-gray-700">사이트 수정</span>
+                            <button onClick={() => setEditingId(null)} className="ml-auto text-xs text-gray-400 hover:text-gray-600">취소</button>
+                          </div>
+                          {[['site_name','사이트 이름',''],['site_url','사이트 URL','font-mono text-xs'],['wp_username','WordPress 사용자명','']].map(([k,p,cls]) => (
+                            <input key={k} value={editForm[k as keyof typeof editForm]} onChange={(e) => setEditForm((f) => ({...f,[k]:e.target.value}))} placeholder={p} className={`w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 ${cls}`} />
+                          ))}
+                          <input value={editForm.app_password} type="password" onChange={(e) => setEditForm((f) => ({...f,app_password:e.target.value}))} placeholder="새 Application Password (변경 시에만 입력)" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" />
+                          {editMsg && <p className="text-xs text-red-500">{editMsg}</p>}
+                          <button onClick={handleSaveEdit} disabled={savingEdit} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2 rounded-xl font-bold text-sm transition-colors">{savingEdit ? '저장 중...' : '저장'}</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-4">
+                          <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center text-sm flex-shrink-0">🌐</div>
+                          <div className="flex-1 min-w-0"><p className="text-sm font-bold text-gray-800">{s.site_name}</p><p className="text-xs text-gray-400 truncate">{s.site_url}</p><p className="text-xs text-gray-400">@{s.wp_username}</p></div>
+                          <button onClick={() => handleEditSite(s)} className="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1 rounded-lg hover:bg-indigo-50 transition-colors">수정</button>
+                          <button onClick={() => handleDeleteSite(s.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">삭제</button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

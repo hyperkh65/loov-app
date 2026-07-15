@@ -67,7 +67,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_connected=1`);
+    const returnTo = req.cookies.get('google_return_to')?.value || '';
+    const redirectTarget = returnTo ? `${baseUrl}${returnTo}?google_connected=1` : `${baseUrl}/dashboard/schedule?google_connected=1`;
+    const redirectRes = NextResponse.redirect(redirectTarget);
+    if (returnTo) redirectRes.cookies.set('google_return_to', '', { maxAge: 0, path: '/' });
+    return redirectRes;
   } catch (err) {
     console.error('Google callback error:', err);
     return NextResponse.redirect(`${baseUrl}/dashboard/schedule?google_error=server_error&detail=${encodeURIComponent(String(err))}`);

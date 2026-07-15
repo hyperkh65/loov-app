@@ -99,7 +99,12 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
         const data = await res.json();
         const hits = data.hits || [];
         if (hits.length > 0) {
-          const urls = hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
+          const urls = hits.slice(0, count).map((h: { webformatURL: string; previewURL?: string }) => {
+            // previewURL is a stable CDN URL (cdn.pixabay.com); derive 640px version from it
+            // webformatURL uses pixabay.com/get/ signed URLs that expire
+            const preview = h.previewURL || '';
+            return preview ? preview.replace(/_\d+\./, '_640.') : h.webformatURL;
+          });
           return { displayUrls: urls, thumbUrl: urls[0] };
         }
       }
@@ -202,11 +207,14 @@ export function injectTitleIntoH3(content: string, title: string): string {
 
 export function insertRepresentativeImageIntoContent(content: string, imageUrl: string, title: string): string {
   const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const repImg = `\n<figure style="text-align:center;margin:20px auto;">`
+  const repImg = `<figure style="text-align:center;margin:0 auto 28px;">`
     + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
     + `style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
     + `</figure>\n`;
-  return content.replace(/(<\/h3>)/, `$1${repImg}`);
+  // 맨 앞에 삽입 (첫 번째 H2 이전)
+  const firstH2 = content.search(/<h2/i);
+  if (firstH2 > 0) return content.slice(0, firstH2) + repImg + content.slice(firstH2);
+  return repImg + content;
 }
 
 export function insertImagesIntoContent(content: string, imageUrls: string[], keyword: string): string {
@@ -220,10 +228,9 @@ export function insertImagesIntoContent(content: string, imageUrls: string[], ke
       + `</figure>\n`;
   };
   let imgIdx = 0;
-  let h2Count = 0;
+  // H2 소제목마다 이미지 삽입 (이미지 있는 만큼)
   return content.replace(/(<h2[^>]*>[\s\S]*?<\/h2>)/gi, (match) => {
-    h2Count++;
-    if (h2Count % 2 === 1 && imgIdx < imageUrls.length) {
+    if (imgIdx < imageUrls.length) {
       const sectionTitle = extractH2Title(match);
       return match + imgHtml(imageUrls[imgIdx++], sectionTitle);
     }

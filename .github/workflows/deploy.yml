@@ -69,6 +69,7 @@ jobs:
           NEXT_PUBLIC_SERVICE_DOMAIN=service.loov.co.kr
           NEXT_PUBLIC_APP_URL=https://loov.co.kr
           NEXT_PUBLIC_MAIN_DOMAIN=loov.co.kr
+          INTERNAL_BASE_URL=http://host.docker.internal:3100
           NAS_SSH_HOST=host.docker.internal
           NAS_SSH_PORT=22
           NAS_SSH_USER=${{ secrets.NAS_SSH_USER }}
@@ -98,6 +99,8 @@ jobs:
           METERED_API_KEY=${{ secrets.METERED_API_KEY }}
           METERED_APP_NAME=${{ secrets.METERED_APP_NAME }}
           FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
+          NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
           ENVEOF
 
       - name: Notify — 전송 중
@@ -164,3 +167,124 @@ jobs:
           curl -s -X POST $WEBHOOK_URL \
             -H "Content-Type: application/json" \
             -d "{\"secret\":\"${{ secrets.DEPLOY_SECRET }}\",\"status\":\"failed\",\"step\":\"배포 실패\",\"message\":\"https://github.com/hyperkh65/loov-app/actions\",\"sha\":\"${{ github.sha }}\"}" || true
+
+  deploy-replica:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Next.js (loov.2days.kr)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: https://loov.2days.kr
+          NEXT_PUBLIC_MAIN_DOMAIN: loov.2days.kr
+          NEXT_PUBLIC_SITE_URL: https://loov.2days.kr
+          NEXT_PUBLIC_OWNER_DOMAIN: loov.co.kr
+          NEXT_PUBLIC_SERVICE_DOMAIN: service.loov.co.kr
+          NEXT_PUBLIC_OWNER_USER_ID: ${{ secrets.OWNER_USER_ID }}
+          NEXT_PUBLIC_OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+          NEXT_PUBLIC_KAKAO_CHANNEL_URL: https://pf.kakao.com/_ixeGIX
+
+      - name: Prepare dist
+        run: |
+          cp -r public .next/standalone/
+          cp -r .next/static .next/standalone/.next/static
+
+      - name: Write .env.production
+        run: |
+          cat > .next/standalone/.env.production << 'ENVEOF'
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OWNER_USER_ID=${{ secrets.OWNER_USER_ID }}
+          OWNER_EMAIL=${{ secrets.OWNER_EMAIL }}
+          NEXT_PUBLIC_OWNER_USER_ID=${{ secrets.OWNER_USER_ID }}
+          NEXT_PUBLIC_OWNER_EMAIL=${{ secrets.OWNER_EMAIL }}
+          NEXT_PUBLIC_OWNER_DOMAIN=loov.co.kr
+          NEXT_PUBLIC_SERVICE_DOMAIN=service.loov.co.kr
+          NEXT_PUBLIC_APP_URL=https://loov.2days.kr
+          NEXT_PUBLIC_MAIN_DOMAIN=loov.2days.kr
+          NEXT_PUBLIC_SITE_URL=https://loov.2days.kr
+          INTERNAL_BASE_URL=http://host.docker.internal:3100
+          NAS_SSH_HOST=host.docker.internal
+          NAS_SSH_PORT=22
+          NAS_SSH_USER=urjent
+          NAS_SSH_PASSWORD="${{ secrets.NAS2_SSH_PASSWORD }}"
+          R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}"
+          R2_BUCKET=${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}
+          NOTION_API_KEY=${{ secrets.NOTION_API_KEY }}
+          NOTION_CAMERA_DB_ID=${{ secrets.NOTION_CAMERA_DB_ID }}
+          GITHUB_PAT=${{ secrets.PAT_TOKEN }}
+          GITHUB_REPO=hyperkh65/loov-app
+          INVITE_CODE=${{ secrets.INVITE_CODE }}
+          NAS_MYSQL_ROOT_PASS="${{ secrets.NAS_MYSQL_ROOT_PASS }}"
+          NAS_SYNO_ADMIN_PASS="${{ secrets.NAS2_SSH_PASSWORD }}"
+          NEXT_PUBLIC_KAKAO_CHANNEL_URL=https://pf.kakao.com/_ixeGIX
+          DEPLOY_SECRET=${{ secrets.DEPLOY_SECRET }}
+          CRON_SECRET=${{ secrets.CRON_SECRET }}
+          BOT_SECRET=${{ secrets.CRON_SECRET }}
+          WORKER_SECRET=${{ secrets.WORKER_SECRET }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI=https://loov.co.kr/api/google/callback
+          GOOGLE_BLOGGER_REDIRECT_URI=https://loov.co.kr/api/blogger/callback
+          GOOGLE_YOUTUBE_REDIRECT_URI=https://loov.co.kr/api/youtube/callback
+          METERED_API_KEY=${{ secrets.METERED_API_KEY }}
+          METERED_APP_NAME=${{ secrets.METERED_APP_NAME }}
+          FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
+          NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
+          ENVEOF
+
+      - name: Upload to hy65
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 22
+          source: ".next/standalone/*"
+          target: /volume1/web/loov-dist-2days
+          strip_components: 2
+          rm: false
+
+      - name: Restart container on hy65
+        uses: appleboy/ssh-action@v1
+        env:
+          DIST_DIR: /volume1/web/loov-dist-2days
+          DEPLOY_SECRET: ${{ secrets.DEPLOY_SECRET }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 22
+          envs: DIST_DIR,DEPLOY_SECRET
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker stop loov-app-2days 2>/dev/null || true
+            echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker rm loov-app-2days 2>/dev/null || true
+            echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker run -d \
+              --name loov-app-2days \
+              --restart unless-stopped \
+              -p 3100:3000 \
+              --add-host=host.docker.internal:host-gateway \
+              -v "${DIST_DIR}:/app" \
+              -w /app \
+              -e DEPLOY_SECRET="$DEPLOY_SECRET" \
+              node:20-alpine \
+              node server.js

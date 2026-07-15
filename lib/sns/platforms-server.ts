@@ -667,9 +667,12 @@ export async function postCommentOnOwnPost(
       });
       if (!cr.ok) throw new Error(`Threads 댓글 생성 실패: ${await cr.text()}`);
       const { id: containerId } = await cr.json();
-      // 미디어 포함 컨테이너는 처리 완료 대기 필요
-      const needsContainerWait = containerBody.media_type !== 'TEXT';
-      if (needsContainerWait) await waitThreadsContainerFinished(containerId, accessToken);
+      // 댓글 컨테이너 처리 대기: 미디어는 FINISHED 폴링, 텍스트는 30초 고정
+      if (containerBody.media_type !== 'TEXT') {
+        await waitThreadsContainerFinished(containerId, accessToken);
+      } else {
+        await new Promise(r => setTimeout(r, 30000));
+      }
       const pr = await fetch(`https://graph.threads.net/v1.0/${platformUserId}/threads_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
