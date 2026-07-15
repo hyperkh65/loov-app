@@ -931,11 +931,8 @@ export default function AutoService2Page() {
                   <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
                 <div className="min-w-0">
                   <p className="font-medium text-gray-800 truncate text-xs">📺 {j.title}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className={`text-xs ${j.status === 'error' ? 'text-red-500' : 'text-gray-500'}`}>
                     {j.progress}
-                    {(j.status === 'pending' || j.status === 'running') && (
-                      <span className="text-orange-500 ml-1">— NAS 처리 서버 확인 필요</span>
-                    )}
                   </p>
                 </div>
               </div>
