@@ -21,6 +21,53 @@ interface Scene {
 interface PixabayImage { id: number; url: string; thumb: string; tags: string; author: string }
 interface BlogPost { id: string; title: string; url: string; image: string; excerpt: string; content: string; date: string; categories: string[] }
 
+// ── 이미지 스마트 배치 ────────────────────────────────────────────────────────
+// 블로그 이미지 수에 따라 핵심 씬에 배치하고 나머지는 Pixabay 검색으로 채운다.
+//
+//  blogImages 수  │  전략
+//  ─────────────────────────────────────────────────────
+//  0              │  전체 Pixabay (image_query 기반 자동 검색)
+//  1 ~ N/3 미만   │  훅(0) + 마지막 씬에만 배치, 나머지 Pixabay
+//  N/3 ~ N 미만   │  균등 간격으로 배치, 빈 씬 Pixabay
+//  N 이상         │  씬마다 1:1 배치 (충분)
+//
+function getKeyIndices(total: number, count: number): number[] {
+  if (count <= 0) return [];
+  if (count >= total) return Array.from({ length: total }, (_, i) => i);
+  if (count === 1) return [0];
+  const indices = new Set<number>();
+  indices.add(0);
+  indices.add(total - 1);
+  for (let i = 1; i < count - 1; i++) {
+    indices.add(Math.round(i * (total - 1) / (count - 1)));
+  }
+  return [...indices].sort((a, b) => a - b).slice(0, count);
+}
+
+function assignImages(scenes: Scene[], blogImages: string[], fallback: ImageSource): Scene[] {
+  const N = scenes.length;
+  const B = blogImages.length;
+
+  if (B === 0) {
+    return scenes.map(s => ({ ...s, image_url: '', image_source: fallback }));
+  }
+
+  if (B >= N) {
+    // 블로그 이미지가 씬 수 이상 → 1:1 배치
+    return scenes.map((s, i) => ({ ...s, image_url: blogImages[i], image_source: 'custom' as ImageSource }));
+  }
+
+  // 블로그 이미지를 균등 간격 핵심 씬에 배치, 나머지는 Pixabay 자동 검색
+  const keyIndices = getKeyIndices(N, B);
+  return scenes.map((s, i) => {
+    const keyPos = keyIndices.indexOf(i);
+    if (keyPos >= 0) {
+      return { ...s, image_url: blogImages[keyPos], image_source: 'custom' as ImageSource };
+    }
+    return { ...s, image_url: '', image_source: fallback };
+  });
+}
+
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const DURATIONS = [
   { v: 15,  label: '15초', sub: '초간단' },
@@ -457,6 +504,7 @@ function ExportPanel({ scenes, title, description, hook, platform }: {
   const [ytUrl, setYtUrl] = useState('');
   const [selectedVoice, setSelectedVoice] = useState('ko-KR-SunHiNeural');
   const [ttsRate, setTtsRate] = useState(10);
+  const [useKenBurns, setUseKenBurns] = useState(true);
 
   const renderVideo = async () => {
     setRenderState('rendering');
@@ -467,7 +515,7 @@ function ExportPanel({ scenes, title, description, hook, platform }: {
       const res = await fetch('/api/shorts/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenes, voice: selectedVoice, rate: ttsRate, title, addSubtitles: true }),
+        body: JSON.stringify({ scenes, voice: selectedVoice, rate: ttsRate, title, addSubtitles: true, kenBurns: useKenBurns }),
       });
       if (!res.body) throw new Error('스트림 없음');
       const reader = res.body.getReader();
@@ -582,6 +630,21 @@ function ExportPanel({ scenes, title, description, hook, platform }: {
               className="w-full h-2 accent-red-500" />
           </div>
         </div>
+        {/* Ken Burns 토글 */}
+        <button onClick={() => setUseKenBurns(v => !v)}
+          className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 transition-all text-left ${
+            useKenBurns ? 'border-orange-400 bg-orange-50' : 'border-gray-200 bg-gray-50'
+          }`}>
+          <div className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${useKenBurns ? 'bg-orange-500' : 'bg-gray-300'}`}>
+            <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${useKenBurns ? 'translate-x-4' : ''}`} />
+          </div>
+          <div>
+            <div className={`text-xs font-bold ${useKenBurns ? 'text-orange-700' : 'text-gray-500'}`}>
+              🎬 Ken Burns 효과 {useKenBurns ? 'ON' : 'OFF'}
+            </div>
+            <div className="text-[10px] text-gray-400">줌인·줌아웃·패닝으로 사진을 살아움직이게 (렌더링 2-3배 증가)</div>
+          </div>
+        </button>
 
         {/* 렌더링 진행 */}
         {renderState !== 'idle' && (
@@ -729,7 +792,8 @@ function ExportPanel({ scenes, title, description, hook, platform }: {
 // ── 메인 ──────────────────────────────────────────────────────────────────────
 export default function ShortsPage() {
   const { companySettings } = useStore();
-  const provider = companySettings.globalAIConfig?.provider ?? 'gemini';
+  // provider/apiKey는 서버 글로벌 AI 설정 우선 (Ollama Cloud 등) — 프론트 override 가능
+  const provider = companySettings.globalAIConfig?.provider;
   const apiKey = companySettings.globalAIConfig?.apiKey ?? '';
 
   // 설정
@@ -758,6 +822,7 @@ export default function ShortsPage() {
   const [blogSearch, setBlogSearch] = useState('');
   const [showBlog, setShowBlog] = useState(false);
   const [selectedBlogPost, setSelectedBlogPost] = useState<BlogPost | null>(null);
+  const [blogImages, setBlogImages] = useState<string[]>([]);
 
   // ── 블로그 로드 ──────────────────────────────────────────────────────────────
   const loadBlog = useCallback(async () => {
@@ -771,11 +836,22 @@ export default function ShortsPage() {
 
   const selectBlogPost = async (post: BlogPost) => {
     setSelectedBlogPost(post);
+    setBlogImages([]);
     let content = post.content;
-    if (!content) {
-      const r = await fetch(`/api/shorts/blog?url=${encodeURIComponent(post.url)}`);
-      if (r.ok) content = ((await r.json()) as { content?: string }).content ?? '';
+
+    const [contentRes, imagesRes] = await Promise.all([
+      !content ? fetch(`/api/shorts/blog?url=${encodeURIComponent(post.url)}`) : Promise.resolve(null),
+      fetch(`/api/shorts/blog?url=${encodeURIComponent(post.url)}&get_images=1`),
+    ]);
+
+    if (contentRes?.ok) {
+      content = ((await contentRes.json()) as { content?: string }).content ?? '';
     }
+    if (imagesRes.ok) {
+      const imgData = await imagesRes.json() as { images?: string[] };
+      setBlogImages(imgData.images ?? []);
+    }
+
     setTopic(`제목: ${post.title}\n카테고리: ${post.categories.join(', ')}\n내용: ${content.slice(0, 600)}`);
     setShowBlog(false);
   };
@@ -794,7 +870,7 @@ export default function ShortsPage() {
       const res = await fetch('/api/shorts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, duration, tone, platform, provider, apiKey }),
+        body: JSON.stringify({ topic, duration, tone, platform, ...(provider ? { provider } : {}), ...(apiKey ? { apiKey } : {}) }),
       });
       const data = await res.json() as {
         title?: string; description?: string; hook?: string;
@@ -804,8 +880,16 @@ export default function ShortsPage() {
       setTitle(data.title ?? '');
       setDescription(data.description ?? '');
       setHook(data.hook ?? '');
-      setScenes((data.scenes ?? []).map(s => ({ ...s, image_source: 'pixabay', image_url: '' })));
+
+      const rawScenes = data.scenes ?? [];
+      const assigned = assignImages(rawScenes, blogImages, defaultImgSource);
+      setScenes(assigned);
       setStep('script');
+
+      // 블로그 이미지로 채워지지 않은 씬은 Pixabay 자동 검색
+      if (assigned.some(s => !s.image_url)) {
+        fetchAllImages(assigned, defaultImgSource);
+      }
     } catch (e) { setGenError(String(e)); }
     finally { setGenerating(false); }
   };
@@ -953,9 +1037,21 @@ export default function ShortsPage() {
                 {!showBlog ? (
                   <div className="space-y-1.5">
                     {selectedBlogPost && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-700">
-                        <span className="truncate flex-1">📰 {selectedBlogPost.title}</span>
-                        <button onClick={() => { setSelectedBlogPost(null); setTopic(''); }} className="text-indigo-400 hover:text-indigo-600">✕</button>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-700">
+                          <span className="truncate flex-1">📰 {selectedBlogPost.title}</span>
+                          <button onClick={() => { setSelectedBlogPost(null); setTopic(''); setBlogImages([]); }} className="text-indigo-400 hover:text-indigo-600">✕</button>
+                        </div>
+                        {blogImages.length > 0 && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-700">
+                            <span>📸 블로그 사진 {blogImages.length}장 로드됨 → 스크립트 생성 시 자동 배치</span>
+                            <div className="flex gap-1 ml-auto">
+                              {blogImages.slice(0, 4).map((img, i) => (
+                                <img key={i} src={img} alt="" className="w-6 h-8 object-cover rounded" />
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                     <textarea value={topic} onChange={e => setTopic(e.target.value)}
@@ -1099,10 +1195,16 @@ export default function ShortsPage() {
               )}
             </div>
 
-            <div className="text-xs text-gray-500 flex items-center gap-1">
+            <div className="text-xs text-gray-500 flex items-center gap-1 flex-wrap">
               <span>총 {scenes.length}장면 · {scenes.reduce((s, sc) => s + sc.duration, 0)}초</span>
               <span className="text-gray-300">|</span>
               <span className="text-indigo-500">썸네일 클릭 = 이미지 선택</span>
+              {blogImages.length > 0 && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-emerald-600 font-semibold">📸 블로그 사진 {blogImages.length}장 배치됨</span>
+                </>
+              )}
             </div>
 
             <div className="space-y-3">

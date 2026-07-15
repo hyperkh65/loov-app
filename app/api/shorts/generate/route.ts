@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { getSetting } from '@/lib/get-setting';
+import { callAI } from '@/lib/ai-call';
 
 // 길이 → 장면 수
 const SCENE_MAP: Record<number, number> = { 15: 3, 30: 5, 60: 9, 120: 16, 180: 22 };
@@ -147,56 +147,7 @@ JSON 형식 (이것만 출력):
 }`;
 }
 
-// GPT용 시스템 프롬프트
-const GPT_SYSTEM = '당신은 대한민국 최고의 숏폼 바이럴 콘텐츠 크리에이터입니다. 시청자가 첫 3초에 멈추고, 끝까지 보고, 공유하게 만드는 스크립트를 씁니다. 반드시 유효한 JSON만 출력하며, 코드블록이나 추가 설명은 절대 포함하지 않습니다.';
-
-async function callAI(prompt: string, apiKey: string, provider: string): Promise<string> {
-  if (provider === 'claude') {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
-        system: GPT_SYSTEM,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    const d = await res.json();
-    return d.content?.[0]?.text ?? '';
-  }
-  if (provider === 'gpt4o' || provider === 'gpt4' || provider === 'gpt35') {
-    const model = provider === 'gpt4o' ? 'gpt-4o'
-      : provider === 'gpt4' ? 'gpt-4-turbo'
-      : 'gpt-3.5-turbo';
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: GPT_SYSTEM },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 4000,
-        temperature: 0.85,
-        response_format: { type: 'json_object' },
-      }),
-    });
-    const d = await res.json();
-    return d.choices?.[0]?.message?.content ?? '';
-  }
-  // Gemini Flash (기본)
-  const { GoogleGenerativeAI } = await import('@google/generative-ai');
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const geminiModel = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
-    generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 4000 },
-    systemInstruction: GPT_SYSTEM,
-  });
-  const result = await geminiModel.generateContent(prompt);
-  return result.response.text();
-}
+const SYSTEM_PROMPT = '당신은 대한민국 최고의 숏폼 바이럴 콘텐츠 크리에이터입니다. 시청자가 첫 3초에 멈추고, 끝까지 보고, 공유하게 만드는 스크립트를 씁니다. 반드시 유효한 JSON만 출력하며, 코드블록이나 추가 설명은 절대 포함하지 않습니다.';
 
 export async function POST(req: NextRequest) {
   try {
@@ -210,17 +161,22 @@ export async function POST(req: NextRequest) {
       character?: { enabled: boolean; name: string; emoji: string; personality: string };
     };
 
-    const provider = body.provider ?? 'gemini';
-    const apiKey = body.apiKey || await getSetting(
-      provider === 'claude' ? 'CLAUDE_API_KEY' :
-      provider.startsWith('gpt') ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY'
-    );
-    if (!apiKey) return NextResponse.json({ error: 'AI API 키가 없습니다. 설정 > API 키에서 등록하세요.' }, { status: 400 });
-
+    const provider = body.provider;  // undefined → callAI uses global AI settings
     const prompt = buildPrompt(body.topic, body.duration ?? 60, body.tone ?? 'info', body.platform ?? 'youtube', body.character);
-    const raw = await callAI(prompt, apiKey, provider);
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const result = await callAI({
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: prompt },
+      ],
+      provider,
+      apiKey: body.apiKey,
+      maxTokens: 4000,
+      temperature: 0.85,
+      useFallback: true,
+    });
+
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return NextResponse.json({ error: '스크립트 생성 실패. 다시 시도해주세요.' }, { status: 500 });
 
     const parsed = JSON.parse(jsonMatch[0]);

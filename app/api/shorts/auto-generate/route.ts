@@ -4,10 +4,21 @@ import { uploadToR2 } from '@/lib/r2-storage';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 import { readFileAsBuffer } from '@/lib/nas-sftp';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { callAI } from '@/lib/ai-call';
 
-export const maxDuration = 300; // 5분 — SSE 스트리밍으로 전체 처리
+export const maxDuration = 300;
 
-// ── FFmpeg 경로 탐색 ────────────────────────────────────────────────────────
+// ── 타입 ────────────────────────────────────────────────────────────────────
+interface Scene {
+  id: number;
+  duration: number;
+  narration: string;
+  subtitle: string;
+  image_query: string;
+  image_url: string;
+}
+
+// ── FFmpeg 경로 ──────────────────────────────────────────────────────────────
 async function findFfmpeg(): Promise<string> {
   const paths = ['ffmpeg','/usr/bin/ffmpeg','/usr/local/bin/ffmpeg','/tmp/ffmpeg',
     '/volume1/@appstore/ffmpeg/bin/ffmpeg','/var/packages/ffmpeg6/target/bin/ffmpeg'];
@@ -15,15 +26,22 @@ async function findFfmpeg(): Promise<string> {
     const r = await nasExec(`${p} -version 2>&1 | head -1`);
     if (r.code === 0 && r.stdout.includes('ffmpeg')) return p;
   }
-  throw new Error('NAS FFmpeg 없음 — /dashboard/shorts 환경체크 실행 필요');
+  throw new Error('NAS FFmpeg 없음');
 }
 
-// ── TTS 생성 → R2 ────────────────────────────────────────────────────────────
-async function genTtsUrl(text: string, voice: string): Promise<string> {
+// ── 한국어 폰트 ──────────────────────────────────────────────────────────────
+async function findFont(): Promise<string | null> {
+  const r = await nasExec('find /usr/share/fonts /volume1 -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|KR$" | head -1');
+  return r.stdout.trim() || null;
+}
+
+// ── TTS → R2 ─────────────────────────────────────────────────────────────────
+async function genTtsUrl(text: string, voice: string, rate: string): Promise<string> {
   const tts = new MsEdgeTTS();
   await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ko-KR">
-    <voice name="${voice}"><prosody rate="+10%">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</prosody></voice></speak>`;
+    <voice name="${voice}"><prosody rate="${rate}">${escaped}</prosody></voice></speak>`;
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('TTS 타임아웃')), 25000);
@@ -36,17 +54,80 @@ async function genTtsUrl(text: string, voice: string): Promise<string> {
   return uploadToR2(key, Buffer.concat(chunks), 'audio/mpeg');
 }
 
-// ── 한국어 폰트 탐색 ─────────────────────────────────────────────────────────
-async function findFont(): Promise<string | null> {
-  const r = await nasExec('find /usr/share/fonts /volume1 -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|KR$" | head -1');
-  return r.stdout.trim() || null;
+// ── Pixabay 이미지 검색 ──────────────────────────────────────────────────────
+async function pixabaySearch(query: string, apiKey: string): Promise<string | null> {
+  try {
+    const q = encodeURIComponent(query);
+    const res = await fetch(
+      `https://pixabay.com/api/?key=${apiKey}&q=${q}&image_type=photo&per_page=5&safesearch=true`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) return null;
+    const d = await res.json() as { hits?: Array<{ largeImageURL: string; imageWidth: number; imageHeight: number }> };
+    const hits = d.hits ?? [];
+    if (!hits.length) return null;
+    // 세로 비율(9:16)에 가까운 이미지 우선
+    const sorted = [...hits].sort((a, b) =>
+      Math.abs(a.imageHeight / a.imageWidth - 16 / 9) - Math.abs(b.imageHeight / b.imageWidth - 16 / 9)
+    );
+    return sorted[0].largeImageURL;
+  } catch {
+    return null;
+  }
+}
+
+// ── assignImages: 블로그 이미지 → 핵심 씬, 나머지 → Pixabay ─────────────────
+function getKeyIndices(total: number, count: number): number[] {
+  if (count <= 0) return [];
+  if (count >= total) return Array.from({ length: total }, (_, i) => i);
+  if (count === 1) return [0];
+  const indices = new Set<number>([0, total - 1]);
+  for (let i = 1; i < count - 1; i++) {
+    indices.add(Math.round(i * (total - 1) / (count - 1)));
+  }
+  return [...indices].sort((a, b) => a - b).slice(0, count);
+}
+
+// ── Ken Burns FFmpeg vf ──────────────────────────────────────────────────────
+const KB_EFFECTS = ['zoom_in', 'zoom_out', 'pan_right', 'pan_left', 'pan_up'] as const;
+
+function getKenBurnsVf(sceneIdx: number, dur: number): string {
+  const effect = KB_EFFECTS[sceneIdx % KB_EFFECTS.length];
+  const fps = 24;
+  const frames = (dur + 4) * fps;
+  const pre = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,scale=2160:3840';
+  const zout = `s=1080x1920:fps=${fps}:d=${frames}`;
+  switch (effect) {
+    case 'zoom_in':   return `${pre},zoompan=z='min(1+0.35*on/${frames}\\,1.35)':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':${zout}`;
+    case 'zoom_out':  return `${pre},zoompan=z='max(1.35-0.35*on/${frames}\\,1.0)':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':${zout}`;
+    case 'pan_right': return `${pre},zoompan=z=1.3:x='(iw-iw/1.3)*on/${frames}':y='(ih-ih/1.3)/2':${zout}`;
+    case 'pan_left':  return `${pre},zoompan=z=1.3:x='(iw-iw/1.3)*(1-on/${frames})':y='(ih-ih/1.3)/2':${zout}`;
+    case 'pan_up':    return `${pre},zoompan=z=1.3:x='(iw-iw/1.3)/2':y='(ih-ih/1.3)*on/${frames}':${zout}`;
+  }
+}
+
+// ── drawtext vf (자막) ───────────────────────────────────────────────────────
+function subtitleVf(subtitle: string, fontPath: string | null): string {
+  const esc = subtitle.replace(/[\\':]/g, '\\$&').replace(/\n/g, ' ').slice(0, 50);
+  if (!esc) return '';
+  if (fontPath) {
+    return `drawtext=fontfile='${fontPath}':text='${esc}':fontsize=58:fontcolor=white:x=(w-text_w)/2:y=h-200:shadowcolor=black@0.9:shadowx=4:shadowy=4:box=1:boxcolor=black@0.65:boxborderw=22`;
+  }
+  return `drawtext=text='${esc}':fontsize=52:fontcolor=white:x=(w-text_w)/2:y=h-200:shadowcolor=black@0.9:shadowx=4:shadowy=4`;
 }
 
 // ── YouTube 업로드 ────────────────────────────────────────────────────────────
-async function ytUpload(userId: string, videoBuffer: ArrayBuffer, title: string, description: string, keyword: string) {
+async function ytUpload(
+  userId: string,
+  videoBuffer: ArrayBuffer,
+  title: string,
+  description: string,
+  keyword: string,
+): Promise<string | null> {
   const admin = createAdminClient();
   const { data: conn } = await admin.from('sns_connections')
-    .select('access_token, refresh_token, extra').eq('user_id', userId).eq('platform', 'youtube').eq('is_active', true).single();
+    .select('access_token, refresh_token, extra')
+    .eq('user_id', userId).eq('platform', 'youtube').eq('is_active', true).single();
   if (!conn) return null;
 
   let accessToken = conn.access_token;
@@ -55,75 +136,97 @@ async function ytUpload(userId: string, videoBuffer: ArrayBuffer, title: string,
     const tr = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ refresh_token: conn.refresh_token, client_id: process.env.GOOGLE_CLIENT_ID!, client_secret: process.env.GOOGLE_CLIENT_SECRET!, grant_type: 'refresh_token' }),
+      body: new URLSearchParams({
+        refresh_token: conn.refresh_token,
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        grant_type: 'refresh_token',
+      }),
     });
-    const td = await tr.json();
+    const td = await tr.json() as { access_token?: string };
     if (td.access_token) {
       accessToken = td.access_token;
-      await admin.from('sns_connections').update({ access_token: accessToken, extra: { expires_at: new Date(Date.now() + 3600000).toISOString() } }).eq('user_id', userId).eq('platform', 'youtube');
+      await admin.from('sns_connections').update({
+        access_token: accessToken,
+        extra: { expires_at: new Date(Date.now() + 3600000).toISOString() },
+      }).eq('user_id', userId).eq('platform', 'youtube');
     }
   }
 
-  const tags = ['Shorts', '쇼츠', ...(keyword ? [keyword] : [])].slice(0, 30);
   const ytTitle = `${title} #Shorts`.slice(0, 100);
   const ytDesc = `${description}\n\n#Shorts #쇼츠${keyword ? ` #${keyword}` : ''}`.slice(0, 5000);
+  const tags = ['Shorts', '쇼츠', ...(keyword ? [keyword] : [])].slice(0, 30);
 
-  const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'X-Upload-Content-Type': 'video/mp4',
-      'X-Upload-Content-Length': String(videoBuffer.byteLength),
-    },
-    body: JSON.stringify({
-      snippet: { title: ytTitle, description: ytDesc, tags, categoryId: '22' },
-      status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
-    }),
-  });
-  if (!initRes.ok) {
-    const errText = await initRes.text().catch(() => '');
-    console.error('[ytUpload] 초기화 실패:', initRes.status, errText.slice(0, 300));
-    return null;
-  }
+  const initRes = await fetch(
+    'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Upload-Content-Type': 'video/mp4',
+        'X-Upload-Content-Length': String(videoBuffer.byteLength),
+      },
+      body: JSON.stringify({
+        snippet: { title: ytTitle, description: ytDesc, tags, categoryId: '22' },
+        status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+      }),
+    }
+  );
+  if (!initRes.ok) return null;
+
   const uploadUrl = initRes.headers.get('Location');
-  if (!uploadUrl) { console.error('[ytUpload] upload URL 없음'); return null; }
+  if (!uploadUrl) return null;
 
-  // Content-Length는 fetch가 자동 계산 — 수동 설정 시 Node.js undici에서 오류 발생
   const upRes = await fetch(uploadUrl, {
     method: 'PUT',
     headers: { 'Content-Type': 'video/mp4' },
     body: videoBuffer,
   });
-  if (!upRes.ok) {
-    const errText = await upRes.text().catch(() => '');
-    console.error('[ytUpload] 업로드 실패:', upRes.status, errText.slice(0, 300));
-    return null;
-  }
-  const d = await upRes.json();
+  if (!upRes.ok) return null;
+
+  const d = await upRes.json() as { id?: string };
   return d.id ? `https://www.youtube.com/shorts/${d.id}` : null;
 }
 
-// ── SSE 라우트 핸들러 ────────────────────────────────────────────────────────
+// ── SSE 핸들러 ───────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return new Response('Unauthorized', { status: 401 });
 
-  const { article_id, title, keyword = '', description = '', content = '' } = await req.json();
-  if (!title) return new Response('title 필요', { status: 400 });
+  const body = await req.json() as {
+    article_id?: string;
+    title: string;
+    keyword?: string;
+    description?: string;
+    content?: string;
+    blog_url?: string;         // 발행된 블로그 URL (이미지 추출용)
+    voice?: string;
+    tts_rate?: string;
+    duration?: number;
+  };
+
+  if (!body.title) return new Response('title 필요', { status: 400 });
 
   const admin = createAdminClient();
   const { data: job } = await admin.from('bossai_shorts_queue').insert({
-    user_id: user.id, article_id, title, keyword,
-    status: 'pending', progress: '대기 중...',
-    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    user_id: user.id,
+    article_id: body.article_id,
+    title: body.title,
+    keyword: body.keyword ?? '',
+    status: 'pending',
+    progress: '대기 중...',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }).select('id').single();
-
   if (!job) return new Response('DB 저장 실패', { status: 500 });
 
   const jobId = job.id;
   const userId = user.id;
+  const voice = body.voice ?? 'ko-KR-SunHiNeural';
+  const ttsRate = body.tts_rate ?? '+35%';
+  const duration = body.duration ?? 60;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
   const cookieHeader = req.headers.get('cookie') || '';
 
@@ -133,117 +236,197 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const send = (data: object) => {
-        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* disconnected */ }
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* 연결 끊김 */ }
       };
-
-      // 연결 유지용 heartbeat (NAS 렌더 중 연결 끊김 방지)
       heartbeat = setInterval(() => {
-        try { controller.enqueue(encoder.encode(': ping\n\n')); } catch { /* disconnected */ }
+        try { controller.enqueue(encoder.encode(': ping\n\n')); } catch { /* 연결 끊김 */ }
       }, 20000);
 
       const upd = async (progress: string, extra?: Record<string, unknown>) => {
-        send({ type: 'progress', msg: progress, pct: extra?.pct, ...extra });
+        send({ type: 'progress', msg: progress, ...extra });
         await admin.from('bossai_shorts_queue')
           .update({ progress, status: 'running', updated_at: new Date().toISOString(), ...extra })
           .eq('id', jobId);
       };
 
       try {
-        // ── 1. AI 스크립트 생성 ───────────────────────────────────────
-        await upd('AI 스크립트 생성 중...', { pct: 5 });
-        const topic = `${title}\n\n${description || content?.slice(0, 500) || ''}`;
-        const genRes = await fetch(`${baseUrl}/api/shorts/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({ topic, duration: 60, tone: 'info', platform: 'youtube', provider: 'gemini' }),
-        });
-        const genData = await genRes.json();
-        if (!genData.scenes?.length) throw new Error('스크립트 생성 실패: ' + (genData.error || JSON.stringify(genData).slice(0, 100)));
+        // ── 1. Supabase 설정 (Pixabay 키) ────────────────────────────
+        const { data: appSettings } = await admin.from('app_settings').select('settings').eq('id', 1).single();
+        const settings = (appSettings?.settings ?? {}) as Record<string, string>;
+        const pixabayKey = settings.PIXABAY_API_KEY ?? '';
 
-        type Scene = { id: number; narration: string; subtitle: string; duration: number; image_url: string; image_query: string };
-        const scenes: Scene[] = genData.scenes;
-        send({ type: 'progress', msg: `스크립트 완성 (${scenes.length}개 장면)`, pct: 15 });
-
-        // ── 2. 이미지 검색 ────────────────────────────────────────────
-        await upd(`이미지 검색 중...`, { pct: 20 });
-        for (let i = 0; i < scenes.length; i++) {
-          if (!scenes[i].image_query) continue;
+        // ── 2. 블로그 이미지 가져오기 ────────────────────────────────
+        await upd('블로그 이미지 분석 중...', { pct: 5 });
+        let blogImages: string[] = [];
+        if (body.blog_url) {
           try {
-            const imgRes = await fetch(`${baseUrl}/api/shorts/images?q=${encodeURIComponent(scenes[i].image_query)}&source=pixabay&per_page=3`, { headers: { Cookie: cookieHeader } });
-            const imgData = await imgRes.json();
-            if (imgData.images?.[0]?.url) scenes[i].image_url = imgData.images[0].url;
-          } catch { /* 검은 배경 사용 */ }
-          send({ type: 'progress', msg: `이미지 검색 중... (${i + 1}/${scenes.length})`, pct: 20 + Math.round((i / scenes.length) * 10) });
+            const imgRes = await fetch(
+              `${baseUrl}/api/shorts/blog?url=${encodeURIComponent(body.blog_url)}&get_images=1`,
+              { headers: { Cookie: cookieHeader }, signal: AbortSignal.timeout(15000) }
+            );
+            if (imgRes.ok) {
+              const imgData = await imgRes.json() as { images?: string[] };
+              blogImages = imgData.images ?? [];
+            }
+          } catch { /* 이미지 없어도 계속 */ }
+        }
+        send({ type: 'progress', msg: `블로그 이미지 ${blogImages.length}장 확보`, pct: 8 });
+
+        // ── 3. AI 스크립트 생성 (블로그 내용 기반) ───────────────────
+        await upd('AI 스크립트 생성 중...', { pct: 10 });
+        const topic = [
+          body.title,
+          body.keyword ? `키워드: ${body.keyword}` : '',
+          body.description || body.content?.slice(0, 800) || '',
+        ].filter(Boolean).join('\n\n');
+
+        const result = await callAI({
+          messages: [
+            {
+              role: 'system',
+              content: '당신은 대한민국 최고의 숏폼 바이럴 콘텐츠 크리에이터입니다. 시청자가 첫 3초에 멈추고, 끝까지 보고, 공유하게 만드는 스크립트를 씁니다. 반드시 유효한 JSON만 출력하며, 코드블록이나 추가 설명은 절대 포함하지 않습니다.',
+            },
+            {
+              role: 'user',
+              content: await buildShortsPrompt(topic, duration),
+            },
+          ],
+          useFallback: true,
+          maxTokens: 4000,
+          temperature: 0.85,
+        });
+
+        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('스크립트 JSON 파싱 실패');
+        const genData = JSON.parse(jsonMatch[0]) as {
+          title?: string; description?: string; hook?: string; scenes?: Scene[];
+        };
+        if (!genData.scenes?.length) throw new Error('씬 데이터 없음');
+
+        const scenes = genData.scenes;
+        send({ type: 'progress', msg: `스크립트 완성 (${scenes.length}개 씬)`, pct: 20 });
+
+        // ── 4. 이미지 배치 (assignImages 로직) ───────────────────────
+        await upd('이미지 배치 결정 중...', { pct: 22 });
+        const N = scenes.length;
+        const B = blogImages.length;
+        const keyIndices = getKeyIndices(N, B);
+
+        // 각 씬에 이미지 URL 배정
+        for (let i = 0; i < scenes.length; i++) {
+          const blogPos = keyIndices.indexOf(i);
+          if (blogPos >= 0) {
+            scenes[i].image_url = blogImages[blogPos];
+          }
+          // image_url 없는 씬은 Pixabay 검색으로 채움
         }
 
-        // ── 3. NAS FFmpeg 렌더 ────────────────────────────────────────
-        await upd('NAS 환경 준비 중...', { pct: 32 });
+        // Pixabay로 빈 씬 채우기
+        await upd('Pixabay 이미지 검색 중...', { pct: 25 });
+        for (let i = 0; i < scenes.length; i++) {
+          if (scenes[i].image_url) continue;
+          const url = pixabayKey ? await pixabaySearch(scenes[i].image_query, pixabayKey) : null;
+          if (url) {
+            scenes[i].image_url = url;
+          }
+          send({ type: 'progress', msg: `이미지 검색 중... (${i + 1}/${N})`, pct: 25 + Math.round((i / N) * 10) });
+        }
+
+        // ── 5. NAS 렌더링 준비 ────────────────────────────────────────
+        await upd('NAS 렌더 환경 확인 중...', { pct: 36 });
         const ffmpeg = await findFfmpeg();
         const fontPath = await findFont();
-        const jobDir = `/tmp/shorts_sse_${jobId.replace(/-/g, '').slice(0, 12)}`;
+        const jobDir = `/tmp/shorts_auto_${jobId.replace(/-/g, '').slice(0, 12)}`;
         await nasExec(`mkdir -p ${jobDir}`);
 
-        // TTS 생성 (장면별 진행)
-        const voice = 'ko-KR-SunHiNeural';
+        // ── 6. TTS 생성 ───────────────────────────────────────────────
+        await upd(`TTS 음성 생성 중... (${voice}, ${ttsRate})`, { pct: 38 });
         const ttsUrls: string[] = [];
         for (let i = 0; i < scenes.length; i++) {
-          send({ type: 'progress', msg: `TTS 음성 생성 중... (${i + 1}/${scenes.length})`, pct: 33 + Math.round((i / scenes.length) * 15) });
-          ttsUrls.push(await genTtsUrl(scenes[i].narration, voice));
+          send({ type: 'progress', msg: `TTS ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
+          ttsUrls.push(await genTtsUrl(scenes[i].narration, voice, ttsRate));
         }
 
-        // 렌더 스크립트 빌드
-        await upd(`NAS FFmpeg 렌더링 중... (~2분)`, { pct: 50 });
-        const escDt = (s: string) => s.replace(/[\\':]/g, '\\$&').replace(/\n/g, ' ').slice(0, 60);
-        const renderLines = [
-          '#!/bin/bash', 'set -e', `DIR="${jobDir}"`,
-          ...scenes.flatMap((s, i) => [
-            s.image_url ? `curl -sL --max-time 30 "${s.image_url}" -o "$DIR/img_${i}.jpg" 2>/dev/null || true` : '',
-            `curl -sL --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3"`,
-            `[ -s "$DIR/img_${i}.jpg" ] || ${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>/dev/null`,
-            `IMG_${i}="$DIR/img_${i}.jpg"`,
-          ].filter(Boolean)),
-          ...scenes.map((s, i) => {
-            const sub = escDt(s.subtitle || '');
-            const vf = [`scale=1080:1920:force_original_aspect_ratio=increase`, `crop=1080:1920`,
-              sub ? (fontPath
-                ? `drawtext=fontfile='${fontPath}':text='${sub}':fontsize=52:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.8:shadowx=3:shadowy=3:box=1:boxcolor=black@0.55:boxborderw=18`
-                : `drawtext=text='${sub}':fontsize=46:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.9:shadowx=3:shadowy=3`) : ''
-            ].filter(Boolean).join(',');
-            return `${ffmpeg} -loop 1 -t ${Math.max(1, s.duration)} -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" -vf "${vf}" -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>/dev/null`;
-          }),
-          `printf '${scenes.map((_,i) => `file '${jobDir}/scene_${i}.mp4'`).join('\\n')}\\n' > "$DIR/filelist.txt"`,
-          `${ffmpeg} -f concat -safe 0 -i "$DIR/filelist.txt" -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4" 2>/dev/null`,
-          `echo "RENDER_DONE"`,
-        ];
+        // ── 7. 렌더 스크립트 생성 & 실행 ─────────────────────────────
+        await upd('NAS FFmpeg 렌더링 중... (~2분)', { pct: 54 });
 
-        await nasExecWithStdin(`cat > ${jobDir}/render.sh`, renderLines.join('\n'));
+        const lines: string[] = ['#!/bin/bash', 'set -e', `DIR="${jobDir}"`];
+
+        // 이미지 + 오디오 다운로드
+        for (let i = 0; i < scenes.length; i++) {
+          const s = scenes[i];
+          if (s.image_url) {
+            lines.push(`curl -sL --max-time 30 "${s.image_url}" -o "$DIR/img_${i}.jpg" 2>/dev/null || true`);
+          }
+          lines.push(`curl -sL --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3"`);
+        }
+
+        // 이미지 폴백 (다운로드 실패 시 검은 배경)
+        for (let i = 0; i < scenes.length; i++) {
+          if (scenes[i].image_url) {
+            lines.push(`[ -s "$DIR/img_${i}.jpg" ] || ${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>/dev/null`);
+          } else {
+            lines.push(`${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>/dev/null`);
+          }
+          lines.push(`IMG_${i}="$DIR/img_${i}.jpg"`);
+        }
+
+        // 씬별 렌더 (Ken Burns + 자막)
+        for (let i = 0; i < scenes.length; i++) {
+          const dur = Math.max(1, scenes[i].duration);
+          const kbVf = getKenBurnsVf(i, dur);
+          const subVf = subtitleVf(scenes[i].subtitle || '', fontPath);
+          const vf = subVf ? `${kbVf},${subVf}` : kbVf;
+
+          lines.push(
+            `${ffmpeg} -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
+            `-vf "${vf}" ` +
+            `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p ` +
+            `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>/dev/null`
+          );
+        }
+
+        // concat
+        const filelistContent = scenes.map((_, i) => `file '${jobDir}/scene_${i}.mp4'`).join('\\n');
+        lines.push(`printf '${filelistContent}\\n' > "$DIR/filelist.txt"`);
+        lines.push(
+          `${ffmpeg} -f concat -safe 0 -i "$DIR/filelist.txt" ` +
+          `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p ` +
+          `-c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4" 2>/dev/null`
+        );
+        lines.push('echo "RENDER_DONE"');
+
+        await nasExecWithStdin(`cat > ${jobDir}/render.sh`, lines.join('\n'));
         const renderResult = await nasExec(`bash ${jobDir}/render.sh`);
         if (!renderResult.stdout.includes('RENDER_DONE')) {
           throw new Error('렌더 실패: ' + renderResult.stderr.slice(0, 300));
         }
 
-        // ── 4. R2 업로드 ─────────────────────────────────────────────
-        await upd('영상 파일 업로드 중...', { pct: 80 });
+        // ── 8. R2 업로드 ─────────────────────────────────────────────
+        await upd('영상 R2 업로드 중...', { pct: 82 });
         const mp4 = await readFileAsBuffer(`${jobDir}/final.mp4`);
-        if (!mp4 || mp4.length < 1000) throw new Error('렌더된 파일이 비어있음');
-        const safe = title.replace(/[^a-zA-Z0-9가-힣]/g, '_').slice(0, 30);
+        if (!mp4 || mp4.length < 1000) throw new Error('렌더 파일 비어있음');
+        const safe = body.title.replace(/[^a-zA-Z0-9가-힣]/g, '_').slice(0, 30);
         const videoUrl = await uploadToR2(`shorts-auto/${Date.now()}_${safe}.mp4`, mp4, 'video/mp4');
         await nasExec(`rm -rf ${jobDir}`).catch(() => {});
 
-        // ── 5. YouTube 업로드 ─────────────────────────────────────────
+        // ── 9. YouTube 업로드 ─────────────────────────────────────────
         await upd('YouTube 업로드 중...', { pct: 90, video_url: videoUrl });
-        // Buffer → 정확한 범위의 ArrayBuffer로 변환 (공유 버퍼 오프셋 문제 방지)
         const videoAB = mp4.buffer.slice(mp4.byteOffset, mp4.byteOffset + mp4.byteLength) as ArrayBuffer;
-        const ytUrl = await ytUpload(userId, videoAB, genData.title || title, description || title, keyword);
+        const ytDescription = [
+          genData.description || body.description || body.title,
+          body.blog_url ? `\n원본 블로그: ${body.blog_url}` : '',
+        ].join('');
+        const ytUrl = await ytUpload(userId, videoAB, genData.title || body.title, ytDescription, body.keyword ?? '');
 
         // ── 완료 ─────────────────────────────────────────────────────
         await admin.from('bossai_shorts_queue').update({
           status: 'done', progress: '완료!', pct: 100,
-          video_url: videoUrl, yt_url: ytUrl || null,
+          video_url: videoUrl, yt_url: ytUrl ?? null,
           updated_at: new Date().toISOString(),
         }).eq('id', jobId);
 
-        send({ type: 'done', job_id: jobId, video_url: videoUrl, yt_url: ytUrl || null, msg: '완료!' });
+        send({ type: 'done', job_id: jobId, video_url: videoUrl, yt_url: ytUrl ?? null, msg: '완료!' });
 
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -271,4 +454,46 @@ export async function POST(req: NextRequest) {
       'X-Job-ID': jobId,
     },
   });
+}
+
+// ── 쇼츠 스크립트 프롬프트 빌더 ─────────────────────────────────────────────
+async function buildShortsPrompt(topic: string, duration: number): Promise<string> {
+  const SCENE_MAP: Record<number, number> = { 15: 3, 30: 5, 60: 9, 120: 16, 180: 22 };
+  const numScenes = SCENE_MAP[duration] ?? 9;
+  const CHARS_PER_SEC = 9.5;
+
+  const sceneDurations: number[] = [];
+  for (let i = 0; i < numScenes; i++) {
+    if (i === 0) sceneDurations.push(Math.max(3, Math.round(duration * 0.10)));
+    else if (i === numScenes - 1) sceneDurations.push(Math.max(4, Math.round(duration * 0.10)));
+    else sceneDurations.push(Math.max(4, Math.round((duration - sceneDurations[0] - Math.round(duration * 0.10)) / (numScenes - 2))));
+  }
+  const total = sceneDurations.reduce((a, b) => a + b, 0);
+  if (total !== duration) sceneDurations[Math.floor(numScenes / 2)] += (duration - total);
+
+  const sceneTemplate = sceneDurations.map((sec, i) =>
+    `{"id":${i+1},"duration":${sec},"narration":"(최소 ${Math.round(sec*CHARS_PER_SEC)}자, 빠른 구어체, 친구에게 말하듯)","subtitle":"(이모지1개+임팩트문구, 12자이내)","image_query":"2~3 english words for pixabay search","dalle_prompt":"vertical 9:16 cinematic no text"}`
+  ).join(',\n    ');
+
+  return `당신은 대한민국 최고의 숏폼 바이럴 크리에이터입니다. 아래 블로그 내용을 바탕으로 ${duration}초 YouTube Shorts 스크립트를 JSON으로만 출력하세요.
+
+[블로그 주제 및 내용]
+${topic}
+
+[규칙]
+• 나레이션: 친구에게 카톡 보내듯 빠른 구어체 (~야, ~거든, ~잖아)
+• 각 씬 duration × 9.5자 이상 필수 (침묵 = 이탈)
+• 훅: 첫 3초에 멈추게 하는 한 방
+• 자막: 이모지1개 + 짧고 강렬한 감정 문구 (12자 이내)
+• image_query: Pixabay 검색용 2~3 영어 단어 (주제에 맞게)
+
+JSON (이것만 출력):
+{
+  "title": "클릭 안 하면 손해인 제목 (숫자·감정 포함, 40자 이내)",
+  "description": "SEO 설명 2~3줄 + 해시태그 5개",
+  "hook": "썸네일 문구 (15자 이내)",
+  "scenes": [
+    ${sceneTemplate}
+  ]
+}`;
 }
