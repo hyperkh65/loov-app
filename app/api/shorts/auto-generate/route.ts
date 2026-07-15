@@ -397,9 +397,24 @@ export async function POST(req: NextRequest) {
         lines.push('echo "RENDER_DONE"');
 
         await nasExecWithStdin(`cat > ${jobDir}/render.sh`, lines.join('\n'));
-        const renderResult = await nasExec(`bash ${jobDir}/render.sh`);
-        if (!renderResult.stdout.includes('RENDER_DONE')) {
-          throw new Error('렌더 실패: ' + renderResult.stderr.slice(0, 300));
+
+        // nohup으로 백그라운드 실행 → 서버 재시작해도 렌더 계속
+        const bgStart = await nasExec(`nohup bash ${jobDir}/render.sh > ${jobDir}/render.log 2>&1 & echo $!`);
+        const renderPid = bgStart.stdout.trim();
+        if (!renderPid || isNaN(Number(renderPid))) throw new Error('렌더 프로세스 시작 실패');
+
+        // 완료까지 폴링 (최대 5분)
+        const deadline = Date.now() + 300_000;
+        while (Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, 8000));
+          const check = await nasExec(`kill -0 ${renderPid} 2>/dev/null && echo RUNNING || echo DONE`);
+          if (check.stdout.includes('DONE')) break;
+          send({ type: 'progress', msg: 'NAS FFmpeg 렌더링 중...', pct: 54 + Math.round(((Date.now() - (deadline - 300_000)) / 300_000) * 25) });
+        }
+
+        const logCheck = await nasExec(`tail -3 ${jobDir}/render.log`);
+        if (!logCheck.stdout.includes('RENDER_DONE')) {
+          throw new Error('렌더 실패: ' + logCheck.stdout.slice(0, 300));
         }
 
         // ── 8. R2 업로드 ─────────────────────────────────────────────
