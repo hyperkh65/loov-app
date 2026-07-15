@@ -5,6 +5,16 @@ import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost
 
 export const maxDuration = 600;
 
+// 한글을 HTML 엔티티로 변환 — Naver Cafe API가 UTF-8 퍼센트인코딩을 EUC-KR로 오해하는 문제 방지
+function toHtmlEntities(text: string): string {
+  let result = '';
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? char.charCodeAt(0);
+    result += code > 0x7E ? `&#${code};` : char;
+  }
+  return result;
+}
+
 async function uploadImageToNaverCafe(imageUrl: string, clubId: string, accessToken: string): Promise<string | null> {
   try {
     const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(15_000) });
@@ -821,10 +831,13 @@ export async function POST(req: NextRequest) {
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
         const cafeRes = await fetch(cafeApiUrl, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
           body: new URLSearchParams([
-            ['subject', cleanTitle],
-            ['content', cafeContent],
+            ['subject', toHtmlEntities(cleanTitle)],
+            ['content', toHtmlEntities(cafeContent)],
             ['openYn', naver_cafe_open_yn],
           ]),
           signal: AbortSignal.timeout(30_000),
