@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 env:
   WEBHOOK_URL: https://loov.co.kr/api/deploy/webhook
   DIST_DIR: /volume1/web/loov-dist
@@ -137,22 +141,24 @@ jobs:
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             WEBHOOK_URL=https://loov.co.kr/api/deploy/webhook
 
-            # 항상 컨테이너 재생성 (볼륨 마운트로 최신 빌드 적용)
-            docker stop loov-app 2>/dev/null || true
-            docker rm loov-app 2>/dev/null || true
-            docker run -d \
-              --name loov-app \
-              --restart unless-stopped \
-              -p 3100:3000 \
-              --add-host=host.docker.internal:host-gateway \
-              -v "${DIST_DIR}:/app" \
-              -w /app \
-              -e DEPLOY_SECRET="$DEPLOY_SECRET" \
-              node:20-alpine \
-              node server.js
+            # 컨테이너 존재하면 restart(파일은 볼륨으로 이미 최신), 없으면 새로 생성
+            if docker ps -a --format '{{.Names}}' | grep -q '^loov-app$'; then
+              docker restart loov-app
+            else
+              docker run -d \
+                --name loov-app \
+                --restart unless-stopped \
+                -p 3100:3000 \
+                --add-host=host.docker.internal:host-gateway \
+                -v "${DIST_DIR}:/app" \
+                -w /app \
+                -e DEPLOY_SECRET="$DEPLOY_SECRET" \
+                node:20-alpine \
+                node server.js
+            fi
 
             # 서버 기동 대기 후 웹훅 재시도 (최대 3회)
-            sleep 25
+            sleep 15
             for i in 1 2 3; do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$WEBHOOK_URL" \
                 -H "Content-Type: application/json" \
@@ -276,15 +282,17 @@ jobs:
           envs: DIST_DIR,DEPLOY_SECRET
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
-            echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker stop loov-app-2days 2>/dev/null || true
-            echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker rm loov-app-2days 2>/dev/null || true
-            echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker run -d \
-              --name loov-app-2days \
-              --restart unless-stopped \
-              -p 3100:3000 \
-              --add-host=host.docker.internal:host-gateway \
-              -v "${DIST_DIR}:/app" \
-              -w /app \
-              -e DEPLOY_SECRET="$DEPLOY_SECRET" \
-              node:20-alpine \
-              node server.js
+            if echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker ps -a --format '{{.Names}}' | grep -q '^loov-app-2days$'; then
+              echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker restart loov-app-2days
+            else
+              echo "${{ secrets.NAS2_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker run -d \
+                --name loov-app-2days \
+                --restart unless-stopped \
+                -p 3100:3000 \
+                --add-host=host.docker.internal:host-gateway \
+                -v "${DIST_DIR}:/app" \
+                -w /app \
+                -e DEPLOY_SECRET="$DEPLOY_SECRET" \
+                node:20-alpine \
+                node server.js
+            fi
