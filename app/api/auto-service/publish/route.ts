@@ -778,7 +778,8 @@ export async function POST(req: NextRequest) {
       if (conn?.club_id && conn.access_token) {
         let accessToken: string = conn.access_token;
 
-        if (conn.token_expires_at && new Date(conn.token_expires_at) < new Date(Date.now() + 60_000)) {
+        const needsRefresh = !conn.token_expires_at || new Date(conn.token_expires_at) < new Date(Date.now() + 60_000);
+        if (needsRefresh) {
           if (conn.refresh_token) {
             const rfRes = await fetch('https://nid.naver.com/oauth2.0/token', {
               method: 'POST',
@@ -865,7 +866,7 @@ export async function POST(req: NextRequest) {
           } catch {}
           results.naver_cafe = { success: true, url: cafeUrl };
         } else {
-          results.naver_cafe = { success: false, error: cafeData.errorMessage || `카페 발행 실패 (HTTP ${cafeRes.status})` };
+          results.naver_cafe = { success: false, error: cafeData.errorMessage || cafeData.errorCode || `카페 발행 실패 (HTTP ${cafeRes.status}): ${cafeRawText.slice(0, 200)}` };
         }
       } else {
         results.naver_cafe = { success: false, error: '카페 연결 없음 또는 club_id 미설정' };
