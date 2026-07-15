@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let result: { ok: boolean; error?: string; url?: string; postNo?: string; errorCode?: string };
+  let result: import('@/lib/naver-blog').NaverPostResult;
   if (accessToken) {
     result = await postToNaverBlogOAuth({
       accessToken,
@@ -95,9 +95,9 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  if (!result.ok) {
+  if (result.error) {
     return NextResponse.json({ error: result.error || '발행 실패' }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, url: result.url, postNo: result.postNo });
+  return NextResponse.json({ ok: true, url: result.postUrl, postNo: result.postId });
 }
