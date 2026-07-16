@@ -850,7 +850,11 @@ export async function POST(req: NextRequest) {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: `subject=${toEucKrEncoded(cleanTitle)}&content=${encodeURIComponent(toHtmlEntities(cafeContent))}&openYn=${naver_cafe_open_yn}`,
+          body: new URLSearchParams([
+            ['subject', toHtmlEntities(cleanTitle)],
+            ['content', toHtmlEntities(cafeContent)],
+            ['openYn', naver_cafe_open_yn],
+          ]),
           signal: AbortSignal.timeout(30_000),
         });
 

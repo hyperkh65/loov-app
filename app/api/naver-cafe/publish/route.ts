@@ -117,7 +117,11 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: `subject=${toEucKrEncoded(title)}&content=${encodeURIComponent(toHtmlEntities(textContent))}&openYn=${open_yn}`,
+    body: new URLSearchParams([
+      ['subject', toHtmlEntities(title)],
+      ['content', toHtmlEntities(textContent)],
+      ['openYn', open_yn],
+    ]),
   });
 
   const rawText = await res.text();
