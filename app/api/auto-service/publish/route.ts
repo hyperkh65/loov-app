@@ -869,7 +869,7 @@ export async function POST(req: NextRequest) {
           } catch {}
           results.naver_cafe = { success: true, url: cafeUrl };
         } else {
-          results.naver_cafe = { success: false, error: `카페 발행 실패 (HTTP ${cafeRes.status}) [${naverErrCode || '?'}] ${naverErrMsg || ''}`.trim() };
+          results.naver_cafe = { success: false, error: `카페 발행 실패 (HTTP ${cafeRes.status}) [${naverErrCode || '?'}] ${naverErrMsg || cafeRawText.slice(0, 300)}`.trim() };
         }
       } else {
         results.naver_cafe = { success: false, error: '카페 연결 없음 또는 club_id 미설정' };
