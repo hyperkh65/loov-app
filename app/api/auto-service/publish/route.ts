@@ -845,10 +845,13 @@ export async function POST(req: NextRequest) {
         });
 
         const cafeRawText = await cafeRes.text();
-        let cafeData: { message?: { result?: { articleId?: number } }; errorCode?: string; errorMessage?: string } = {};
+        let cafeData: { message?: { result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
         try { cafeData = JSON.parse(cafeRawText); } catch {}
 
-        if (cafeRes.ok && !cafeData.errorCode) {
+        const naverErrCode = cafeData.message?.result?.code || cafeData.errorCode;
+        const naverErrMsg = cafeData.message?.result?.message || cafeData.errorMessage;
+
+        if (cafeRes.ok && !naverErrCode) {
           const cafeArticleId = cafeData.message?.result?.articleId;
           const cafeSlug = (conn.cafe_url as string | null) || (conn.club_id as string);
           const cafeUrl = cafeArticleId ? `https://cafe.naver.com/${cafeSlug}/articles/${cafeArticleId}` : undefined;
@@ -866,7 +869,7 @@ export async function POST(req: NextRequest) {
           } catch {}
           results.naver_cafe = { success: true, url: cafeUrl };
         } else {
-          results.naver_cafe = { success: false, error: cafeData.errorMessage || cafeData.errorCode || `카페 발행 실패 (HTTP ${cafeRes.status}): ${cafeRawText.slice(0, 200)}` };
+          results.naver_cafe = { success: false, error: `카페 발행 실패 (HTTP ${cafeRes.status}) [${naverErrCode || '?'}] ${naverErrMsg || ''}`.trim() };
         }
       } else {
         results.naver_cafe = { success: false, error: '카페 연결 없음 또는 club_id 미설정' };
