@@ -5,9 +5,11 @@ import iconv from 'iconv-lite';
 // 제목: EUC-KR 퍼센트인코딩 — Naver Cafe 목록/세부 모두 정상 표시
 function toEucKrEncoded(text: string): string {
   const buf = iconv.encode(text, 'euc-kr');
+  const unreserved = /[A-Za-z0-9\-_.~]/;
   let result = '';
   for (const byte of buf) {
-    result += byte > 0x7E ? `%${byte.toString(16).toUpperCase().padStart(2, '0')}` : String.fromCharCode(byte);
+    const ch = String.fromCharCode(byte);
+    result += unreserved.test(ch) ? ch : `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
   }
   return result;
 }
