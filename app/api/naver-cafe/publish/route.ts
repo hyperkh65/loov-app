@@ -119,10 +119,10 @@ export async function POST(req: NextRequest) {
   let resData: { message?: { result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
   try { resData = JSON.parse(rawText); } catch {}
 
-  if (!res.ok || resData.errorCode) {
-    const errCode = resData.errorCode || resData.message?.result?.code || 'none';
-    const errDetail = resData.errorMessage || resData.message?.result?.message || rawText.slice(0, 500);
-    return NextResponse.json({ error: `카페 발행 실패: HTTP ${res.status} | ${errCode} | ${errDetail}` }, { status: 400 });
+  const errCode = resData.errorCode || resData.message?.result?.code;
+  const errDetail = resData.errorMessage || resData.message?.result?.message;
+  if (!res.ok || errCode) {
+    return NextResponse.json({ error: `카페 발행 실패: HTTP ${res.status} | ${errCode || '?'} | ${errDetail || rawText.slice(0, 300)}` }, { status: 400 });
   }
 
   const articleId = resData.message?.result?.articleId;
