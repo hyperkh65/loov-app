@@ -2,10 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import iconv from 'iconv-lite';
 
 export const maxDuration = 600;
 
-// 한글을 HTML 엔티티로 변환 — Naver Cafe API가 UTF-8 퍼센트인코딩을 EUC-KR로 오해하는 문제 방지
+// Naver Cafe API는 폼 데이터를 EUC-KR로 디코딩 → EUC-KR 퍼센트인코딩으로 전송
+function toEucKrEncoded(text: string): string {
+  const buf = iconv.encode(text, 'euc-kr');
+  let result = '';
+  for (const byte of buf) {
+    result += byte > 0x7E ? `%${byte.toString(16).toUpperCase().padStart(2, '0')}` : String.fromCharCode(byte);
+  }
+  return result;
+}
+
+// 본문(HTML 렌더링)은 HTML 엔티티로 변환
 function toHtmlEntities(text: string): string {
   let result = '';
   for (const char of text) {
@@ -836,11 +847,7 @@ export async function POST(req: NextRequest) {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
-          body: new URLSearchParams([
-            ['subject', cleanTitle],
-            ['content', toHtmlEntities(cafeContent)],
-            ['openYn', naver_cafe_open_yn],
-          ]),
+          body: `subject=${toEucKrEncoded(cleanTitle)}&content=${encodeURIComponent(toHtmlEntities(cafeContent))}&openYn=${naver_cafe_open_yn}`,
           signal: AbortSignal.timeout(30_000),
         });
 

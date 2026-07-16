@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
+import iconv from 'iconv-lite';
 
-// 한글을 HTML 엔티티(&#44032;)로 인코딩 → ASCII → Naver API 수용 + 상세보기에서 한글 렌더링
+// 제목: EUC-KR 퍼센트인코딩 — Naver Cafe 목록/세부 모두 정상 표시
+function toEucKrEncoded(text: string): string {
+  const buf = iconv.encode(text, 'euc-kr');
+  let result = '';
+  for (const byte of buf) {
+    result += byte > 0x7E ? `%${byte.toString(16).toUpperCase().padStart(2, '0')}` : String.fromCharCode(byte);
+  }
+  return result;
+}
+
+// 본문: HTML 엔티티 변환 (본문은 HTML 렌더링되므로 엔티티 디코딩됨)
 function toHtmlEntities(text: string): string {
   let result = '';
   for (const char of text) {
     const code = char.codePointAt(0) ?? char.charCodeAt(0);
-    if (code > 0x7E) {
-      result += `&#${code};`;
-    } else {
-      result += char;
-    }
+    result += code > 0x7E ? `&#${code};` : char;
   }
   return result;
 }
@@ -108,11 +115,7 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams([
-      ['subject', title],
-      ['content', toHtmlEntities(textContent)],
-      ['openYn', open_yn],
-    ]),
+    body: `subject=${toEucKrEncoded(title)}&content=${encodeURIComponent(toHtmlEntities(textContent))}&openYn=${open_yn}`,
   });
 
   const rawText = await res.text();
