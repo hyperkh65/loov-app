@@ -115,10 +115,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // search?c=cloud에서 누락된 Cloud 모델 수동 보완
-  const MISSING_CLOUD_MODELS: OllamaModelInfo[] = [
-    { id: 'qwen3-coder', base: 'qwen3-coder', size: 0, category: 'heavy' },
-  ];
+  // search?c=cloud 스크래핑 누락 보완 (qwen3-coder-next/480b는 2026-07-15 은퇴)
+  const MISSING_CLOUD_MODELS: OllamaModelInfo[] = [];
 
   // ── 병합: 계정 모델 우선, 라이브러리 전용 모델 추가 ──
   const accountBases = new Set(accountModels.map(m => m.base));

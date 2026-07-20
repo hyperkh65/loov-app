@@ -385,12 +385,12 @@ export async function generateText(
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
     // 폴백 순서: 검증된 중간 크기 모델만 (전체 순회 금지 — 300s maxDuration 초과 방지)
     const OLLAMA_FALLBACKS = [
-      // Ollama Cloud 실제 목록 기준 (한국어 안정성 우선)
-      'mistral-large-3', 'nemotron-3-super', 'nemotron-3-ultra',
-      'deepseek-v4-flash', 'gpt-oss', 'qwen3.5',
-      'nemotron-3-nano', 'deepseek-v4-pro',
+      // Ollama Cloud 활성 모델 기준 (2026-07 / 한국어 안정성 우선)
+      'mistral-large-3', 'nemotron-3-super',
+      'deepseek-v4-flash', 'nemotron-3-ultra', 'gpt-oss',
+      'qwen3.5', 'gemma4', 'nemotron-3-nano',
       // 중국어 출력 위험 → 후순위
-      'kimi-k2.6', 'kimi-k2.5', 'minimax-m2.5', 'glm-5.1',
+      'minimax-m3', 'glm-5.2', 'kimi-k2.6', 'kimi-k2.5',
     ];
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
