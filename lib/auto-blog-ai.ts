@@ -188,7 +188,7 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
         num_ctx: 8192,      // 컨텍스트 윈도우 8K
       },
     }),
-    signal: AbortSignal.timeout(540_000),
+    signal: AbortSignal.timeout(120_000),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
   const data = await res.json();
