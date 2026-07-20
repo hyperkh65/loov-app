@@ -176,6 +176,7 @@ export default function AutoServicePage() {
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
   // 네이버 카페
   const [naverCafeMenus, setNaverCafeMenus] = useState<{ menuId: number; menuName: string }[]>([]);
+  const [naverCafeStatus, setNaverCafeStatus] = useState<{ connected: boolean; oauth_valid: boolean; has_token: boolean } | null>(null);
   const [selNaverCafeMenuId, setSelNaverCafeMenuId] = useState<string>('');
   // 백링크 플랫폼
   const [selBacklink, setSelBacklink] = useState<string[]>([]);
@@ -258,6 +259,19 @@ export default function AutoServicePage() {
     }
   }, []);
 
+  const loadNaverCafeMenus = useCallback(async () => {
+    try {
+      const d = await fetch('/api/naver-cafe/menus').then(r => r.json()) as {
+        menus?: { menuId: number; menuName: string }[];
+        connected?: boolean;
+        oauth_valid?: boolean;
+        has_token?: boolean;
+      };
+      if (Array.isArray(d.menus)) setNaverCafeMenus(d.menus);
+      setNaverCafeStatus({ connected: !!d.connected, oauth_valid: !!d.oauth_valid, has_token: !!d.has_token });
+    } catch { /* ignore */ }
+  }, []);
+
   // 설정 로드
   const fetchDbRunProgress = useCallback(async () => {
     try {
@@ -324,10 +338,8 @@ export default function AutoServicePage() {
     });
     loadModels();
     // 네이버 카페 메뉴 로드
-    fetch('/api/naver-cafe/menus')
-      .then(r => r.json())
-      .then((d: { menus?: { menuId: number; menuName: string }[] }) => { if (Array.isArray(d.menus)) setNaverCafeMenus(d.menus); });
-  }, [loadModels]);
+    loadNaverCafeMenus();
+  }, [loadModels, loadNaverCafeMenus]);
 
   const loadArticles = useCallback(async (status?: string) => {
     setLoadingArticles(true);
@@ -810,7 +822,9 @@ export default function AutoServicePage() {
     setSelBlog([]);
     setSelSns([]);
     setSelWpSiteIds([]);
+    setSelNaverCafeMenuId('');
     setPublishResult(null);
+    loadNaverCafeMenus();
   };
 
   const openSchedule = (article: Article) => {
@@ -2313,22 +2327,36 @@ export default function AutoServicePage() {
                 </div>
                 {/* 네이버 카페 */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">네이버 카페 (선택)</label>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    🟢 네이버 카페{selNaverCafeMenuId ? <span className="ml-1 text-xs text-green-600 font-bold">✔ 발행 선택됨</span> : <span className="ml-1 text-xs text-gray-400">(선택 안 함)</span>}
+                  </label>
                   {naverCafeMenus.length > 0 ? (
                     <select
                       value={selNaverCafeMenuId}
                       onChange={e => setSelNaverCafeMenuId(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                      className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${selNaverCafeMenuId ? 'border-green-500 bg-green-50' : 'border-gray-300'} focus:border-green-500`}
                     >
                       <option value="">— 발행 안 함 —</option>
                       {naverCafeMenus.map(m => (
                         <option key={m.menuId} value={String(m.menuId)}>{m.menuName}</option>
                       ))}
                     </select>
-                  ) : (
+                  ) : naverCafeStatus === null ? (
+                    <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-400 border border-gray-200">로딩 중...</div>
+                  ) : !naverCafeStatus.connected ? (
                     <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 border border-gray-200">
-                      🟢 카페 메뉴가 없습니다.{' '}
-                      <a href="/dashboard/naver-cafe" className="text-green-600 hover:underline">네이버 카페 연결</a>에서 설정하세요.
+                      ⚠️ 네이버 카페 미연결.{' '}
+                      <a href="/dashboard/naver-cafe" target="_blank" className="text-green-600 hover:underline font-medium">카페 연결 설정 →</a>
+                    </div>
+                  ) : !naverCafeStatus.oauth_valid ? (
+                    <div className="p-3 bg-orange-50 rounded-lg text-xs text-orange-700 border border-orange-200">
+                      ⚠️ OAuth 토큰 만료됨.{' '}
+                      <a href="/dashboard/naver-cafe" target="_blank" className="text-orange-700 hover:underline font-medium">재인증 필요 →</a>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-yellow-50 rounded-lg text-xs text-yellow-800 border border-yellow-200">
+                      ⚠️ 카페 게시판 미설정. 발행하려면 게시판 ID를 먼저 등록하세요.{' '}
+                      <a href="/dashboard/naver-cafe" target="_blank" className="text-yellow-800 hover:underline font-medium">게시판 추가 →</a>
                     </div>
                   )}
                 </div>

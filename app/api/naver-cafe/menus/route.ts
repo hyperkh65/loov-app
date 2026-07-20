@@ -1,18 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 
-// GET: 저장된 메뉴 목록 반환
+// GET: 저장된 메뉴 목록 + 연결 상태 반환
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const { data: conn } = await supabase.from('naver_cafe_connections')
-    .select('menu_list')
+    .select('menu_list, club_id, access_token, token_expires_at')
     .eq('user_id', user.id)
     .single();
 
-  return NextResponse.json({ menus: conn?.menu_list || [] });
+  if (!conn) return NextResponse.json({ menus: [], connected: false, oauth_valid: false });
+
+  const oauth_valid = !!(conn.token_expires_at && new Date(conn.token_expires_at) > new Date());
+  const connected = !!(conn.club_id);
+  const has_token = !!(conn.access_token);
+
+  return NextResponse.json({
+    menus: conn?.menu_list || [],
+    connected,
+    oauth_valid,
+    has_token,
+  });
 }
 
 // POST: 메뉴 목록 수동 저장 (Naver API에 메뉴 목록 조회 기능 없음)
