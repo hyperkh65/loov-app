@@ -38,28 +38,38 @@ async function findFont(): Promise<string | null> {
 // ── TTS → R2 ─────────────────────────────────────────────────────────────────
 async function genTtsUrl(text: string, voice: string, rate: string): Promise<string> {
   const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ko-KR">
-    <voice name="${voice}"><prosody rate="${rate}">${escaped}</prosody></voice></speak>`;
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const chunks: Buffer[] = [];
-    await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('TTS 타임아웃')), 25000);
-      const { audioStream } = tts.toStream(ssml);
-      audioStream.on('data', (d: Buffer) => chunks.push(d));
-      audioStream.on('end', () => { clearTimeout(t); resolve(); });
-      audioStream.on('error', (e: Error) => { clearTimeout(t); reject(e); });
-    });
-    const audio = Buffer.concat(chunks);
-    if (audio.length > 100) {
-      const key = `shorts-tts/${Date.now()}_${Math.random().toString(36).slice(2,6)}.mp3`;
-      return uploadToR2(key, audio, 'audio/mpeg');
+  // 기본 목소리 실패 시 한국어 폴백 목소리 순서
+  const KO_FALLBACK_VOICES = ['ko-KR-InJoonNeural', 'ko-KR-HyunsuNeural', 'ko-KR-SunHiNeural'];
+  const voicesToTry = [voice, ...KO_FALLBACK_VOICES.filter(v => v !== voice)];
+
+  for (const tryVoice of voicesToTry) {
+    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ko-KR">
+    <voice name="${tryVoice}"><prosody rate="${rate}">${escaped}</prosody></voice></speak>`;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const tts = new MsEdgeTTS();
+        await tts.setMetadata(tryVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+        const chunks: Buffer[] = [];
+        await new Promise<void>((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('TTS 타임아웃')), 25000);
+          const { audioStream } = tts.toStream(ssml);
+          audioStream.on('data', (d: Buffer) => chunks.push(d));
+          audioStream.on('end', () => { clearTimeout(t); resolve(); });
+          audioStream.on('error', (e: Error) => { clearTimeout(t); reject(e); });
+        });
+        const audio = Buffer.concat(chunks);
+        if (audio.length > 100) {
+          const key = `shorts-tts/${Date.now()}_${Math.random().toString(36).slice(2,6)}.mp3`;
+          return uploadToR2(key, audio, 'audio/mpeg');
+        }
+      } catch { /* 다음 시도 */ }
+      if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
     }
-    if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+    // 이 목소리로 3회 실패 → 다음 폴백 목소리로
   }
-  throw new Error(`TTS 빈 오디오 반환 (voice=${voice})`);
+  throw new Error(`TTS 빈 오디오 반환 (voice=${voice}, 폴백 모두 실패)`);
 }
 
 // ── Pixabay 이미지 검색 ──────────────────────────────────────────────────────
