@@ -115,9 +115,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // search?c=cloud에서 누락된 Cloud 모델 수동 보완
+  const MISSING_CLOUD_MODELS: OllamaModelInfo[] = [
+    { id: 'qwen3-coder', base: 'qwen3-coder', size: 0, category: 'heavy' },
+  ];
+
   // ── 병합: 계정 모델 우선, 라이브러리 전용 모델 추가 ──
   const accountBases = new Set(accountModels.map(m => m.base));
-  const libraryOnly = libraryModels.filter(m => !accountBases.has(m.base));
+  const libraryOnly = [
+    ...libraryModels,
+    ...MISSING_CLOUD_MODELS.filter(m => !accountBases.has(m.base) && !libraryModels.some(l => l.base === m.base)),
+  ].filter(m => !accountBases.has(m.base));
   const allModels = [...accountModels, ...libraryOnly]
     .sort((a, b) => a.base.localeCompare(b.base));
 
