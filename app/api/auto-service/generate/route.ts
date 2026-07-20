@@ -440,6 +440,20 @@ export async function POST(req: NextRequest) {
   // 워터마크 자동 제거
   rawOutput = cleanWatermarks(rawOutput);
 
+  // 포맷 실패 감지: ===TITLE=== 마커 없으면 Ollama 다른 모델로 1회 재시도
+  // (deepseek 등 일부 모델이 <!DOCTYPE html> 페이지를 통째로 출력하는 경우 대응)
+  if (!rawOutput.includes('===TITLE===') || !rawOutput.includes('===CONTENT===')) {
+    const retryModel = (ai_model === 'kimi-k2.6' || ai_model.startsWith('kimi')) ? 'llama3.3' : 'kimi-k2.6';
+    try {
+      const retried = cleanWatermarks(await generateText(
+        prompt, retryModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel,
+      ));
+      if (retried.includes('===TITLE===') && retried.includes('===CONTENT===')) {
+        rawOutput = retried;
+      }
+    } catch { /* 재시도 실패 → 원본으로 진행 */ }
+  }
+
   const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
   if (!title || !rawContent) {
     return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
