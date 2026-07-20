@@ -477,7 +477,7 @@ export async function POST(req: NextRequest) {
 
   // 포맷 실패 감지: ===TITLE=== 마커 없으면 Ollama 다른 모델로 1회 재시도
   if (!rawOutput.includes('===TITLE===') || !rawOutput.includes('===CONTENT===')) {
-    const retryModel = ai_model === 'llama3.3' ? 'qwen3' : 'llama3.3';
+    const retryModel = ai_model === 'mistral-large-3' ? 'nemotron-3-super' : 'mistral-large-3';
     try {
       const retried = cleanWatermarks(await generateText(
         prompt, retryModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel,
