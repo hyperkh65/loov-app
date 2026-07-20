@@ -443,7 +443,7 @@ export async function POST(req: NextRequest) {
   // 포맷 실패 감지: ===TITLE=== 마커 없으면 Ollama 다른 모델로 1회 재시도
   // (deepseek 등 일부 모델이 <!DOCTYPE html> 페이지를 통째로 출력하는 경우 대응)
   if (!rawOutput.includes('===TITLE===') || !rawOutput.includes('===CONTENT===')) {
-    const retryModel = (ai_model === 'kimi-k2.6' || ai_model.startsWith('kimi')) ? 'llama3.3' : 'kimi-k2.6';
+    const retryModel = ai_model === 'llama3.3' ? 'qwen3' : 'llama3.3';
     try {
       const retried = cleanWatermarks(await generateText(
         prompt, retryModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel,
