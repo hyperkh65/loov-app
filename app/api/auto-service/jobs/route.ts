@@ -96,11 +96,26 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ article_id: articleId, status: 'generating' });
 }
 
-// GET: 현재 생성 중인 잡 목록
+// GET: 현재 생성 중인 잡 목록 (15분 이상 stuck → 자동 실패 처리)
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+
+  const admin = createAdminClient();
+  const staleThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+  // 15분 이상 generating 상태인 ⏳ placeholder 잡 → 실패로 자동 처리
+  await admin.from('bossai_auto_articles')
+    .update({
+      status: 'failed',
+      meta_description: 'AI 응답 시간 초과 (15분) — 다시 시도해주세요.',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', user.id)
+    .eq('status', 'generating')
+    .lt('created_at', staleThreshold)
+    .like('title', '⏳%');
 
   const { data } = await supabase
     .from('bossai_auto_articles')
