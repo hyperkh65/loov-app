@@ -37,7 +37,20 @@ async function findFfmpeg(): Promise<string> {
 }
 
 
-// ── Pixabay 이미지 검색 ──────────────────────────────────────────────────────
+// ── Pexels 이미지 검색 ───────────────────────────────────────────────────────
+async function pexelsSearch(query: string, apiKey: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=10&orientation=portrait`,
+      { headers: { Authorization: apiKey }, signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) return null;
+    const d = await res.json() as { photos?: Array<{ src: { portrait: string; large2x: string } }> };
+    return d.photos?.[0]?.src?.large2x ?? d.photos?.[0]?.src?.portrait ?? null;
+  } catch { return null; }
+}
+
+// ── Pixabay 이미지 검색 (보조) ────────────────────────────────────────────────
 async function pixabaySearch(query: string, apiKey: string): Promise<string | null> {
   const hasKorean = /[가-힣]/.test(query);
   try {
@@ -51,26 +64,11 @@ async function pixabaySearch(query: string, apiKey: string): Promise<string | nu
     const d = await res.json() as { hits?: Array<{ largeImageURL: string; imageWidth: number; imageHeight: number }> };
     const hits = d.hits ?? [];
     if (!hits.length) return null;
-    // 세로 비율(9:16)에 가까운 이미지 우선
     const sorted = [...hits].sort((a, b) =>
       Math.abs(a.imageHeight / a.imageWidth - 16 / 9) - Math.abs(b.imageHeight / b.imageWidth - 16 / 9)
     );
     return sorted[0].largeImageURL;
-  } catch {
-    return null;
-  }
-}
-
-// ── assignImages: 블로그 이미지 → 핵심 씬, 나머지 → Pixabay ─────────────────
-function getKeyIndices(total: number, count: number): number[] {
-  if (count <= 0) return [];
-  if (count >= total) return Array.from({ length: total }, (_, i) => i);
-  if (count === 1) return [0];
-  const indices = new Set<number>([0, total - 1]);
-  for (let i = 1; i < count - 1; i++) {
-    indices.add(Math.round(i * (total - 1) / (count - 1)));
-  }
-  return [...indices].sort((a, b) => a - b).slice(0, count);
+  } catch { return null; }
 }
 
 // ── Ken Burns FFmpeg vf ──────────────────────────────────────────────────────
@@ -92,7 +90,6 @@ function getKenBurnsVf(sceneIdx: number, dur: number): string {
 }
 
 const KO_FONT_DIR = '/volume1/homes/urjent/bin/fonts';
-const KO_FONT_PATH = `${KO_FONT_DIR}/NanumGothicBold.ttf`;
 
 // ── ASS 자막 파일 생성 ────────────────────────────────────────────────────────
 function makeAssSubtitle(subtitle: string, durationSec: number): string {
@@ -310,30 +307,28 @@ export async function POST(req: NextRequest) {
         const scenes = genData.scenes;
         send({ type: 'progress', msg: `스크립트 완성 (${scenes.length}개 씬)`, pct: 20 });
 
-        // ── 4. 이미지 배치 (assignImages 로직) ───────────────────────
-        await upd('이미지 배치 결정 중...', { pct: 22 });
+        // ── 4. 이미지 배치: 블로그 이미지 순환 → Pexels → Pixabay 보조 ──
+        await upd('이미지 배치 중...', { pct: 22 });
         const N = scenes.length;
         const B = blogImages.length;
-        const keyIndices = getKeyIndices(N, B);
+        const pexelsKey = settings.PEXELS_API_KEY ?? '';
 
-        // 각 씬에 이미지 URL 배정
-        for (let i = 0; i < scenes.length; i++) {
-          const blogPos = keyIndices.indexOf(i);
-          if (blogPos >= 0) {
-            scenes[i].image_url = blogImages[blogPos];
+        // 블로그 이미지가 있으면 모든 씬에 순환 배정 (주제 일치 보장)
+        if (B > 0) {
+          for (let i = 0; i < N; i++) {
+            scenes[i].image_url = blogImages[i % B];
           }
-          // image_url 없는 씬은 Pixabay 검색으로 채움
-        }
-
-        // Pixabay로 빈 씬 채우기
-        await upd('Pixabay 이미지 검색 중...', { pct: 25 });
-        for (let i = 0; i < scenes.length; i++) {
-          if (scenes[i].image_url) continue;
-          const url = pixabayKey ? await pixabaySearch(scenes[i].image_query, pixabayKey) : null;
-          if (url) {
-            scenes[i].image_url = url;
+          send({ type: 'progress', msg: `블로그 이미지 ${B}장 → ${N}개 씬 순환 배정`, pct: 25 });
+        } else {
+          // 블로그 이미지 없음 → Pexels 우선, Pixabay 보조
+          await upd('Pexels · Pixabay 이미지 검색 중...', { pct: 25 });
+          for (let i = 0; i < N; i++) {
+            send({ type: 'progress', msg: `이미지 검색 중... (${i + 1}/${N})`, pct: 25 + Math.round((i / N) * 10) });
+            const query = scenes[i].image_query;
+            const url = (pexelsKey ? await pexelsSearch(query, pexelsKey) : null)
+              ?? (pixabayKey ? await pixabaySearch(query, pixabayKey) : null);
+            if (url) scenes[i].image_url = url;
           }
-          send({ type: 'progress', msg: `이미지 검색 중... (${i + 1}/${N})`, pct: 25 + Math.round((i / N) * 10) });
         }
 
         // ── 5. NAS 렌더링 준비 ────────────────────────────────────────
