@@ -329,46 +329,37 @@ export async function POST(req: NextRequest) {
         const jobDir = `/tmp/shorts_auto_${jobId.replace(/-/g, '').slice(0, 12)}`;
         await nasExec(`mkdir -p ${jobDir}`);
 
-        // ── 6. TTS 생성 (NAS HTTP 서버 aboda.kr:5050 호출) ───────────────
-        await upd('TTS 음성 생성 중...', { pct: 38 });
-        const { data: appSettingsForTts } = await admin.from('app_settings').select('settings').eq('id', 1).single();
-        const ttsSettings = (appSettingsForTts?.settings ?? {}) as Record<string, string>;
-        const ttsServerUrl = (ttsSettings.EDGE_TTS_SERVER_URL || 'http://aboda.kr:5050').replace(/\/$/, '');
-        const ttsSecret = ttsSettings.EDGE_TTS_SECRET || 'loov_tts_secret';
-        const rateNum = parseInt(ttsRate.replace(/[^0-9-+]/g, ''), 10) || 35;
-
-        const ttsUrls: string[] = [];
+        // ── 6. TTS 나레이션 NAS 전송 (SSH) ───────────────────────────────
+        // aboda.kr:5050은 외부(Vercel)에서 차단됨 → SSH로 파일 전송 후 render.sh에서 생성
+        await upd('TTS 나레이션 NAS 전송 중...', { pct: 38 });
         for (let i = 0; i < scenes.length; i++) {
-          send({ type: 'progress', msg: `TTS ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
-          const ttsRes = await fetch(`${ttsServerUrl}/tts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-API-Secret': ttsSecret },
-            body: JSON.stringify({ text: scenes[i].narration, voice, rate: rateNum }),
-            signal: AbortSignal.timeout(30000),
-          });
-          if (!ttsRes.ok) throw new Error(`TTS 서버 오류 (${ttsRes.status}): scene ${i}`);
-          const ttsData = await ttsRes.json() as { audio?: string; error?: string };
-          if (ttsData.error) throw new Error(`TTS 오류: ${ttsData.error}`);
-          const b64 = (ttsData.audio ?? '').replace(/^data:audio\/[^;]+;base64,/, '');
-          if (!b64) throw new Error(`TTS 빈 응답: scene ${i}`);
-          const audioBuf = Buffer.from(b64, 'base64');
-          const r2Key = `shorts-tts/${Date.now()}_${i}_${Math.random().toString(36).slice(2,5)}.mp3`;
-          ttsUrls.push(await uploadToR2(r2Key, audioBuf, 'audio/mpeg'));
+          send({ type: 'progress', msg: `나레이션 전송 ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
+          await nasExecWithStdin(`cat > ${jobDir}/narration_${i}.txt`, scenes[i].narration);
         }
 
         // ── 7. 렌더 스크립트 생성 & 실행 ─────────────────────────────
         await upd('NAS FFmpeg 렌더링 중... (~2분)', { pct: 54 });
 
+        const EDGE_TTS = '/var/services/homes/urjent/.local/bin/edge-tts';
+        const TTS_FALLBACKS = ['ko-KR-InJoonNeural', 'ko-KR-HyunsuNeural', 'ko-KR-SunHiNeural'].filter(v => v !== voice);
         const lines: string[] = ['#!/bin/bash', 'set -e', `DIR="${jobDir}"`, `LOG="$DIR/render.log"`];
 
-        // 이미지 + TTS 다운로드
+        // NAS edge-tts로 TTS 생성 (먼저 실행해 빠른 실패 감지)
+        for (let i = 0; i < scenes.length; i++) {
+          const voiceCmds = [voice, ...TTS_FALLBACKS]
+            .map(v => `${EDGE_TTS} --voice ${v} --rate "${ttsRate}" --file "$DIR/narration_${i}.txt" --write-media "$DIR/tts_${i}.mp3" 2>>"$LOG"`)
+            .join(' || ');
+          lines.push(`echo "TTS_${i}_START" >> "$LOG"`);
+          lines.push(`${voiceCmds} || { echo "TTS_FAIL_${i}" >> "$LOG"; exit 1; }`);
+          lines.push(`[ -s "$DIR/tts_${i}.mp3" ] || { echo "TTS_EMPTY_${i}" >> "$LOG"; exit 1; }`);
+        }
+
+        // 이미지 다운로드
         for (let i = 0; i < scenes.length; i++) {
           const s = scenes[i];
           if (s.image_url) {
             lines.push(`curl -sL --max-time 30 "${s.image_url}" -o "$DIR/img_${i}.jpg" 2>/dev/null || true`);
           }
-          lines.push(`curl -sLf --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3" || { echo "TTS_DOWNLOAD_FAIL_${i}" >> "$LOG"; exit 1; }`);
-          lines.push(`[ -s "$DIR/tts_${i}.mp3" ] || { echo "TTS_EMPTY_${i}" >> "$LOG"; exit 1; }`);
         }
 
         // 이미지 폴백 (다운로드 실패 시 검은 배경)
