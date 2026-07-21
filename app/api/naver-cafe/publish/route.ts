@@ -112,41 +112,23 @@ export async function POST(req: NextRequest) {
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
 
-  const makeForm = () => {
-    const f = new FormData();
-    f.append('subject', title);
-    f.append('content', textContent);
-    f.append('openYn', open_yn);
-    return f;
-  };
+  let serverIp = '';
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json() as { ip?: string };
+    serverIp = d.ip || '';
+  } catch {}
 
-  const doPost = (token: string) => fetch(apiUrl, {
+  const form = new FormData();
+  form.append('subject', title);
+  form.append('content', textContent);
+  form.append('openYn', open_yn);
+
+  const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: makeForm(),
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
   });
-
-  let res = await doPost(accessToken);
-
-  // 403 → 토큰 만료 가능성: 강제 갱신 후 1회 재시도
-  if (res.status === 403) {
-    if (!conn.refresh_token) {
-      return NextResponse.json({ error: '네이버 카페 재연결 필요 (refresh token 없음)' }, { status: 401 });
-    }
-    const refreshed = await refreshNaverToken(conn.refresh_token);
-    if (!refreshed) {
-      return NextResponse.json({ error: '네이버 카페 토큰이 만료됐습니다. 설정 > 카페 연결에서 재연결해주세요.' }, { status: 401 });
-    }
-    accessToken = refreshed.access_token;
-    const payload: Record<string, string> = {
-      access_token: refreshed.access_token,
-      token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    if (refreshed.refresh_token) payload.refresh_token = refreshed.refresh_token;
-    await supabase.from('naver_cafe_connections').update(payload).eq('user_id', user.id);
-    res = await doPost(accessToken);
-  }
 
   const rawText = await res.text();
   let resData: { message?: { result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
@@ -155,13 +137,15 @@ export async function POST(req: NextRequest) {
   const errCode = resData.errorCode || resData.message?.result?.code;
   const errDetail = resData.errorMessage || resData.message?.result?.message;
   if (!res.ok || errCode) {
-    const hint = res.status === 403
-      ? ' → 설정 > 카페 연결에서 재연결해주세요'
-      : res.status === 401
-      ? ' → 토큰 만료, 재연결 필요'
-      : '';
     return NextResponse.json({
-      error: `카페 발행 실패: HTTP ${res.status}${errCode ? ` | ${errCode}` : ''}${errDetail ? ` | ${errDetail}` : ` | ${rawText.slice(0, 300)}`}${hint}`,
+      error: `카페 발행 실패: HTTP ${res.status}${errCode ? ` | ${errCode}` : ''}${errDetail ? ` | ${errDetail}` : ` | ${rawText.slice(0, 300)}`}`,
+      debug: {
+        server_ip: serverIp,
+        token_prefix: accessToken.slice(0, 8),
+        needs_refresh_fired: needsRefresh,
+        club_id: conn.club_id,
+        menu_id: targetMenuId,
+      },
     }, { status: 400 });
   }
 
