@@ -399,12 +399,13 @@ async function generateArticleForUser(
   const lockKey = `${userId}:${keyword}`;
   if (_generatingLocks.has(lockKey)) return { ok: false, reason: '이미 생성 중 (동시 실행 방지)' };
 
-  // 최근 7일 내 같은 키워드 글 있으면 스킵 (generating 포함)
+  // 최근 7일 내 같은 키워드 글 있으면 스킵 (failed는 재시도 허용)
   const { data: existing } = await supabase
     .from('bossai_auto_articles')
     .select('id')
     .eq('user_id', userId)
     .eq('keyword', keyword)
+    .not('status', 'eq', 'failed')
     .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     .limit(1);
 
@@ -443,7 +444,10 @@ async function generateArticleForUser(
     let rawOutput: string;
     let scrapedImages: { url: string; title: string }[] = [];
     [rawOutput, scrapedImages] = await Promise.all([
-      generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel),
+      Promise.race([
+        generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('AI 생성 시간 초과 (180초) — 다시 시도해주세요')), 180_000)),
+      ]),
       scrapeArticleImages(allSourceItems),
     ]);
 
@@ -661,6 +665,14 @@ export async function POST(req: NextRequest) {
 
       try {
         send({ type: 'start' });
+
+        // 10분 이상 stuck된 'generating' 기사 정리 (Vercel 타임아웃으로 죽은 경우)
+        await adminSupabase
+          .from('bossai_auto_articles')
+          .update({ status: 'failed', meta_description: '생성 시간 초과 (자동 정리됨)' })
+          .eq('user_id', user!.id)
+          .eq('status', 'generating')
+          .lt('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString());
 
         // 실행 시작 즉시 DB에 기록 (페이지 새로고침 시에도 진행중 표시)
         await adminSupabase.from('bossai_auto_settings').upsert({
