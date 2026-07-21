@@ -846,8 +846,8 @@ export async function POST(req: NextRequest) {
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
         const cafeForm = new FormData();
-        cafeForm.append('subject', cleanTitle);
-        cafeForm.append('content', cafeContent);
+        cafeForm.append('subject', toHtmlEntities(cleanTitle));
+        cafeForm.append('content', toHtmlEntities(cafeContent));
         cafeForm.append('openYn', naver_cafe_open_yn);
 
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
