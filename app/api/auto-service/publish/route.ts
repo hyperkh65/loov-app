@@ -830,11 +830,11 @@ export async function POST(req: NextRequest) {
           .replace(/\n{3,}/g, '\n\n').trim();
         const excerpt = rawText.slice(0, 400) + (rawText.length > 400 ? '...' : '');
 
-        // naver_cafe/SNS는 제외하고 블로그 URL만 원문 링크로 사용
-        const BLOG_KEYS = ['naver', 'tistory', 'blogger', 'wordpress'];
+        // 블로그 플랫폼 URL만 원문 링크로 사용 (naver_cafe/SNS 명시 제외)
+        const isBlogKey = (k: string) => k === 'naver' || k === 'tistory' || k === 'blogger' || k.startsWith('wordpress_') || k.startsWith('wp_');
         const blogUrl = results.naver?.url || results.tistory?.url || results.blogger?.url
-          || Object.entries(results).find(([k, r]) => BLOG_KEYS.some(b => k.startsWith(b)) && r.success && r.url)?.[1]?.url
-          || Object.entries(article.published_urls || {}).find(([k, v]) => BLOG_KEYS.some(b => k.startsWith(b)) && v)?.[1] as string | undefined;
+          || Object.entries(results).find(([k, r]) => isBlogKey(k) && r.success && r.url)?.[1]?.url
+          || Object.entries(article.published_urls || {}).find(([k, v]) => isBlogKey(k) && v)?.[1] as string | undefined;
 
         const cafeImageUrl = article.representative_image_url
           ? await uploadImageToNaverCafe(String(article.representative_image_url), String(conn.club_id), accessToken)
