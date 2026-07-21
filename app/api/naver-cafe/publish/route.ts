@@ -118,11 +118,36 @@ export async function POST(req: NextRequest) {
   cafeForm.append('openYn', open_yn);
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
-  const res = await fetch(apiUrl, {
+
+  const doPost = (token: string) => fetch(apiUrl, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${token}` },
     body: cafeForm,
   });
+
+  let res = await doPost(accessToken);
+
+  // 403 (권한없음) → 토큰 만료일 가능성 높음 → 강제 갱신 후 1회 재시도
+  if (res.status === 403 && conn.refresh_token) {
+    const refreshed = await refreshNaverToken(conn.refresh_token);
+    if (refreshed) {
+      accessToken = refreshed.access_token;
+      const payload: Record<string, string> = {
+        access_token: refreshed.access_token,
+        token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      if (refreshed.refresh_token) payload.refresh_token = refreshed.refresh_token;
+      await supabase.from('naver_cafe_connections').update(payload).eq('user_id', user.id);
+      cafeForm.delete('subject'); cafeForm.delete('content'); cafeForm.delete('openYn');
+      cafeForm.append('subject', toHtmlEntities(title));
+      cafeForm.append('content', toHtmlEntities(textContent));
+      cafeForm.append('openYn', open_yn);
+      res = await doPost(accessToken);
+    } else {
+      return NextResponse.json({ error: '네이버 카페 토큰이 만료됐습니다. 설정 > 카페 연결에서 재연결해주세요.' }, { status: 401 });
+    }
+  }
 
   const rawText = await res.text();
   let resData: { message?: { result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
@@ -131,7 +156,8 @@ export async function POST(req: NextRequest) {
   const errCode = resData.errorCode || resData.message?.result?.code;
   const errDetail = resData.errorMessage || resData.message?.result?.message;
   if (!res.ok || errCode) {
-    return NextResponse.json({ error: `카페 발행 실패: HTTP ${res.status} | ${errCode || '?'} | ${errDetail || rawText.slice(0, 300)}` }, { status: 400 });
+    const hint = res.status === 403 ? ' (설정 > 카페 연결에서 재연결 필요)' : '';
+    return NextResponse.json({ error: `카페 발행 실패: HTTP ${res.status} | ${errCode || '?'} | ${errDetail || rawText.slice(0, 200)}${hint}` }, { status: 400 });
   }
 
   const articleId = resData.message?.result?.articleId;
