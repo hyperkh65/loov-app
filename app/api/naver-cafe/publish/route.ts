@@ -119,15 +119,27 @@ export async function POST(req: NextRequest) {
     serverIp = d.ip || '';
   } catch {}
 
-  const form = new FormData();
-  form.append('subject', toHtmlEntities(title));
-  form.append('content', toHtmlEntities(textContent));
-  form.append('openYn', open_yn);
+  const boundary = `----NaverCafeBoundary${Date.now()}`;
+  const titleBytes = iconv.encode(title, 'euc-kr');
+  const contentBytes = Buffer.from(toHtmlEntities(textContent), 'utf-8');
+  const nl = Buffer.from('\r\n');
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="subject"\r\nContent-Type: text/plain; charset=euc-kr\r\n\r\n`),
+    titleBytes, nl,
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n`),
+    contentBytes, nl,
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="openYn"\r\n\r\n`),
+    Buffer.from(open_yn), nl,
+    Buffer.from(`--${boundary}--\r\n`),
+  ]);
 
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: form,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body,
   });
 
   const rawText = await res.text();

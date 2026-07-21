@@ -845,16 +845,31 @@ export async function POST(req: NextRequest) {
         let cafeContent = excerpt + cafeLink + keyword;
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
-        const cafeForm = new FormData();
-        cafeForm.append('subject', toHtmlEntities(cleanTitle));
-        cafeForm.append('content', toHtmlEntities(cafeContent));
-        cafeForm.append('openYn', naver_cafe_open_yn);
+        // subject: EUC-KR 바이트 직접 전송 (& 없어 WAF 통과) → 목록에 한글 표시
+        // content: HTML 엔티티 (Naver HTML 렌더링으로 한글 정상 표시)
+        const boundary = `----NaverCafeBoundary${Date.now()}`;
+        const titleBytes = iconv.encode(cleanTitle, 'euc-kr');
+        const contentBytes = Buffer.from(toHtmlEntities(cafeContent), 'utf-8');
+        const openYnBytes = Buffer.from(naver_cafe_open_yn, 'utf-8');
+        const nl = Buffer.from('\r\n', 'utf-8');
+        const cafeBody = Buffer.concat([
+          Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="subject"\r\nContent-Type: text/plain; charset=euc-kr\r\n\r\n`),
+          titleBytes, nl,
+          Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n`),
+          contentBytes, nl,
+          Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="openYn"\r\n\r\n`),
+          openYnBytes, nl,
+          Buffer.from(`--${boundary}--\r\n`),
+        ]);
 
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
         const cafeRes = await fetch(cafeApiUrl, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
-          body: cafeForm,
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          },
+          body: cafeBody,
           signal: AbortSignal.timeout(30_000),
         });
 
