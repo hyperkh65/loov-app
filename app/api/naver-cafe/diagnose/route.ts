@@ -17,32 +17,43 @@ export async function GET() {
   const clubId = conn.club_id as string;
   const menuList = conn.menu_list as { menuId: number; menuName: string }[] | null;
 
-  // 1. 토큰 기본 유효성 (네이버 프로필)
+  // 1. 토큰 기본 유효성 + 네이버 계정 확인
   let profileOk = false;
   let profileError = '';
+  let naverName = '';
+  let naverEmail = '';
   try {
     const r = await fetch('https://openapi.naver.com/v1/nid/me', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const body = await r.json() as { resultcode?: string; message?: string };
+    const body = await r.json() as { resultcode?: string; message?: string; response?: { name?: string; email?: string; nickname?: string } };
     profileOk = r.ok && body.resultcode === '00';
+    naverName = body.response?.name || body.response?.nickname || '';
+    naverEmail = body.response?.email || '';
     if (!profileOk) profileError = `HTTP ${r.status} / ${JSON.stringify(body).slice(0, 100)}`;
   } catch (e) {
     profileError = String(e);
   }
 
-  // 2. 카페 API 접근 시도 (카페 게시판 목록 GET — 실제 글 쓰기는 안 함)
-  let cafeApiStatus = 0;
-  let cafeApiBody = '';
-  if (clubId) {
+  // 2. 카페 실제 글쓰기 테스트 (진단용 임시 글 — 아래서 즉시 삭제 안 함)
+  let cafePostStatus = 0;
+  let cafePostBody = '';
+  if (clubId && menuList?.[0]) {
+    const testMenuId = menuList[0].menuId;
+    const testForm = new FormData();
+    testForm.append('subject', '[진단테스트] 자동삭제');
+    testForm.append('content', '진단용 테스트 글입니다. 수동으로 삭제해주세요.');
+    testForm.append('openYn', 'N');
     try {
-      const r = await fetch(`https://openapi.naver.com/v1/cafe/${clubId}/members/me`, {
+      const r = await fetch(`https://openapi.naver.com/v1/cafe/${clubId}/menu/${testMenuId}/articles`, {
+        method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
+        body: testForm,
       });
-      cafeApiStatus = r.status;
-      cafeApiBody = (await r.text()).slice(0, 200);
+      cafePostStatus = r.status;
+      cafePostBody = (await r.text()).slice(0, 300);
     } catch (e) {
-      cafeApiBody = String(e);
+      cafePostBody = String(e);
     }
   }
 
@@ -60,9 +71,9 @@ export async function GET() {
     menus: menuList?.map(m => `${m.menuId}: ${m.menuName}`) || [],
     token_expires_at: conn.token_expires_at,
     token_prefix: token ? token.slice(0, 6) + '...' : '(없음)',
-    profile_api: profileOk ? '✅ 정상' : `❌ ${profileError}`,
-    cafe_api_status: cafeApiStatus || '(skipped — club_id 없음)',
-    cafe_api_body: cafeApiBody || '(skipped)',
+    naver_account: profileOk ? `${naverName} (${naverEmail})` : `❌ ${profileError}`,
+    cafe_post_status: cafePostStatus || '(skipped)',
+    cafe_post_body: cafePostBody || '(skipped)',
     server_ip: serverIp,
   });
 }
