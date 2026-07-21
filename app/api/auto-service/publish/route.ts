@@ -846,7 +846,7 @@ export async function POST(req: NextRequest) {
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
         const cafeForm = new FormData();
-        cafeForm.append('subject', toHtmlEntities(cleanTitle));
+        cafeForm.append('subject', toEucKrEncoded(cleanTitle));
         cafeForm.append('content', toHtmlEntities(cafeContent));
         cafeForm.append('openYn', naver_cafe_open_yn);
 
