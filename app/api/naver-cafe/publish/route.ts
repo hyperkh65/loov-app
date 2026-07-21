@@ -110,43 +110,42 @@ export async function POST(req: NextRequest) {
   const linkLine = blog_url ? `\n\n▶ 원문 보기: ${blog_url}` : '';
   const textContent = excerpt + linkLine;
 
-  // Naver Cafe API는 multipart/form-data 형식 요구
-  // subject HTML 엔티티 변환 — 세부페이지에서 HTML 렌더링으로 정상 표시됨
-  const cafeForm = new FormData();
-  cafeForm.append('subject', toHtmlEntities(title));
-  cafeForm.append('content', toHtmlEntities(textContent));
-  cafeForm.append('openYn', open_yn);
-
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
+
+  const makeForm = () => {
+    const f = new FormData();
+    f.append('subject', toHtmlEntities(title));
+    f.append('content', toHtmlEntities(textContent));
+    f.append('openYn', open_yn);
+    return f;
+  };
 
   const doPost = (token: string) => fetch(apiUrl, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
-    body: cafeForm,
+    body: makeForm(),
   });
 
   let res = await doPost(accessToken);
 
-  // 403 (권한없음) → 토큰 만료일 가능성 높음 → 강제 갱신 후 1회 재시도
-  if (res.status === 403 && conn.refresh_token) {
+  // 403 → 토큰 만료 가능성: 강제 갱신 후 1회 재시도
+  if (res.status === 403) {
+    if (!conn.refresh_token) {
+      return NextResponse.json({ error: '네이버 카페 재연결 필요 (refresh token 없음)' }, { status: 401 });
+    }
     const refreshed = await refreshNaverToken(conn.refresh_token);
-    if (refreshed) {
-      accessToken = refreshed.access_token;
-      const payload: Record<string, string> = {
-        access_token: refreshed.access_token,
-        token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      if (refreshed.refresh_token) payload.refresh_token = refreshed.refresh_token;
-      await supabase.from('naver_cafe_connections').update(payload).eq('user_id', user.id);
-      cafeForm.delete('subject'); cafeForm.delete('content'); cafeForm.delete('openYn');
-      cafeForm.append('subject', toHtmlEntities(title));
-      cafeForm.append('content', toHtmlEntities(textContent));
-      cafeForm.append('openYn', open_yn);
-      res = await doPost(accessToken);
-    } else {
+    if (!refreshed) {
       return NextResponse.json({ error: '네이버 카페 토큰이 만료됐습니다. 설정 > 카페 연결에서 재연결해주세요.' }, { status: 401 });
     }
+    accessToken = refreshed.access_token;
+    const payload: Record<string, string> = {
+      access_token: refreshed.access_token,
+      token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (refreshed.refresh_token) payload.refresh_token = refreshed.refresh_token;
+    await supabase.from('naver_cafe_connections').update(payload).eq('user_id', user.id);
+    res = await doPost(accessToken);
   }
 
   const rawText = await res.text();
@@ -156,8 +155,14 @@ export async function POST(req: NextRequest) {
   const errCode = resData.errorCode || resData.message?.result?.code;
   const errDetail = resData.errorMessage || resData.message?.result?.message;
   if (!res.ok || errCode) {
-    const hint = res.status === 403 ? ' (설정 > 카페 연결에서 재연결 필요)' : '';
-    return NextResponse.json({ error: `카페 발행 실패: HTTP ${res.status} | ${errCode || '?'} | ${errDetail || rawText.slice(0, 200)}${hint}` }, { status: 400 });
+    const hint = res.status === 403
+      ? ' → 설정 > 카페 연결에서 재연결해주세요'
+      : res.status === 401
+      ? ' → 토큰 만료, 재연결 필요'
+      : '';
+    return NextResponse.json({
+      error: `카페 발행 실패: HTTP ${res.status}${errCode ? ` | ${errCode}` : ''}${errDetail ? ` | ${errDetail}` : ` | ${rawText.slice(0, 300)}`}${hint}`,
+    }, { status: 400 });
   }
 
   const articleId = resData.message?.result?.articleId;
