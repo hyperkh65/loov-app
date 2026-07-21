@@ -339,6 +339,16 @@ export default function AutoServicePage() {
     loadModels();
     // 네이버 카페 메뉴 로드
     loadNaverCafeMenus();
+    // Shorts 큐 DB에서 복원 (페이지 새로고침 후에도 표시)
+    fetch('/api/shorts/queue')
+      .then(r => r.json())
+      .then((d: { jobs?: { id: string; title: string; status: string; progress: string; video_url?: string; yt_url?: string }[] }) => {
+        if (d.jobs?.length) {
+          // running 상태는 연결 끊긴 것이므로 error로 표시
+          setShortsJobs(d.jobs.map(j => j.status === 'running' ? { ...j, status: 'error', progress: '이전 작업이 중단됐습니다. 다시 시도해주세요.' } : j));
+        }
+      })
+      .catch(() => {});
   }, [loadModels, loadNaverCafeMenus]);
 
   const loadArticles = useCallback(async (status?: string) => {
@@ -929,6 +939,10 @@ export default function AutoServicePage() {
             } catch { /* JSON parse 실패 무시 */ }
           }
         }
+        // SSE가 done/error 없이 끊긴 경우 error로 마크
+        setShortsJobs(prev => prev.map(j => j.id === jobId && j.status === 'running'
+          ? { ...j, status: 'error', progress: '연결이 끊겼습니다. 다시 시도해주세요.' }
+          : j));
       } catch (err) {
         setShortsJobs(prev => prev.map(j => j.id === jobId
           ? { ...j, status: 'error', progress: String(err) }
