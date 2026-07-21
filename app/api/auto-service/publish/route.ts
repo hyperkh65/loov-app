@@ -300,7 +300,7 @@ export async function POST(req: NextRequest) {
 
   let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = body;
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'N' } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -845,11 +845,9 @@ export async function POST(req: NextRequest) {
         let cafeContent = excerpt + cafeLink + keyword;
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
-        // Naver Cafe API는 multipart/form-data 형식 요구 (URLSearchParams x-www-form-urlencoded 거부)
-        // subject도 HTML 엔티티 변환 — 세부페이지에서 HTML 렌더링으로 정상 표시됨
         const cafeForm = new FormData();
-        cafeForm.append('subject', toHtmlEntities(cleanTitle));
-        cafeForm.append('content', toHtmlEntities(cafeContent));
+        cafeForm.append('subject', cleanTitle);
+        cafeForm.append('content', cafeContent);
         cafeForm.append('openYn', naver_cafe_open_yn);
 
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
