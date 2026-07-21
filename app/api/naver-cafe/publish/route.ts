@@ -110,18 +110,17 @@ export async function POST(req: NextRequest) {
   const linkLine = blog_url ? `\n\n▶ 원문 보기: ${blog_url}` : '';
   const textContent = excerpt + linkLine;
 
+  // Naver Cafe API는 multipart/form-data 형식 요구
+  const cafeForm = new FormData();
+  cafeForm.append('subject', title);
+  cafeForm.append('content', toHtmlEntities(textContent));
+  cafeForm.append('openYn', open_yn);
+
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams([
-      ['subject', toHtmlEntities(title)],
-      ['content', toHtmlEntities(textContent)],
-      ['openYn', open_yn],
-    ]),
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: cafeForm,
   });
 
   const rawText = await res.text();

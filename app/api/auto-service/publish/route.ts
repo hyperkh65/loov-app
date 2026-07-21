@@ -843,18 +843,17 @@ export async function POST(req: NextRequest) {
         let cafeContent = excerpt + cafeLink + keyword;
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
+        // Naver Cafe API는 multipart/form-data 형식 요구 (URLSearchParams x-www-form-urlencoded 거부)
+        const cafeForm = new FormData();
+        cafeForm.append('subject', cleanTitle);
+        cafeForm.append('content', toHtmlEntities(cafeContent));
+        cafeForm.append('openYn', naver_cafe_open_yn);
+
         const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
         const cafeRes = await fetch(cafeApiUrl, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams([
-            ['subject', toHtmlEntities(cleanTitle)],
-            ['content', toHtmlEntities(cafeContent)],
-            ['openYn', naver_cafe_open_yn],
-          ]),
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: cafeForm,
           signal: AbortSignal.timeout(30_000),
         });
 
