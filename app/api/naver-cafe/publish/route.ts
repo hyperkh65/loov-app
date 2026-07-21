@@ -114,8 +114,8 @@ export async function POST(req: NextRequest) {
 
   const makeForm = () => {
     const f = new FormData();
-    f.append('subject', toHtmlEntities(title));
-    f.append('content', toHtmlEntities(textContent));
+    f.append('subject', title);
+    f.append('content', textContent);
     f.append('openYn', open_yn);
     return f;
   };
