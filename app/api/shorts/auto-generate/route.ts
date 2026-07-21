@@ -325,6 +325,7 @@ export async function POST(req: NextRequest) {
         await upd('NAS 렌더 환경 확인 중...', { pct: 36 });
         const ffmpeg = await findFfmpeg();
         const fontPath = await findFont();
+        const hasDrawtext = (await nasExec(`${ffmpeg} -filters 2>&1 | grep -c drawtext`)).stdout.trim() !== '0';
         const jobDir = `/tmp/shorts_auto_${jobId.replace(/-/g, '').slice(0, 12)}`;
         await nasExec(`mkdir -p ${jobDir}`);
 
@@ -384,7 +385,7 @@ export async function POST(req: NextRequest) {
         for (let i = 0; i < scenes.length; i++) {
           const dur = Math.max(1, scenes[i].duration);
           const kbVf = getKenBurnsVf(i, dur);
-          const subVf = subtitleVf(scenes[i].subtitle || '', fontPath);
+          const subVf = hasDrawtext ? subtitleVf(scenes[i].subtitle || '', fontPath) : '';
           const vf = subVf ? `${kbVf},${subVf}` : kbVf;
 
           lines.push(`echo "SCENE_${i}_START" >> "$LOG"`);
