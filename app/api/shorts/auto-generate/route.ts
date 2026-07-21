@@ -3,7 +3,6 @@ import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { uploadToR2 } from '@/lib/r2-storage';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 import { readFileAsBuffer } from '@/lib/nas-sftp';
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { callAI } from '@/lib/ai-call';
 
 export const maxDuration = 300;
@@ -36,42 +35,6 @@ async function findFont(): Promise<string | null> {
 }
 
 // ── TTS → R2 ─────────────────────────────────────────────────────────────────
-async function genTtsUrl(text: string, voice: string, rate: string): Promise<string> {
-  const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-  // 기본 목소리 실패 시 한국어 폴백 목소리 순서
-  const KO_FALLBACK_VOICES = ['ko-KR-InJoonNeural', 'ko-KR-HyunsuNeural', 'ko-KR-SunHiNeural'];
-  const voicesToTry = [voice, ...KO_FALLBACK_VOICES.filter(v => v !== voice)];
-
-  for (const tryVoice of voicesToTry) {
-    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ko-KR">
-    <voice name="${tryVoice}"><prosody rate="${rate}">${escaped}</prosody></voice></speak>`;
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const tts = new MsEdgeTTS();
-        await tts.setMetadata(tryVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-        const chunks: Buffer[] = [];
-        await new Promise<void>((resolve, reject) => {
-          const t = setTimeout(() => reject(new Error('TTS 타임아웃')), 25000);
-          const { audioStream } = tts.toStream(ssml);
-          audioStream.on('data', (d: Buffer) => chunks.push(d));
-          audioStream.on('end', () => { clearTimeout(t); resolve(); });
-          audioStream.on('error', (e: Error) => { clearTimeout(t); reject(e); });
-        });
-        const audio = Buffer.concat(chunks);
-        if (audio.length > 100) {
-          const key = `shorts-tts/${Date.now()}_${Math.random().toString(36).slice(2,6)}.mp3`;
-          return uploadToR2(key, audio, 'audio/mpeg');
-        }
-      } catch { /* 다음 시도 */ }
-      if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
-    }
-    // 이 목소리로 3회 실패 → 다음 폴백 목소리로
-  }
-  throw new Error(`TTS 빈 오디오 반환 (voice=${voice}, 폴백 모두 실패)`);
-}
-
 // ── Pixabay 이미지 검색 ──────────────────────────────────────────────────────
 async function pixabaySearch(query: string, apiKey: string): Promise<string | null> {
   try {
@@ -357,27 +320,36 @@ export async function POST(req: NextRequest) {
         const jobDir = `/tmp/shorts_auto_${jobId.replace(/-/g, '').slice(0, 12)}`;
         await nasExec(`mkdir -p ${jobDir}`);
 
-        // ── 6. TTS 생성 ───────────────────────────────────────────────
-        await upd(`TTS 음성 생성 중... (${voice}, ${ttsRate})`, { pct: 38 });
-        const ttsUrls: string[] = [];
+        // ── 6. TTS 나레이션 NAS 전송 ──────────────────────────────────
+        await upd('TTS 나레이션 NAS 전송 중...', { pct: 38 });
         for (let i = 0; i < scenes.length; i++) {
-          send({ type: 'progress', msg: `TTS ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
-          ttsUrls.push(await genTtsUrl(scenes[i].narration, voice, ttsRate));
+          send({ type: 'progress', msg: `나레이션 전송 ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
+          await nasExecWithStdin(`cat > ${jobDir}/narration_${i}.txt`, scenes[i].narration);
         }
 
         // ── 7. 렌더 스크립트 생성 & 실행 ─────────────────────────────
-        await upd('NAS FFmpeg 렌더링 중... (~2분)', { pct: 54 });
+        await upd('NAS FFmpeg 렌더링 중... (~3분)', { pct: 54 });
 
+        const EDGE_TTS = '/var/services/homes/urjent/.local/bin/edge-tts';
+        const TTS_FALLBACKS = ['ko-KR-InJoonNeural', 'ko-KR-HyunsuNeural', 'ko-KR-SunHiNeural'];
         const lines: string[] = ['#!/bin/bash', 'set -e', `DIR="${jobDir}"`, `LOG="$DIR/render.log"`];
 
-        // 이미지 + 오디오 다운로드
+        // NAS edge-tts로 TTS 생성 (이미지보다 먼저 실행해 빠른 실패 감지)
+        for (let i = 0; i < scenes.length; i++) {
+          const voiceFallbackCmd = [voice, ...TTS_FALLBACKS.filter(v => v !== voice)]
+            .map(v => `${EDGE_TTS} --voice ${v} --rate "${ttsRate}" --file "$DIR/narration_${i}.txt" --write-media "$DIR/tts_${i}.mp3" 2>>"$LOG"`)
+            .join(' || ');
+          lines.push(`echo "TTS_${i}_START" >> "$LOG"`);
+          lines.push(`${voiceFallbackCmd} || { echo "TTS_FAIL_${i}" >> "$LOG"; exit 1; }`);
+          lines.push(`[ -s "$DIR/tts_${i}.mp3" ] || { echo "TTS_EMPTY_${i}" >> "$LOG"; exit 1; }`);
+        }
+
+        // 이미지 다운로드
         for (let i = 0; i < scenes.length; i++) {
           const s = scenes[i];
           if (s.image_url) {
             lines.push(`curl -sL --max-time 30 "${s.image_url}" -o "$DIR/img_${i}.jpg" 2>/dev/null || true`);
           }
-          lines.push(`curl -sLf --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3" || { echo "TTS_DOWNLOAD_FAIL_${i}" >> "$LOG"; exit 1; }`);
-          lines.push(`[ -s "$DIR/tts_${i}.mp3" ] || { echo "TTS_EMPTY_${i}" >> "$LOG"; exit 1; }`);
         }
 
         // 이미지 폴백 (다운로드 실패 시 검은 배경)
