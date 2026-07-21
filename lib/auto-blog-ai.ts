@@ -188,7 +188,7 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
         num_ctx: 8192,      // 컨텍스트 윈도우 8K
       },
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(80_000),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -212,7 +212,7 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
       stream: false,
       max_tokens: 8192,
     }),
-    signal: AbortSignal.timeout(540_000),
+    signal: AbortSignal.timeout(90_000),
   });
   if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
   const data = await res.json();
@@ -233,7 +233,7 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { maxOutputTokens: 8192 },
         }),
-        signal: AbortSignal.timeout(540_000),
+        signal: AbortSignal.timeout(120_000),
       }
     );
     if (!res.ok) continue;
@@ -255,7 +255,7 @@ async function callOpenAI(apiKey: string, prompt: string, model = 'gpt-4o-mini')
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 8192,
       }),
-      signal: AbortSignal.timeout(540_000),
+      signal: AbortSignal.timeout(120_000),
     });
     if (res.status === 429 && attempt < RETRY_DELAYS.length) {
       await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
@@ -338,7 +338,7 @@ async function callClaude(apiKey: string, prompt: string, model?: string): Promi
       max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     }),
-    signal: AbortSignal.timeout(540_000),
+    signal: AbortSignal.timeout(120_000),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -412,7 +412,7 @@ export async function generateText(
         const fallbackOrdered = OLLAMA_FALLBACKS
           .flatMap(fb => available.filter(m => (m === fb || m.startsWith(fb + ':') || m.startsWith(fb + '.')) && isFreeModel(m)))
           .filter(m => !priority.includes(m))
-          .slice(0, 4);
+          .slice(0, 3);
         toTry = [...priority, ...fallbackOrdered];
       } else {
         // 모델 목록 조회 실패 시 :cloud 접미사도 함께 시도 (최대 6개)
