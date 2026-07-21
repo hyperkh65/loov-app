@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
   } catch {}
 
   const form = new FormData();
-  form.append('subject', toEucKrEncoded(title));
+  form.append('subject', toHtmlEntities(title));
   form.append('content', toHtmlEntities(textContent));
   form.append('openYn', open_yn);
 

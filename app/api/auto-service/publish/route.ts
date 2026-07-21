@@ -300,7 +300,7 @@ export async function POST(req: NextRequest) {
 
   let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'N' } = body;
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -846,7 +846,7 @@ export async function POST(req: NextRequest) {
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
         const cafeForm = new FormData();
-        cafeForm.append('subject', toEucKrEncoded(cleanTitle));
+        cafeForm.append('subject', toHtmlEntities(cleanTitle));
         cafeForm.append('content', toHtmlEntities(cafeContent));
         cafeForm.append('openYn', naver_cafe_open_yn);
 
