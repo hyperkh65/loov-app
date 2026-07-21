@@ -368,7 +368,7 @@ export async function POST(req: NextRequest) {
         // ── 7. 렌더 스크립트 생성 & 실행 ─────────────────────────────
         await upd('NAS FFmpeg 렌더링 중... (~2분)', { pct: 54 });
 
-        const lines: string[] = ['#!/bin/bash', 'set -e', `DIR="${jobDir}"`];
+        const lines: string[] = ['#!/bin/bash', 'set -e', `DIR="${jobDir}"`, `LOG="$DIR/render.log"`];
 
         // 이미지 + 오디오 다운로드
         for (let i = 0; i < scenes.length; i++) {
@@ -376,15 +376,16 @@ export async function POST(req: NextRequest) {
           if (s.image_url) {
             lines.push(`curl -sL --max-time 30 "${s.image_url}" -o "$DIR/img_${i}.jpg" 2>/dev/null || true`);
           }
-          lines.push(`curl -sL --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3"`);
+          lines.push(`curl -sLf --max-time 30 "${ttsUrls[i]}" -o "$DIR/tts_${i}.mp3" || { echo "TTS_DOWNLOAD_FAIL_${i}" >> "$LOG"; exit 1; }`);
+          lines.push(`[ -s "$DIR/tts_${i}.mp3" ] || { echo "TTS_EMPTY_${i}" >> "$LOG"; exit 1; }`);
         }
 
         // 이미지 폴백 (다운로드 실패 시 검은 배경)
         for (let i = 0; i < scenes.length; i++) {
           if (scenes[i].image_url) {
-            lines.push(`[ -s "$DIR/img_${i}.jpg" ] || ${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>/dev/null`);
+            lines.push(`[ -s "$DIR/img_${i}.jpg" ] || ${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>>"$LOG"`);
           } else {
-            lines.push(`${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>/dev/null`);
+            lines.push(`${ffmpeg} -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=1 -frames:v 1 "$DIR/img_${i}.jpg" -y 2>>"$LOG"`);
           }
           lines.push(`IMG_${i}="$DIR/img_${i}.jpg"`);
         }
@@ -396,22 +397,25 @@ export async function POST(req: NextRequest) {
           const subVf = subtitleVf(scenes[i].subtitle || '', fontPath);
           const vf = subVf ? `${kbVf},${subVf}` : kbVf;
 
+          lines.push(`echo "SCENE_${i}_START" >> "$LOG"`);
           lines.push(
             `${ffmpeg} -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
             `-vf "${vf}" ` +
             `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p ` +
-            `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>/dev/null`
+            `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>>"$LOG"`
           );
         }
 
         // concat
         const filelistContent = scenes.map((_, i) => `file '${jobDir}/scene_${i}.mp4'`).join('\\n');
         lines.push(`printf '${filelistContent}\\n' > "$DIR/filelist.txt"`);
+        lines.push(`echo "CONCAT_START" >> "$LOG"`);
         lines.push(
           `${ffmpeg} -f concat -safe 0 -i "$DIR/filelist.txt" ` +
           `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p ` +
-          `-c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4" 2>/dev/null`
+          `-c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4" 2>>"$LOG"`
         );
+        lines.push('echo "RENDER_DONE" >> "$LOG"');
         lines.push('echo "RENDER_DONE"');
 
         await nasExecWithStdin(`cat > ${jobDir}/render.sh`, lines.join('\n'));

@@ -31,6 +31,7 @@ export async function uploadToR2(key: string, body: Buffer | ArrayBuffer | Uint8
     Key: key,
     Body: buf,
     ContentType: contentType,
+    ContentLength: buf.byteLength,
   }))
   return `${PUBLIC_URL}/${key}`
 }
