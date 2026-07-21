@@ -36,19 +36,15 @@ async function findFfmpeg(): Promise<string> {
   throw new Error('NAS FFmpeg 없음');
 }
 
-// ── 한국어 폰트 ──────────────────────────────────────────────────────────────
-async function findFont(): Promise<string | null> {
-  const r = await nasExec('find /usr/share/fonts /volume1 -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|KR$" | head -1');
-  return r.stdout.trim() || null;
-}
 
-// ── TTS → R2 ─────────────────────────────────────────────────────────────────
 // ── Pixabay 이미지 검색 ──────────────────────────────────────────────────────
 async function pixabaySearch(query: string, apiKey: string): Promise<string | null> {
+  const hasKorean = /[가-힣]/.test(query);
   try {
     const q = encodeURIComponent(query);
+    const langParam = hasKorean ? '&lang=ko' : '';
     const res = await fetch(
-      `https://pixabay.com/api/?key=${apiKey}&q=${q}&image_type=photo&per_page=5&safesearch=true`,
+      `https://pixabay.com/api/?key=${apiKey}&q=${q}${langParam}&image_type=photo&per_page=10&safesearch=true`,
       { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) }
     );
     if (!res.ok) return null;
@@ -95,14 +91,33 @@ function getKenBurnsVf(sceneIdx: number, dur: number): string {
   }
 }
 
-// ── drawtext vf (자막) ───────────────────────────────────────────────────────
-function subtitleVf(subtitle: string, fontPath: string | null): string {
-  const esc = subtitle.replace(/[\\':]/g, '\\$&').replace(/\n/g, ' ').slice(0, 50);
-  if (!esc) return '';
-  if (fontPath) {
-    return `drawtext=fontfile='${fontPath}':text='${esc}':fontsize=58:fontcolor=white:x=(w-text_w)/2:y=h-200:shadowcolor=black@0.9:shadowx=4:shadowy=4:box=1:boxcolor=black@0.65:boxborderw=22`;
-  }
-  return `drawtext=text='${esc}':fontsize=52:fontcolor=white:x=(w-text_w)/2:y=h-200:shadowcolor=black@0.9:shadowx=4:shadowy=4`;
+const KO_FONT_DIR = '/volume1/homes/urjent/bin/fonts';
+const KO_FONT_PATH = `${KO_FONT_DIR}/NanumGothicBold.ttf`;
+
+// ── ASS 자막 파일 생성 ────────────────────────────────────────────────────────
+function makeAssSubtitle(subtitle: string, durationSec: number): string {
+  const text = subtitle.replace(/[{}\\]/g, '').trim().slice(0, 30);
+  if (!text) return '';
+  const end = durationSec + 5;
+  const h = Math.floor(end / 3600);
+  const m = Math.floor((end % 3600) / 60);
+  const s = Math.floor(end % 60);
+  const endTime = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.00`;
+  return [
+    '[Script Info]',
+    'ScriptType: v4.00+',
+    'PlayResX: 1080',
+    'PlayResY: 1920',
+    'WrapStyle: 2',
+    '',
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    'Style: Default,NanumGothicBold,72,&H00FFFFFF,&H000000FF,&H00000000,&HCC000000,1,0,0,0,100,100,0,0,1,4,2,2,60,60,80,1',
+    '',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+    `Dialogue: 0,0:00:00.00,${endTime},Default,,0,0,0,,${text}`,
+  ].join('\n');
 }
 
 // ── YouTube 업로드 ────────────────────────────────────────────────────────────
@@ -324,17 +339,16 @@ export async function POST(req: NextRequest) {
         // ── 5. NAS 렌더링 준비 ────────────────────────────────────────
         await upd('NAS 렌더 환경 확인 중...', { pct: 36 });
         const ffmpeg = await findFfmpeg();
-        const fontPath = await findFont();
-        const hasDrawtext = (await nasExec(`${ffmpeg} -filters 2>&1 | grep -c drawtext`)).stdout.trim() !== '0';
         const jobDir = `/tmp/shorts_auto_${jobId.replace(/-/g, '').slice(0, 12)}`;
         await nasExec(`mkdir -p ${jobDir}`);
 
-        // ── 6. TTS 나레이션 NAS 전송 (SSH) ───────────────────────────────
-        // aboda.kr:5050은 외부(Vercel)에서 차단됨 → SSH로 파일 전송 후 render.sh에서 생성
-        await upd('TTS 나레이션 NAS 전송 중...', { pct: 38 });
+        // ── 6. TTS 나레이션 + ASS 자막 NAS 전송 (SSH) ───────────────────
+        await upd('TTS·자막 파일 NAS 전송 중...', { pct: 38 });
         for (let i = 0; i < scenes.length; i++) {
-          send({ type: 'progress', msg: `나레이션 전송 ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
+          send({ type: 'progress', msg: `파일 전송 ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
           await nasExecWithStdin(`cat > ${jobDir}/narration_${i}.txt`, scenes[i].narration);
+          const assContent = makeAssSubtitle(scenes[i].subtitle || '', Math.max(1, scenes[i].duration));
+          if (assContent) await nasExecWithStdin(`cat > ${jobDir}/sub_${i}.ass`, assContent);
         }
 
         // ── 7. 렌더 스크립트 생성 & 실행 ─────────────────────────────
@@ -372,12 +386,13 @@ export async function POST(req: NextRequest) {
           lines.push(`IMG_${i}="$DIR/img_${i}.jpg"`);
         }
 
-        // 씬별 렌더 (Ken Burns + 자막)
+        // 씬별 렌더 (Ken Burns + ASS 자막)
         for (let i = 0; i < scenes.length; i++) {
           const dur = Math.max(1, scenes[i].duration);
           const kbVf = getKenBurnsVf(i, dur);
-          const subVf = hasDrawtext ? subtitleVf(scenes[i].subtitle || '', fontPath) : '';
-          const vf = subVf ? `${kbVf},${subVf}` : kbVf;
+          const hasSubFile = !!(makeAssSubtitle(scenes[i].subtitle || '', dur));
+          const assVf = hasSubFile ? `,ass=${jobDir}/sub_${i}.ass:fontsdir=${KO_FONT_DIR}` : '';
+          const vf = `${kbVf}${assVf}`;
 
           lines.push(`echo "SCENE_${i}_START" >> "$LOG"`);
           lines.push(
@@ -491,7 +506,7 @@ async function buildShortsPrompt(topic: string, duration: number): Promise<strin
   if (total !== duration) sceneDurations[Math.floor(numScenes / 2)] += (duration - total);
 
   const sceneTemplate = sceneDurations.map((sec, i) =>
-    `{"id":${i+1},"duration":${sec},"narration":"(최소 ${Math.round(sec*CHARS_PER_SEC)}자, 빠른 구어체, 친구에게 말하듯)","subtitle":"(이모지1개+임팩트문구, 12자이내)","image_query":"2~3 english words for pixabay search","dalle_prompt":"vertical 9:16 cinematic no text"}`
+    `{"id":${i+1},"duration":${sec},"narration":"(최소 ${Math.round(sec*CHARS_PER_SEC)}자, 빠른 구어체, 친구에게 말하듯)","subtitle":"(이모지1개+임팩트문구, 10자이내, 이모지 제외)","image_query":"(이 씬 장면에 딱 맞는 Pixabay 검색어, 한국어 2~3단어, 주제와 직접 연관된 구체적 장면)"}`
   ).join(',\n    ');
 
   return `당신은 대한민국 최고의 숏폼 바이럴 크리에이터입니다. 아래 블로그 내용을 바탕으로 ${duration}초 YouTube Shorts 스크립트를 JSON으로만 출력하세요.
@@ -503,8 +518,8 @@ ${topic}
 • 나레이션: 친구에게 카톡 보내듯 빠른 구어체 (~야, ~거든, ~잖아)
 • 각 씬 duration × 9.5자 이상 필수 (침묵 = 이탈)
 • 훅: 첫 3초에 멈추게 하는 한 방
-• 자막: 이모지1개 + 짧고 강렬한 감정 문구 (12자 이내)
-• image_query: Pixabay 검색용 2~3 영어 단어 (주제에 맞게)
+• 자막: 이모지1개 + 짧고 강렬한 감정 문구 (10자 이내, 이모지는 subtitle 필드 밖에 두지 말 것)
+• image_query: 해당 씬 내용을 가장 잘 표현하는 Pixabay 검색어 (한국어 2~3단어, 예: "아파트 화재", "소방차 진화", "주민 대피"처럼 구체적으로)
 
 JSON (이것만 출력):
 {
