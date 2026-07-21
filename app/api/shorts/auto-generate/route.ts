@@ -19,8 +19,16 @@ interface Scene {
 
 // ── FFmpeg 경로 ──────────────────────────────────────────────────────────────
 async function findFfmpeg(): Promise<string> {
-  const paths = ['ffmpeg','/usr/bin/ffmpeg','/usr/local/bin/ffmpeg','/tmp/ffmpeg',
-    '/volume1/@appstore/ffmpeg/bin/ffmpeg','/var/packages/ffmpeg6/target/bin/ffmpeg'];
+  // libx264 지원 바이너리 우선
+  const paths = [
+    '/volume1/homes/urjent/bin/ffmpeg',
+    '/var/packages/ffmpeg6/target/bin/ffmpeg',
+    '/volume1/@appstore/ffmpeg/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    '/tmp/ffmpeg',
+    '/usr/bin/ffmpeg',
+    'ffmpeg',
+  ];
   for (const p of paths) {
     const r = await nasExec(`${p} -version 2>&1 | head -1`);
     if (r.code === 0 && r.stdout.includes('ffmpeg')) return p;
