@@ -111,8 +111,9 @@ export async function POST(req: NextRequest) {
   const textContent = excerpt + linkLine;
 
   // Naver Cafe API는 multipart/form-data 형식 요구
+  // subject HTML 엔티티 변환 — 세부페이지에서 HTML 렌더링으로 정상 표시됨
   const cafeForm = new FormData();
-  cafeForm.append('subject', title);
+  cafeForm.append('subject', toHtmlEntities(title));
   cafeForm.append('content', toHtmlEntities(textContent));
   cafeForm.append('openYn', open_yn);
 

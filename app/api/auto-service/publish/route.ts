@@ -844,8 +844,9 @@ export async function POST(req: NextRequest) {
         if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
         // Naver Cafe API는 multipart/form-data 형식 요구 (URLSearchParams x-www-form-urlencoded 거부)
+        // subject도 HTML 엔티티 변환 — 세부페이지에서 HTML 렌더링으로 정상 표시됨
         const cafeForm = new FormData();
-        cafeForm.append('subject', cleanTitle);
+        cafeForm.append('subject', toHtmlEntities(cleanTitle));
         cafeForm.append('content', toHtmlEntities(cafeContent));
         cafeForm.append('openYn', naver_cafe_open_yn);
 
