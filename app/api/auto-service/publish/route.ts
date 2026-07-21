@@ -859,13 +859,16 @@ export async function POST(req: NextRequest) {
         });
 
         const cafeRawText = await cafeRes.text();
-        let cafeData: { message?: { result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
+        let cafeData: { message?: { '@service'?: string; result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
         try { cafeData = JSON.parse(cafeRawText); } catch {}
 
         const naverErrCode = cafeData.message?.result?.code || cafeData.errorCode;
         const naverErrMsg = cafeData.message?.result?.message || cafeData.errorMessage;
+        // Naver 403: result 없이 message만 오는 경우 (앱 권한 미등록)
+        const naverService = cafeData.message?.['@service'];
+        const hasNaverError = !cafeRes.ok || (naverErrCode && naverErrCode !== '0');
 
-        if (cafeRes.ok && !naverErrCode) {
+        if (cafeRes.ok && !hasNaverError) {
           const cafeArticleId = cafeData.message?.result?.articleId;
           const cafeSlug = (conn.cafe_url as string | null) || (conn.club_id as string);
           const cafeUrl = cafeArticleId ? `https://cafe.naver.com/${cafeSlug}/articles/${cafeArticleId}` : undefined;
@@ -883,7 +886,8 @@ export async function POST(req: NextRequest) {
           } catch {}
           results.naver_cafe = { success: true, url: cafeUrl };
         } else {
-          results.naver_cafe = { success: false, error: `카페 발행 실패 (HTTP ${cafeRes.status}) [${naverErrCode || '?'}] ${naverErrMsg || cafeRawText.slice(0, 300)}`.trim() };
+          const errDetail = naverErrMsg || (naverService ? `서비스(${naverService}) 접근 거부 — developers.naver.com 앱에서 카페 API 권한 확인 필요` : cafeRawText.slice(0, 200));
+          results.naver_cafe = { success: false, error: `카페 발행 실패 (HTTP ${cafeRes.status}) [${naverErrCode || '권한없음'}] ${errDetail}`.trim() };
         }
       } else {
         results.naver_cafe = { success: false, error: '카페 연결 없음 또는 club_id 미설정' };
