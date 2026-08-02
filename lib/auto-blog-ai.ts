@@ -160,17 +160,14 @@ function replaceEnglishWords(text: string): string {
   }).join('\n');
 }
 
+// 2026-08 기준 활성 무료 모델 (삭제된 모델: qwen3-next-80b, meta-llama/llama-3.3-70b, hermes-3-llama-405b)
 const OPENROUTER_MODELS = [
-  'moonshotai/kimi-k2.6:free',              // 한국어 강함, 262K ctx
-  'openrouter/free',                         // 자동 최적 무료 모델 선택
-  'qwen/qwen3-next-80b-a3b-instruct:free',  // Qwen3 인스트럭트, 한국어 우수
-  'qwen/qwen3-coder:free',                  // Qwen3 480B A35B, 1M ctx
-  'z-ai/glm-4.5-air:free',                 // GLM 4.5, 한국어/중국어 강함
-  'nvidia/nemotron-3-ultra-550b-a55b:free', // 550B, 1M ctx
-  'nvidia/nemotron-3-super-120b-a12b:free', // 120B, 1M ctx
+  'openrouter/free',                         // 자동 최적 무료 모델 선택 (항상 최우선)
+  'nvidia/nemotron-3-ultra-550b-a55b:free', // 550B, 1M ctx — 안정적
   'openai/gpt-oss-120b:free',              // OpenAI OSS 120B
-  'nousresearch/hermes-3-llama-3.1-405b:free', // 405B
-  'meta-llama/llama-3.3-70b-instruct:free', // Llama 70B
+  'nvidia/nemotron-3-super-120b-a12b:free', // 120B, 1M ctx
+  'moonshotai/kimi-k2.6:free',              // 한국어 강함, 262K ctx
+  'z-ai/glm-4.5-air:free',                 // GLM 4.5
   'google/gemma-4-31b-it:free',             // Gemma 4 31B, 262K ctx
   'openai/gpt-oss-20b:free',               // OpenAI OSS 20B (빠름)
 ];
@@ -385,12 +382,12 @@ export async function generateText(
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
     // 폴백 순서: 검증된 중간 크기 모델만 (전체 순회 금지 — 300s maxDuration 초과 방지)
     const OLLAMA_FALLBACKS = [
-      // Ollama Cloud 활성 모델 기준 (2026-07 / 한국어 안정성 우선)
+      // Ollama Cloud 활성 모델 기준 (2026-08 / 한국어 안정성 우선)
       'mistral-large-3', 'nemotron-3-super',
       'deepseek-v4-flash', 'nemotron-3-ultra', 'gpt-oss',
       'qwen3.5', 'gemma4', 'nemotron-3-nano',
-      // 중국어 출력 위험 → 후순위
-      'minimax-m3', 'glm-5.2', 'kimi-k2.6', 'kimi-k2.5',
+      // 중국어 출력 위험 → 후순위 (kimi-k2.7 신규 추가)
+      'kimi-k2.7-code', 'minimax-m3', 'glm-5.2', 'kimi-k2.6',
     ];
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
