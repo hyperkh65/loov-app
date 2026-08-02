@@ -207,7 +207,8 @@ async function getOllamaCloudModels(apiKey: string): Promise<string[]> {
     });
     if (!res.ok) return GENERIC_FALLBACKS;
     const data = await res.json() as { models?: Array<{ name: string }> };
-    const models = (data.models ?? []).map((m: { name: string }) => m.name.split(':')[0]).filter(Boolean);
+    // 전체 이름 보존 (kimi-k2.6:cloud, gpt-oss:120b-cloud 등 — split 금지)
+    const models = (data.models ?? []).map((m: { name: string }) => m.name).filter(Boolean);
     if (models.length === 0) return GENERIC_FALLBACKS;
     _ollamaModelCache = { key: apiKey, models, ts: now };
     return models;
