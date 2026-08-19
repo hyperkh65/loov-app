@@ -1,28 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import iconv from 'iconv-lite';
-
-// 제목: EUC-KR 퍼센트인코딩 — Naver Cafe 목록/세부 모두 정상 표시
-function toEucKrEncoded(text: string): string {
-  const buf = iconv.encode(text, 'euc-kr');
-  const unreserved = /[A-Za-z0-9\-_.~]/;
-  let result = '';
-  for (const byte of buf) {
-    const ch = String.fromCharCode(byte);
-    result += unreserved.test(ch) ? ch : `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
-  }
-  return result;
-}
-
-// 본문: HTML 엔티티 변환 (본문은 HTML 렌더링되므로 엔티티 디코딩됨)
-function toHtmlEntities(text: string): string {
-  let result = '';
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? char.charCodeAt(0);
-    result += code > 0x7E ? `&#${code};` : char;
-  }
-  return result;
-}
 
 export const maxDuration = 30;
 
@@ -112,34 +89,15 @@ export async function POST(req: NextRequest) {
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
 
-  let serverIp = '';
-  try {
-    const r = await fetch('https://api.ipify.org?format=json');
-    const d = await r.json() as { ip?: string };
-    serverIp = d.ip || '';
-  } catch {}
-
-  const boundary = `----NaverCafeBoundary${Date.now()}`;
-  const titleBytes = iconv.encode(title, 'euc-kr');
-  const contentBytes = Buffer.from(toHtmlEntities(textContent), 'utf-8');
-  const nl = Buffer.from('\r\n');
-  const body = Buffer.concat([
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="subject"\r\nContent-Type: text/plain; charset=euc-kr\r\n\r\n`),
-    titleBytes, nl,
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n`),
-    contentBytes, nl,
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="openYn"\r\n\r\n`),
-    Buffer.from(open_yn), nl,
-    Buffer.from(`--${boundary}--\r\n`),
-  ]);
+  const form = new FormData();
+  form.append('subject', title);
+  form.append('content', textContent);
+  form.append('openYn', open_yn);
 
   const res = await fetch(apiUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-    },
-    body,
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
   });
 
   const rawText = await res.text();
@@ -152,7 +110,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       error: `카페 발행 실패: HTTP ${res.status}${errCode ? ` | ${errCode}` : ''}${errDetail ? ` | ${errDetail}` : ` | ${rawText.slice(0, 300)}`}`,
       debug: {
-        server_ip: serverIp,
         token_prefix: accessToken.slice(0, 8),
         needs_refresh_fired: needsRefresh,
         club_id: conn.club_id,
