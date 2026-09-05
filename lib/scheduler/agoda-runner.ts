@@ -1,10 +1,41 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
+import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, AgodaAutoConfig } from './index';
 
 const AGODA_SITE_ID = (process.env.AGODA_SITE_ID || '1959217').trim();
 const AGODA_API_KEY = (process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30').trim();
+const DISCLOSURE = '이 포스팅은 아고다 제휴 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
+
+function getSection(text: string, tag: string, allTags: string[]): string {
+  const marker = `[[[${tag}]]]`;
+  const start = text.indexOf(marker);
+  if (start < 0) return '';
+  const from = start + marker.length;
+  let end = text.length;
+  for (const t of allTags) {
+    if (t === tag) continue;
+    const pos = text.indexOf(`[[[${t}]]]`, from);
+    if (pos >= 0 && pos < end) end = pos;
+  }
+  return text.slice(from, end).trim();
+}
+
+function stripMarkerArtifacts(s: string): string {
+  return s.replace(/\[\[\[[^\]]{0,40}\]\]\]/g, '').trim();
+}
+
+async function getSnsConnections(userId: string): Promise<Array<{ platform: string; platform_user_id: string; platform_username: string; access_token: string; is_active: boolean }>> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from('sns_connections')
+    .select('platform, platform_user_id, platform_username, access_token, is_active')
+    .eq('user_id', userId)
+    .eq('is_active', true);
+  return (data || []) as typeof data extends null ? [] : NonNullable<typeof data>;
+}
 
 interface AgodaHotel {
   hotelId: number;
@@ -83,7 +114,7 @@ async function publishToWordPress(wpUrl: string, username: string, password: str
   return d.link || '';
 }
 
-export async function runAgodaAuto(schedule: Schedule): Promise<{ city: string; url: string; title: string }> {
+export async function runAgodaAuto(schedule: Schedule): Promise<{ city: string; url: string; title: string; results: string[] }> {
   const config = schedule.config as AgodaAutoConfig;
   if (!config.cities?.length) throw new Error('도시가 설정되지 않았습니다');
 
@@ -123,26 +154,25 @@ SEO 제목 (60자 이내)
 [[[CONTENT]]]
 HTML 본문 전체`;
 
-  const aiText = await generateText(prompt, 'qwen3');
+  // 실측(coupang-runner에서 이미 확인됨): qwen3 기본값이 Ollama 무료 모델로 라우팅되면서
+  // 마커 형식을 아예 무시하고 엉뚱한 텍스트를 내놓는 경우가 있어 빈 본문으로 전체 실행이
+  // 실패하는 사고가 났다 — claude로 기본값을 올려 같은 문제를 방지.
+  const aiText = await generateText(prompt, config.ai_model || 'claude');
+  const BLOG_TAGS = ['TITLE', 'META', 'LABELS', 'CONTENT'];
 
-  const getSection = (tag: string) => {
-    const ALL = ['TITLE', 'META', 'LABELS', 'CONTENT'];
-    const marker = `[[[${tag}]]]`;
-    const start = aiText.indexOf(marker);
-    if (start < 0) return '';
-    const from = start + marker.length;
-    let end = aiText.length;
-    for (const t of ALL) {
-      if (t === tag) continue;
-      const pos = aiText.indexOf(`[[[${t}]]]`, from);
-      if (pos >= 0 && pos < end) end = pos;
-    }
-    return aiText.slice(from, end).trim();
-  };
+  let title = stripMarkerArtifacts(getSection(aiText, 'TITLE', BLOG_TAGS) || '');
+  let content = getSection(aiText, 'CONTENT', BLOG_TAGS);
+  const labels = getSection(aiText, 'LABELS', BLOG_TAGS).split(',').map(s => s.trim()).filter(Boolean);
 
-  const title = getSection('TITLE') || `${city.name} 호텔 추천 TOP 5`;
-  const content = getSection('CONTENT');
-  const labels = getSection('LABELS').split(',').map(s => s.trim()).filter(Boolean);
+  // 마커를 AI가 안 지켰을 때 곧바로 실패시키지 않고, "첫 줄=제목, 나머지=본문"으로 복구
+  // 시도 — coupang-runner에서 실측으로 검증된 동일 폴백.
+  if (!content || title.length > 80 || /<[a-z]/i.test(title)) {
+    const lines = (title || aiText).split('\n').map(l => l.trim()).filter(Boolean);
+    title = stripMarkerArtifacts(lines[0] || `${city.name} 호텔 추천 TOP 5`);
+    content = lines.slice(1).join('\n') || content || aiText;
+  }
+  if (!title) title = `${city.name} 호텔 추천 TOP 5`;
+  content = stripMarkerArtifacts(content);
 
   if (!content) throw new Error('AI 블로그 생성 실패');
 
@@ -164,11 +194,82 @@ HTML 본문 전체`;
     publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content);
   }
 
+  // SNS 발행 — 블로그 발행 성공/실패와 무관하게 별도로 시도(부분 실패 허용)
+  const results: string[] = [];
+  const snsPlatforms = (config.sns_platforms || []).filter(p => ['threads', 'twitter', 'facebook', 'instagram'].includes(p));
+  const topHotel = top5[0];
+  if (snsPlatforms.length && topHotel) {
+    const TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
+    const snsPrompt = `너는 SNS 마케팅 전문가야. 아고다 제휴 호텔 추천을 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
+반드시 한국어로만 작성하고, 중국어·일본어 등 외국 문자 절대 사용 금지.
+
+도시: ${city.name}
+추천 호텔: ${topHotel.hotelName} — 리뷰 ${topHotel.reviewScore}/10, 1박 ${Math.round(topHotel.dailyRate).toLocaleString('ko-KR')}원${topHotel.discountPercentage > 0 ? ` (-${Math.round(topHotel.discountPercentage)}%)` : ''}
+여행 스타일: ${travelStyle}
+
+[플랫폼별 작성 규칙]
+- THREADS: 줄바꿈으로 리듬감. 2~4줄 짧은 문장. 이모지 1~2개. URL 없이 (댓글로 추가)
+- TWITTER: 한 방에 꽂히는 문장 + 해시태그 2~3개. 240자 이내. URL 없이 (댓글로 추가)
+- FACEBOOK: 친근하게 250자 내외. 이모지 적당히. URL 없이
+- INSTAGRAM: 감성적, 이모지 풍부, 해시태그 10개. URL 없이
+
+반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):
+[[[THREADS]]]
+스레드용 텍스트
+[[[TWITTER]]]
+트위터용 텍스트
+[[[FACEBOOK]]]
+페이스북용 텍스트
+[[[INSTAGRAM]]]
+인스타그램용 텍스트`;
+
+    try {
+      const aiText = await generateText(snsPrompt, 'qwen3');
+      const textMap: Record<string, string> = {
+        threads: getSection(aiText, 'THREADS', TAGS),
+        twitter: getSection(aiText, 'TWITTER', TAGS),
+        facebook: getSection(aiText, 'FACEBOOK', TAGS),
+        instagram: getSection(aiText, 'INSTAGRAM', TAGS),
+      };
+      const comment = `🔗 예약 링크: ${topHotel.landingURL}\n\n${DISCLOSURE}`;
+      const connections = await getSnsConnections(schedule.user_id);
+
+      for (const platform of snsPlatforms) {
+        const conns = connections.filter(c => c.platform === platform);
+        if (!conns.length) { results.push(`${platform}: 계정 미연결`); continue; }
+        const text = textMap[platform];
+        if (!text) { results.push(`${platform}: 텍스트 생성 실패`); continue; }
+
+        for (const conn of conns) {
+          const label = `${platform}(${conn.platform_username || conn.platform_user_id})`;
+          try {
+            const postResult = await postToPlatformWithMedia(
+              platform as Platform,
+              conn.access_token,
+              conn.platform_user_id,
+              text,
+              topHotel.imageURL ? [topHotel.imageURL] : undefined,
+            );
+            try {
+              await postCommentOnOwnPost(platform as Platform, conn.access_token, conn.platform_user_id, postResult.id, comment);
+            } catch { /* 댓글 실패 시 무시 */ }
+            results.push(`${label}: 발행 완료`);
+          } catch (err) {
+            results.push(`${label}: ${(err as Error).message?.slice(0, 50) || '실패'}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[agoda-runner] SNS 발행 실패:', err);
+      results.push(`sns: ${(err as Error).message?.slice(0, 80) || '실패'}`);
+    }
+  }
+
   // 도시 인덱스 업데이트
   if (config.city_mode === 'rotate') {
     const supabase = createAdminClient();
     await supabase.from('bossai_schedules').update({ keyword_index: (idx + 1) % config.cities.length }).eq('id', schedule.id);
   }
 
-  return { city: city.name, url: publishedUrl, title };
+  return { city: city.name, url: publishedUrl, title, results };
 }
