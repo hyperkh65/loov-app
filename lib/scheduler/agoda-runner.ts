@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { publishToWordPress, getWpCredentials } from './blog-runner';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, AgodaAutoConfig } from './index';
 
@@ -95,23 +96,52 @@ async function publishToBlogger(accessToken: string, blogId: string, title: stri
   return d.url || '';
 }
 
-async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
-  const supabase = createAdminClient();
-  const { data } = await supabase.from('wordpress_sites').select('site_url, wp_username, app_password').eq('id', siteId).single();
-  if (!data) throw new Error('등록된 WordPress 사이트를 찾을 수 없습니다');
-  return { url: data.site_url, username: data.wp_username, appPassword: data.app_password };
+/** 호텔 이미지·가격 카드 — AI 재량에 맡기지 않고 code가 실데이터(아고다 API)로 직접 그림.
+ * 실측 확인(2026-09-05): 발리 발행 결과 AI가 텍스트만 쓰고 이미지·가격을 전혀 안 넣은 사고가
+ * 나서, /api/agoda/generate 수동 경로에 이미 있던 이미지 카드 패턴을 자동 스케줄러에도 적용. */
+function buildHotelCard(h: AgodaHotel, formatPrice: (p: number) => string): string {
+  const stars = '⭐'.repeat(Math.round(h.starRating));
+  const discount = h.discountPercentage > 0
+    ? `<span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:13px;font-weight:bold;margin-left:8px">-${Math.round(h.discountPercentage)}%</span>`
+    : '';
+  const originalPrice = h.crossedOutRate > 0
+    ? `<span style="text-decoration:line-through;color:#999;font-size:13px;margin-right:6px">${formatPrice(h.crossedOutRate)}</span>`
+    : '';
+  return `
+<div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin:24px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+  ${h.imageURL ? `<img src="${h.imageURL}" alt="${h.hotelName}" style="width:100%;height:260px;object-fit:cover;display:block">` : ''}
+  <div style="padding:16px">
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <span style="font-size:14px">${stars}</span>
+      <span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:600">리뷰 ${h.reviewScore}/10</span>
+      <span style="color:#6b7280;font-size:12px">(${h.reviewCount.toLocaleString('ko-KR')}개)</span>
+    </div>
+    <div style="margin-bottom:14px">
+      ${originalPrice}
+      <span style="font-size:20px;font-weight:bold;color:#1f2937">1박 ${formatPrice(h.dailyRate)}</span>
+      ${discount}
+    </div>
+    <a href="${h.landingURL}" target="_blank" rel="nofollow sponsored noopener"
+      style="display:inline-block;background:#f97316;color:#fff;padding:10px 24px;border-radius:8px;font-weight:bold;text-decoration:none;font-size:14px">
+      아고다에서 예약하기 →
+    </a>
+  </div>
+</div>`;
 }
 
-async function publishToWordPress(wpUrl: string, username: string, password: string, title: string, content: string): Promise<string> {
-  const creds = Buffer.from(`${username}:${password}`).toString('base64');
-  const res = await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`, {
-    method: 'POST',
-    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, content, status: 'publish' }),
-  });
-  if (!res.ok) throw new Error(`WordPress API 오류 ${res.status}`);
-  const d = await res.json();
-  return d.link || '';
+/** 아고다 Sherpa 위젯(사용자가 직접 아고다 파트너 대시보드에서 발급받아 제공한 실제 코드) —
+ * 도시별 딜을 보여주는 다이나믹 배너. City 파라미터만 매 포스트마다 실제 도시 id로 교체.
+ * 우리 API 크레덴셜(AGODA_SITE_ID=1959217/AGODA_API_KEY)과 Cid·ApiKey가 일치하는 것만 사용 —
+ * 사용자가 같이 준 다른 두 개(Cid=1945810)는 이 계정과 안 맞아서(다른 사이트ID로 보임)
+ * 확인 전까지는 넣지 않음. */
+function buildAffiliateWidgetHtml(cityId: number, divSeed: string): string {
+  const divId = `adgshp${divSeed}`;
+  return `
+<div id="${divId}"></div>
+<script type="text/javascript" src="//cdn0.agoda.net/images/sherpa/js/init-dynamic_v8.min.js"></script>
+<script type="text/javascript">
+var stg = new Object(); stg.crt="5384551278740";stg.version="1.05"; stg.id=stg.name="${divId}"; stg.Width="300px"; stg.Height="300px";stg.RefKey="egGqIV7JzENp0+lIKc8n7A==";stg.AutoScrollSpeed=3000;stg.AutoScrollToggle=true;stg.SearchboxShow=false;stg.DiscountedOnly=false;stg.Layout="squaredynamic"; stg.Language="ko-kr";stg.ApiKey="${AGODA_API_KEY}";stg.Cid="${AGODA_SITE_ID}";  stg.City="${cityId}";stg.Currency="KRW";stg.OverideConf=false; new AgdDynamic('${divId}').initialize(stg);
+</script>`;
 }
 
 export async function runAgodaAuto(schedule: Schedule): Promise<{ city: string; url: string; title: string; results: string[] }> {
@@ -134,15 +164,15 @@ export async function runAgodaAuto(schedule: Schedule): Promise<{ city: string; 
 
   const prompt = `너는 여행 블로그 전문 작가야. "${city.name}" ${travelStyle} 여행자를 위한 호텔 추천 블로그 글을 써줘.
 
-[호텔 데이터]
+[호텔 데이터 — 순서대로 1번부터 ${top5.length}번]
 ${hotelList}
 
 작성 규칙:
 - 제목: "${city.name} 호텔 추천 TOP 5" 형식의 SEO 제목
-- 본문: 최소 1500자, HTML 형식(h2/h3/p/ul/a 사용)
-- 각 호텔마다 장점 2-3가지 + 아고다 예약 링크 포함
-- <a href="링크" target="_blank" rel="noopener noreferrer">호텔명</a> 형식으로 링크 삽입
-- 마지막에 "아고다에서 최저가 예약하기" CTA
+- 본문: 최소 1500자, HTML 형식(h2/h3/p/ul 사용, a 태그는 쓰지 마라 — 예약 링크는 코드가 자동으로 이미지·가격 카드로 삽입한다)
+- 각 호텔은 반드시 <h3 id="hotel-1">호텔명</h3> ~ <h3 id="hotel-${top5.length}">호텔명</h3> 형식으로 위 순서 그대로 소제목을 달고, 그 아래에 장점 2-3가지를 구체적인 여행 장면과 함께 서술(가격·평점 숫자는 언급하지 마라 — 카드에 이미 자동으로 표시된다)
+- 예약 링크나 이미지 태그를 직접 넣지 마라(자동 삽입됨)
+- 마지막 문단은 짧은 마무리 인사
 
 반드시 아래 구분자 형식으로만 출력:
 [[[TITLE]]]
@@ -176,6 +206,31 @@ HTML 본문 전체`;
 
   if (!content) throw new Error('AI 블로그 생성 실패');
 
+  // 호텔별 이미지·가격 카드 삽입 — id="hotel-N" 우선, 없으면 호텔명 매칭, 그래도 안 되면
+  // 마지막에 통째로 이어붙임(카드 자체가 절대 누락되지 않게).
+  const formatPrice = (p: number) => p > 0 ? `${Math.round(p).toLocaleString('ko-KR')}원` : '';
+  top5.forEach((h, i) => {
+    const card = buildHotelCard(h, formatPrice);
+    const idPattern = new RegExp(`(<h3[^>]*id=["']hotel-${i + 1}["'][^>]*>.*?</h3>)`, 'i');
+    if (idPattern.test(content)) {
+      content = content.replace(idPattern, `$1${card}`);
+      return;
+    }
+    const namePattern = new RegExp(`(<h3[^>]*>${h.hotelName.slice(0, 15).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^<]*</h3>)`, 'i');
+    if (namePattern.test(content)) {
+      content = content.replace(namePattern, `$1${card}`);
+      return;
+    }
+    content += card;
+  });
+
+  // 아고다 제휴 배너 위젯(사용자 파트너 대시보드에서 발급된 실제 코드) — 글 도입부 뒤에 1개.
+  const widget = buildAffiliateWidgetHtml(city.id, String(Date.now()).slice(-9));
+  const firstH2End = content.indexOf('</h2>');
+  content = firstH2End !== -1
+    ? content.slice(0, firstH2End + 5) + widget + content.slice(firstH2End + 5)
+    : widget + content;
+
   let publishedUrl = '';
   if (config.blog_platform === 'blogger') {
     const token = await getBloggerTokenAdmin(schedule.user_id);
@@ -191,7 +246,7 @@ HTML 본문 전체`;
     } else {
       throw new Error('WordPress 사이트를 선택해주세요');
     }
-    publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content);
+    publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content, top5[0]?.imageURL || null);
   }
 
   // SNS 발행 — 블로그 발행 성공/실패와 무관하게 별도로 시도(부분 실패 허용)
