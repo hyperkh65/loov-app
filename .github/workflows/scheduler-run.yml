@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 9
     steps:
+      - name: 디버그 - URL 확인 (다른 크론은 성공하는데 이것만 실패해서 원인 확인용, 시크릿값은 GH가 자동 마스킹함)
+        run: echo "target=${{ secrets.APP_URL }}/api/scheduler/run"
       - name: 스케줄러 실행 (/api/scheduler/run)
         run: |
           curl -s -X POST "${{ secrets.APP_URL }}/api/scheduler/run" \
