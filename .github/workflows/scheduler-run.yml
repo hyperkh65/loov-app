@@ -13,6 +13,6 @@ jobs:
       - name: 스케줄러 실행 (/api/scheduler/run)
         run: |
           curl -s -X POST "${{ secrets.APP_URL }}/api/scheduler/run" \
-            -H "x-internal-key: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json" \
             --max-time 300 --fail-with-body
