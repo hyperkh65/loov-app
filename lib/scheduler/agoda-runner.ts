@@ -286,7 +286,10 @@ HTML 본문 전체`;
         facebook: getSection(aiText, 'FACEBOOK', TAGS),
         instagram: getSection(aiText, 'INSTAGRAM', TAGS),
       };
-      const comment = `🔗 예약 링크: ${topHotel.landingURL}\n\n${DISCLOSURE}`;
+      // 링크는 아고다 직링크가 아니라 블로그 글 주소로 — 후기·가격비교·다른 호텔 정보까지
+      // 다 보여준 뒤 그 안의 예약 버튼으로 넘어가게 유도.
+      const linkUrl = publishedUrl || topHotel.landingURL;
+      const comment = `🔗 자세히 보기: ${linkUrl}\n\n${DISCLOSURE}`;
       const connections = await getSnsConnections(schedule.user_id);
 
       for (const platform of snsPlatforms) {
