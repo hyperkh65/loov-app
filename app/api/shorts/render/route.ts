@@ -4,6 +4,7 @@ import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 import { readFileAsBuffer } from '@/lib/nas-sftp';
 import { uploadToR2 } from '@/lib/r2-storage';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { findFfmpeg, findKoreanFont, escapeDrawtext } from '@/lib/shorts/nas-ffmpeg';
 
 export const maxDuration = 300;
 
@@ -13,20 +14,6 @@ interface RenderScene {
   image_url: string;
   duration: number;
   subtitle: string;
-}
-
-// ffmpeg 경로 탐색
-async function findFfmpeg(): Promise<string> {
-  const paths = [
-    'ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/tmp/ffmpeg',
-    '/volume1/@appstore/ffmpeg/bin/ffmpeg', '/var/packages/ffmpeg6/target/bin/ffmpeg',
-    '/var/packages/MediaServer/target/bin/ffmpeg',
-  ];
-  for (const p of paths) {
-    const r = await nasExec(`${p} -version 2>&1 | head -1`);
-    if (r.code === 0 && r.stdout.includes('ffmpeg')) return p;
-  }
-  throw new Error('NAS에 FFmpeg가 없습니다. /dashboard/shorts의 환경 체크를 먼저 실행하세요.');
 }
 
 // msedge-tts로 TTS 생성 → R2 업로드 → 공개 URL 반환
@@ -54,19 +41,6 @@ async function generateTtsUrl(text: string, voice: string, rate: number): Promis
   const buf = Buffer.concat(chunks);
   const key = `shorts-tts/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.mp3`;
   return uploadToR2(key, buf, 'audio/mpeg');
-}
-
-// 한국어 폰트 경로 탐색
-async function findKoreanFont(): Promise<string | null> {
-  const r = await nasExec(
-    'find /usr/share/fonts /volume1 /opt/share/fonts -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|korean|KR$" | head -1'
-  );
-  return r.stdout.trim() || null;
-}
-
-// 자막 텍스트를 drawtext-safe 문자열로 변환
-function escapeDrawtext(s: string): string {
-  return s.replace(/[\\':]/g, '\\$&').replace(/\n/g, ' ');
 }
 
 // Ken Burns 효과별 FFmpeg vf 문자열 생성

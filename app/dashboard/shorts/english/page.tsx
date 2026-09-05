@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  CLIP_COUNT, CLIP_DURATION_SEC, validatePatternClips,
+  type PatternScript, type PatternClip, type VariationLevel, type TextPosition,
+} from '@/lib/shorts/pattern-types';
 
 interface Clip {
   id: string;
@@ -19,6 +23,21 @@ interface EditClip extends Clip {
   showSubtitle: boolean;
   subtitleStyle: 'white' | 'yellow' | 'neon';
   note: string;
+}
+
+interface PatternClipMeta {
+  targetChunk: string;
+  variationLevel: VariationLevel;
+  duration: number;
+  textPosition: TextPosition;
+  contextLabel: string;
+}
+
+function defaultLevelForIndex(i: number, total: number): VariationLevel {
+  if (i === 0) return 0;
+  if (i === 1) return 1;
+  if (i === total - 1 && total >= 5) return 3; // 마지막 한 클립만 level 3(자연스러운 변형) 후보
+  return 2;
 }
 
 const SUB_STYLES = {
@@ -43,6 +62,16 @@ export default function EnglishShortsPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [exportingCard, setExportingCard] = useState(false);
   const [tab, setTab] = useState<'search' | 'list'>('search');
+
+  // ── 패턴 반복 포맷(같은 표현을 여러 화자/상황으로 반복) ────────────────────
+  const [patternExpression, setPatternExpression] = useState('');
+  const [patternScript, setPatternScript] = useState<PatternScript | null>(null);
+  const [patternAnalyzing, setPatternAnalyzing] = useState(false);
+  const [patternError, setPatternError] = useState('');
+  const [patternMeta, setPatternMeta] = useState<Record<string, PatternClipMeta>>({});
+  const [patternRendering, setPatternRendering] = useState(false);
+  const [patternProgress, setPatternProgress] = useState('');
+  const [patternVideoUrl, setPatternVideoUrl] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const dragIdx = useRef<number | null>(null);
@@ -146,6 +175,111 @@ export default function EnglishShortsPage() {
   const translateAll = async () => {
     for (let i = 0; i < editList.length; i++) {
       if (!editList[i].koText && editList[i].enText) await translateKo(i);
+    }
+  };
+
+  // ── 패턴 반복 포맷: AI 스크립트 분석 ─────────────────────────────────────
+  const analyzePattern = async () => {
+    const expr = patternExpression.trim() || query.trim();
+    if (!expr) { setPatternError('타겟 표현을 입력하세요'); return; }
+    setPatternAnalyzing(true);
+    setPatternError('');
+    setPatternVideoUrl(null);
+    try {
+      const res = await fetch('/api/shorts/pattern/analyze', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetExpression: expr }),
+      });
+      const data = await res.json() as { script?: PatternScript; error?: string };
+      if (!res.ok || !data.script) { setPatternError(data.error || '분석 실패'); return; }
+      setPatternScript(data.script);
+      setPatternExpression(expr);
+      // 이미 편집목록에 있는 클립들에 기본 메타(타겟청크/레벨/길이/위치)를 채워준다.
+      setPatternMeta(prev => {
+        const next = { ...prev };
+        editList.forEach((ec, i) => {
+          if (next[ec.id]) return;
+          next[ec.id] = {
+            targetChunk: data.script!.targetChunk,
+            variationLevel: defaultLevelForIndex(i, editList.length),
+            duration: CLIP_DURATION_SEC.default,
+            textPosition: 'lower',
+            contextLabel: data.script!.contextSuggestions[i] || ec.show || '',
+          };
+        });
+        return next;
+      });
+    } catch (e) {
+      setPatternError(String(e));
+    } finally {
+      setPatternAnalyzing(false);
+    }
+  };
+
+  const updatePatternMeta = (id: string, patch: Partial<PatternClipMeta>) =>
+    setPatternMeta(prev => ({
+      ...prev,
+      [id]: { ...(prev[id] || {
+        targetChunk: patternScript?.targetChunk || '',
+        variationLevel: 0 as VariationLevel,
+        duration: CLIP_DURATION_SEC.default,
+        textPosition: 'lower' as TextPosition,
+        contextLabel: '',
+      }), ...patch },
+    }));
+
+  const buildPatternClips = (): PatternClip[] =>
+    editList.map(ec => {
+      const meta = patternMeta[ec.id];
+      return {
+        id: ec.id,
+        videoUrl: ec.videoUrl,
+        sentence: ec.enText,
+        targetChunk: meta?.targetChunk || patternScript?.targetChunk || '',
+        variationLevel: meta?.variationLevel ?? 0,
+        contextLabel: meta?.contextLabel || '',
+        startAt: ec.startAt,
+        duration: meta?.duration ?? CLIP_DURATION_SEC.default,
+        textPosition: meta?.textPosition ?? 'lower',
+      };
+    });
+
+  const patternValidationError = patternScript ? validatePatternClips(buildPatternClips()) : '편집 목록에 클립을 추가하고 AI 분석을 실행하세요';
+
+  const renderPattern = async () => {
+    if (!patternScript || patternValidationError) return;
+    setPatternRendering(true);
+    setPatternProgress('시작 중...');
+    setPatternVideoUrl(null);
+    try {
+      const res = await fetch('/api/shorts/pattern/render', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script: patternScript, clips: buildPatternClips() }),
+      });
+      if (!res.body) throw new Error('스트림 없음');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const chunks = buf.split('\n');
+        buf = chunks.pop() || '';
+        for (const line of chunks) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const d = JSON.parse(line.slice(5).trim());
+            if (d.type === 'progress') setPatternProgress(d.message);
+            if (d.type === 'done') { setPatternVideoUrl(d.url); setPatternProgress('완료!'); }
+            if (d.type === 'error') { setPatternError(d.message); setPatternProgress(''); }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      setPatternError(String(e));
+    } finally {
+      setPatternRendering(false);
     }
   };
 
@@ -499,6 +633,48 @@ export default function EnglishShortsPage() {
                   placeholder="사용 상황, 뉘앙스 등..."
                   className="w-full text-xs text-white bg-transparent resize-none focus:outline-none placeholder:text-gray-600" />
               </div>
+
+              {/* 패턴 포맷 메타 — AI 분석 후에만 표시 */}
+              {patternScript && (
+                <div className="bg-lime-950/20 border border-lime-900/40 rounded-lg p-2 space-y-1.5">
+                  <div className="text-[9px] text-lime-400 font-bold">🎯 패턴 포맷</div>
+                  <input
+                    value={patternMeta[activeClip.id]?.targetChunk ?? patternScript.targetChunk}
+                    onChange={e => updatePatternMeta(activeClip.id, { targetChunk: e.target.value })}
+                    placeholder="타겟 청크 (문장 안 핵심 구절)"
+                    className="w-full text-xs text-lime-200 bg-gray-900/60 rounded px-2 py-1 focus:outline-none" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-gray-400 shrink-0">변형레벨</span>
+                    <div className="flex gap-1 flex-1">
+                      {([0, 1, 2, 3] as VariationLevel[]).map(lv => (
+                        <button key={lv}
+                          onClick={() => updatePatternMeta(activeClip.id, { variationLevel: lv })}
+                          className={`flex-1 py-0.5 rounded text-[10px] font-bold border ${(patternMeta[activeClip.id]?.variationLevel ?? 0) === lv ? 'border-lime-500 bg-lime-900/40 text-lime-300' : 'border-gray-700 bg-gray-800 text-gray-400'}`}>
+                          {lv}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-gray-400 shrink-0">길이(초)</span>
+                    <input type="number" step={0.1} min={CLIP_DURATION_SEC.min} max={CLIP_DURATION_SEC.max}
+                      value={patternMeta[activeClip.id]?.duration ?? CLIP_DURATION_SEC.default}
+                      onChange={e => updatePatternMeta(activeClip.id, { duration: Number(e.target.value) })}
+                      className="w-16 text-xs text-white bg-gray-900/60 rounded px-2 py-0.5 focus:outline-none" />
+                    <span className="text-[9px] text-gray-400 shrink-0 ml-2">자막 위치</span>
+                    <div className="flex gap-1">
+                      {(['upper', 'lower'] as TextPosition[]).map(pos => (
+                        <button key={pos}
+                          onClick={() => updatePatternMeta(activeClip.id, { textPosition: pos })}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold border ${(patternMeta[activeClip.id]?.textPosition ?? 'lower') === pos ? 'border-lime-500 bg-lime-900/40 text-lime-300' : 'border-gray-700 bg-gray-800 text-gray-400'}`}>
+                          {pos === 'upper' ? '상단' : '하단'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-gray-500">얼굴을 가리면 자막 위치를 바꾸세요(자동 회피는 지원 안 함).</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -554,6 +730,62 @@ export default function EnglishShortsPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* 패턴 반복 포맷 — 같은 표현을 여러 화자/상황으로 반복하는 최종 렌더 */}
+          <div className="border-t border-gray-800 p-3 space-y-2 shrink-0">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-lime-400">🎯 패턴 포맷 (여러 화자 반복)</span>
+              <span className="text-[9px] text-gray-500">{CLIP_COUNT.min}~{CLIP_COUNT.max}클립</span>
+            </div>
+            <div className="flex gap-1.5">
+              <input
+                value={patternExpression}
+                onChange={e => setPatternExpression(e.target.value)}
+                placeholder={query || '타겟 표현 (예: I couldn\'t help laughing)'}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-lime-500" />
+              <button onClick={analyzePattern} disabled={patternAnalyzing}
+                className="shrink-0 px-3 py-1.5 bg-lime-700/80 hover:bg-lime-600 rounded-lg text-xs font-bold disabled:opacity-50">
+                {patternAnalyzing ? '분석 중...' : 'AI 분석'}
+              </button>
+            </div>
+
+            {patternError && <p className="text-[10px] text-red-400">{patternError}</p>}
+
+            {patternScript && (
+              <div className="bg-gray-800/60 rounded-lg p-2 space-y-1 text-[10px]">
+                <p className="text-gray-300"><span className="text-lime-400 font-bold">의미</span> {patternScript.coreMeaning}</p>
+                <p className="text-gray-300"><span className="text-lime-400 font-bold">패턴</span> {patternScript.microGrammarPattern}</p>
+                <p className="text-gray-300"><span className="text-lime-400 font-bold">Recall</span> {patternScript.koreanRecallPrompt}</p>
+                {patternScript.variations.length > 0 && (
+                  <details className="text-gray-400">
+                    <summary className="cursor-pointer text-gray-500">AI가 제안한 변형 문장 {patternScript.variations.length}개 (참고용 — 실제 클립 검색에 활용)</summary>
+                    <ul className="mt-1 space-y-0.5 pl-3 list-disc">
+                      {patternScript.variations.map((v, i) => (
+                        <li key={i}>Lv{v.level} · {v.sentence}{v.context ? ` (${v.context})` : ''}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {patternScript && patternValidationError && (
+              <p className="text-[10px] text-amber-400">⚠ {patternValidationError}</p>
+            )}
+
+            <button onClick={renderPattern} disabled={!patternScript || !!patternValidationError || patternRendering}
+              className="w-full py-2 bg-lime-600 hover:bg-lime-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-xl text-xs font-bold transition-colors">
+              {patternRendering ? (patternProgress || '렌더링 중...') : '🎬 패턴 쇼츠 렌더'}
+            </button>
+
+            {patternVideoUrl && (
+              <div className="space-y-1.5">
+                <video src={patternVideoUrl} controls className="w-full rounded-lg" />
+                <a href={patternVideoUrl} target="_blank" rel="noreferrer"
+                  className="block text-center text-[10px] text-lime-400 hover:text-lime-300">R2에서 새 탭으로 열기 / 다운로드</a>
+              </div>
+            )}
           </div>
 
           {editList.length > 1 && (
