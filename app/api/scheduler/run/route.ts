@@ -42,7 +42,9 @@ async function executeSchedule(schedule: Schedule) {
   const logId = logRow?.id;
 
   try {
-    // 최근 발행된 쿠팡 상품 ID 조회 (중복 방지)
+    // 발행된 쿠팡 상품 ID 조회 (중복 방지) — "최근 10개"만 피하면 11번째 실행부터 같은
+    // 상품이 다시 나올 수 있어서(실측 확인), 사실상 전체 이력을 봐서 완전히 재사용을 막는다.
+    // 2시간 주기 기준 1년치도 5000개면 넉넉히 커버됨.
     let recentProductIds: string[] = [];
     if (schedule.type === 'coupang_auto') {
       const { data: recentLogs } = await supabase
@@ -51,7 +53,7 @@ async function executeSchedule(schedule: Schedule) {
         .eq('schedule_id', schedule.id)
         .eq('status', 'success')
         .order('started_at', { ascending: false })
-        .limit(10);
+        .limit(5000);
       recentProductIds = (recentLogs || [])
         .map(l => (l.result as { productId?: string })?.productId)
         .filter(Boolean) as string[];

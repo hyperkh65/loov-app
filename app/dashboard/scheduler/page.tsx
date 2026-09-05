@@ -98,6 +98,7 @@ const defaultForm = () => ({
   coupang: {
     product_source: 'goldbox' as 'goldbox' | 'keyword', search_keywords: [] as string[],
     sns_platforms: ['threads'] as string[], min_discount: 0,
+    publish_targets: ['sns'] as ('sns' | 'wordpress')[], wp_site_id: '', ai_model: 'claude',
   } as CoupangAutoConfig,
   agoda: {
     cities: [] as AgodaAutoConfig['cities'], city_mode: 'rotate' as 'rotate' | 'random',
@@ -467,7 +468,7 @@ export default function SchedulerPage() {
               </div>
 
               {/* ── WordPress 사이트 선택 (등록된 사이트) ───────────── */}
-              {(['blog_auto', 'agoda_auto', 'shorts_auto'].includes(form.type)) && (
+              {(['blog_auto', 'agoda_auto', 'shorts_auto', 'coupang_auto'].includes(form.type)) && (
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
                   <p className="text-[11px] font-semibold text-gray-700">🌐 등록된 WordPress 사이트</p>
                   {!wpRegSitesLoaded ? (
@@ -477,12 +478,12 @@ export default function SchedulerPage() {
                   ) : (
                     <div className="space-y-1.5 max-h-36 overflow-y-auto">
                       {wpRegSites.map(site => {
-                        const field = form.type === 'blog_auto' ? 'blog' : form.type === 'agoda_auto' ? 'agoda' : 'shorts';
+                        const field = form.type === 'blog_auto' ? 'blog' : form.type === 'agoda_auto' ? 'agoda' : form.type === 'coupang_auto' ? 'coupang' : 'shorts';
                         const cfg = (form as Record<string, unknown>)[field] as { blog_platform?: string; wp_site_id?: string };
-                        const isSelected = cfg?.blog_platform === 'wordpress' && cfg?.wp_site_id === site.id;
+                        const isSelected = field === 'coupang' ? cfg?.wp_site_id === site.id : (cfg?.blog_platform === 'wordpress' && cfg?.wp_site_id === site.id);
                         return (
                           <button key={site.id} onClick={() => {
-                            setForm(f => ({ ...f, [field]: { ...(f as Record<string, unknown>)[field] as object, blog_platform: 'wordpress', wp_site_id: site.id } }));
+                            setForm(f => ({ ...f, [field]: { ...(f as Record<string, unknown>)[field] as object, ...(field === 'coupang' ? {} : { blog_platform: 'wordpress' }), wp_site_id: site.id } }));
                           }} className={`w-full text-left px-3 py-2 rounded-lg border text-[11px] transition-colors ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300 hover:bg-blue-50'}`}>
                             <div className="font-medium">{site.site_name}</div>
                             <div className={`truncate ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>{site.site_url}</div>
@@ -598,13 +599,40 @@ export default function SchedulerPage() {
                     </div>
                   )}
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-1 block">발행 SNS</label>
-                    <div className="flex flex-wrap gap-2">
-                      {SNS_PLATFORMS.map(p => (
-                        <button key={p.id} onClick={() => setForm(f => ({ ...f, coupang: { ...f.coupang, sns_platforms: f.coupang.sns_platforms.includes(p.id) ? f.coupang.sns_platforms.filter(x => x !== p.id) : [...f.coupang.sns_platforms, p.id] } }))} className={`px-3 py-1.5 text-sm rounded-xl border transition-colors ${form.coupang.sns_platforms.includes(p.id) ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600'}`}>{p.label}</button>
-                      ))}
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">발행 대상</label>
+                    <div className="flex gap-2">
+                      {([['sns', '📱 SNS'], ['wordpress', '🌐 워드프레스']] as const).map(([v, l]) => {
+                        const targets: ('sns' | 'wordpress')[] = form.coupang.publish_targets?.length ? form.coupang.publish_targets : ['sns'];
+                        const active = targets.includes(v);
+                        return (
+                          <button key={v} onClick={() => setForm(f => {
+                            const cur: ('sns' | 'wordpress')[] = f.coupang.publish_targets?.length ? f.coupang.publish_targets : ['sns'];
+                            const next: ('sns' | 'wordpress')[] = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];
+                            return { ...f, coupang: { ...f.coupang, publish_targets: next.length ? next : ['sns'] } };
+                          })} className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${active ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600'}`}>{l}</button>
+                        );
+                      })}
                     </div>
                   </div>
+                  {(form.coupang.publish_targets || ['sns']).includes('sns') && (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">발행 SNS</label>
+                      <div className="flex flex-wrap gap-2">
+                        {SNS_PLATFORMS.map(p => (
+                          <button key={p.id} onClick={() => setForm(f => ({ ...f, coupang: { ...f.coupang, sns_platforms: f.coupang.sns_platforms.includes(p.id) ? f.coupang.sns_platforms.filter(x => x !== p.id) : [...f.coupang.sns_platforms, p.id] } }))} className={`px-3 py-1.5 text-sm rounded-xl border transition-colors ${form.coupang.sns_platforms.includes(p.id) ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600'}`}>{p.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(form.coupang.publish_targets || []).includes('wordpress') && (
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      {form.coupang.wp_site_id
+                        ? <p className="text-[11px] text-emerald-700">✓ {wpRegSites.find(s => s.id === form.coupang.wp_site_id)?.site_name || '사이트 선택됨'} — 위에서 사이트를 선택하면 자동 연결됩니다</p>
+                        : <p className="text-[11px] text-orange-600">위에서 등록된 WordPress 사이트를 선택하세요</p>
+                      }
+                      <p className="text-[10px] text-gray-400 mt-1">실사용 리뷰를 스크래핑할 수 있으면 인용하고, 못 하면(쿠팡 봇 차단 등) 없는 리뷰를 지어내지 않고 상품 정보 기반으로만 씁니다.</p>
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs font-semibold text-gray-600 mb-1 block">최소 할인율 (%)</label>
                     <input type="number" min={0} max={90} value={form.coupang.min_discount || 0} onChange={e => setForm(f => ({ ...f, coupang: { ...f.coupang, min_discount: parseInt(e.target.value) || 0 } }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
