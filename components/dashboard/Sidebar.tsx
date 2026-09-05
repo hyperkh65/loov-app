@@ -119,6 +119,8 @@ const NAV_GROUPS = [
     label: '제휴 엔진',
     items: [
       { href: '/dashboard/affiliate-engine',          icon: '🧭', label: '대시보드' },
+      { href: '/dashboard/affiliate-engine/discover', icon: '🔎', label: '발굴' },
+      { href: '/dashboard/affiliate-engine/products', icon: '📦', label: '상품' },
       { href: '/dashboard/affiliate-engine/sources',  icon: '🔌', label: '소스 레지스트리' },
     ],
   },
