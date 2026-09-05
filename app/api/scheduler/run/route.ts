@@ -78,7 +78,7 @@ async function executeSchedule(schedule: Schedule) {
       case 'agoda_auto': {
         const r = await runAgodaAuto(schedule);
         result = r;
-        summary = `${r.city} 호텔 블로그 발행 완료: ${r.title}`;
+        summary = `${r.city} 호텔 블로그 발행 완료: ${r.title}${r.results.length ? ` / ${r.results.join(', ')}` : ''}`;
         break;
       }
       case 'shorts_auto': {

@@ -98,6 +98,7 @@ export interface AgodaAutoConfig {
   wp_app_password?: string;
   travel_style?: string;
   sns_platforms?: string[];
+  ai_model?: string;
 }
 
 export interface ShortsAutoConfig {

@@ -691,6 +691,15 @@ export default function SchedulerPage() {
                       }
                     </div>
                   )}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 mb-1 block">SNS 동시 발행 (선택)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {SNS_PLATFORMS.map(p => (
+                        <button key={p.id} onClick={() => setForm(f => ({ ...f, agoda: { ...f.agoda, sns_platforms: (f.agoda.sns_platforms || []).includes(p.id) ? (f.agoda.sns_platforms || []).filter(x => x !== p.id) : [...(f.agoda.sns_platforms || []), p.id] } }))} className={`px-3 py-1.5 text-sm rounded-xl border transition-colors ${(form.agoda.sns_platforms || []).includes(p.id) ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200 text-gray-600'}`}>{p.label}</button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">선택 시 연결된 해당 SNS 계정 전체에 1등 추천 호텔로 자동 발행됩니다.</p>
+                  </div>
                 </div>
               )}
 
