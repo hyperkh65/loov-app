@@ -43,7 +43,7 @@ async function publishToBlogger(accessToken: string, blogId: string, title: stri
   return data.url || data.id || '';
 }
 
-async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null): Promise<string> {
+export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish'): Promise<string> {
   const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
   const apiUrl = `${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
 
@@ -74,7 +74,7 @@ async function publishToWordPress(wpUrl: string, username: string, appPassword: 
     } catch { /* featured image optional */ }
   }
 
-  const body: Record<string, unknown> = { title, content, status: 'publish' };
+  const body: Record<string, unknown> = { title, content, status };
   if (featuredMediaId) body.featured_media = featuredMediaId;
 
   const res = await fetch(apiUrl, {
@@ -90,7 +90,7 @@ async function publishToWordPress(wpUrl: string, username: string, appPassword: 
   return data.link || '';
 }
 
-async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
+export async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from('wordpress_sites')

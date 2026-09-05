@@ -53,6 +53,10 @@ export interface CoupangAutoConfig {
   search_keywords?: string[];
   sns_platforms: string[];
   min_discount?: number;
+  // 워드프레스 발행(신규) — 미지정 시 기존처럼 SNS만 발행(하위호환)
+  publish_targets?: ('sns' | 'wordpress')[];
+  wp_site_id?: string;
+  ai_model?: string;
 }
 
 export interface Schedule {
