@@ -116,6 +116,13 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: '제휴 엔진',
+    items: [
+      { href: '/dashboard/affiliate-engine',          icon: '🧭', label: '대시보드' },
+      { href: '/dashboard/affiliate-engine/sources',  icon: '🔌', label: '소스 레지스트리' },
+    ],
+  },
+  {
     label: '자동화',
     items: [
       { href: '/dashboard/x-collect',  icon: '🐦', label: 'X 수집 / SNS 발행' },
