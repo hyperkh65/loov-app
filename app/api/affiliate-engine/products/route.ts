@@ -33,6 +33,19 @@ export async function GET(req: NextRequest) {
   const scoreByProduct = new Map<string, unknown>();
   for (const s of scores || []) if (!scoreByProduct.has(s.product_id)) scoreByProduct.set(s.product_id, s);
 
-  const merged = products.map(p => ({ ...p, match: matchByProduct.get(p.id) || null, score: scoreByProduct.get(p.id) || null }));
+  const { data: scripts } = await supabase
+    .from('affiliate_scripts')
+    .select('product_id, hook_text, full_script, created_at')
+    .in('product_id', productIds)
+    .order('created_at', { ascending: false });
+  const scriptByProduct = new Map<string, unknown>();
+  for (const s of scripts || []) if (!scriptByProduct.has(s.product_id)) scriptByProduct.set(s.product_id, s);
+
+  const merged = products.map(p => ({
+    ...p,
+    match: matchByProduct.get(p.id) || null,
+    score: scoreByProduct.get(p.id) || null,
+    script: scriptByProduct.get(p.id) || null,
+  }));
   return NextResponse.json(merged);
 }
