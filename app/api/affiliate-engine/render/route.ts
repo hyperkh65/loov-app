@@ -26,7 +26,6 @@ async function runRenderInBackground(params: {
   scriptId: string; variantLabel: string;
 }) {
   const admin = createAdminClient();
-  console.error('[affiliate-engine/render] 백그라운드 함수 진입:', params.projectId);
 
   try {
     const result = await renderShortsVideo(params.scenes, { title: params.title });

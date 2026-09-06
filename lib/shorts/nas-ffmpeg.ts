@@ -18,10 +18,15 @@ export async function findFfmpeg(): Promise<string> {
   throw new Error('NAS에 FFmpeg가 없습니다. /dashboard/shorts의 환경 체크를 먼저 실행하세요.');
 }
 
-/** 한글이 그려지는 폰트 파일의 절대경로(없으면 null — 호출자가 영문 폴백 처리). */
+/**
+ * 한글이 그려지는 폰트 파일의 절대경로(없으면 null — 호출자가 영문 폴백 처리).
+ * /volume1을 통째로 뒤지면(NAS 메인 스토리지, 데이터가 많으면 TB 단위) 2분
+ * 넘게 걸리는 게 실사용 중 확인돼 렌더링 전체를 막았음 — 폰트가 실제로 있을
+ * 법한 경로로 좁히고, timeout으로 한 번 더 안전장치를 둔다.
+ */
 export async function findKoreanFont(): Promise<string | null> {
   const r = await nasExec(
-    'find /usr/share/fonts /volume1 /opt/share/fonts -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|korean|KR$" | head -1'
+    'timeout 8 find /usr/share/fonts /opt/share/fonts /volume1/@appstore -maxdepth 6 -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|korean|KR$" | head -1'
   );
   return r.stdout.trim() || null;
 }
