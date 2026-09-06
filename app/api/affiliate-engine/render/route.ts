@@ -14,7 +14,7 @@
  * 계속 진행, 완료되면 DB 상태만 갱신. 프론트는 폴링으로 완료 확인.
  * Body: { script_id: string }
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { renderShortsVideo } from '@/lib/shorts/render-core';
 
@@ -94,8 +94,11 @@ export async function POST(req: NextRequest) {
   }).select().single();
   if (projectErr || !project) return NextResponse.json({ error: projectErr?.message || '프로젝트 생성 실패' }, { status: 500 });
 
-  // fire-and-forget: 응답은 즉시 반환하고, 실제 렌더링은 백그라운드에서 계속 진행.
-  void runRenderInBackground({
+  // 응답은 즉시 반환하고, 실제 렌더링은 응답 이후에도 계속 진행 — 그냥
+  // await 없이 호출(void)하면 Next.js가 응답 전송 후 요청 컨텍스트를 정리하며
+  // 이 fire-and-forget 작업이 이어지지 않을 수 있어(실사용 중 확인됨: mkdir조차
+  // 실행 안 됨) 정확히 이 용도로 만들어진 after()로 감싼다.
+  after(() => runRenderInBackground({
     projectId: project.id,
     userId: user.id,
     productId: script.product_id,
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest) {
     title: structure.title,
     scriptId,
     variantLabel: script.variant_label,
-  });
+  }));
 
   return NextResponse.json({ ok: true, project_id: project.id, status: 'CREATING' });
 }
