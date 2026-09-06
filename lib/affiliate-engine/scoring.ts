@@ -59,6 +59,7 @@ function buildPrompt(input: {
   features: string[]; problemSolved: string | null; useCase: string | null;
 }): string {
   return `다음 쇼핑몰 상품을 숏폼 영상 콘텐츠 소재로서 평가해서 JSON으로만 응답하세요. 0-100 점수로 채점하세요.
+"explanation" 필드는 반드시 한국어로만 작성하세요 (영어·중국어·일본어 절대 금지).
 
 상품명: ${input.productName}
 브랜드: ${input.brand || '미상'}
