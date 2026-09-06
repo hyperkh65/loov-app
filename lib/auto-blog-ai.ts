@@ -383,11 +383,13 @@ export async function generateText(
     // 폴백 순서: 검증된 중간 크기 모델만 (전체 순회 금지 — 300s maxDuration 초과 방지)
     const OLLAMA_FALLBACKS = [
       // Ollama Cloud 활성 모델 기준 (2026-08 / 한국어 안정성 우선)
-      'mistral-large-3', 'nemotron-3-super',
+      'nemotron-3-super',
       'deepseek-v4-flash', 'nemotron-3-ultra', 'gpt-oss',
       'qwen3.5', 'gemma4', 'nemotron-3-nano',
-      // 중국어 출력 위험 → 후순위 (kimi-k2.7 신규 추가)
-      'kimi-k2.7-code', 'minimax-m3', 'glm-5.2', 'kimi-k2.6',
+      // 외국어 혼입 위험 → 후순위 (mistral은 유럽어, kimi/minimax/glm은 중국어 섞여나오는 게
+      // 실사용 중 실제로 확인됨 — replaceEnglishWords/removeEuropeanWords 사전에 없는
+      // 단어는 그대로 새어나감)
+      'mistral-large-3', 'kimi-k2.7-code', 'minimax-m3', 'glm-5.2', 'kimi-k2.6',
     ];
     // 개별 호출은 80s 타임아웃이 있지만 모델을 6개까지 순차 시도하면 480s까지
     // 걸릴 수 있어 maxDuration(300s)을 넘긴다 — 전체 예산을 100s로 캡핑해서

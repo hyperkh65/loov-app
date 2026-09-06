@@ -254,7 +254,7 @@ export function parseAiOutput(raw: string) {
   const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
 
   const extract = (tag: string) => {
-    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?=====[A-Za-z0-9]|$)`, 'i');
+    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?===[A-Za-z0-9]|$)`, 'i');
     const m = cleaned.match(re);
     return m ? m[1].trim() : '';
   };
@@ -353,7 +353,7 @@ function buildHtmlFromSections(raw: string, title: string): string {
 
   // 도입부
   const introRaw = (() => {
-    const m = raw.match(/===INTRO===\s*([\s\S]*?)(?=====[A-Z])/i);
+    const m = raw.match(/===INTRO===\s*([\s\S]*?)(?===[A-Z])/i);
     return m ? m[1].trim() : '';
   })();
   if (introRaw) {
@@ -387,7 +387,7 @@ function buildHtmlFromSections(raw: string, title: string): string {
 
   // FAQ
   const faqRaw = (() => {
-    const m = raw.match(/===FAQ===\s*([\s\S]*?)(?=====[A-Z]|$)/i);
+    const m = raw.match(/===FAQ===\s*([\s\S]*?)(?===[A-Z]|$)/i);
     return m ? m[1].trim() : '';
   })();
   if (faqRaw) {
