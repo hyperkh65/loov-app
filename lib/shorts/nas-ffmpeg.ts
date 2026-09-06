@@ -5,17 +5,24 @@
 import { nasExec } from '@/lib/nas-ssh';
 
 const FFMPEG_PATHS = [
-  'ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/tmp/ffmpeg',
+  '/volume1/homes/urjent/bin/ffmpeg', 'ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg',
   '/volume1/@appstore/ffmpeg/bin/ffmpeg', '/var/packages/ffmpeg6/target/bin/ffmpeg',
   '/var/packages/MediaServer/target/bin/ffmpeg',
 ];
 
+/**
+ * Synology 기본 /usr/bin/ffmpeg는 libx264/aac 인코더가 아예 빠진 축소 빌드라
+ * "-version"만으로는 실제로 쓸 수 있는지 알 수 없음 - 렌더링이 매번
+ * "Unrecognized option 'preset'"로 조용히 실패하던 진짜 원인이었음(2>/dev/null로
+ * 가려짐). libx264 인코더 존재 여부까지 확인해야 진짜 사용 가능한 ffmpeg를 고름.
+ * /tmp는 noexec로 마운트돼 있어 다운로드해도 실행 불가 - 실행 가능한 홈 디렉토리에 설치.
+ */
 export async function findFfmpeg(): Promise<string> {
   for (const p of FFMPEG_PATHS) {
-    const r = await nasExec(`${p} -version 2>&1 | head -1`);
-    if (r.code === 0 && r.stdout.includes('ffmpeg')) return p;
+    const r = await nasExec(`${p} -hide_banner -encoders 2>&1 | grep -c libx264`);
+    if (r.code === 0 && parseInt(r.stdout.trim() || '0', 10) > 0) return p;
   }
-  throw new Error('NAS에 FFmpeg가 없습니다. /dashboard/shorts의 환경 체크를 먼저 실행하세요.');
+  throw new Error('NAS에 libx264 지원 FFmpeg가 없습니다. /dashboard/shorts의 환경 체크를 먼저 실행하세요.');
 }
 
 /**

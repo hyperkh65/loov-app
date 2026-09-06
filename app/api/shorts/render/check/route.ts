@@ -1,39 +1,16 @@
 import { NextResponse } from 'next/server';
 import { nasExec } from '@/lib/nas-ssh';
 import { createClient } from '@/lib/supabase-server';
-import { findKoreanFont } from '@/lib/shorts/nas-ffmpeg';
+import { findKoreanFont, findFfmpeg } from '@/lib/shorts/nas-ffmpeg';
 
 export const maxDuration = 60;
 
-// Synology NAS에서 ffmpeg 경로 탐색 순서
-const FFMPEG_PATHS = [
-  'ffmpeg',
-  '/usr/bin/ffmpeg',
-  '/usr/local/bin/ffmpeg',
-  '/volume1/@appstore/ffmpeg/bin/ffmpeg',
-  '/var/packages/ffmpeg6/target/bin/ffmpeg',
-  '/var/packages/MediaServer/target/bin/ffmpeg',
-  '/opt/bin/ffmpeg',
-  '/tmp/ffmpeg',
-];
-
-async function findFfmpeg(): Promise<string | null> {
-  for (const p of FFMPEG_PATHS) {
-    const r = await nasExec(`${p} -version 2>&1 | head -1`);
-    if (r.code === 0 && r.stdout.includes('ffmpeg')) return p;
-  }
-  return null;
-}
+// 실행 가능한 영구 설치 위치. /tmp는 noexec로 마운트돼 있어 다운로드해도
+// 실행 자체가 안 됨 - 이 경로가 findFfmpeg()의 FFMPEG_PATHS 1순위와 일치해야 함.
+const FFMPEG_INSTALL_PATH = '/volume1/homes/urjent/bin/ffmpeg';
 
 async function installFfmpeg(): Promise<{ ok: boolean; path?: string; error?: string }> {
-  // Synology Package Center 방식
-  const syno = await nasExec('synopkg install ffmpeg 2>&1 || synopkg install ffmpeg6 2>&1 || echo "synopkg failed"');
-  if (!syno.stdout.includes('failed')) {
-    const found = await findFfmpeg();
-    if (found) return { ok: true, path: found };
-  }
-
-  // 정적 바이너리 다운로드 (Linux ARM64 또는 x86_64)
+  // 정적 바이너리 다운로드 (Linux ARM64 또는 x86_64) - libx264/aac 포함된 완전판
   const arch = await nasExec('uname -m');
   const archStr = arch.stdout.trim();
   const url = archStr.includes('aarch64') || archStr.includes('arm')
@@ -41,15 +18,16 @@ async function installFfmpeg(): Promise<{ ok: boolean; path?: string; error?: st
     : 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz';
 
   const dl = await nasExec(
-    `mkdir -p /tmp/ffmpeg_dl && cd /tmp/ffmpeg_dl && ` +
+    `mkdir -p /volume1/homes/urjent/bin /tmp/ffmpeg_dl && cd /tmp/ffmpeg_dl && ` +
     `curl -L --max-time 120 "${url}" -o ffmpeg.tar.xz 2>&1 && ` +
     `tar -xJf ffmpeg.tar.xz --wildcards "*/ffmpeg" --strip-components=2 2>&1 && ` +
-    `chmod +x /tmp/ffmpeg_dl/ffmpeg && cp /tmp/ffmpeg_dl/ffmpeg /tmp/ffmpeg && ` +
-    `rm -rf /tmp/ffmpeg_dl && echo "ok"`
+    `cp /tmp/ffmpeg_dl/ffmpeg ${FFMPEG_INSTALL_PATH} && chmod +x ${FFMPEG_INSTALL_PATH} && ` +
+    `rm -rf /tmp/ffmpeg_dl && echo "ok"`,
+    3 * 60_000
   );
   if (dl.stdout.includes('ok')) {
-    const r = await nasExec('/tmp/ffmpeg -version 2>&1 | head -1');
-    if (r.code === 0 && r.stdout.includes('ffmpeg')) return { ok: true, path: '/tmp/ffmpeg' };
+    const found = await findFfmpeg().catch(() => null);
+    if (found) return { ok: true, path: found };
   }
 
   return { ok: false, error: dl.stderr || dl.stdout };
@@ -60,8 +38,8 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  // FFmpeg 확인
-  let ffmpegPath = await findFfmpeg();
+  // FFmpeg 확인 (libx264 인코더까지 있는지 검증)
+  let ffmpegPath: string | null = await findFfmpeg().catch(() => null);
   let installed = false;
 
   if (!ffmpegPath) {

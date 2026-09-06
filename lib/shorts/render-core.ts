@@ -143,10 +143,10 @@ export async function renderShortsVideo(scenes: RenderScene[], options: RenderOp
     }
 
     lines.push(
-      `${ffmpeg} -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
+      `${ffmpeg} -hide_banner -loglevel error -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
       `-vf "${vfStr}" ` +
       `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p ` +
-      `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4" 2>/dev/null`
+      `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4"`
     );
   }
 
@@ -154,9 +154,9 @@ export async function renderShortsVideo(scenes: RenderScene[], options: RenderOp
   lines.push(`printf '${filelistLines.join('\\n')}\\n' > "$DIR/filelist.txt"`);
 
   lines.push(
-    `${ffmpeg} -f concat -safe 0 -i "$DIR/filelist.txt" ` +
+    `${ffmpeg} -hide_banner -loglevel error -f concat -safe 0 -i "$DIR/filelist.txt" ` +
     `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p ` +
-    `-c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4" 2>/dev/null`
+    `-c:a aac -b:a 128k -movflags +faststart -y "$DIR/final.mp4"`
   );
   lines.push(`echo "RENDER_DONE"`);
 
