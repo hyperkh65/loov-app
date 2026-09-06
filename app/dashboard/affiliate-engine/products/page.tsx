@@ -25,7 +25,8 @@ interface Product {
   problem_solved: string | null;
   match: { match_confidence: string; affiliate_listings: Listing } | null;
   score: { opportunity_score: number; saturation_level: string; explanation: string } | null;
-  script: { hook_text: string; full_script: string } | null;
+  script: { id: string; hook_text: string; full_script: string } | null;
+  video_url: string | null;
 }
 
 const SATURATION_BADGE: Record<string, string> = {
@@ -52,6 +53,7 @@ export default function AffiliateProductsPage() {
   const [normalizing, setNormalizing] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [scriptingId, setScriptingId] = useState<string | null>(null);
+  const [renderingId, setRenderingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -105,6 +107,20 @@ export default function AffiliateProductsPage() {
     setScriptingId(null);
     setToast(data.ok ? '스크립트 생성 완료' : (data.error || '생성 실패'));
     setTimeout(() => setToast(null), 3000);
+    fetchProducts();
+  };
+
+  const handleRender = async (scriptId: string, productId: string) => {
+    setRenderingId(productId);
+    const res = await fetch('/api/affiliate-engine/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script_id: scriptId }),
+    });
+    const data = await res.json();
+    setRenderingId(null);
+    setToast(data.ok ? '영상 렌더링 완료' : (data.error || '렌더링 실패'));
+    setTimeout(() => setToast(null), 4000);
     fetchProducts();
   };
 
@@ -216,16 +232,30 @@ export default function AffiliateProductsPage() {
                   {p.script && (
                     <div className="mt-2 p-2 bg-teal-50 rounded-lg">
                       <p className="text-[11px] font-semibold text-teal-700">🎬 &ldquo;{p.script.hook_text}&rdquo;</p>
-                      <button
-                        onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
-                        className="text-[10px] text-teal-600 underline mt-1"
-                      >
-                        {expandedId === p.id ? '스크립트 접기' : '전체 스크립트 보기'}
-                      </button>
+                      <div className="flex items-center gap-3 mt-1">
+                        <button
+                          onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                          className="text-[10px] text-teal-600 underline"
+                        >
+                          {expandedId === p.id ? '스크립트 접기' : '전체 스크립트 보기'}
+                        </button>
+                        {!p.video_url && (
+                          <button
+                            onClick={() => handleRender(p.script!.id, p.id)}
+                            disabled={renderingId === p.id}
+                            className="text-[10px] font-semibold text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                          >
+                            {renderingId === p.id ? '🎥 렌더링중... (1~2분)' : '🎥 영상 렌더링'}
+                          </button>
+                        )}
+                      </div>
                       {expandedId === p.id && (
                         <p className="text-[11px] text-gray-600 mt-1.5 whitespace-pre-line">{p.script.full_script}</p>
                       )}
                     </div>
+                  )}
+                  {p.video_url && (
+                    <video src={p.video_url} controls className="mt-2 rounded-xl w-40" />
                   )}
                 </div>
               </div>
