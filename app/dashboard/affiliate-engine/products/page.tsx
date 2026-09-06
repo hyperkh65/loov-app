@@ -27,6 +27,7 @@ interface Product {
   score: { opportunity_score: number; saturation_level: string; explanation: string } | null;
   script: { id: string; hook_text: string; full_script: string } | null;
   video_url: string | null;
+  video_status: string | null;
 }
 
 const SATURATION_BADGE: Record<string, string> = {
@@ -64,6 +65,14 @@ export default function AffiliateProductsPage() {
   }, []);
 
   useEffect(() => { fetchProducts().finally(() => setLoading(false)); }, [fetchProducts]);
+
+  // 렌더링 중인 상품이 있으면 완료될 때까지 주기적으로 새로고침
+  useEffect(() => {
+    const hasCreating = products.some(p => p.video_status === 'CREATING');
+    if (!hasCreating) return;
+    const t = setInterval(() => fetchProducts(), 8000);
+    return () => clearInterval(t);
+  }, [products, fetchProducts]);
 
   const unnormalizedCount = products.filter(p => !p.brand).length;
   const unscoredCount = products.filter(p => p.brand && p.status === 'MATCHED' && !p.score).length;
@@ -119,7 +128,7 @@ export default function AffiliateProductsPage() {
     });
     const data = await res.json();
     setRenderingId(null);
-    setToast(data.ok ? '영상 렌더링 완료' : (data.error || '렌더링 실패'));
+    setToast(data.ok ? '렌더링 시작됨 (완료되면 자동으로 나타남)' : (data.error || '렌더링 시작 실패'));
     setTimeout(() => setToast(null), 4000);
     fetchProducts();
   };
@@ -239,14 +248,19 @@ export default function AffiliateProductsPage() {
                         >
                           {expandedId === p.id ? '스크립트 접기' : '전체 스크립트 보기'}
                         </button>
-                        {!p.video_url && (
+                        {!p.video_url && p.video_status !== 'CREATING' && (
                           <button
                             onClick={() => handleRender(p.script!.id, p.id)}
                             disabled={renderingId === p.id}
                             className="text-[10px] font-semibold text-purple-600 hover:text-purple-800 disabled:opacity-50"
                           >
-                            {renderingId === p.id ? '🎥 렌더링중... (1~2분)' : '🎥 영상 렌더링'}
+                            {renderingId === p.id
+                              ? '🎥 시작하는 중...'
+                              : p.video_status === 'REJECTED' ? '🎥 다시 렌더링' : '🎥 영상 렌더링'}
                           </button>
+                        )}
+                        {p.video_status === 'CREATING' && (
+                          <span className="text-[10px] font-semibold text-purple-500 animate-pulse">🎥 렌더링 중... (2~5분)</span>
                         )}
                       </div>
                       {expandedId === p.id && (

@@ -43,11 +43,19 @@ export async function GET(req: NextRequest) {
 
   const { data: projects } = await supabase
     .from('affiliate_video_projects')
-    .select('id, product_id')
-    .in('product_id', productIds);
+    .select('id, product_id, status')
+    .in('product_id', productIds)
+    .order('created_at', { ascending: false });
   const projectByProduct = new Map<string, string>();
+  const statusByProduct = new Map<string, string>();
   const projectIds: string[] = [];
-  for (const pr of projects || []) { projectByProduct.set(pr.product_id, pr.id); projectIds.push(pr.id); }
+  for (const pr of projects || []) {
+    if (!projectByProduct.has(pr.product_id)) {
+      projectByProduct.set(pr.product_id, pr.id);
+      statusByProduct.set(pr.product_id, pr.status);
+    }
+    projectIds.push(pr.id);
+  }
 
   const videoUrlByProduct = new Map<string, string>();
   if (projectIds.length) {
@@ -78,6 +86,7 @@ export async function GET(req: NextRequest) {
     score: scoreByProduct.get(p.id) || null,
     script: scriptByProduct.get(p.id) || null,
     video_url: videoUrlByProduct.get(p.id) || null,
+    video_status: statusByProduct.get(p.id) || null,
   }));
   return NextResponse.json(merged);
 }
