@@ -9,7 +9,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 
-export const maxDuration = 280;
+// self-hosted(Docker)라 maxDuration은 실제 제약이 아니지만 명시는 남겨둠.
+// 실제 렌더링(TTS 9개 + ffmpeg 합성)이 4~5분을 넘길 수 있어 넉넉히 잡음.
+export const maxDuration = 600;
 
 interface Scene { id: number; duration: number; narration: string; subtitle: string }
 
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest) {
       cookie: req.headers.get('cookie') || '',
     },
     body: JSON.stringify({ scenes: scenesWithImages, title: structure.title }),
-    signal: AbortSignal.timeout(270_000),
+    signal: AbortSignal.timeout(580_000),
   });
 
   if (!renderRes.body) return NextResponse.json({ error: '렌더링 응답 없음' }, { status: 500 });
