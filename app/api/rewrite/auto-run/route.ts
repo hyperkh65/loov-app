@@ -86,10 +86,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 3. 발행 대기열에서 하나 발행 시도 (간격 15분은 publish-next가 자체 체크)
+  let publishResult: unknown = null;
+  try {
+    const res = await fetch(`${BASE}/api/rewrite/publish-next`, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(60_000),
+    });
+    publishResult = await res.json();
+  } catch (e) {
+    publishResult = { ok: false, error: String(e) };
+  }
+
   return NextResponse.json({
     ok: true,
     sync: syncResult,
     processed: results.filter((r) => !('error' in r)).length,
     results,
+    publish: publishResult,
   });
 }

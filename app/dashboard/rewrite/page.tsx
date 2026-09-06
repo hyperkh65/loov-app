@@ -20,6 +20,7 @@ interface Article {
   source_account: string;
   source_id: string | null;
   representative_image_url: string | null;
+  published_urls: { wordpress?: string; sns?: Record<string, string> } | null;
   rewritten_title: string;
   rewritten_meta: string;
   rewritten_content: string;
@@ -633,6 +634,17 @@ function ArticleCard({
           )}
           {article.status === 'failed' && article.error_message && (
             <p className="text-xs text-red-500 mt-1 line-clamp-1">{article.error_message}</p>
+          )}
+          {article.published_urls?.wordpress && (
+            <a
+              href={article.published_urls.wordpress}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs text-green-600 hover:underline mt-0.5 block truncate"
+            >
+              ✅ 발행됨: {article.published_urls.wordpress}
+            </a>
           )}
         </button>
 
