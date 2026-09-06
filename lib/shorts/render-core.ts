@@ -8,7 +8,7 @@
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 import { readFileAsBuffer } from '@/lib/nas-sftp';
 import { uploadToR2 } from '@/lib/r2-storage';
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { generateEdgeTts } from '@/lib/edge-tts-client';
 import { findFfmpeg, findKoreanFont, escapeDrawtext } from '@/lib/shorts/nas-ffmpeg';
 
 export interface RenderScene {
@@ -34,31 +34,11 @@ export interface RenderResult {
   scenes: number;
 }
 
-// msedge-tts로 TTS 생성 → R2 업로드 → 공개 URL 반환
+// NAS 자체 호스팅 edge-tts-api로 TTS 생성 → R2 업로드 → 공개 URL 반환
 async function generateTtsUrl(text: string, voice: string, rate: number): Promise<string> {
-  const tts = new MsEdgeTTS();
-  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-
-  const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis"
-    xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="ko-KR">
-    <voice name="${voice}">
-      <prosody rate="${rate >= 0 ? '+' : ''}${rate}%">
-        ${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
-      </prosody>
-    </voice>
-  </speak>`;
-
-  const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('TTS 타임아웃')), 25000);
-    const { audioStream } = tts.toStream(ssml);
-    audioStream.on('data', (d: Buffer) => chunks.push(d));
-    audioStream.on('end', () => { clearTimeout(timeout); resolve(); });
-    audioStream.on('error', (e: Error) => { clearTimeout(timeout); reject(e); });
-  });
-  const buf = Buffer.concat(chunks);
+  const { audioBuffer } = await generateEdgeTts({ text, voice, rate });
   const key = `shorts-tts/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.mp3`;
-  return uploadToR2(key, buf, 'audio/mpeg');
+  return uploadToR2(key, audioBuffer, 'audio/mpeg');
 }
 
 // Ken Burns 효과별 FFmpeg vf 문자열 생성

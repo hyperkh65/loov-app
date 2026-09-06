@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { nasExec } from '@/lib/nas-ssh';
 import { createClient } from '@/lib/supabase-server';
+import { findKoreanFont } from '@/lib/shorts/nas-ffmpeg';
 
 export const maxDuration = 60;
 
@@ -71,14 +72,11 @@ export async function GET() {
     }
   }
 
-  // edge-tts (msedge-tts npm은 서버에서 직접 사용) - NAS가 아닌 Next.js 서버에서 실행
   // curl 가용성 확인 (이미지/오디오 다운로드용)
   const curlCheck = await nasExec('which curl && curl --version 2>&1 | head -1');
 
   // 한국어 폰트 탐색 (자막 오버레이용)
-  const fontCheck = await nasExec(
-    'find /usr/share/fonts /volume1 -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -i "nanum\\|gothic\\|korean\\|KR\\|kr" | head -1'
-  );
+  const koreanFontPath = await findKoreanFont();
 
   // Python3 (edge-tts CLI 백업용)
   const pythonCheck = await nasExec('python3 --version 2>&1');
@@ -99,12 +97,12 @@ export async function GET() {
     },
     curl: { available: curlCheck.code === 0 },
     font: {
-      available: !!fontCheck.stdout.trim(),
-      path: fontCheck.stdout.trim(),
+      available: !!koreanFontPath,
+      path: koreanFontPath || '',
     },
     tts: {
       nasEdgeTts: edgeTtsNas,
-      serverMsEdgeTts: true, // npm msedge-tts는 Next.js 서버에서 항상 사용 가능
+      serverEdgeTtsApi: true, // NAS 자체 호스팅 edge-tts-api(포트 5050)를 서버에서 항상 호출 가능
     },
     python: pythonCheck.stdout.trim(),
     ready: !!(ffmpegPath && curlCheck.code === 0),

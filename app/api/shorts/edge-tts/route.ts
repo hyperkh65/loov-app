@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { generateEdgeTts } from '@/lib/edge-tts-client';
 
 export const maxDuration = 30; // Vercel 함수 최대 실행 시간 (초)
 
@@ -31,79 +31,21 @@ export async function POST(req: NextRequest) {
       voice = 'ko-KR-SunHiNeural',
       rate = 0,    // -50 ~ +100 (%)
       pitch = 0,   // -50 ~ +50 (Hz)
-      style,
     } = await req.json() as {
       text: string; voice?: string; rate?: number; pitch?: number; style?: string;
     };
 
     if (!text?.trim()) return NextResponse.json({ error: '텍스트가 없습니다.' }, { status: 400 });
 
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-
-    // SSML로 rate/pitch/style 제어
-    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis"
-      xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="ko-KR">
-      <voice name="${voice}">
-        ${style ? `<mstts:express-as style="${style}">` : ''}
-        <prosody rate="${rate >= 0 ? '+' : ''}${rate}%" pitch="${pitch >= 0 ? '+' : ''}${pitch}Hz">
-          ${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
-        </prosody>
-        ${style ? '</mstts:express-as>' : ''}
-      </voice>
-    </speak>`;
-
-    // 오디오 스트림 + 단어 타임스탬프 동시 수집
-    const audioChunks: Buffer[] = [];
-    const words: { word: string; start: number; end: number }[] = [];
-
-    await new Promise<void>((resolve, reject) => {
-      // 25초 타임아웃
-      const timeout = setTimeout(() => reject(new Error('TTS 타임아웃 (25초)')), 25000);
-
-      const { audioStream, metadataStream } = tts.toStream(ssml);
-
-      if (metadataStream) {
-        metadataStream.on('data', (data: Buffer) => {
-          try {
-            const parsed = JSON.parse(data.toString()) as {
-              Metadata?: Array<{
-                Type: string;
-                Data: { text: { Text: string }; Offset: number; Duration: number };
-              }>;
-            };
-            for (const item of parsed.Metadata ?? []) {
-              if (item.Type === 'WordBoundary') {
-                words.push({
-                  word: item.Data.text.Text,
-                  start: Math.round(item.Data.Offset / 10000),
-                  end: Math.round((item.Data.Offset + item.Data.Duration) / 10000),
-                });
-              }
-            }
-          } catch { /* 파싱 실패 무시 */ }
-        });
-        metadataStream.on('error', (e: Error) => console.warn('metadata error:', e));
-      }
-
-      audioStream.on('data', (chunk: Buffer) => audioChunks.push(chunk));
-      audioStream.on('end', () => { clearTimeout(timeout); resolve(); });
-      audioStream.on('error', (e) => { clearTimeout(timeout); reject(e); });
-    });
-
-    const audioBuffer = Buffer.concat(audioChunks);
-
-    if (audioBuffer.length === 0) {
-      return NextResponse.json({ error: 'Edge-TTS: 오디오 데이터가 비어 있습니다. Vercel 서버리스 WebSocket 제한일 수 있습니다.' }, { status: 500 });
-    }
-
+    // ponytail: NAS 자체 호스팅 edge-tts-api는 rate/pitch만 지원, style(express-as)은
+    // 미지원 — 필요해지면 edge-tts-api 쪽에 SSML 옵션 추가
+    const { audioBuffer, words, duration } = await generateEdgeTts({ text, voice, rate, pitch });
     const base64 = audioBuffer.toString('base64');
-    const totalDuration = words.length > 0 ? words[words.length - 1].end : 0;
 
     return NextResponse.json({
       audio: `data:audio/mpeg;base64,${base64}`,
       words,
-      duration: totalDuration,
+      duration,
       voice,
       size: audioBuffer.length,
     });
