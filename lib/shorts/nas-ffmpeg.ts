@@ -33,7 +33,7 @@ export async function findFfmpeg(): Promise<string> {
  */
 export async function findKoreanFont(): Promise<string | null> {
   const r = await nasExec(
-    'timeout 8 find /usr/share/fonts /opt/share/fonts /volume1/@appstore -maxdepth 6 -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|korean|KR$" | head -1'
+    'timeout 8 find /volume1/homes/urjent/bin/fonts /usr/share/fonts /opt/share/fonts /volume1/@appstore -maxdepth 6 -name "*.ttf" -o -name "*.otf" 2>/dev/null | grep -iE "nanum|gothic|korean|KR$" | head -1'
   );
   return r.stdout.trim() || null;
 }
