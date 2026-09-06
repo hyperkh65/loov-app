@@ -14,8 +14,14 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { Agent } from 'undici';
 
 interface Scene { id: number; duration: number; narration: string; subtitle: string }
+
+// undici 기본 bodyTimeout(300s)이 SSE 스트림 중간(ffmpeg 합성 구간, 응답 없이
+// 몇 분씩 걸림)에 걸려 "BodyTimeoutError"로 끊기는 게 실제로 확인됨 — 이 내부
+// 호출 전용으로 넉넉하게 늘린 dispatcher를 사용한다.
+const longBodyTimeoutAgent = new Agent({ bodyTimeout: 0, headersTimeout: 0 });
 
 async function runRenderInBackground(params: {
   projectId: string; userId: string; productId: string;
@@ -34,6 +40,8 @@ async function runRenderInBackground(params: {
       headers: { 'Content-Type': 'application/json', cookie: params.cookie },
       body: JSON.stringify({ scenes: params.scenes, title: params.title }),
       signal: AbortSignal.timeout(580_000),
+      // @ts-expect-error - undici 전용 확장 옵션(dispatcher), 표준 fetch 타입엔 없음
+      dispatcher: longBodyTimeoutAgent,
     });
 
     if (!renderRes.body) throw new Error('렌더링 응답 없음');
