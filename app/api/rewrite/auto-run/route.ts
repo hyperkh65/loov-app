@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     Authorization: `Bearer ${cronSecret}`,
   };
 
-  // 1. Notion 동기화
+  // 1. Notion 동기화 + 소스 사이트 RSS 동기화
   let syncResult: { synced?: number; skipped?: number } = {};
   if (!skip_sync) {
     try {
@@ -51,6 +51,16 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       syncResult = { synced: 0, skipped: 0 };
       console.error('Notion sync 실패:', e);
+    }
+
+    try {
+      await fetch(`${BASE}/api/rewrite/sync-sites`, {
+        method: 'POST',
+        headers,
+        signal: AbortSignal.timeout(90_000),
+      });
+    } catch (e) {
+      console.error('사이트 RSS 동기화 실패:', e);
     }
   }
 

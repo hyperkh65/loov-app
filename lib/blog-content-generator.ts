@@ -40,7 +40,7 @@ export async function searchNaver(type: 'news' | 'blog', query: string) {
   try {
     const res = await fetch(
       `https://openapi.naver.com/v1/search/${type}.json?query=${encodeURIComponent(query)}&display=10&sort=date`,
-      { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
+      { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret }, signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) return [];
     const data = await res.json();
@@ -114,17 +114,29 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
 }
 
 // ── 프롬프트 빌더 ──────────────────────────────────────────────────────────
-export function buildBlogPrompt(keyword: string, newsItems: {title:string;description:string}[], blogItems: {title:string;description:string}[]): string {
+export function buildBlogPrompt(
+  keyword: string,
+  newsItems: {title:string;description:string}[],
+  blogItems: {title:string;description:string}[],
+  sourceArticle?: { title: string; content: string },
+): string {
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
   const sources = [
     ...newsItems.slice(0, 5).map((n, i) => `[뉴스${i+1}] ${n.title} — ${n.description}`),
     ...blogItems.slice(0, 5).map((b, i) => `[블로그${i+1}] ${b.title} — ${b.description}`),
   ].join('\n');
 
-  return `한국어 SEO 블로그 작가입니다. 아래 규칙대로 "${keyword}" 블로그 글을 작성하세요.
+  const intro = sourceArticle
+    ? `한국어 SEO 블로그 작가입니다. 아래 원문 기사를 리라이팅해 "${keyword}" 블로그 글을 작성하세요.`
+    : `한국어 SEO 블로그 작가입니다. 아래 규칙대로 "${keyword}" 블로그 글을 작성하세요.`;
+  const sourceBlock = sourceArticle
+    ? `\n원문 기사(리라이팅 대상 — 표절 금지, 사실·정보는 유지하되 문장은 완전히 새롭게 재구성):\n제목: ${sourceArticle.title}\n${sourceArticle.content.slice(0, 3000) || '(본문 없음 — 제목 기반으로 작성)'}\n`
+    : '';
+
+  return `${intro}
 
 오늘 날짜: ${today}
-참고자료:
+${sourceBlock}참고자료(다른 기사·블로그 — 맥락 보강용):
 ${sources || '(없음 — 전문 지식으로 작성)'}
 
 [규칙]

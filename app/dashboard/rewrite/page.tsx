@@ -18,6 +18,8 @@ interface Article {
   title: string;
   source_url: string;
   source_account: string;
+  source_id: string | null;
+  representative_image_url: string | null;
   rewritten_title: string;
   rewritten_meta: string;
   rewritten_content: string;
@@ -27,6 +29,15 @@ interface Article {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface SourceSite {
+  id: string;
+  name: string;
+  site_url: string;
+  feed_url: string | null;
+  is_active: boolean;
+  last_checked_at: string | null;
 }
 
 type FilterStatus = 'all' | Status;
@@ -54,6 +65,14 @@ export default function RewritePage() {
   const [addContent, setAddContent] = useState('');
   const [adding, setAdding] = useState(false);
 
+  // 소스 사이트 관리
+  const [sites, setSites] = useState<SourceSite[]>([]);
+  const [showSites, setShowSites] = useState(false);
+  const [siteName, setSiteName] = useState('');
+  const [siteUrl, setSiteUrl] = useState('');
+  const [addingSite, setAddingSite] = useState(false);
+  const [checkingSites, setCheckingSites] = useState(false);
+
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3500);
@@ -76,6 +95,63 @@ export default function RewritePage() {
   }, [filterStatus, filterAccount]);
 
   useEffect(() => { fetchArticles(); }, [fetchArticles]);
+
+  const fetchSites = useCallback(async () => {
+    const res = await fetch('/api/rewrite/sites');
+    const data = await res.json();
+    if (data.ok) setSites(data.data || []);
+  }, []);
+
+  useEffect(() => { fetchSites(); }, [fetchSites]);
+
+  const handleAddSite = async () => {
+    if (!siteName.trim() || !siteUrl.trim()) return;
+    setAddingSite(true);
+    const res = await fetch('/api/rewrite/sites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: siteName, site_url: siteUrl }),
+    });
+    const data = await res.json();
+    setAddingSite(false);
+    if (data.ok) {
+      showToast('사이트 등록 완료');
+      setSiteName(''); setSiteUrl('');
+      fetchSites();
+    } else {
+      showToast(data.error || '등록 실패 (RSS 피드를 못 찾았을 수 있음)', false);
+    }
+  };
+
+  const handleDeleteSite = async (id: string) => {
+    if (!confirm('이 사이트를 삭제할까요?')) return;
+    await fetch(`/api/rewrite/sites?id=${id}`, { method: 'DELETE' });
+    setSites((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const handleToggleSite = async (site: SourceSite) => {
+    const res = await fetch('/api/rewrite/sites', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: site.id, is_active: !site.is_active }),
+    });
+    const data = await res.json();
+    if (data.ok) setSites((prev) => prev.map((s) => (s.id === site.id ? data.data : s)));
+  };
+
+  const handleCheckSites = async () => {
+    setCheckingSites(true);
+    const res = await fetch('/api/rewrite/sync-sites', { method: 'POST' });
+    const data = await res.json();
+    setCheckingSites(false);
+    if (data.ok) {
+      showToast(`사이트 확인 완료 (새 글 ${data.newFound}개)`);
+      fetchArticles();
+      fetchSites();
+    } else {
+      showToast(data.error || '확인 실패', false);
+    }
+  };
 
   // 자동 새로고침 (리라이팅 중인 기사 있을 때)
   useEffect(() => {
@@ -238,6 +314,12 @@ export default function RewritePage() {
             {syncing ? '동기화중...' : 'Notion 동기화'}
           </button>
           <button
+            onClick={() => setShowSites((v) => !v)}
+            className="px-3 py-2 text-sm font-semibold bg-teal-50 text-teal-700 rounded-lg hover:bg-teal-100 transition-colors"
+          >
+            📡 소스 사이트 ({sites.length})
+          </button>
+          <button
             onClick={() => setShowAdd(true)}
             className="px-3 py-2 text-sm font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
           >
@@ -252,6 +334,66 @@ export default function RewritePage() {
           </button>
         </div>
       </div>
+
+      {/* 소스 사이트 관리 */}
+      {showSites && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-bold text-gray-900 text-sm">소스 사이트</h3>
+              <p className="text-xs text-gray-500 mt-0.5">등록한 사이트에 새 글이 올라오면 RSS로 감지해 자동 리라이팅합니다 (10분마다).</p>
+            </div>
+            <button
+              onClick={handleCheckSites}
+              disabled={checkingSites || sites.length === 0}
+              className="px-3 py-1.5 text-xs font-semibold bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors flex-shrink-0"
+            >
+              {checkingSites ? '확인중...' : '지금 확인'}
+            </button>
+          </div>
+
+          <div className="space-y-2 mb-3">
+            {sites.length === 0 && <p className="text-xs text-gray-400">등록된 사이트가 없습니다.</p>}
+            {sites.map((s) => (
+              <div key={s.id} className="flex items-center gap-2 text-sm p-2 bg-gray-50 rounded-lg">
+                <input type="checkbox" checked={s.is_active} onChange={() => handleToggleSite(s)} className="flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-gray-800 truncate">{s.name}</p>
+                  <p className="text-xs text-gray-400 truncate">{s.feed_url || s.site_url}</p>
+                </div>
+                {s.last_checked_at && (
+                  <span className="text-xs text-gray-400 flex-shrink-0">
+                    {new Date(s.last_checked_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+                <button onClick={() => handleDeleteSite(s.id)} className="text-gray-400 hover:text-red-500 text-xs flex-shrink-0">삭제</button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              placeholder="사이트 이름"
+              className="w-32 px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
+            />
+            <input
+              value={siteUrl}
+              onChange={(e) => setSiteUrl(e.target.value)}
+              placeholder="https://example.com"
+              className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
+            />
+            <button
+              onClick={handleAddSite}
+              disabled={addingSite}
+              className="px-3 py-1.5 text-sm font-semibold bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50 transition-colors flex-shrink-0"
+            >
+              {addingSite ? '등록중...' : '등록'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 통계 카드 */}
       <div className="grid grid-cols-5 gap-3 mb-6">
@@ -457,6 +599,14 @@ function ArticleCard({
     <div className="bg-white rounded-xl border border-gray-200 hover:border-indigo-200 transition-all shadow-sm">
       {/* 카드 헤더 */}
       <div className="flex items-start gap-3 p-4">
+        {article.representative_image_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={article.representative_image_url}
+            alt=""
+            className="w-14 h-14 rounded-lg object-cover flex-shrink-0 bg-gray-100"
+          />
+        )}
         <button onClick={onToggle} className="flex-1 text-left min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${meta.color}`}>
