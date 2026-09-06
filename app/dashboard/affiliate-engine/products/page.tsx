@@ -24,7 +24,16 @@ interface Product {
   features: string[] | null;
   problem_solved: string | null;
   match: { match_confidence: string; affiliate_listings: Listing } | null;
+  score: { opportunity_score: number; saturation_level: string; explanation: string } | null;
 }
+
+const SATURATION_BADGE: Record<string, string> = {
+  LOW: 'bg-emerald-100 text-emerald-700',
+  RISING: 'bg-teal-100 text-teal-700',
+  MEDIUM: 'bg-amber-100 text-amber-700',
+  HIGH: 'bg-orange-100 text-orange-700',
+  OVERUSED: 'bg-red-100 text-red-700',
+};
 
 const STATUS_BADGE: Record<string, string> = {
   DISCOVERED: 'bg-gray-100 text-gray-600',
@@ -40,6 +49,7 @@ export default function AffiliateProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [normalizing, setNormalizing] = useState(false);
+  const [scoring, setScoring] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const fetchProducts = useCallback(() => {
@@ -51,6 +61,7 @@ export default function AffiliateProductsPage() {
   useEffect(() => { fetchProducts().finally(() => setLoading(false)); }, [fetchProducts]);
 
   const unnormalizedCount = products.filter(p => !p.brand).length;
+  const unscoredCount = products.filter(p => p.brand && p.status === 'MATCHED' && !p.score).length;
 
   const handleNormalize = async () => {
     setNormalizing(true);
@@ -66,23 +77,48 @@ export default function AffiliateProductsPage() {
     fetchProducts();
   };
 
+  const handleScore = async () => {
+    setScoring(true);
+    const res = await fetch('/api/affiliate-engine/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 5 }),
+    });
+    const data = await res.json();
+    setScoring(false);
+    setToast(data.processed ? `${data.processed}건 점수 계산 완료` : '점수 계산할 상품 없음');
+    setTimeout(() => setToast(null), 3000);
+    fetchProducts();
+  };
+
+  const sortedProducts = [...products].sort((a, b) => (b.score?.opportunity_score ?? -1) - (a.score?.opportunity_score ?? -1));
+
   return (
     <div className="max-w-3xl mx-auto p-4 pb-24">
       {toast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-2 rounded-xl shadow-lg text-white text-sm font-medium bg-gray-800">{toast}</div>
       )}
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mb-1 gap-2">
         <h1 className="text-xl font-bold text-gray-900">📦 발굴된 상품</h1>
-        <button
-          onClick={handleNormalize}
-          disabled={normalizing || unnormalizedCount === 0}
-          className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-        >
-          {normalizing ? '정규화중...' : `🧠 정규화 실행 (${unnormalizedCount}개 대기)`}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleNormalize}
+            disabled={normalizing || unnormalizedCount === 0}
+            className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            {normalizing ? '정규화중...' : `🧠 정규화 (${unnormalizedCount})`}
+          </button>
+          <button
+            onClick={handleScore}
+            disabled={scoring || unscoredCount === 0}
+            className="px-3 py-1.5 text-xs font-semibold bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
+          >
+            {scoring ? '계산중...' : `🎯 점수 계산 (${unscoredCount})`}
+          </button>
+        </div>
       </div>
       <p className="text-xs text-gray-500 mb-4">
-        정규화된 상품 개념 목록. Phase 6(스코어링) 전까지는 바이럴/기회 점수 없이 발견 순서로만 나열됩니다.
+        정규화된 상품 개념 목록. 기회 점수가 높은 순으로 정렬됩니다.
       </p>
 
       {loading ? (
@@ -93,7 +129,7 @@ export default function AffiliateProductsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {products.map(p => {
+          {sortedProducts.map(p => {
             const listing = p.match?.affiliate_listings;
             return (
               <div key={p.id} className="bg-white border border-gray-200 rounded-2xl p-4 flex gap-3">
@@ -103,7 +139,14 @@ export default function AffiliateProductsPage() {
                   <div className="w-20 h-20 rounded-xl bg-gray-100 shrink-0" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-gray-900 text-sm truncate">{p.product_name}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="font-semibold text-gray-900 text-sm truncate">{p.product_name}</div>
+                    {p.score && (
+                      <span className="shrink-0 text-xs font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
+                        🎯 {p.score.opportunity_score}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[11px] text-gray-400 mt-0.5">
                     {p.brand ? `${p.brand} · ` : ''}{p.generic_product_type || p.category || '카테고리 없음'}
                   </div>
@@ -115,7 +158,9 @@ export default function AffiliateProductsPage() {
                       )}
                     </div>
                   )}
-                  {p.problem_solved && (
+                  {p.score?.explanation ? (
+                    <p className="text-[11px] text-gray-500 mt-1.5 line-clamp-2">🎯 {p.score.explanation}</p>
+                  ) : p.problem_solved && (
                     <p className="text-[11px] text-gray-500 mt-1.5 line-clamp-2">💡 {p.problem_solved}</p>
                   )}
                   {p.features && p.features.length > 0 && (
@@ -129,6 +174,11 @@ export default function AffiliateProductsPage() {
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[p.status] || 'bg-gray-100 text-gray-600'}`}>{p.status}</span>
                     {p.match && (
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">{p.match.match_confidence}</span>
+                    )}
+                    {p.score && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${SATURATION_BADGE[p.score.saturation_level] || 'bg-gray-100 text-gray-600'}`}>
+                        포화도 {p.score.saturation_level}
+                      </span>
                     )}
                   </div>
                   {listing?.affiliate_url && (

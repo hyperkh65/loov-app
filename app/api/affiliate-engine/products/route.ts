@@ -25,6 +25,14 @@ export async function GET(req: NextRequest) {
   const matchByProduct = new Map<string, unknown>();
   for (const m of matches || []) matchByProduct.set(m.product_id, m);
 
-  const merged = products.map(p => ({ ...p, match: matchByProduct.get(p.id) || null }));
+  const { data: scores } = await supabase
+    .from('affiliate_product_scores')
+    .select('product_id, opportunity_score, saturation_level, explanation')
+    .in('product_id', productIds)
+    .order('computed_at', { ascending: false });
+  const scoreByProduct = new Map<string, unknown>();
+  for (const s of scores || []) if (!scoreByProduct.has(s.product_id)) scoreByProduct.set(s.product_id, s);
+
+  const merged = products.map(p => ({ ...p, match: matchByProduct.get(p.id) || null, score: scoreByProduct.get(p.id) || null }));
   return NextResponse.json(merged);
 }
