@@ -37,7 +37,6 @@
     "mailparser": "^3.9.8",
     "mammoth": "^1.11.0",
     "mp4-muxer": "^5.2.2",
-    "msedge-tts": "^2.0.4",
     "next": "16.1.6",
     "nodemailer": "^8.0.7",
     "openai": "^6.33.0",
