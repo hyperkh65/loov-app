@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest) {
   const { id, ...fields } = await req.json().catch(() => ({})) as { id?: string; [k: string]: unknown };
   if (!id) return err('id 필요');
 
-  const allowed = ['name', 'site_url', 'feed_url', 'is_active'];
+  const allowed = ['name', 'site_url', 'feed_url', 'is_active', 'use_generated_thumbnail'];
   const updates: Record<string, unknown> = {};
   for (const k of allowed) if (k in fields) updates[k] = fields[k];
 
