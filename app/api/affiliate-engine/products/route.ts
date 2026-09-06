@@ -35,17 +35,49 @@ export async function GET(req: NextRequest) {
 
   const { data: scripts } = await supabase
     .from('affiliate_scripts')
-    .select('product_id, hook_text, full_script, created_at')
+    .select('id, product_id, hook_text, full_script, created_at')
     .in('product_id', productIds)
     .order('created_at', { ascending: false });
   const scriptByProduct = new Map<string, unknown>();
   for (const s of scripts || []) if (!scriptByProduct.has(s.product_id)) scriptByProduct.set(s.product_id, s);
+
+  const { data: projects } = await supabase
+    .from('affiliate_video_projects')
+    .select('id, product_id')
+    .in('product_id', productIds);
+  const projectByProduct = new Map<string, string>();
+  const projectIds: string[] = [];
+  for (const pr of projects || []) { projectByProduct.set(pr.product_id, pr.id); projectIds.push(pr.id); }
+
+  const videoUrlByProduct = new Map<string, string>();
+  if (projectIds.length) {
+    const { data: variants } = await supabase
+      .from('affiliate_video_variants')
+      .select('id, project_id')
+      .in('project_id', projectIds);
+    const variantIds = (variants || []).map(v => v.id);
+    const projectByVariant = new Map((variants || []).map(v => [v.id, v.project_id]));
+
+    if (variantIds.length) {
+      const { data: renders } = await supabase
+        .from('affiliate_renders')
+        .select('variant_id, public_url, status')
+        .in('variant_id', variantIds)
+        .eq('status', 'completed');
+      for (const r of renders || []) {
+        const projectId = projectByVariant.get(r.variant_id);
+        const productId = [...projectByProduct.entries()].find(([, pid]) => pid === projectId)?.[0];
+        if (productId && r.public_url) videoUrlByProduct.set(productId, r.public_url);
+      }
+    }
+  }
 
   const merged = products.map(p => ({
     ...p,
     match: matchByProduct.get(p.id) || null,
     score: scoreByProduct.get(p.id) || null,
     script: scriptByProduct.get(p.id) || null,
+    video_url: videoUrlByProduct.get(p.id) || null,
   }));
   return NextResponse.json(merged);
 }
