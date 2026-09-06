@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   let q = supabase
     .from('bossai_rewrite_articles')
-    .select('id,notion_page_id,title,source_url,source_account,source_id,representative_image_url,rewritten_title,rewritten_content,rewritten_meta,status,ai_model,word_count,error_message,created_at,updated_at')
+    .select('id,notion_page_id,title,source_url,source_account,source_id,representative_image_url,rewritten_title,rewritten_content,rewritten_meta,status,ai_model,word_count,error_message,published_urls,created_at,updated_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
