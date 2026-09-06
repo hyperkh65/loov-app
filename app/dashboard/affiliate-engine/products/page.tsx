@@ -25,6 +25,7 @@ interface Product {
   problem_solved: string | null;
   match: { match_confidence: string; affiliate_listings: Listing } | null;
   score: { opportunity_score: number; saturation_level: string; explanation: string } | null;
+  script: { hook_text: string; full_script: string } | null;
 }
 
 const SATURATION_BADGE: Record<string, string> = {
@@ -50,6 +51,8 @@ export default function AffiliateProductsPage() {
   const [loading, setLoading] = useState(true);
   const [normalizing, setNormalizing] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [scriptingId, setScriptingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const fetchProducts = useCallback(() => {
@@ -87,6 +90,20 @@ export default function AffiliateProductsPage() {
     const data = await res.json();
     setScoring(false);
     setToast(data.processed ? `${data.processed}건 점수 계산 완료` : '점수 계산할 상품 없음');
+    setTimeout(() => setToast(null), 3000);
+    fetchProducts();
+  };
+
+  const handleGenerateScript = async (productId: string) => {
+    setScriptingId(productId);
+    const res = await fetch('/api/affiliate-engine/script', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: productId }),
+    });
+    const data = await res.json();
+    setScriptingId(null);
+    setToast(data.ok ? '스크립트 생성 완료' : (data.error || '생성 실패'));
     setTimeout(() => setToast(null), 3000);
     fetchProducts();
   };
@@ -181,9 +198,34 @@ export default function AffiliateProductsPage() {
                       </span>
                     )}
                   </div>
-                  {listing?.affiliate_url && (
-                    <a href={listing.affiliate_url} target="_blank" rel="noopener noreferrer nofollow sponsored"
-                      className="inline-block mt-2 text-xs text-blue-500 font-semibold">제휴 링크 열기 →</a>
+                  <div className="flex items-center gap-3 mt-2">
+                    {listing?.affiliate_url && (
+                      <a href={listing.affiliate_url} target="_blank" rel="noopener noreferrer nofollow sponsored"
+                        className="text-xs text-blue-500 font-semibold">제휴 링크 열기 →</a>
+                    )}
+                    {p.score && !p.script && (
+                      <button
+                        onClick={() => handleGenerateScript(p.id)}
+                        disabled={scriptingId === p.id}
+                        className="text-xs font-semibold text-teal-600 hover:text-teal-800 disabled:opacity-50"
+                      >
+                        {scriptingId === p.id ? '스크립트 생성중...' : '🎬 스크립트 생성'}
+                      </button>
+                    )}
+                  </div>
+                  {p.script && (
+                    <div className="mt-2 p-2 bg-teal-50 rounded-lg">
+                      <p className="text-[11px] font-semibold text-teal-700">🎬 &ldquo;{p.script.hook_text}&rdquo;</p>
+                      <button
+                        onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                        className="text-[10px] text-teal-600 underline mt-1"
+                      >
+                        {expandedId === p.id ? '스크립트 접기' : '전체 스크립트 보기'}
+                      </button>
+                      {expandedId === p.id && (
+                        <p className="text-[11px] text-gray-600 mt-1.5 whitespace-pre-line">{p.script.full_script}</p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
