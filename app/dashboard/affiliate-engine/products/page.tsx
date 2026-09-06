@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 interface Listing {
   product_name: string;
@@ -19,6 +19,10 @@ interface Product {
   category: string | null;
   status: string;
   created_at: string;
+  brand: string | null;
+  generic_product_type: string | null;
+  features: string[] | null;
+  problem_solved: string | null;
   match: { match_confidence: string; affiliate_listings: Listing } | null;
 }
 
@@ -35,19 +39,50 @@ const STATUS_BADGE: Record<string, string> = {
 export default function AffiliateProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [normalizing, setNormalizing] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch('/api/affiliate-engine/products')
+  const fetchProducts = useCallback(() => {
+    return fetch('/api/affiliate-engine/products')
       .then(r => r.json())
-      .then(d => setProducts(Array.isArray(d) ? d : []))
-      .finally(() => setLoading(false));
+      .then(d => setProducts(Array.isArray(d) ? d : []));
   }, []);
+
+  useEffect(() => { fetchProducts().finally(() => setLoading(false)); }, [fetchProducts]);
+
+  const unnormalizedCount = products.filter(p => !p.brand).length;
+
+  const handleNormalize = async () => {
+    setNormalizing(true);
+    const res = await fetch('/api/affiliate-engine/normalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 5 }),
+    });
+    const data = await res.json();
+    setNormalizing(false);
+    setToast(data.processed ? `${data.processed}건 정규화 완료` : '정규화할 상품 없음');
+    setTimeout(() => setToast(null), 3000);
+    fetchProducts();
+  };
 
   return (
     <div className="max-w-3xl mx-auto p-4 pb-24">
-      <h1 className="text-xl font-bold text-gray-900 mb-1">📦 발굴된 상품</h1>
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 px-4 py-2 rounded-xl shadow-lg text-white text-sm font-medium bg-gray-800">{toast}</div>
+      )}
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-xl font-bold text-gray-900">📦 발굴된 상품</h1>
+        <button
+          onClick={handleNormalize}
+          disabled={normalizing || unnormalizedCount === 0}
+          className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          {normalizing ? '정규화중...' : `🧠 정규화 실행 (${unnormalizedCount}개 대기)`}
+        </button>
+      </div>
       <p className="text-xs text-gray-500 mb-4">
-        정규화된 상품 개념 목록. Phase 4(스코어링) 전까지는 바이럴/기회 점수 없이 발견 순서로만 나열됩니다.
+        정규화된 상품 개념 목록. Phase 6(스코어링) 전까지는 바이럴/기회 점수 없이 발견 순서로만 나열됩니다.
       </p>
 
       {loading ? (
@@ -69,13 +104,25 @@ export default function AffiliateProductsPage() {
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold text-gray-900 text-sm truncate">{p.product_name}</div>
-                  <div className="text-[11px] text-gray-400 mt-0.5">{p.category || '카테고리 없음'}</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    {p.brand ? `${p.brand} · ` : ''}{p.generic_product_type || p.category || '카테고리 없음'}
+                  </div>
                   {listing && (
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="font-bold text-gray-900">{Math.round(listing.current_price).toLocaleString('ko-KR')}원</span>
                       {listing.discount_rate > 0 && (
                         <span className="text-[11px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-semibold">-{Math.round(listing.discount_rate)}%</span>
                       )}
+                    </div>
+                  )}
+                  {p.problem_solved && (
+                    <p className="text-[11px] text-gray-500 mt-1.5 line-clamp-2">💡 {p.problem_solved}</p>
+                  )}
+                  {p.features && p.features.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {p.features.slice(0, 4).map((f, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{f}</span>
+                      ))}
                     </div>
                   )}
                   <div className="flex flex-wrap gap-1.5 mt-2">
