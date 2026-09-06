@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   let q = supabase
     .from('bossai_rewrite_articles')
-    .select('id,notion_page_id,title,source_url,source_account,rewritten_title,rewritten_content,rewritten_meta,status,ai_model,word_count,error_message,created_at,updated_at')
+    .select('id,notion_page_id,title,source_url,source_account,source_id,representative_image_url,rewritten_title,rewritten_content,rewritten_meta,status,ai_model,word_count,error_message,created_at,updated_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -120,7 +120,7 @@ export async function PATCH(req: NextRequest) {
   if (!id) return err('id 필요');
 
   // 허용 필드만
-  const allowed = ['title', 'source_url', 'source_account', 'original_content', 'rewritten_title', 'rewritten_meta', 'rewritten_content', 'status', 'ai_model'];
+  const allowed = ['title', 'source_url', 'source_account', 'original_content', 'rewritten_title', 'rewritten_meta', 'rewritten_content', 'status', 'ai_model', 'representative_image_url'];
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const key of allowed) {
     if (key in updates) patch[key] = updates[key];

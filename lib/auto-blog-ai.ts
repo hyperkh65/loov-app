@@ -389,8 +389,13 @@ export async function generateText(
       // 중국어 출력 위험 → 후순위 (kimi-k2.7 신규 추가)
       'kimi-k2.7-code', 'minimax-m3', 'glm-5.2', 'kimi-k2.6',
     ];
+    // 개별 호출은 80s 타임아웃이 있지만 모델을 6개까지 순차 시도하면 480s까지
+    // 걸릴 수 있어 maxDuration(300s)을 넘긴다 — 전체 예산을 100s로 캡핑해서
+    // 그 안에서만 시도하고 나머지는 다른 provider(Gemini 등) 폴백으로 넘긴다.
+    const deadline = Date.now() + 100_000;
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
+      if (Date.now() > deadline) break;
       const available = await getAvailableOllamaModels(key);
       let toTry: string[];
       if (available.length > 0) {
@@ -419,6 +424,7 @@ export async function generateText(
         toTry = [...new Set(withCloud)].slice(0, 6);
       }
       for (const model of toTry) {
+        if (Date.now() > deadline) break;
         try { return await callOllama(key, model, prompt); }
         catch (e) {
           if (firstErrors.length < 3) firstErrors.push(`key${ollamaKeys.indexOf(key) + 1}/${model}: ${String(e).slice(0, 60)}`);
