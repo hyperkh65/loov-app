@@ -100,9 +100,22 @@ export async function POST(req: NextRequest) {
       throw new Error('AI 출력 파싱 실패 (제목/본문 없음) — 모델 응답이 중간에 끊겼을 수 있음');
     }
 
-    // 이미지: 원문에서 스크랩된 게 있으면 그걸 쓰고, 없으면 대표이미지를 새로 생성
+    // 소스에 따라 스크랩 이미지 대신 항상 자체 썸네일을 생성 (예: 실제 사진이
+    // 아니라 사이트 자체의 범용 미리보기 템플릿 배너를 대표이미지로 쓰는 소스)
+    let useOwnThumbnail = false;
+    if (article.source_id) {
+      const { data: source } = await supabase
+        .from('bossai_rewrite_sources')
+        .select('use_generated_thumbnail')
+        .eq('id', article.source_id)
+        .single();
+      useOwnThumbnail = !!source?.use_generated_thumbnail;
+    }
+
+    // 이미지: 원문에서 스크랩된 게 있으면 그걸 쓰고, 없거나(또는 소스 설정상 항상
+    // 자체 생성해야 하면) 대표이미지를 새로 생성
     let content = rawContent;
-    let representativeImageUrl = article.representative_image_url;
+    let representativeImageUrl = useOwnThumbnail ? null : article.representative_image_url;
     if (representativeImageUrl) {
       content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
       if (article.image_urls?.length) content = insertImagesIntoContent(content, article.image_urls, title);

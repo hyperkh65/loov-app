@@ -38,6 +38,7 @@ interface SourceSite {
   site_url: string;
   feed_url: string | null;
   is_active: boolean;
+  use_generated_thumbnail: boolean;
   last_checked_at: string | null;
 }
 
@@ -135,6 +136,16 @@ export default function RewritePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: site.id, is_active: !site.is_active }),
+    });
+    const data = await res.json();
+    if (data.ok) setSites((prev) => prev.map((s) => (s.id === site.id ? data.data : s)));
+  };
+
+  const handleToggleThumbnail = async (site: SourceSite) => {
+    const res = await fetch('/api/rewrite/sites', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: site.id, use_generated_thumbnail: !site.use_generated_thumbnail }),
     });
     const data = await res.json();
     if (data.ok) setSites((prev) => prev.map((s) => (s.id === site.id ? data.data : s)));
@@ -367,6 +378,10 @@ export default function RewritePage() {
                     {new Date(s.last_checked_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
+                <label className="flex items-center gap-1 text-xs text-gray-500 flex-shrink-0 cursor-pointer" title="스크랩한 대표이미지 대신 자체 썸네일을 생성해서 씁니다 (원본 사이트 이미지가 실제 사진이 아닐 때)">
+                  <input type="checkbox" checked={s.use_generated_thumbnail} onChange={() => handleToggleThumbnail(s)} />
+                  자체 썸네일
+                </label>
                 <button onClick={() => handleDeleteSite(s.id)} className="text-gray-400 hover:text-red-500 text-xs flex-shrink-0">삭제</button>
               </div>
             ))}
