@@ -42,8 +42,11 @@ export async function POST(req: NextRequest) {
 
   const scenesWithImages = structure.scenes.map(s => ({ ...s, image_url: listingImageUrl }));
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
-  const renderRes = await fetch(`${appUrl}/api/shorts/render`, {
+  // 내부 서버-투-서버 호출은 반드시 로컬 주소로 — NEXT_PUBLIC_APP_URL(공인 도메인)로 호출하면
+  // 컨테이너 → 라우터 → 공인IP → 자기 자신으로 되돌아오는 hairpin NAT을 타게 되는데,
+  // 이 왕복 연결이 오래 걸리는 렌더링 스트림 중간에 끊기는 문제가 실제로 확인됨.
+  const internalUrl = process.env.INTERNAL_BASE_URL || 'http://localhost:3000';
+  const renderRes = await fetch(`${internalUrl}/api/shorts/render`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
