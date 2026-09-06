@@ -183,7 +183,7 @@ export async function renderShortsVideo(scenes: RenderScene[], options: RenderOp
   const script = lines.join('\n');
   await nasExecWithStdin(`cat > ${dir}/render.sh`, script);
 
-  const renderResult = await nasExec(`bash ${dir}/render.sh`);
+  const renderResult = await nasExec(`bash ${dir}/render.sh`, 5 * 60_000);
   if (!renderResult.stdout.includes('RENDER_DONE')) {
     throw new Error('렌더링 실패: ' + (renderResult.stderr || renderResult.stdout).slice(0, 300));
   }
