@@ -8,6 +8,7 @@ import { publishToWordPress } from '@/lib/scheduler/blog-runner';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { uploadToR2 } from '@/lib/r2-storage';
 import type { Platform } from '@/lib/sns/platforms';
+import { publishToNaverCafe } from '@/lib/naver-cafe';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
@@ -72,6 +73,7 @@ async function buildHookCaptions(title: string, summary: string): Promise<Record
 export interface PublishResult {
   wordpressUrl: string | null;
   sns: Record<string, string>;
+  naverCafe: string; // 'ok' | 'skip: ...' | 'error: ...'
 }
 
 export async function publishRewrittenArticle(
@@ -96,6 +98,17 @@ export async function publishRewrittenArticle(
     }
   }
 
+  // 카페 발행은 SNS 연결 여부와 무관하게 시도 — 부분 실패 허용(다른 채널 발행에 영향 없음)
+  let naverCafe = 'skip: 연결 없음';
+  try {
+    const { articleUrl } = await publishToNaverCafe(admin, {
+      userId, title: article.title, content: article.content, blogUrl: wordpressUrl || undefined,
+    });
+    naverCafe = articleUrl ? `ok: ${articleUrl}` : 'ok';
+  } catch (e) {
+    naverCafe = `error: ${(e as Error).message?.slice(0, 150)}`;
+  }
+
   const sns: Record<string, string> = {};
   const { data: conns } = await admin
     .from('sns_connections')
@@ -104,7 +117,7 @@ export async function publishRewrittenArticle(
     .eq('is_active', true);
 
   const relevantConns = (conns || []).filter(c => SNS_PLATFORMS.includes(c.platform as Platform));
-  if (!relevantConns.length) return { wordpressUrl, sns };
+  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe };
 
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   let captions: Record<string, string>;
@@ -153,5 +166,5 @@ export async function publishRewrittenArticle(
     }
   }
 
-  return { wordpressUrl, sns };
+  return { wordpressUrl, sns, naverCafe };
 }

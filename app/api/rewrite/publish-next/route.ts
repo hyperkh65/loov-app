@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       .from('bossai_rewrite_articles')
       .update({
         status,
-        published_urls: { wordpress: result.wordpressUrl, sns: result.sns },
+        published_urls: { wordpress: result.wordpressUrl, sns: result.sns, naver_cafe: result.naverCafe },
         published_at: result.wordpressUrl ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
