@@ -4,8 +4,22 @@ import { searchAliExpressItems, getAliExpressItemDetail } from '@/lib/affiliate-
 import { upsertCoupangMatch } from '@/lib/affiliate-engine/coupang-match';
 import { searchProducts } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
+import { callAISimple } from '@/lib/ai-call';
 
 const SOURCE_NAME = '알리익스프레스 (영상 보유 상품)';
+
+/** 알리 영어 상품명은 쿠팡 한국어 검색과 안 맞아서 핵심 상품군만 짧은 한국어 키워드로 뽑음 */
+async function toKoreanSearchKeyword(englishTitle: string): Promise<string> {
+  try {
+    const raw = await callAISimple(
+      `다음 알리익스프레스 상품명에서 실제 상품 종류만 짧은 한국어 검색 키워드(2~4단어)로 뽑아줘. 브랜드명/과장광고 문구는 빼고, 쿠팡에서 검색했을 때 같은 종류 상품이 나올 만한 일반명사로. 키워드만 출력, 다른 말 하지 마.\n\n상품명: ${englishTitle}`,
+    );
+    const cleaned = raw.trim().split('\n')[0].replace(/["'.]/g, '').trim();
+    return cleaned || englishTitle;
+  } catch {
+    return englishTitle;
+  }
+}
 
 /**
  * 알리익스프레스에 실제 홍보 영상이 붙어있는(=영상 만들 가치가 있다고 이미 검증된) 인기
@@ -65,11 +79,16 @@ export async function POST(req: NextRequest) {
         status: 'PROCESSED',
       }, { onConflict: 'source_id,external_id' }).select('id').single();
 
-      // 상품명으로 쿠팡 검색 → 매칭
-      const coupangCandidates = await searchProducts(item.title, accessKey, secretKey).catch(() => []);
+      // 알리 영어 상품명 → 한국어 검색 키워드로 변환 후 쿠팡 검색 → 매칭
+      const koKeyword = await toKoreanSearchKeyword(item.title);
+      let coupangCandidates = await searchProducts(koKeyword, accessKey, secretKey).catch(() => []);
+      if (coupangCandidates.length === 0 && koKeyword !== item.title) {
+        // 번역 키워드로 못 찾으면 원문으로 한 번 더 시도(브랜드성 상품명일 수 있음)
+        coupangCandidates = await searchProducts(item.title, accessKey, secretKey).catch(() => []);
+      }
       const best = coupangCandidates.find(c => c.productImage);
       if (!best) {
-        results.push({ title: item.title, hasVideo: true, status: 'NO_COUPANG_MATCH' });
+        results.push({ title: item.title, hasVideo: true, status: `NO_COUPANG_MATCH (검색어: ${koKeyword})` });
         continue;
       }
 
