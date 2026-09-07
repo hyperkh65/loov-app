@@ -151,6 +151,7 @@ async function callClaude(
       messages: chatMsgs.map((m) => ({ role: m.role, content: m.content })),
       temperature,
     }),
+    signal: AbortSignal.timeout(60_000),
   });
 
   const data = await res.json() as {
@@ -187,7 +188,12 @@ async function callGemini(
   if (!lastMsg) throw new Error('No user message provided');
 
   const chat = geminiModel.startChat({ history });
-  const result = await chat.sendMessage(lastMsg.content);
+  // SDK 자체에 타임아웃이 없어 네트워크 이슈 시 무한 대기할 수 있음 — fallback 체인
+  // 전체가 막히는 걸 막기 위해 여기서 강제로 끊음(다른 provider 호출들과 동일하게 60초).
+  const result = await Promise.race([
+    chat.sendMessage(lastMsg.content),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini 타임아웃(60초)')), 60_000)),
+  ]);
   return result.response.text().trim();
 }
 
