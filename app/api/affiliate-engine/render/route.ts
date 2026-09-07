@@ -5,8 +5,8 @@
  * 업로드)를 같은 프로세스 안에서 직접 함수 호출로 재사용한다 — 자기 자신을
  * HTTP로 호출하는 방식은 hairpin NAT, undici bodyTimeout, 리버스 프록시
  * 타임아웃이 전부 실사용 중 확인되어 폐기.
- * 각 장면 이미지는 우선 상품의 실제 제휴 리스팅 사진을 재사용한다
- * (장면별로 다른 사진을 붙이는 건 별도 이미지 소싱이 필요해 다음 범위).
+ * 각 장면 이미지는 쿠팡 상품 페이지를 스크랩한 실제 사진 여러 장을 순환 배정한다
+ * (스크랩 실패/타임아웃 시에만 리스팅 대표사진 1장을 전 장면에 재사용하는 폴백).
  *
  * 렌더링(TTS 9개+ffmpeg 합성)은 몇 분씩 걸려서 동기 응답으로 두면 안 됨 —
  * self-hosted Docker라 Node 프로세스가 계속 살아있는 걸 이용해 요청은 즉시
@@ -17,18 +17,41 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { renderShortsVideo } from '@/lib/shorts/render-core';
+import { scrapeProductData } from '@/lib/coupang/api';
 
 interface Scene { id: number; duration: number; narration: string; subtitle: string }
 
 async function runRenderInBackground(params: {
   projectId: string; userId: string; productId: string;
-  scenes: (Scene & { image_url: string | null })[]; title: string;
+  scenes: Scene[]; title: string;
   scriptId: string; variantLabel: string;
+  fallbackImageUrl: string | null; networkProductId: string | null; affiliateUrl: string | null;
 }) {
   const admin = createAdminClient();
 
   try {
-    const result = await renderShortsVideo(params.scenes, { title: params.title });
+    // 장면마다 같은 사진 하나만 우려먹으면 "사진에 줌만 넣은 영상"처럼 보임 —
+    // 쿠팡 상품 페이지를 스크랩해서 실제 상품 사진 여러 장을 장면별로 다르게 배정.
+    // 스크랩(브라우저 렌더링 포함)은 봇 차단 등으로 길게는 수 분 걸릴 수 있어
+    // (lib/scheduler/coupang-runner.ts와 동일한 이유) 실패해도 넘어가게 타임아웃.
+    let sceneImageUrls: string[] = params.fallbackImageUrl ? [params.fallbackImageUrl] : [];
+    if (params.networkProductId) {
+      try {
+        const scraped = await Promise.race([
+          scrapeProductData(params.networkProductId, { affiliateUrl: params.affiliateUrl || undefined }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('상품 이미지 스크랩 타임아웃')), 25_000)),
+        ]);
+        if (scraped.images?.length) sceneImageUrls = scraped.images;
+      } catch (e) {
+        console.error('[affiliate-engine/render] 이미지 스크랩 실패, 단일 이미지로 폴백:', e);
+      }
+    }
+    const scenesWithImages = params.scenes.map((s, i) => ({
+      ...s,
+      image_url: sceneImageUrls.length > 0 ? sceneImageUrls[i % sceneImageUrls.length] : null,
+    }));
+
+    const result = await renderShortsVideo(scenesWithImages, { title: params.title });
 
     const totalDuration = params.scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
 
@@ -80,11 +103,11 @@ export async function POST(req: NextRequest) {
 
   const { data: match } = await supabase
     .from('affiliate_product_matches')
-    .select('listing_id, affiliate_listings(image_url)')
+    .select('listing_id, affiliate_listings(image_url, network_product_id, affiliate_url)')
     .eq('product_id', script.product_id)
     .maybeSingle();
-  const listingImageUrl = (match?.affiliate_listings as unknown as { image_url: string } | null)?.image_url || null;
-  const scenesWithImages = structure.scenes.map(s => ({ ...s, image_url: listingImageUrl }));
+  const listing = match?.affiliate_listings as unknown as
+    { image_url: string | null; network_product_id: string | null; affiliate_url: string | null } | null;
 
   const { data: project, error: projectErr } = await supabase.from('affiliate_video_projects').insert({
     user_id: user.id,
@@ -102,10 +125,13 @@ export async function POST(req: NextRequest) {
     projectId: project.id,
     userId: user.id,
     productId: script.product_id,
-    scenes: scenesWithImages,
+    scenes: structure.scenes,
     title: structure.title,
     scriptId,
     variantLabel: script.variant_label,
+    fallbackImageUrl: listing?.image_url || null,
+    networkProductId: listing?.network_product_id || null,
+    affiliateUrl: listing?.affiliate_url || null,
   }));
 
   return NextResponse.json({ ok: true, project_id: project.id, status: 'CREATING' });
