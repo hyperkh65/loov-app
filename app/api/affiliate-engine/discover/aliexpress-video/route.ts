@@ -81,10 +81,11 @@ export async function POST(req: NextRequest) {
 
       // 알리 영어 상품명 → 한국어 검색 키워드로 변환 후 쿠팡 검색 → 매칭
       const koKeyword = await toKoreanSearchKeyword(item.title);
-      let coupangCandidates = await searchProducts(koKeyword, accessKey, secretKey).catch(() => []);
+      const onSearchError = (e: unknown) => { console.error('[discover/aliexpress-video] 쿠팡 검색 실패:', e); return []; };
+      let coupangCandidates = await searchProducts(koKeyword, accessKey, secretKey).catch(onSearchError);
       if (coupangCandidates.length === 0 && koKeyword !== item.title) {
         // 번역 키워드로 못 찾으면 원문으로 한 번 더 시도(브랜드성 상품명일 수 있음)
-        coupangCandidates = await searchProducts(item.title, accessKey, secretKey).catch(() => []);
+        coupangCandidates = await searchProducts(item.title, accessKey, secretKey).catch(onSearchError);
       }
       const best = coupangCandidates.find(c => c.productImage);
       if (!best) {
