@@ -22,6 +22,10 @@ export default function DiscoverPage() {
   const [discovering, setDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState('');
 
+  const [aliKeyword, setAliKeyword] = useState('');
+  const [aliDiscovering, setAliDiscovering] = useState(false);
+  const [aliResult, setAliResult] = useState('');
+
   const loadItems = useCallback(async () => {
     const res = await fetch('/api/affiliate-engine/import');
     const data = await res.json();
@@ -69,6 +73,27 @@ export default function DiscoverPage() {
     }
   }
 
+  async function runAliexpressVideoDiscovery() {
+    if (!aliKeyword.trim()) { setAliResult('❌ 키워드를 입력하세요'); return; }
+    setAliDiscovering(true);
+    setAliResult('');
+    try {
+      const res = await fetch('/api/affiliate-engine/discover/aliexpress-video', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword: aliKeyword.trim(), limit: 5 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '발굴 실패');
+      const matched = data.results.filter((r: { coupangMatch?: string }) => r.coupangMatch).length;
+      const withVideo = data.results.filter((r: { hasVideo: boolean }) => r.hasVideo).length;
+      setAliResult(`✅ ${data.processed}건 확인 (영상 보유 ${withVideo}건, 쿠팡 매칭 ${matched}건) — 상품 목록에서 확인하세요.`);
+    } catch (e) {
+      setAliResult(`❌ ${(e as Error).message}`);
+    } finally {
+      setAliDiscovering(false);
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto p-4 pb-24">
       <h1 className="text-xl font-bold text-gray-900 mb-4">🔎 발굴</h1>
@@ -86,6 +111,24 @@ export default function DiscoverPage() {
           </button>
         </div>
         {discoverResult && <p className="text-xs mt-2 text-gray-600">{discoverResult}</p>}
+      </div>
+
+      {/* 알리익스프레스 영상 보유 상품 발굴 */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">🎬 알리익스프레스 영상 보유 상품으로 발굴</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          입력한 키워드로 알리익스프레스 인기순 상품을 찾고, 실제 홍보 영상이 붙어있는(=영상화 가치가 검증된) 상품만 골라 쿠팡에서 같은 상품을 매칭합니다.
+          알리 영상 자체는 재사용하지 않고 신호로만 씁니다. (무료 API 월 100회 한도 — 키워드 하나당 최대 6회 소모)
+        </p>
+        <div className="flex gap-2">
+          <input value={aliKeyword} onChange={e => setAliKeyword(e.target.value)} placeholder="키워드 (예: kitchen gadget)"
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+          <button onClick={runAliexpressVideoDiscovery} disabled={aliDiscovering}
+            className="px-4 py-2 bg-rose-500 text-white text-sm rounded-xl font-semibold disabled:opacity-50">
+            {aliDiscovering ? '확인 중...' : '발굴 실행'}
+          </button>
+        </div>
+        {aliResult && <p className="text-xs mt-2 text-gray-600">{aliResult}</p>}
       </div>
 
       {/* 수동 URL 임포트 */}
