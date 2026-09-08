@@ -107,16 +107,25 @@ export async function publishToNaverCafe(
   });
 
   const rawText = await res.text();
-  let resData: { message?: { result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
+  let resData: {
+    message?: {
+      result?: { articleId?: number; code?: string; message?: string };
+      error?: { code?: string; msg?: string };
+    };
+    errorCode?: string; errorMessage?: string;
+  } = {};
   try { resData = JSON.parse(rawText); } catch { /* non-JSON error body */ }
 
-  const errCode = resData.errorCode || resData.message?.result?.code;
-  const errDetail = resData.errorMessage || resData.message?.result?.message;
-  if (!res.ok || errCode) {
+  // 네이버가 실제로는 HTTP 200 + message.error.{code,msg} 형태로 인증 실패를
+  // 내려보내는 걸 실사용 중 확인(토큰 만료돼도 res.ok=true라 감지가 안 되고
+  // 조용히 "성공"으로 처리되던 진짜 원인 — 발행이 DB엔 ok로 기록되는데 카페엔
+  // 하나도 안 올라가고 있었음). 알려진 에러 모양을 전부 확인.
+  const errCode = resData.errorCode || resData.message?.result?.code || resData.message?.error?.code;
+  const errDetail = resData.errorMessage || resData.message?.result?.message || resData.message?.error?.msg;
+  const articleId = resData.message?.result?.articleId;
+  if (!res.ok || errCode || !articleId) {
     throw new Error(`카페 발행 실패: HTTP ${res.status}${errCode ? ` | ${errCode}` : ''}${errDetail ? ` | ${errDetail}` : ` | ${rawText.slice(0, 300)}`}`);
   }
-
-  const articleId = resData.message?.result?.articleId;
   const cafeSlug = conn.cafe_url || conn.club_id;
   const articleUrl = articleId ? `https://cafe.naver.com/${cafeSlug}/articles/${articleId}` : null;
 
