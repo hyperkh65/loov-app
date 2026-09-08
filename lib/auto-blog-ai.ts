@@ -185,7 +185,11 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
         num_ctx: 8192,      // 컨텍스트 윈도우 8K
       },
     }),
-    signal: AbortSignal.timeout(80_000),
+    // 80s였던 걸 30s로 축소 — 키가 9개까지 등록돼있는데 응답 없이 멈추는 키/모델
+    // 조합 하나가 80s를 다 잡아먹으면 전체 100s 예산 안에서 남은 키를 거의
+    // 못 시도해보고 폴백으로 넘어가버리는 게 실사용 중 확인됨(429/402 같은 실제
+    // 거부 응답은 항상 즉시 옴 — 정상 생성도 대부분 30s 안에 끝나는 걸 확인)
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -220,6 +224,7 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
   const GEMINI_MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  const modelErrors: string[] = [];
   for (const model of GEMINI_MODELS) {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -233,12 +238,18 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
         signal: AbortSignal.timeout(120_000),
       }
     );
-    if (!res.ok) continue;
+    if (!res.ok) {
+      // 원인 추적 불가 문제(모델별 상세 에러가 안 남아 디버깅 불가)였던 것을 수정 —
+      // 상태코드/본문 일부를 모아서 최종 실패 메시지에 포함
+      modelErrors.push(`${model}:${res.status} ${(await res.text()).slice(0, 100)}`);
+      continue;
+    }
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (text) return text;
+    modelErrors.push(`${model}:빈 응답`);
   }
-  throw new Error('Gemini 모든 모델 실패');
+  throw new Error(`Gemini 모든 모델 실패 (${modelErrors.join(' | ')})`);
 }
 
 async function callOpenAI(apiKey: string, prompt: string, model = 'gpt-4o-mini'): Promise<string> {
@@ -429,7 +440,9 @@ export async function generateText(
         if (Date.now() > deadline) break;
         try { return await callOllama(key, model, prompt); }
         catch (e) {
-          if (firstErrors.length < 3) firstErrors.push(`key${ollamaKeys.indexOf(key) + 1}/${model}: ${String(e).slice(0, 60)}`);
+          // 캡을 3개로 걸어두면 키 하나가 여러 모델에서 실패할 때 로그가 거기서
+          // 잘려서 나머지 8개 키가 실제로 시도됐는지조차 알 수 없었음 — 캡 제거
+          firstErrors.push(`key${ollamaKeys.indexOf(key) + 1}/${model}: ${String(e).slice(0, 60)}`);
           continue;
         }
       }
