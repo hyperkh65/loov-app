@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
-import { searchNaver, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
+import { searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 
 export const maxDuration = 300;
@@ -121,7 +121,11 @@ export async function POST(req: NextRequest) {
       if (article.image_urls?.length) content = insertImagesIntoContent(content, article.image_urls, title);
     } else {
       try {
-        representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue');
+        // 배경 없이 그라디언트+텍스트만 넣으면 밋밋해서 임팩트가 없다는 피드백 —
+        // "블로그 자동화"(lib/blog-content-generator.ts)가 하던 것과 동일하게
+        // 실제 관련 사진을 검색해 배경으로 깔아준다.
+        const { thumbUrl: bgImageUrl } = await searchInlineImages(title, 3).catch(() => ({ thumbUrl: undefined }));
+        representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', bgImageUrl);
         if (representativeImageUrl) content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
       } catch { /* 썸네일은 선택사항 */ }
     }
