@@ -95,10 +95,12 @@ export async function POST(req: NextRequest) {
   // 3. 발행 대기열에서 하나 발행 시도 (간격 15분은 publish-next가 자체 체크)
   let publishResult: unknown = null;
   try {
+    // 워드프레스+SNS 4종+네이버카페까지 순차 발행하면 60초로는 부족한 경우가
+    // 실사용 중 확인돼 늘림 (전체 라우트 maxDuration=300, NAS cron --max-time 280과 맞춤)
     const res = await fetch(`${BASE}/api/rewrite/publish-next`, {
       method: 'POST',
       headers,
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(200_000),
     });
     publishResult = await res.json();
   } catch (e) {
