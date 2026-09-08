@@ -9,9 +9,11 @@ export const maxDuration = 300;
 
 // 공개 도메인으로 자기 자신을 호출하면 hairpin NAT로 간헐적으로 Synology
 // 에러 페이지(HTML)가 응답으로 와서 JSON 파싱이 실패하는 게 실사용 중 확인됨
-// (다른 곳에서도 이미 겪은 문제 — /api/affiliate-engine/render 등). 이 라우트는
-// 항상 이 컨테이너 안에서만 실행되므로 컨테이너 내부 포트로 직접 호출.
-const BASE = 'http://localhost:3000';
+// (다른 곳에서도 이미 겪은 문제 — /api/affiliate-engine/render 등). localhost는
+// Next standalone server.js가 컨테이너 자체 IP에만 바인딩돼 있어 연결 거부됨
+// (docker HOSTNAME env 이슈, docker run 재생성 전까진 안 고쳐짐) — 대신 도커
+// 브리지 게이트웨이+게시된 포트(172.17.0.1:3100)로 우회하면 확실히 도달함(확인됨).
+const BASE = 'http://172.17.0.1:3100';
 
 async function authOk(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
