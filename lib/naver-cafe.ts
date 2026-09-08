@@ -88,15 +88,21 @@ export async function publishToNaverCafe(
   const textContent = excerpt + linkLine;
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
-  const form = new FormData();
-  form.append('subject', title);
-  form.append('content', textContent);
-  form.append('openYn', openYn);
+
+  // 네이버 카페 글쓰기 API는 multipart(FormData)로 보내면 한글이 깨짐(실사용 중 확인:
+  // 자동발행 글만 깨지고 수동 발행은 멀쩡했음) — 커뮤니티에서 확인된 이 엔드포인트 특유의
+  // 해결법대로 x-www-form-urlencoded + 값을 한 번 더 encodeURIComponent(이중 인코딩)해야
+  // 정상 표시됨. URLSearchParams가 직렬화하면서 인코딩을 한 번 더 걸어줌.
+  const body = new URLSearchParams({
+    subject: encodeURIComponent(title),
+    content: encodeURIComponent(textContent),
+    openYn,
+  });
 
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-    body: form,
+    body,
     signal: AbortSignal.timeout(20_000),
   });
 
