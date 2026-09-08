@@ -9,8 +9,9 @@ import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platfor
 import { uploadToR2 } from '@/lib/r2-storage';
 import type { Platform } from '@/lib/sns/platforms';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
+import { publishToTumblr } from '@/lib/tumblr-publish';
 
-const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram'];
+const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 
 /** 인스타그램은 종횡비 0.8~1.91 범위를 벗어난 이미지를 거부함 — 1080x1080 센터크롭으로 항상 통과시킴 */
@@ -76,16 +77,35 @@ export interface PublishResult {
   wordpressUrl: string | null;
   sns: Record<string, string>;
   naverCafe: string; // 'ok' | 'skip: ...' | 'error: ...'
+  tumblr: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
 }
 
 export async function publishRewrittenArticle(
   article: { title: string; content: string; representative_image_url: string | null },
   userId: string,
+  sourceId?: string | null,
 ): Promise<PublishResult> {
   const admin = createAdminClient();
 
+  // 소스 사이트별 발행 설정 (없으면 전역 기본값 사용 — 기존 동작 그대로 유지)
+  let sourcePublishWpSiteId: string | null = null;
+  let publishSns = true;
+  let publishTumblr = false;
+  if (sourceId) {
+    const { data: source } = await admin
+      .from('bossai_rewrite_sources')
+      .select('publish_wp_site_id, publish_sns, publish_tumblr')
+      .eq('id', sourceId)
+      .single();
+    if (source) {
+      sourcePublishWpSiteId = source.publish_wp_site_id;
+      publishSns = source.publish_sns;
+      publishTumblr = source.publish_tumblr;
+    }
+  }
+
   let wordpressUrl: string | null = null;
-  const wpSiteId = await getSetting('REWRITE_PUBLISH_WP_SITE_ID');
+  const wpSiteId = sourcePublishWpSiteId || await getSetting('REWRITE_PUBLISH_WP_SITE_ID');
   if (wpSiteId) {
     const { data: site } = await admin
       .from('wordpress_sites')
@@ -111,7 +131,28 @@ export async function publishRewrittenArticle(
     naverCafe = `error: ${(e as Error).message?.slice(0, 150)}`;
   }
 
+  // 텀블러는 워드프레스 발행 URL을 링크 포스트로 거는 방식이라 워드프레스가
+  // 발행돼야만 의미가 있음
+  let tumblr = 'skip: 소스 설정에서 꺼짐';
+  if (publishTumblr) {
+    if (!wordpressUrl) {
+      tumblr = 'skip: 워드프레스 발행 URL 없음';
+    } else {
+      try {
+        const { url } = await publishToTumblr({
+          title: article.title,
+          canonical_url: wordpressUrl,
+        });
+        tumblr = url ? `ok: ${url}` : 'ok';
+      } catch (e) {
+        tumblr = `error: ${(e as Error).message?.slice(0, 150)}`;
+      }
+    }
+  }
+
   const sns: Record<string, string> = {};
+  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr };
+
   const { data: conns } = await admin
     .from('sns_connections')
     .select('platform, platform_user_id, access_token, platform_username')
@@ -119,7 +160,7 @@ export async function publishRewrittenArticle(
     .eq('is_active', true);
 
   const relevantConns = (conns || []).filter(c => SNS_PLATFORMS.includes(c.platform as Platform));
-  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe };
+  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr };
 
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   let captions: Record<string, string>;
@@ -168,5 +209,5 @@ export async function publishRewrittenArticle(
     }
   }
 
-  return { wordpressUrl, sns, naverCafe };
+  return { wordpressUrl, sns, naverCafe, tumblr };
 }

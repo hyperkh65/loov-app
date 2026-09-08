@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
   const { data: article } = await supabase
     .from('bossai_rewrite_articles')
-    .select('id, rewritten_title, rewritten_content, representative_image_url')
+    .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
     .eq('user_id', ownerId)
     .eq('status', 'ready')
     .order('created_at', { ascending: true })
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
         representative_image_url: article.representative_image_url,
       },
       ownerId,
+      article.source_id,
     );
 
     const status = result.wordpressUrl ? 'published' : 'ready';
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
       .from('bossai_rewrite_articles')
       .update({
         status,
-        published_urls: { wordpress: result.wordpressUrl, sns: result.sns, naver_cafe: result.naverCafe },
+        published_urls: { wordpress: result.wordpressUrl, sns: result.sns, naver_cafe: result.naverCafe, tumblr: result.tumblr },
         published_at: result.wordpressUrl ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
