@@ -32,14 +32,18 @@ export async function POST(req: NextRequest) {
   const ownerId = process.env.OWNER_USER_ID!;
   const supabase = await createAdminClient();
 
-  const { data: article } = await supabase
+  const body = await req.json().catch(() => ({}));
+  const { article_id } = body as { article_id?: string };
+
+  let articleQuery = supabase
     .from('bossai_rewrite_articles')
     .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
     .eq('user_id', ownerId)
-    .eq('status', 'ready')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .single();
+    .eq('status', 'ready');
+  articleQuery = article_id
+    ? articleQuery.eq('id', article_id)
+    : articleQuery.order('created_at', { ascending: true }).limit(1);
+  const { data: article } = await articleQuery.single();
 
   if (!article) {
     return NextResponse.json({ ok: true, published: false, reason: '발행 대기 중인 기사 없음' });
