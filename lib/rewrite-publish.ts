@@ -15,8 +15,9 @@ const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 
 /** 인스타그램은 종횡비 0.8~1.91 범위를 벗어난 이미지를 거부함 — 1080x1080 센터크롭으로 항상 통과시킴 */
 async function toInstagramSafeImage(url: string): Promise<string> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
-  const res = await fetch(`${appUrl}/api/rewrite/square-image?src=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(20_000) });
+  // 공개 도메인으로 자기 자신을 호출하면 hairpin NAT로 간헐적으로 실패함 —
+  // 항상 이 컨테이너 안에서만 실행되므로 내부 포트로 직접 호출.
+  const res = await fetch(`http://localhost:3000/api/rewrite/square-image?src=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`정사각형 변환 실패: HTTP ${res.status}`);
   const buffer = Buffer.from(await res.arrayBuffer());
   const filename = `rewrite-ig/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;

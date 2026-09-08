@@ -11,7 +11,9 @@ export async function generateAndUploadThumbnail(
   sub?: string,
   size: 'blog' | 'square' = 'square',
 ): Promise<string> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr'
+  // 공개 도메인으로 자기 자신을 호출하면 hairpin NAT로 간헐적으로 실패함 —
+  // 항상 이 컨테이너 안에서만 실행되므로 내부 포트로 직접 호출.
+  const appUrl = 'http://localhost:3000'
 
   const params = new URLSearchParams({ title, keyword, color: colorScheme, size })
   if (bgImageUrl) params.set('bg', bgImageUrl)
