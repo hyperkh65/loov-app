@@ -65,9 +65,10 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
         const data = await res.json();
         const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
         if (items.length > 0) {
+          // 배경 이미지는 저해상도 thumbnail 대신 원본 link를 써야 화질이 안 뭉개짐
           return {
             displayUrls: items.slice(0, count).map((item: { link: string }) => item.link),
-            thumbUrl: items[0].thumbnail as string | undefined,
+            thumbUrl: items[0].link,
           };
         }
       }
