@@ -7,7 +7,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 300;
 
-const BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
+// 공개 도메인으로 자기 자신을 호출하면 hairpin NAT로 간헐적으로 Synology
+// 에러 페이지(HTML)가 응답으로 와서 JSON 파싱이 실패하는 게 실사용 중 확인됨
+// (다른 곳에서도 이미 겪은 문제 — /api/affiliate-engine/render 등). 이 라우트는
+// 항상 이 컨테이너 안에서만 실행되므로 컨테이너 내부 포트로 직접 호출.
+const BASE = 'http://localhost:3000';
 
 async function authOk(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
