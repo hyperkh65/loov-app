@@ -157,7 +157,9 @@ export async function POST(req: NextRequest) {
       .from('bossai_rewrite_articles')
       .update({
         status: 'failed',
-        error_message: String(e).slice(0, 500),
+        // 500자는 Ollama 9키 폴백 실패 사유를 다 담기엔 너무 짧아서 항상 key2
+        // 근처에서 잘려 나머지 키가 시도됐는지조차 진단이 안 됐음 — 확장
+        error_message: String(e).slice(0, 3000),
         updated_at: new Date().toISOString(),
       })
       .eq('id', article.id);
