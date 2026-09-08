@@ -43,7 +43,16 @@ export async function fetchFeedItems(feedUrl: string, limit = 10): Promise<FeedI
   const xml = await fetchText(feedUrl, 8000);
   if (!xml) return [];
 
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+  // fast-xml-parser v5는 엔티티 확장 개수를 기본 1000개로 제한(엔티티 폭탄 방어용) —
+  // 카테고리 태그가 많은 블로그(Blogger 등) 피드는 이 한도를 조용히 넘겨서
+  // parse()가 예외를 던지고 매번 빈 배열([])을 리턴, 새 글이 있어도 계속
+  // "새 글 없음"으로 나오던 원인이었음. 등록된(신뢰하는) 소스 피드만 다루므로
+  // 상한을 없앰
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    processEntities: { maxTotalExpansions: Infinity },
+  });
   let doc: unknown;
   try { doc = parser.parse(xml); } catch { return []; }
 
