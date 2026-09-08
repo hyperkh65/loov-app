@@ -443,6 +443,11 @@ export async function generateText(
           // 캡을 3개로 걸어두면 키 하나가 여러 모델에서 실패할 때 로그가 거기서
           // 잘려서 나머지 8개 키가 실제로 시도됐는지조차 알 수 없었음 — 캡 제거
           firstErrors.push(`key${ollamaKeys.indexOf(key) + 1}/${model}: ${String(e).slice(0, 60)}`);
+          // Ollama Cloud가 계정 동시요청 슬롯 대기로 응답 없이 물고 있다가 타임아웃
+          // 나는 경우(429/402처럼 즉시 오는 거부와 다름)가 실사용 중 확인됨 — 이런
+          // 키는 다른 모델로 재시도해봤자 또 타임아웃 날 뿐이니 그 키는 바로 포기하고
+          // 다음 키로 넘어가서 9개 키를 예산 안에서 최대한 많이 시도
+          if ((e as Error).name === 'TimeoutError') break;
           continue;
         }
       }
