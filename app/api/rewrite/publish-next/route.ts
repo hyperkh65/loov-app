@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 
-export const maxDuration = 120;
+export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
 const PUBLISH_INTERVAL_MS = 15 * 60 * 1000;
 
