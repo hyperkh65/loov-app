@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
   const { data: sites } = await supabase
     .from('bossai_rewrite_sources')
-    .select('id, user_id, name, site_url, feed_url')
+    .select('id, user_id, name, site_url, feed_url, latest_only')
     .eq('user_id', ownerId)
     .eq('is_active', true);
 
@@ -48,7 +48,10 @@ export async function POST(req: NextRequest) {
       }
       if (!feedUrl) { perSiteResults.push({ site: site.name, newFound: 0, error: '피드 없음' }); continue; }
 
-      const items = await fetchFeedItems(feedUrl, 10);
+      // latest_only 소스는 오래된 글부터 밀린 순서로 처리하다 최신 이슈를 놓치는 걸
+      // 방지하기 위해 피드의 최신 글 1개만 확인 — 처리 안 된 pending 백로그가
+      // 있으면 이 최신 글로 교체(오래된 건 버림)
+      const items = await fetchFeedItems(feedUrl, site.latest_only ? 1 : 10);
       let siteNew = 0;
 
       for (const item of items) {
@@ -59,6 +62,14 @@ export async function POST(req: NextRequest) {
           .eq('source_url', item.link)
           .limit(1);
         if (existing && existing.length > 0) continue;
+
+        if (site.latest_only) {
+          await supabase
+            .from('bossai_rewrite_articles')
+            .delete()
+            .eq('source_id', site.id)
+            .eq('status', 'pending');
+        }
 
         const scraped = await scrapeArticleFull(item.link);
 
