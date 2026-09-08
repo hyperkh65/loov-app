@@ -32,20 +32,6 @@ export async function POST(req: NextRequest) {
   const ownerId = process.env.OWNER_USER_ID!;
   const supabase = await createAdminClient();
 
-  const { data: lastPublished } = await supabase
-    .from('bossai_rewrite_articles')
-    .select('published_at')
-    .eq('user_id', ownerId)
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    .limit(1)
-    .single();
-  const sinceLast = lastPublished?.published_at ? Date.now() - new Date(lastPublished.published_at).getTime() : Infinity;
-
-  if (sinceLast < PUBLISH_INTERVAL_MS) {
-    return NextResponse.json({ ok: true, published: false, reason: `발행 간격(15분) 대기 중 — ${Math.ceil((PUBLISH_INTERVAL_MS - sinceLast) / 60000)}분 후 재시도` });
-  }
-
   const { data: article } = await supabase
     .from('bossai_rewrite_articles')
     .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
@@ -57,6 +43,26 @@ export async function POST(req: NextRequest) {
 
   if (!article) {
     return NextResponse.json({ ok: true, published: false, reason: '발행 대기 중인 기사 없음' });
+  }
+
+  // 발행 간격은 소스별로 따로 체크 — 소스마다 발행 대상 워드프레스/채널이
+  // 달라졌으므로(예: 미라쿨 vs 아보다) 서로 무관한 소스끼리 발행을 막을 이유가 없음.
+  // source_id가 없는 기존/수동 기사는 이전처럼 전체 기준으로 체크.
+  let lastPublishedQuery = supabase
+    .from('bossai_rewrite_articles')
+    .select('published_at')
+    .eq('user_id', ownerId)
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(1);
+  lastPublishedQuery = article.source_id
+    ? lastPublishedQuery.eq('source_id', article.source_id)
+    : lastPublishedQuery.is('source_id', null);
+  const { data: lastPublished } = await lastPublishedQuery.single();
+  const sinceLast = lastPublished?.published_at ? Date.now() - new Date(lastPublished.published_at).getTime() : Infinity;
+
+  if (sinceLast < PUBLISH_INTERVAL_MS) {
+    return NextResponse.json({ ok: true, published: false, reason: `발행 간격 대기 중 — ${Math.ceil((PUBLISH_INTERVAL_MS - sinceLast) / 60000)}분 후 재시도` });
   }
 
   try {
