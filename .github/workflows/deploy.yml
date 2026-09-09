@@ -176,6 +176,13 @@ jobs:
                 node server.js
             fi
 
+            # 쿠팡 상품 페이지 스크래핑(Playwright)용 Alpine 네이티브 크로미움 —
+            # /app은 볼륨 마운트라 유지되지만 chromium은 컨테이너 자체 레이어에
+            # apk로 설치돼서, 컨테이너가 restart가 아니라 완전히 새로 생성되는
+            # 경우(재부팅 등) 조용히 사라짐 — 매 배포마다 없으면 설치해서 보장
+            sleep 5
+            docker exec loov-app sh -c 'which chromium-browser >/dev/null 2>&1 || apk add --no-cache chromium' || true
+
             # 서버 기동 대기 후 웹훅 재시도 (최대 3회)
             sleep 15
             for i in 1 2 3; do
