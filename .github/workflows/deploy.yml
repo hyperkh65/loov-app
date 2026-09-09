@@ -58,14 +58,21 @@ jobs:
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/static
           # playwright-extra/puppeteer-extra-plugin-stealth 하위의 lazy-cache
-          # 동적 require 체인(is-plain-object 등)을 Next standalone 트레이서가
-          # 일부만 복사하고 놓치는 걸 실사용 중 확인 — 정적 import 추가로도
-          # 완전히 못 잡아서 관련 패키지 전체를 직접 복사해 확실히 보장
+          # 동적 require 체인을 Next standalone 트레이서가 일부만 복사하고
+          # 놓치는 걸 실사용 중 확인 — 정적 import 추가로도 완전히 못 잡아서
+          # package.json dependencies를 재귀 추적해 얻은 전체 41개 패키지를
+          # 직접 복사해 확실히 보장
           for pkg in playwright playwright-core playwright-extra puppeteer-extra-plugin-stealth \
-                     puppeteer-extra-plugin merge-deep clone-deep shallow-clone \
-                     lazy-cache is-plain-object kind-of for-own is-extendable mixin-object; do
+                     puppeteer-extra-plugin puppeteer-extra-plugin-user-preferences \
+                     puppeteer-extra-plugin-user-data-dir merge-deep clone-deep shallow-clone \
+                     lazy-cache is-plain-object kind-of for-own is-extendable mixin-object \
+                     deepmerge arr-union isobject is-buffer fs-extra fs.realpath glob \
+                     graceful-fs inflight inherits jsonfile minimatch once path-is-absolute \
+                     rimraf universalify wrappy balanced-match brace-expansion concat-map \
+                     for-in debug ms @types/debug @types/ms; do
             if [ -d "node_modules/$pkg" ]; then
               rm -rf ".next/standalone/node_modules/$pkg"
+              mkdir -p ".next/standalone/node_modules/$(dirname "$pkg")"
               cp -r "node_modules/$pkg" ".next/standalone/node_modules/$pkg"
             fi
           done
@@ -219,14 +226,21 @@ jobs:
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/static
           # playwright-extra/puppeteer-extra-plugin-stealth 하위의 lazy-cache
-          # 동적 require 체인(is-plain-object 등)을 Next standalone 트레이서가
-          # 일부만 복사하고 놓치는 걸 실사용 중 확인 — 정적 import 추가로도
-          # 완전히 못 잡아서 관련 패키지 전체를 직접 복사해 확실히 보장
+          # 동적 require 체인을 Next standalone 트레이서가 일부만 복사하고
+          # 놓치는 걸 실사용 중 확인 — 정적 import 추가로도 완전히 못 잡아서
+          # package.json dependencies를 재귀 추적해 얻은 전체 41개 패키지를
+          # 직접 복사해 확실히 보장
           for pkg in playwright playwright-core playwright-extra puppeteer-extra-plugin-stealth \
-                     puppeteer-extra-plugin merge-deep clone-deep shallow-clone \
-                     lazy-cache is-plain-object kind-of for-own is-extendable mixin-object; do
+                     puppeteer-extra-plugin puppeteer-extra-plugin-user-preferences \
+                     puppeteer-extra-plugin-user-data-dir merge-deep clone-deep shallow-clone \
+                     lazy-cache is-plain-object kind-of for-own is-extendable mixin-object \
+                     deepmerge arr-union isobject is-buffer fs-extra fs.realpath glob \
+                     graceful-fs inflight inherits jsonfile minimatch once path-is-absolute \
+                     rimraf universalify wrappy balanced-match brace-expansion concat-map \
+                     for-in debug ms @types/debug @types/ms; do
             if [ -d "node_modules/$pkg" ]; then
               rm -rf ".next/standalone/node_modules/$pkg"
+              mkdir -p ".next/standalone/node_modules/$(dirname "$pkg")"
               cp -r "node_modules/$pkg" ".next/standalone/node_modules/$pkg"
             fi
           done
