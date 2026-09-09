@@ -61,7 +61,7 @@ jobs:
           # 동적 require 체인(is-plain-object 등)을 Next standalone 트레이서가
           # 일부만 복사하고 놓치는 걸 실사용 중 확인 — 정적 import 추가로도
           # 완전히 못 잡아서 관련 패키지 전체를 직접 복사해 확실히 보장
-          for pkg in playwright playwright-extra puppeteer-extra-plugin-stealth \
+          for pkg in playwright playwright-core playwright-extra puppeteer-extra-plugin-stealth \
                      puppeteer-extra-plugin merge-deep clone-deep shallow-clone \
                      lazy-cache is-plain-object kind-of for-own is-extendable mixin-object; do
             if [ -d "node_modules/$pkg" ]; then
@@ -222,7 +222,7 @@ jobs:
           # 동적 require 체인(is-plain-object 등)을 Next standalone 트레이서가
           # 일부만 복사하고 놓치는 걸 실사용 중 확인 — 정적 import 추가로도
           # 완전히 못 잡아서 관련 패키지 전체를 직접 복사해 확실히 보장
-          for pkg in playwright playwright-extra puppeteer-extra-plugin-stealth \
+          for pkg in playwright playwright-core playwright-extra puppeteer-extra-plugin-stealth \
                      puppeteer-extra-plugin merge-deep clone-deep shallow-clone \
                      lazy-cache is-plain-object kind-of for-own is-extendable mixin-object; do
             if [ -d "node_modules/$pkg" ]; then
