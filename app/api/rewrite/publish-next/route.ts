@@ -35,38 +35,79 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { article_id } = body as { article_id?: string };
 
-  let articleQuery = supabase
-    .from('bossai_rewrite_articles')
-    .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
-    .eq('user_id', ownerId)
-    .eq('status', 'ready');
-  articleQuery = article_id
-    ? articleQuery.eq('id', article_id)
-    : articleQuery.order('created_at', { ascending: true }).limit(1);
-  const { data: article } = await articleQuery.single();
+  type ArticleRow = {
+    id: string; source_id: string | null;
+    rewritten_title: string; rewritten_content: string; representative_image_url: string | null;
+  };
+  let article: ArticleRow | null = null;
 
-  if (!article) {
-    return NextResponse.json({ ok: true, published: false, reason: '발행 대기 중인 기사 없음' });
-  }
+  if (article_id) {
+    const { data } = await supabase
+      .from('bossai_rewrite_articles')
+      .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
+      .eq('user_id', ownerId)
+      .eq('status', 'ready')
+      .eq('id', article_id)
+      .single();
+    article = data;
+    if (!article) return NextResponse.json({ ok: true, published: false, reason: '발행 대기 중인 기사 없음' });
+  } else {
+    // "가장 오래된 ready 하나"만 뽑으면 process와 동일하게 백로그 큰 소스가
+    // 계속 우선권을 가져가서 다른 소스는 자기 차례가 와도(간격 통과해도) 영영
+    // 발행이 안 되는 문제가 실사용 중 확인됨 — 소스별로 순서를 공평하게
+    // 배정하되, 아직 발행 간격이 안 지난 소스는 건너뛰고 지금 당장 발행
+    // 가능한 소스 중에서 가장 오래 기다린 소스를 고름
+    const { data: readyBySource } = await supabase
+      .from('bossai_rewrite_articles')
+      .select('source_id, created_at')
+      .eq('user_id', ownerId)
+      .eq('status', 'ready')
+      .order('created_at', { ascending: true });
 
-  // 발행 간격은 소스별로 따로 체크 — 소스마다 발행 대상 워드프레스/채널이
-  // 달라졌으므로(예: 미라쿨 vs 아보다) 서로 무관한 소스끼리 발행을 막을 이유가 없음.
-  // source_id가 없는 기존/수동 기사는 이전처럼 전체 기준으로 체크.
-  let lastPublishedQuery = supabase
-    .from('bossai_rewrite_articles')
-    .select('published_at')
-    .eq('user_id', ownerId)
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    .limit(1);
-  lastPublishedQuery = article.source_id
-    ? lastPublishedQuery.eq('source_id', article.source_id)
-    : lastPublishedQuery.is('source_id', null);
-  const { data: lastPublished } = await lastPublishedQuery.single();
-  const sinceLast = lastPublished?.published_at ? Date.now() - new Date(lastPublished.published_at).getTime() : Infinity;
+    if (!readyBySource?.length) {
+      return NextResponse.json({ ok: true, published: false, reason: '발행 대기 중인 기사 없음' });
+    }
 
-  if (sinceLast < PUBLISH_INTERVAL_MS) {
-    return NextResponse.json({ ok: true, published: false, reason: `발행 간격 대기 중 — ${Math.ceil((PUBLISH_INTERVAL_MS - sinceLast) / 60000)}분 후 재시도` });
+    const sourceKeys = [...new Set(readyBySource.map((r) => r.source_id ?? 'null'))];
+    const candidates: Array<{ sourceKey: string; lastServedAt: string; waitMs: number }> = [];
+    for (const sourceKey of sourceKeys) {
+      let lastPublishedQuery = supabase
+        .from('bossai_rewrite_articles')
+        .select('published_at')
+        .eq('user_id', ownerId)
+        .eq('status', 'published')
+        .order('published_at', { ascending: false })
+        .limit(1);
+      lastPublishedQuery = sourceKey === 'null' ? lastPublishedQuery.is('source_id', null) : lastPublishedQuery.eq('source_id', sourceKey);
+      const { data: lastPublished } = await lastPublishedQuery.single();
+      const sinceLast = lastPublished?.published_at ? Date.now() - new Date(lastPublished.published_at).getTime() : Infinity;
+      candidates.push({
+        sourceKey,
+        lastServedAt: lastPublished?.published_at || '0000-01-01',
+        waitMs: Math.max(0, PUBLISH_INTERVAL_MS - sinceLast),
+      });
+    }
+
+    // 간격이 지나 지금 발행 가능한 소스들 중, 가장 오래 기다린(=마지막 발행이 가장
+    // 오래전인) 소스를 우선 — 전부 간격 대기 중이면 가장 빨리 풀리는 소스로 안내
+    const ready = candidates.filter((c) => c.waitMs === 0).sort((a, b) => (a.lastServedAt < b.lastServedAt ? -1 : 1));
+    if (!ready.length) {
+      const soonest = candidates.sort((a, b) => a.waitMs - b.waitMs)[0];
+      return NextResponse.json({ ok: true, published: false, reason: `발행 간격 대기 중 — ${Math.ceil(soonest.waitMs / 60000)}분 후 재시도` });
+    }
+
+    const chosenSourceKey = ready[0].sourceKey;
+    let articleQuery = supabase
+      .from('bossai_rewrite_articles')
+      .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
+      .eq('user_id', ownerId)
+      .eq('status', 'ready')
+      .order('created_at', { ascending: true })
+      .limit(1);
+    articleQuery = chosenSourceKey === 'null' ? articleQuery.is('source_id', null) : articleQuery.eq('source_id', chosenSourceKey);
+    const { data } = await articleQuery.single();
+    article = data;
+    if (!article) return NextResponse.json({ ok: true, published: false, reason: '발행 대기 중인 기사 없음' });
   }
 
   try {
