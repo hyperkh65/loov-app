@@ -81,7 +81,7 @@ export interface PublishResult {
 }
 
 export async function publishRewrittenArticle(
-  article: { title: string; content: string; representative_image_url: string | null },
+  article: { title: string; content: string; representative_image_url: string | null; meta?: string | null },
   userId: string,
   sourceId?: string | null,
 ): Promise<PublishResult> {
@@ -163,16 +163,20 @@ export async function publishRewrittenArticle(
   if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr };
 
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  // AI 캡션 생성이 실패/타임아웃하면 제목 한 줄로만 폴백하던 것 — "블로그 자동화"처럼
+  // 글 요약(메타디스크립션, 없으면 본문 앞부분)으로 폴백해서 캡션이 너무 짧아지는
+  // 문제 방지
+  const fallbackCaption = (article.meta || plainSummary || article.title).slice(0, 150);
   let captions: Record<string, string>;
   try {
     // generateText는 provider 폴백 체인이 길어 최악의 경우 수 분 걸릴 수 있음 —
-    // 캡션은 없어도 제목으로 폴백 가능하니 60초 넘으면 바로 포기하고 진행
+    // 캡션은 없어도 요약으로 폴백 가능하니 60초 넘으면 바로 포기하고 진행
     captions = await Promise.race([
       buildHookCaptions(article.title, plainSummary),
       new Promise<Record<string, string>>((_, reject) => setTimeout(() => reject(new Error('caption timeout')), 60_000)),
     ]);
   } catch {
-    captions = {}; // 실패/타임아웃하면 아래에서 제목으로 폴백
+    captions = {}; // 실패/타임아웃하면 아래에서 요약으로 폴백
   }
 
   const images = article.representative_image_url ? [article.representative_image_url] : [];
@@ -199,7 +203,7 @@ export async function publishRewrittenArticle(
       sns[label] = 'skip: 이미지 없음';
       continue;
     }
-    const caption = (captions[platform] || article.title).slice(0, 500);
+    const caption = (captions[platform] || fallbackCaption).slice(0, 500);
     try {
       const posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, caption, platformImages);
       if (comment) {
