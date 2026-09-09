@@ -37,14 +37,15 @@ export async function POST(req: NextRequest) {
 
   type ArticleRow = {
     id: string; source_id: string | null;
-    rewritten_title: string; rewritten_content: string; representative_image_url: string | null;
+    rewritten_title: string; rewritten_content: string; rewritten_meta: string | null;
+    representative_image_url: string | null;
   };
   let article: ArticleRow | null = null;
 
   if (article_id) {
     const { data } = await supabase
       .from('bossai_rewrite_articles')
-      .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
+      .select('id, source_id, rewritten_title, rewritten_content, rewritten_meta, representative_image_url')
       .eq('user_id', ownerId)
       .eq('status', 'ready')
       .eq('id', article_id)
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
     const chosenSourceKey = ready[0].sourceKey;
     let articleQuery = supabase
       .from('bossai_rewrite_articles')
-      .select('id, source_id, rewritten_title, rewritten_content, representative_image_url')
+      .select('id, source_id, rewritten_title, rewritten_content, rewritten_meta, representative_image_url')
       .eq('user_id', ownerId)
       .eq('status', 'ready')
       .order('created_at', { ascending: true })
@@ -116,6 +117,7 @@ export async function POST(req: NextRequest) {
         title: article.rewritten_title,
         content: article.rewritten_content,
         representative_image_url: article.representative_image_url,
+        meta: article.rewritten_meta,
       },
       ownerId,
       article.source_id,
