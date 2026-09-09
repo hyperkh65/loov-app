@@ -59,16 +59,57 @@ export async function POST(req: NextRequest) {
       .single();
     article = data;
   } else {
-    // oldest pending 선택
-    const { data } = await supabase
+    // 전체 통틀어 가장 오래된 pending 하나만 뽑으면, 백로그가 큰 소스(예:
+    // 수십 개씩 쌓인 소스)가 큐를 계속 독점해서 다른 소스의 새 글이 몇 시간이고
+    // 뒤로 밀리는 문제가 실사용 중 확인됨 — 소스별로 "가장 최근에 처리된 시각"이
+    // 오래된(=한동안 순서를 못 받은) 소스부터 우선 배정하는 라운드로빈으로 변경
+    const { data: pendingBySource } = await supabase
       .from('bossai_rewrite_articles')
-      .select(SELECT_COLS)
+      .select('source_id, created_at')
       .eq('user_id', ownerId)
       .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
-    article = data;
+      .order('created_at', { ascending: true });
+
+    if (pendingBySource?.length) {
+      const oldestPendingBySource = new Map<string, string>(); // source_id(또는 'null') -> article created_at(최고참)
+      for (const row of pendingBySource) {
+        const key = row.source_id ?? 'null';
+        if (!oldestPendingBySource.has(key)) oldestPendingBySource.set(key, row.created_at);
+      }
+
+      let bestSourceKey = 'null';
+      let bestLastServedAt = '9999-12-31'; // 이 소스가 최근에 처리된 적이 있는지 — 없으면 최우선(가장 옛날 취급)
+      for (const sourceKey of oldestPendingBySource.keys()) {
+        let lastServedAt = '0000-01-01';
+        if (sourceKey !== 'null') {
+          const { data: lastServed } = await supabase
+            .from('bossai_rewrite_articles')
+            .select('updated_at')
+            .eq('user_id', ownerId)
+            .eq('source_id', sourceKey)
+            .neq('status', 'pending')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .single();
+          lastServedAt = lastServed?.updated_at || '0000-01-01';
+        }
+        if (lastServedAt < bestLastServedAt) {
+          bestLastServedAt = lastServedAt;
+          bestSourceKey = sourceKey;
+        }
+      }
+
+      let query = supabase
+        .from('bossai_rewrite_articles')
+        .select(SELECT_COLS)
+        .eq('user_id', ownerId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1);
+      query = bestSourceKey === 'null' ? query.is('source_id', null) : query.eq('source_id', bestSourceKey);
+      const { data } = await query.single();
+      article = data;
+    }
   }
 
   if (!article) {
