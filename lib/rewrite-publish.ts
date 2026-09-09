@@ -5,9 +5,9 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { generateText } from '@/lib/auto-blog-ai';
 import { publishToWordPress } from '@/lib/scheduler/blog-runner';
-import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { uploadToR2 } from '@/lib/r2-storage';
-import { PLATFORMS, type Platform } from '@/lib/sns/platforms';
+import type { Platform } from '@/lib/sns/platforms';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
 
@@ -176,10 +176,10 @@ export async function publishRewrittenArticle(
   }
 
   const images = article.representative_image_url ? [article.representative_image_url] : [];
-  // 링크를 댓글로 따로 달면 Threads 등에서 링크 미리보기가 대표이미지를 그대로
-  // 다시 보여줘서 피드에 같은 사진이 두 번 올라온 것처럼 보이는 문제가 실사용
-  // 중 확인됨 — 댓글 대신 본문 캡션 끝에 바로 붙임(게시물 1개로 끝남)
-  const linkSuffix = wordpressUrl ? `\n\n🔗 전체 기사 보기\n${wordpressUrl}` : '';
+  // 캡션에 링크를 텍스트로 넣으면 하이퍼링크가 안 걸려서 클릭이 안 되는 문제가
+  // 있어서(실사용 중 확인) 댓글로 되돌림 — 대표이미지가 링크 미리보기로 한 번
+  // 더 보이는 건 감수하고, 실제로 클릭 가능한 링크를 우선함(사용자 선택)
+  const comment = wordpressUrl ? `🔗 전체 기사 보기\n${wordpressUrl}` : '';
 
   const hasInstagram = relevantConns.some(c => c.platform === 'instagram');
   let instagramImages: string[] = [];
@@ -199,13 +199,13 @@ export async function publishRewrittenArticle(
       sns[label] = 'skip: 이미지 없음';
       continue;
     }
-    const limit = PLATFORMS[platform].charLimit;
-    const body = captions[platform] || article.title;
-    const caption = linkSuffix && (body.length + linkSuffix.length) <= limit
-      ? body + linkSuffix
-      : body.slice(0, Math.max(0, limit - linkSuffix.length)) + linkSuffix;
+    const caption = (captions[platform] || article.title).slice(0, 500);
     try {
-      await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, caption, platformImages);
+      const posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, caption, platformImages);
+      if (comment) {
+        try { await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, comment); }
+        catch { /* 댓글 실패는 무시 — 본문 발행은 이미 성공 */ }
+      }
       sns[label] = 'ok';
     } catch (e) {
       sns[label] = `error: ${String(e).slice(0, 150)}`;
