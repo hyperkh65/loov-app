@@ -1,8 +1,12 @@
 name: Rewrite Auto-Run
 
+# schedule 트리거 제거: GitHub Actions가 10분 같은 짧은 간격의 예약 실행을
+# 안정적으로 안 지켜줌(실사용 중 확인 — 며칠간 매번 2~5시간씩 밀림 + 매번
+# Synology 프록시 오류로 "실패" 표시). NAS 자체 크론(/etc/crontab의
+# /usr/local/etc/rewrite-cron/run.sh, 10분마다, localhost:3100 직접 호출)이
+# 이미 안정적으로 같은 일을 하고 있어서 이 workflow와 중복 실행되고 있었음 —
+# workflow_dispatch(수동 실행)만 남김.
 on:
-  schedule:
-    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       max:
