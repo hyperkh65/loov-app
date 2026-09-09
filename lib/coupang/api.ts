@@ -160,12 +160,26 @@ function toAbsoluteUrl(url: string): string {
 /** Playwright + Stealth 기반 스크래핑 (봇 감지 우회) */
 async function scrapeWithBrowser(productId: string): Promise<ScrapedProduct> {
   // puppeteer-extra-plugin-stealth 내부(puppeteer-extra-plugin → merge-deep →
-  // clone-deep)가 lazy-cache의 require(변수) 동적 로딩 패턴을 써서 is-plain-object를
-  // 불러옴 — Next standalone 트레이서(@vercel/nft)는 정적 분석이라 이런 동적
-  // require를 못 잡아서 node_modules에서 누락됨(serverExternalPackages에 이름만
-  // 추가해도 소용없음, 실사용 중 확인). 여기서 정적으로 한 번 import해서 강제로
-  // 트레이서 그래프에 포함시킴
-  await import('is-plain-object').catch(() => {});
+  // clone-deep → shallow-clone)가 lazy-cache의 require(변수) 동적 로딩 패턴을
+  // 여러 겹으로 써서 아래 패키지들을 불러옴 — Next standalone 트레이서
+  // (@vercel/nft)는 정적 분석이라 이런 동적 require를 못 잡아서 node_modules에서
+  // 누락됨(serverExternalPackages에 이름만 추가해도 소용없음, 실사용 중 하나씩
+  // 실행하며 전체 체인 확인). 정적으로 한 번씩 import해서 트레이서 그래프에
+  // 강제로 포함시킴 — clone-deep: is-plain-object/shallow-clone/kind-of/for-own,
+  // shallow-clone: is-extendable/mixin-object/kind-of
+  await Promise.all([
+    import('is-plain-object').catch(() => {}),
+    // @ts-expect-error - 타입 선언 없는 레거시 패키지, 트레이서 강제 포함용 더미 import
+    import('shallow-clone').catch(() => {}),
+    // @ts-expect-error - 타입 선언 없는 레거시 패키지, 트레이서 강제 포함용 더미 import
+    import('kind-of').catch(() => {}),
+    // @ts-expect-error - 타입 선언 없는 레거시 패키지, 트레이서 강제 포함용 더미 import
+    import('for-own').catch(() => {}),
+    // @ts-expect-error - 타입 선언 없는 레거시 패키지, 트레이서 강제 포함용 더미 import
+    import('is-extendable').catch(() => {}),
+    // @ts-expect-error - 타입 선언 없는 레거시 패키지, 트레이서 강제 포함용 더미 import
+    import('mixin-object').catch(() => {}),
+  ]);
 
   // playwright-extra + stealth plugin 동적 로드
   // eslint-disable-next-line @typescript-eslint/no-require-imports
