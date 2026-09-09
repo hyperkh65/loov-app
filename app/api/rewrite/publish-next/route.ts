@@ -1,7 +1,7 @@
 /**
  * POST /api/rewrite/publish-next
  * "ready" 상태 기사 중 가장 오래된 것 하나를 골라 설정된 WordPress 사이트 +
- * 연결된 SNS 전체에 발행. 한 번에 몰아서 쏟아지지 않도록 발행 간격은 2시간으로 제한.
+ * 연결된 SNS 전체에 발행. 한 번에 몰아서 쏟아지지 않도록 발행 간격은 1시간으로 제한.
  * Auth: Bearer CRON_SECRET
  */
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,7 +10,7 @@ import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 2 * 60 * 60 * 1000;
+const PUBLISH_INTERVAL_MS = 60 * 60 * 1000;
 
 async function authOk(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
