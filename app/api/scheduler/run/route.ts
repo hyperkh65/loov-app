@@ -157,8 +157,7 @@ export async function POST(req: NextRequest) {
   let query = supabase
     .from('bossai_schedules')
     .select('*')
-    .eq('is_active', true)
-    .or('last_status.is.null,last_status.neq.running');
+    .eq('is_active', true);
 
   if (scheduleId) {
     query = query.eq('id', scheduleId);
@@ -170,9 +169,21 @@ export async function POST(req: NextRequest) {
     query = query.lte('next_run_at', now);
   }
 
-  const { data: schedules, error } = await query;
+  const { data: allSchedules, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!schedules?.length) return NextResponse.json({ ran: 0, message: '실행할 스케줄 없음' });
+
+  // last_status='running' 중이면 원래는 건너뛰는데, 실행 도중 프로세스가 죽어서
+  // (배포 재시작 등) success/failed로 못 바뀌면 영원히 running으로 박제되어 다시는
+  // 안 돌아가는 문제가 실사용 중 확인됨(쿠팡/아고다 스케줄이 며칠째 멈춰있었음).
+  // 30분 넘게 running이면 죽은 것으로 보고 다시 시도
+  const STALE_RUNNING_MS = 30 * 60 * 1000;
+  const schedules = (allSchedules || []).filter((s) => {
+    if (s.last_status !== 'running') return true;
+    const runningSince = s.last_run_at ? new Date(s.last_run_at).getTime() : 0;
+    return Date.now() - runningSince > STALE_RUNNING_MS;
+  });
+
+  if (!schedules.length) return NextResponse.json({ ran: 0, message: '실행할 스케줄 없음' });
 
   const results = await Promise.allSettled(
     schedules.map(s => executeSchedule(s as Schedule))
