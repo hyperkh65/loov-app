@@ -26,9 +26,16 @@ export async function findCrossSiteLink(excludeSiteUrl: string, keyword: string)
     try { return new URL(s.site_url).host !== excludeHost; } catch { return true; }
   }).sort(() => Math.random() - 0.5);
 
+  // AI가 만든 제목은 "서인영 남편 서인영 이혼..."처럼 단어가 반복되는 경우가
+  // 많아서 앞 N단어를 그대로 이어붙이면 워드프레스 검색(다단어 AND에 가까움)이
+  // 매칭을 못 찾는 게 실사용 중 확인됨 — 중복 제거한 첫 단어(보통 핵심
+  // 인물/주제명) 하나만 검색어로 써서 매칭률을 높임
+  const words = keyword.split(' ').filter(Boolean);
+  const searchTerm = [...new Set(words)][0] || words[0] || keyword;
+  if (!searchTerm || searchTerm.length < 2) return null;
+
   for (const site of others) {
     try {
-      const searchTerm = keyword.split(' ').slice(0, 3).join(' '); // 검색어가 너무 길면 매칭 안 됨
       const res = await fetch(
         `${site.site_url.replace(/\/$/, '')}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchTerm)}&per_page=1&status=publish`,
         { signal: AbortSignal.timeout(8000) },
