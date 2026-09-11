@@ -21,6 +21,8 @@ const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 // ponytail: 소스 3~4개뿐이라 source_id 하드코딩, 소스가 늘어나면 DB 컬럼으로 옮길 것
 const SNS_ACCOUNT_ROUTING: Record<string, string[]> = {
   'dadaf1c1-cdef-418f-bd6a-66432504bb26': ['@2dayskr'], // 행정안전부 — 정부지원책/정보성 글 전용
+  '6eeebbb5-f9bd-441a-966c-3a85c24ee63d': ['@2dayskr'], // 보건복지부 보도자료
+  '1977545d-a790-4db3-b452-f4cc03c343f6': ['@2dayskr'], // 고용노동부 정책자료
 };
 const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 그 외 일반 리라이트글
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
