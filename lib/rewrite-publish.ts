@@ -11,6 +11,7 @@ import type { Platform } from '@/lib/sns/platforms';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
 import { publishToLinkedIn } from '@/lib/linkedin-publish';
+import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
@@ -160,9 +161,13 @@ export async function publishRewrittenArticle(
       .single();
     if (site) {
       wpCreds = { url: site.site_url, username: site.wp_username, appPassword: site.app_password };
+      // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
+      // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행 자체는 진행
+      const crossLink = await findCrossSiteLink(site.site_url, article.title).catch(() => null);
+      const contentWithLink = appendCrossLink(article.content, crossLink);
       const wpResult = await publishToWordPress(
         site.site_url, site.wp_username, site.app_password,
-        article.title, article.content, article.representative_image_url, 'publish',
+        article.title, contentWithLink, article.representative_image_url, 'publish',
       );
       wordpressUrl = wpResult.link;
       if (wpResult.featuredImageUrl) snsImageUrl = wpResult.featuredImageUrl;
