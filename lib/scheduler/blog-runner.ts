@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { refreshBloggerToken } from '@/lib/blogger-token';
-import { pickKeywordForUser } from './keyword-picker';
+import { pickKeywordForUser, pickFromKeywordList } from './keyword-picker';
 import { generateBlogContent } from '@/lib/blog-content-generator';
 import { submitToIndexNow } from '@/lib/indexnow';
 import type { Schedule, BlogAutoConfig } from './index';
@@ -119,10 +119,14 @@ export async function getWpCredentials(siteId: string): Promise<{ url: string; u
 export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string; url: string; title: string }> {
   const config = schedule.config as BlogAutoConfig;
 
-  // 키워드 자동 발굴
+  // 키워드 자동 발굴 — config.keywords가 있으면(고CPC 카테고리 시범 등 특정
+  // 주제로 고정하고 싶은 스케줄) 그 목록에서만 순환/랜덤 선택, 없으면 기존대로
+  // 캐시/트렌드 기반 자동 발굴
   let keyword: string;
   try {
-    keyword = await pickKeywordForUser(schedule.user_id);
+    keyword = config.keywords?.length
+      ? await pickFromKeywordList(schedule.user_id, config.keywords, config.keyword_mode || 'rotate')
+      : await pickKeywordForUser(schedule.user_id);
   } catch (e) {
     throw new Error(`[키워드 발굴 실패] ${(e as Error).message}`);
   }
