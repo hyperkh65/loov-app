@@ -410,7 +410,7 @@ export async function runCoupangAuto(
       // (config.ai_model로 언제든 재정의 가능 — 기존 SNS 텍스트 생성은 qwen3 그대로 유지).
       const { title, content } = await buildProductBlogPost(product, affiliateUrl, config.ai_model || 'claude', scraped, comparisonProducts);
       const { url, username, appPassword } = await getWpCredentials(config.wp_site_id);
-      wordpressUrl = await publishToWordPress(url, username, appPassword, title, content, product.productImage || null);
+      wordpressUrl = (await publishToWordPress(url, username, appPassword, title, content, product.productImage || null)).link;
       results.push(`wordpress: 발행 완료 (${wordpressUrl})`);
     } catch (err) {
       // 실측: 이 실패 사유가 results 배열에만 담기고 서버 로그엔 안 남아서, 자동실행이

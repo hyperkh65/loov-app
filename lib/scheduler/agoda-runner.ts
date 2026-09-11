@@ -252,7 +252,7 @@ HTML 본문 전체`;
     } else {
       throw new Error('WordPress 사이트를 선택해주세요');
     }
-    publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content, top5[0]?.imageURL || null);
+    publishedUrl = (await publishToWordPress(wpUrl, wpUser, wpPass, title, content, top5[0]?.imageURL || null)).link;
   }
 
   // SNS 발행 — 블로그 발행 성공/실패와 무관하게 별도로 시도(부분 실패 허용)

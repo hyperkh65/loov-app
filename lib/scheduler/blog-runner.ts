@@ -44,12 +44,21 @@ async function publishToBlogger(accessToken: string, blogId: string, title: stri
   return data.url || data.id || '';
 }
 
-export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish'): Promise<string> {
+export interface WordPressPublishResult {
+  link: string;
+  /** 워드프레스 미디어 라이브러리에 실제 업로드된 대표이미지 URL — R2/원본 URL이
+   * 메타(스레드/인스타) 크롤러에 막혀도 이건 실제 서비스 도메인이라 SNS 발행에
+   * 재사용 가능(lib/rewrite-publish.ts 참고). 업로드 실패/이미지 없으면 null. */
+  featuredImageUrl: string | null;
+}
+
+export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish'): Promise<WordPressPublishResult> {
   const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
   const apiUrl = `${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
 
   // 대표 이미지를 Featured Image로 등록
   let featuredMediaId: number | undefined;
+  let uploadedImageUrl: string | null = null;
   if (featuredImageUrl) {
     try {
       const imgRes = await fetch(featuredImageUrl, { signal: AbortSignal.timeout(15000) });
@@ -70,6 +79,7 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
         if (uploadRes.ok) {
           const uploadData = await uploadRes.json();
           featuredMediaId = uploadData.id;
+          uploadedImageUrl = uploadData.source_url || null;
         }
       }
     } catch { /* featured image optional */ }
@@ -92,7 +102,7 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
   // 발행 직후 검색엔진(네이버/빙 등 IndexNow 참여 엔진)에 새 글을 바로 알려서
   // 크롤링/노출을 앞당김 — 실패해도 발행 자체에는 영향 없음(fire-and-forget)
   if (link) submitToIndexNow(link).catch(() => {});
-  return link;
+  return { link, featuredImageUrl: uploadedImageUrl };
 }
 
 export async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
@@ -147,7 +157,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
       } else {
         throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
       }
-      publishedUrl = await publishToWordPress(wpUrl, wpUser, wpPass, title, content, imageUrl);
+      publishedUrl = (await publishToWordPress(wpUrl, wpUser, wpPass, title, content, imageUrl)).link;
     }
   } catch (e) {
     const msg = (e as Error).message;
