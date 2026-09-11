@@ -27,16 +27,41 @@ const SNS_ACCOUNT_ROUTING: Record<string, string[]> = {
 const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 그 외 일반 리라이트글
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
 
+interface WpCreds { url: string; username: string; appPassword: string }
+
 /** 인스타그램은 종횡비 0.8~1.91 범위를 벗어난 이미지를 거부함 — 1080x1080 센터크롭으로 항상 통과시킴 */
-async function toInstagramSafeImage(url: string): Promise<string> {
+async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null): Promise<string> {
   // 공개 도메인으로 자기 자신을 호출하면 hairpin NAT로 간헐적으로 실패함.
   // localhost는 컨테이너 바인딩 이슈로 연결 거부되어 도커 브리지
   // 게이트웨이+게시된 포트로 우회(app/api/rewrite/auto-run/route.ts 참고).
   const res = await fetch(`http://172.17.0.1:3100/api/rewrite/square-image?src=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`정사각형 변환 실패: HTTP ${res.status}`);
   const buffer = Buffer.from(await res.arrayBuffer());
-  const filename = `rewrite-ig/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
-  return uploadToR2(filename, buffer, 'image/png');
+  const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  // 워드프레스 자체 도메인에 올리면 메타 크롤러가 R2 dev URL을 못 가져가서
+  // catbox.moe로 중계하던 문제를 아예 피할 수 있음 — 크리덴셜 있으면 우선
+  // 시도하고, 실패하면 기존 R2 업로드로 폴백
+  if (wpCreds) {
+    try {
+      const creds = Buffer.from(`${wpCreds.username}:${wpCreds.appPassword}`).toString('base64');
+      const uploadRes = await fetch(`${wpCreds.url.replace(/\/$/, '')}/wp-json/wp/v2/media`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${creds}`,
+          'Content-Type': 'image/png',
+          'Content-Disposition': `attachment; filename="ig-${filename}.png"`,
+        },
+        body: buffer,
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (uploadRes.ok) {
+        const data = await uploadRes.json();
+        if (data.source_url) return data.source_url;
+      }
+    } catch { /* WP 업로드 실패하면 R2로 폴백 */ }
+  }
+  return uploadToR2(`rewrite-ig/${filename}.png`, buffer, 'image/png');
 }
 
 function getSection(text: string, tag: string, allTags: string[]): string {
@@ -118,6 +143,12 @@ export async function publishRewrittenArticle(
   }
 
   let wordpressUrl: string | null = null;
+  // 워드프레스에 올린 이미지 URL — 메타(스레드/인스타) 크롤러가 R2 dev URL을
+  // 잘 못 가져가서(원인 불명, catbox.moe 중계로 우회하던 문제) 실사용 중 확인됨.
+  // 이미 워드프레스 자체 도메인에 업로드된 이미지가 있으면 그걸 그대로 SNS에도
+  // 재사용 — 실제 서비스 도메인이라 크롤러가 못 가져갈 이유가 없고 중계도 불필요.
+  let snsImageUrl = article.representative_image_url;
+  let wpCreds: WpCreds | null = null;
   const wpSiteId = sourcePublishWpSiteId || await getSetting('REWRITE_PUBLISH_WP_SITE_ID');
   if (wpSiteId) {
     const { data: site } = await admin
@@ -126,10 +157,13 @@ export async function publishRewrittenArticle(
       .eq('id', wpSiteId)
       .single();
     if (site) {
-      wordpressUrl = await publishToWordPress(
+      wpCreds = { url: site.site_url, username: site.wp_username, appPassword: site.app_password };
+      const wpResult = await publishToWordPress(
         site.site_url, site.wp_username, site.app_password,
         article.title, article.content, article.representative_image_url, 'publish',
       );
+      wordpressUrl = wpResult.link;
+      if (wpResult.featuredImageUrl) snsImageUrl = wpResult.featuredImageUrl;
     }
   }
 
@@ -197,7 +231,7 @@ export async function publishRewrittenArticle(
     captions = {}; // 실패/타임아웃하면 아래에서 요약으로 폴백
   }
 
-  const images = article.representative_image_url ? [article.representative_image_url] : [];
+  const images = snsImageUrl ? [snsImageUrl] : [];
   // 캡션에 링크를 텍스트로 넣으면 하이퍼링크가 안 걸려서 클릭이 안 되는 문제가
   // 있어서(실사용 중 확인) 댓글로 되돌림 — 대표이미지가 링크 미리보기로 한 번
   // 더 보이는 건 감수하고, 실제로 클릭 가능한 링크를 우선함(사용자 선택)
@@ -207,7 +241,7 @@ export async function publishRewrittenArticle(
   let instagramImages: string[] = [];
   if (hasInstagram && images.length) {
     try {
-      instagramImages = [await toInstagramSafeImage(images[0])];
+      instagramImages = [await toInstagramSafeImage(images[0], wpCreds)];
     } catch {
       instagramImages = images; // 변환 실패하면 원본으로 시도 (기존 동작 유지)
     }
