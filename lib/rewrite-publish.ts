@@ -10,6 +10,7 @@ import { uploadToR2 } from '@/lib/r2-storage';
 import type { Platform } from '@/lib/sns/platforms';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
+import { publishToLinkedIn } from '@/lib/linkedin-publish';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
@@ -116,6 +117,7 @@ export interface PublishResult {
   sns: Record<string, string>;
   naverCafe: string; // 'ok' | 'skip: ...' | 'error: ...'
   tumblr: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
+  linkedin: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
 }
 
 export async function publishRewrittenArticle(
@@ -197,8 +199,25 @@ export async function publishRewrittenArticle(
     }
   }
 
+  // 링크드인은 LINKEDIN_ACCESS_TOKEN이 이미 설정돼 있었는데 자동화 어디서도
+  // 호출하지 않아 그동안 완전히 놀고 있었음 — 백링크/추가 유입 경로 확보를
+  // 위해 텀블러처럼 워드프레스 발행 URL이 있으면 소스 설정과 무관하게 시도
+  let linkedin = 'skip: 워드프레스 발행 URL 없음';
+  if (wordpressUrl) {
+    try {
+      const { url } = await publishToLinkedIn({
+        title: article.title,
+        meta_description: article.meta || undefined,
+        canonical_url: wordpressUrl,
+      });
+      linkedin = url ? `ok: ${url}` : 'ok';
+    } catch (e) {
+      linkedin = `error: ${(e as Error).message?.slice(0, 150)}`;
+    }
+  }
+
   const sns: Record<string, string> = {};
-  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr };
+  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr, linkedin };
 
   const { data: conns } = await admin
     .from('sns_connections')
@@ -212,7 +231,7 @@ export async function publishRewrittenArticle(
     if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
     return allowedAccounts.includes(c.platform_username || '');
   });
-  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr };
+  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, linkedin };
 
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   // AI 캡션 생성이 실패/타임아웃하면 제목 한 줄로만 폴백하던 것 — "블로그 자동화"처럼
@@ -268,5 +287,5 @@ export async function publishRewrittenArticle(
     }
   }
 
-  return { wordpressUrl, sns, naverCafe, tumblr };
+  return { wordpressUrl, sns, naverCafe, tumblr, linkedin };
 }
