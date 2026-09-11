@@ -285,8 +285,10 @@ export async function postToThreadsWithMedia(
       text: content.substring(0, 500),
       access_token: accessToken,
     };
-    // 영상은 반드시 처리 완료 대기 필요
-    needsWait = isVideo;
+    // 이미지도 메타 서버가 URL을 다운로드/처리하는 데 시간이 걸려 대기 없이
+    // 바로 publish하면 "미디어 준비 안 됨"(subcode 4279009)으로 가끔 실패하는
+    // 게 실사용 중 확인됨 — 영상뿐 아니라 미디어가 있으면 항상 대기
+    needsWait = true;
   } else if (mediaUrls && mediaUrls.length > 1) {
     const childIds: string[] = [];
     for (const url of mediaUrls.slice(0, 10)) {
@@ -316,7 +318,7 @@ export async function postToThreadsWithMedia(
         text: content.substring(0, 500),
         access_token: accessToken,
       };
-      needsWait = isVideo;
+      needsWait = true;
     } else {
       containerBody = { media_type: 'CAROUSEL', children: childIds.join(','), text: content.substring(0, 500), access_token: accessToken };
     }
