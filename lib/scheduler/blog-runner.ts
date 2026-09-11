@@ -74,6 +74,18 @@ function injectAdSenseForSite(wpUrl: string, content: string): string {
   return content.slice(0, idx) + ad + content.slice(idx);
 }
 
+// 2days.kr는 카테고리를 안 정해주면 기본값인 "미분류"(id 1)로 들어가는데,
+// 이 사이트에 "/category/미분류/ → /category/aboda/" 301 리다이렉트 규칙이
+// 있고 그게 글 개별 URL(퍼머링크에 카테고리 슬러그가 들어가는 구조)에도
+// 걸려서 글 URL이 "미분류"↔"aboda" 사이를 무한 리다이렉트하는 버그를
+// 실사용 중 발견함(방문자가 글을 아예 못 봄). 미분류 카테고리를 아예 안
+// 쓰도록 발행 시 명시적으로 다른 카테고리를 지정해서 회피.
+function getSafeCategoryFor(wpUrl: string): number[] | undefined {
+  let host: string;
+  try { host = new URL(wpUrl).host; } catch { return undefined; }
+  return host === '2days.kr' ? [968] : undefined; // 968 = economic
+}
+
 export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish'): Promise<WordPressPublishResult> {
   content = injectAdSenseForSite(wpUrl, content);
   const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
@@ -110,6 +122,8 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
 
   const body: Record<string, unknown> = { title, content, status };
   if (featuredMediaId) body.featured_media = featuredMediaId;
+  const safeCategories = getSafeCategoryFor(wpUrl);
+  if (safeCategories) body.categories = safeCategories;
 
   const res = await fetch(apiUrl, {
     method: 'POST',
