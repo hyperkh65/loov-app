@@ -167,6 +167,30 @@ async function findBestTrendingKeyword(): Promise<string> {
   return allTrending[0];
 }
 
+// 고정 키워드 목록에서 선택 — 특정 카테고리(고CPC 등)를 노리는 스케줄용.
+// pickKeywordForUser와 동일하게 최근 7일 내 이미 쓴 키워드는 피함.
+export async function pickFromKeywordList(
+  userId: string,
+  keywords: string[],
+  mode: 'rotate' | 'random' = 'rotate',
+): Promise<string> {
+  if (!keywords.length) throw new Error('키워드 목록이 비어있음');
+  const supabase = createAdminClient();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+  const { data: recentLogs } = await supabase
+    .from('bossai_schedule_logs')
+    .select('result')
+    .eq('user_id', userId)
+    .gte('started_at', sevenDaysAgo)
+    .eq('status', 'success');
+  const usedKeywords = new Set(
+    (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean)
+  );
+  const fresh = keywords.filter(k => !usedKeywords.has(k));
+  const pool = fresh.length ? fresh : keywords; // 다 썼으면 처음부터 다시 순환
+  return mode === 'random' ? pool[Math.floor(Math.random() * pool.length)] : pool[0];
+}
+
 // ── 메인 함수 ──────────────────────────────────────────────────────────────
 export async function pickKeywordForUser(userId: string): Promise<string> {
   const supabase = createAdminClient();
