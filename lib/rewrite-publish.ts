@@ -28,6 +28,8 @@ const SNS_ACCOUNT_ROUTING: Record<string, string[]> = {
   '55e472de-948a-45f5-8350-02c82cce4e9f': ['@2dayskr'], // 서울시 정책뉴스
   'e8c07b52-ae40-4bca-a553-e874821fddf2': ['@2dayskr'], // 행정안전부 알립니다
   '526fc596-e56d-4614-b3d8-0d611ee06714': ['@2dayskr'], // 고용노동부 공지사항
+  '48501db6-dc65-4d73-b341-6c6e5066a75d': ['@2dayskr'], // 문화체육관광부 보도자료
+  'fbb25bb6-10d2-4575-b66d-dc53e9170909': ['@2dayskr'], // 환경부 보도자료
 };
 const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 그 외 일반 리라이트글
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
