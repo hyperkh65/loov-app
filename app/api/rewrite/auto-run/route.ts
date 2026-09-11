@@ -107,6 +107,30 @@ export async function POST(req: NextRequest) {
     publishResult = { ok: false, error: String(e) };
   }
 
+  // 4. 고CPC 키워드 캐시 자동 재발굴 — pickKeywordForUser는 12시간 넘은 캐시를
+  // 무시하고 구글트렌드로 폴백하므로(lib/scheduler/keyword-picker.ts), 그보다
+  // 여유 있게 10시간마다 재발굴해서 공백이 안 생기게 함. 대시보드에서 사람이
+  // 안 눌러도 이미 10분마다 도는 이 크론에 얹어서 실행하고, 응답은 기다리지
+  // 않고 백그라운드로 흘려보냄(fire-and-forget) — 실패해도 리라이트/발행
+  // 결과에는 영향 없음.
+  try {
+    const { createAdminClient } = await import('@/lib/supabase-server');
+    const admin = createAdminClient();
+    const { data: latest } = await admin
+      .from('bossai_keyword_opportunities')
+      .select('created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    const staleMs = 10 * 60 * 60 * 1000;
+    const isStale = !latest || Date.now() - new Date(latest.created_at).getTime() > staleMs;
+    if (isStale) {
+      fetch(`${BASE}/api/keyword/auto-discover`, {
+        method: 'POST', headers, signal: AbortSignal.timeout(50_000),
+      }).catch(() => {});
+    }
+  } catch { /* 캐시 신선도 체크 실패는 무시 — 부가 기능 */ }
+
   return NextResponse.json({
     ok: true,
     sync: syncResult,
