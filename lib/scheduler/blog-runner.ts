@@ -52,7 +52,30 @@ export interface WordPressPublishResult {
   featuredImageUrl: string | null;
 }
 
+// 2days.kr(투데이즈 메인 사이트)는 홈페이지엔 애드센스가 있는데 실제 글
+// 페이지에는 광고 삽입 메커니즘이 전혀 없어서(테마/플러그인 확인 불가 —
+// 관리자 로그인 정보 없음) 방문자가 실제로 읽는 글에 광고가 안 나가고
+// 있었음(실사용 중 확인) — 기존 계정으로 워드프레스 관리자 설정은 못
+// 건드리니, 발행하는 본문 자체에 광고 코드를 직접 삽입. 같은 애드센스
+// 계정(ca-pub-8940400388075870)을 이미 다른 사이트에서 쓰고 있어 그대로
+// 재사용, 슬롯 ID도 기존에 검증된 것 재사용.
+function injectAdSenseForSite(wpUrl: string, content: string): string {
+  let host: string;
+  try { host = new URL(wpUrl).host; } catch { return content; }
+  if (host !== '2days.kr') return content;
+  const ad = `<div class="loov-ad" style="margin:20px auto;text-align:center;clear:both;">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8940400388075870" crossorigin="anonymous"></script>
+<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-8940400388075870" data-ad-slot="4238744126" data-ad-format="auto" data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>`;
+  const firstParaEnd = content.indexOf('</p>');
+  if (firstParaEnd === -1) return ad + content;
+  const idx = firstParaEnd + 4;
+  return content.slice(0, idx) + ad + content.slice(idx);
+}
+
 export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish'): Promise<WordPressPublishResult> {
+  content = injectAdSenseForSite(wpUrl, content);
   const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
   const apiUrl = `${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
 
