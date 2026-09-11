@@ -3,6 +3,7 @@ import { refreshBloggerToken } from '@/lib/blogger-token';
 import { pickKeywordForUser, pickFromKeywordList } from './keyword-picker';
 import { generateBlogContent } from '@/lib/blog-content-generator';
 import { submitToIndexNow } from '@/lib/indexnow';
+import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import type { Schedule, BlogAutoConfig } from './index';
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
@@ -198,7 +199,11 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
       } else {
         throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
       }
-      publishedUrl = (await publishToWordPress(wpUrl, wpUser, wpPass, title, content, imageUrl)).link;
+      // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
+      // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행은 진행
+      const crossLink = await findCrossSiteLink(wpUrl, keyword).catch(() => null);
+      const contentWithLink = appendCrossLink(content, crossLink);
+      publishedUrl = (await publishToWordPress(wpUrl, wpUser, wpPass, title, contentWithLink, imageUrl)).link;
     }
   } catch (e) {
     const msg = (e as Error).message;
