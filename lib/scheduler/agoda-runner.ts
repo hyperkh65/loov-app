@@ -10,6 +10,12 @@ const AGODA_SITE_ID = (process.env.AGODA_SITE_ID || '1959217').trim();
 const AGODA_API_KEY = (process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30').trim();
 const DISCLOSURE = '이 포스팅은 아고다 제휴 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
+// 스레드/인스타는 계정이 여러 개 연결돼 있어 전부에 발행하면 다른 콘텐츠 계정까지
+// 호텔 광고로 도배돼 계정 전체 도달률이 깎임 — 여행 전용 계정으로 고정.
+// 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
+const ACCOUNT_ROUTED_PLATFORMS = ['threads', 'instagram'];
+const AGODA_SNS_ACCOUNTS = ['@armchair_travel_today'];
+
 function getSection(text: string, tag: string, allTags: string[]): string {
   const marker = `[[[${tag}]]]`;
   const start = text.indexOf(marker);
@@ -293,7 +299,11 @@ HTML 본문 전체`;
       const connections = await getSnsConnections(schedule.user_id);
 
       for (const platform of snsPlatforms) {
-        const conns = connections.filter(c => c.platform === platform);
+        const conns = connections.filter(c => {
+          if (c.platform !== platform) return false;
+          if (!ACCOUNT_ROUTED_PLATFORMS.includes(platform)) return true;
+          return AGODA_SNS_ACCOUNTS.includes(c.platform_username || '');
+        });
         if (!conns.length) { results.push(`${platform}: 계정 미연결`); continue; }
         const text = textMap[platform];
         if (!text) { results.push(`${platform}: 텍스트 생성 실패`); continue; }

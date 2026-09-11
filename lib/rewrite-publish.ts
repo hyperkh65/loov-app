@@ -14,6 +14,17 @@ import { publishToTumblr } from '@/lib/tumblr-publish';
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 
+// 스레드/인스타는 계정이 여러 개 연결돼 있어 "전부 발행" 하면 여행 전문
+// 계정(@armchair_travel_today)에 쿠팡 상품 광고가 섞이는 식으로 니치가 안 맞는
+// 계정까지 도배돼 계정 전체 도달률이 깎이는 문제가 있었음 — 소스별로 계정을
+// 고정 배정. 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
+// ponytail: 소스 3~4개뿐이라 source_id 하드코딩, 소스가 늘어나면 DB 컬럼으로 옮길 것
+const SNS_ACCOUNT_ROUTING: Record<string, string[]> = {
+  'dadaf1c1-cdef-418f-bd6a-66432504bb26': ['@2dayskr'], // 행정안전부 — 정부지원책/정보성 글 전용
+};
+const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 그 외 일반 리라이트글
+const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
+
 /** 인스타그램은 종횡비 0.8~1.91 범위를 벗어난 이미지를 거부함 — 1080x1080 센터크롭으로 항상 통과시킴 */
 async function toInstagramSafeImage(url: string): Promise<string> {
   // 공개 도메인으로 자기 자신을 호출하면 hairpin NAT로 간헐적으로 실패함.
@@ -159,7 +170,12 @@ export async function publishRewrittenArticle(
     .eq('user_id', userId)
     .eq('is_active', true);
 
-  const relevantConns = (conns || []).filter(c => SNS_PLATFORMS.includes(c.platform as Platform));
+  const allowedAccounts = (sourceId && SNS_ACCOUNT_ROUTING[sourceId]) || DEFAULT_SNS_ACCOUNTS;
+  const relevantConns = (conns || []).filter(c => {
+    if (!SNS_PLATFORMS.includes(c.platform as Platform)) return false;
+    if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
+    return allowedAccounts.includes(c.platform_username || '');
+  });
   if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr };
 
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();

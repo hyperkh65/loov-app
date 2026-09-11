@@ -9,6 +9,12 @@ import type { Schedule, CoupangAutoConfig } from './index';
 
 const DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
+// 스레드/인스타는 계정이 여러 개 연결돼 있어 전부에 발행하면 여행/정보성 계정까지
+// 쿠팡 상품 광고로 도배돼 계정 전체 도달률이 깎임 — 쿠팡 전용 계정으로 고정.
+// 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
+const ACCOUNT_ROUTED_PLATFORMS = ['threads', 'instagram'];
+const COUPANG_SNS_ACCOUNTS = ['@2days.kr'];
+
 async function getSnsConnections(userId: string): Promise<Array<{ platform: string; platform_user_id: string; platform_username: string; access_token: string; is_active: boolean }>> {
   const supabase = createAdminClient();
   const { data } = await supabase
@@ -342,9 +348,11 @@ export async function runCoupangAuto(
   if (platforms.length) {
     const connections = await getSnsConnections(schedule.user_id);
     for (const platform of platforms) {
-      // "연결된 SNS 모두 발행" — 같은 플랫폼에 계정이 여러 개 연결돼 있으면(스레드 5개,
-      // 인스타 3개 등) 첫 번째 하나만 쓰지 않고 전부에 발행한다.
-      const conns = connections.filter(c => c.platform === platform);
+      const conns = connections.filter(c => {
+        if (c.platform !== platform) return false;
+        if (!ACCOUNT_ROUTED_PLATFORMS.includes(platform)) return true;
+        return COUPANG_SNS_ACCOUNTS.includes(c.platform_username || '');
+      });
       if (!conns.length) { results.push(`${platform}: 계정 미연결`); continue; }
 
       const text = textMap[platform];
