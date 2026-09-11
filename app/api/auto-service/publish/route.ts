@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { submitToIndexNow } from '@/lib/indexnow';
 import iconv from 'iconv-lite';
 
 export const maxDuration = 600;
@@ -445,6 +446,7 @@ export async function POST(req: NextRequest) {
             if (res.ok) {
               const post = await res.json();
               results[siteKey] = { success: true, url: post.link };
+              if (post.link) submitToIndexNow(post.link).catch(() => {});
             } else {
               const errText = await res.text();
               results[siteKey] = { success: false, error: `WP 오류(${res.status}): ${errText.slice(0, 200)}` };

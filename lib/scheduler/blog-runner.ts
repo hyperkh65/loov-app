@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { pickKeywordForUser } from './keyword-picker';
 import { generateBlogContent } from '@/lib/blog-content-generator';
+import { submitToIndexNow } from '@/lib/indexnow';
 import type { Schedule, BlogAutoConfig } from './index';
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
@@ -87,7 +88,11 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
     throw new Error(`WordPress API 오류 ${res.status}: ${err.slice(0, 100)}`);
   }
   const data = await res.json();
-  return data.link || '';
+  const link = data.link || '';
+  // 발행 직후 검색엔진(네이버/빙 등 IndexNow 참여 엔진)에 새 글을 바로 알려서
+  // 크롤링/노출을 앞당김 — 실패해도 발행 자체에는 영향 없음(fire-and-forget)
+  if (link) submitToIndexNow(link).catch(() => {});
+  return link;
 }
 
 export async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
