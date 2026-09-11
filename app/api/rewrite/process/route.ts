@@ -42,6 +42,17 @@ export async function POST(req: NextRequest) {
 
   const supabase = await createAdminClient();
 
+  // maxDuration(300s)을 넘겨 함수가 강제 종료되면 catch 블록까지 못 가고
+  // 'rewriting' 상태에서 영영 멈추는 문제가 실사용 중 확인됨(위즈데이터센터
+  // 소스에서 최대 3일 이상 방치된 사례 다수) — 10분 이상 rewriting인 건 죽은
+  // 시도로 보고 pending으로 되돌려 다음 라운드에 재시도되게 함
+  const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await supabase
+    .from('bossai_rewrite_articles')
+    .update({ status: 'pending', updated_at: new Date().toISOString() })
+    .eq('status', 'rewriting')
+    .lt('updated_at', staleThreshold);
+
   // 처리할 기사 선택
   type ArticleRow = {
     id: string; title: string; original_content: string;
