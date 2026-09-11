@@ -255,10 +255,22 @@ function calcCanRank1(
   return { canRank1: false, reason: reasons.join(' / ') || '경쟁 심함' };
 }
 
-export async function POST(_req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+export async function POST(req: NextRequest) {
+  // 대시보드 수동 클릭 세션 인증 외에, NAS 크론이 매일 자동으로 캐시를 채울 수
+  // 있도록 CRON_SECRET bearer 인증도 허용 — 이게 없으면 사람이 안 누르는 한
+  // bossai_keyword_opportunities 캐시가 계속 비어서 블로그자동화가 고CPC
+  // 키워드 대신 구글트렌드 일반 키워드로만 계속 폴백함(실사용 중 확인).
+  const cronSecret = process.env.CRON_SECRET || process.env.BOT_SECRET;
+  const isCron = !!cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`;
+  let userId: string;
+  if (isCron) {
+    userId = process.env.OWNER_USER_ID!;
+  } else {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+    userId = user.id;
+  }
 
   const [naverCid, naverSec, adKey, adSec, adCust, kakaoKey] = await Promise.all([
     getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET'),
@@ -348,7 +360,7 @@ export async function POST(_req: NextRequest) {
 
   for (const r of results) {
     await adminDb.from('bossai_keyword_opportunities').upsert({
-      user_id: user.id, keyword: r.keyword, source: r.source,
+      user_id: userId, keyword: r.keyword, source: r.source,
       monthly_total: r.monthlyTotal, monthly_pc: r.monthlyPc, monthly_mobile: r.monthlyMobile,
       naver_blog: r.naverBlog, daum_total: r.daumBlog + r.daumCafe,
       google_count: r.googleCount, competition_score: r.competitionScore,
