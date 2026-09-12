@@ -22,19 +22,24 @@ const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 // 계정(@armchair_travel_today)에 쿠팡 상품 광고가 섞이는 식으로 니치가 안 맞는
 // 계정까지 도배돼 계정 전체 도달률이 깎이는 문제가 있었음 — 소스별로 계정을
 // 고정 배정. 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
-// ponytail: 소스 3~4개뿐이라 source_id 하드코딩, 소스가 늘어나면 DB 컬럼으로 옮길 것
-const SNS_ACCOUNT_ROUTING: Record<string, string[]> = {
-  'dadaf1c1-cdef-418f-bd6a-66432504bb26': ['@2dayskr'], // 행정안전부 — 정부지원책/정보성 글 전용
-  '6eeebbb5-f9bd-441a-966c-3a85c24ee63d': ['@2dayskr'], // 보건복지부 보도자료
-  '1977545d-a790-4db3-b452-f4cc03c343f6': ['@2dayskr'], // 고용노동부 정책자료
-  '55e472de-948a-45f5-8350-02c82cce4e9f': ['@2dayskr'], // 서울시 정책뉴스
-  'e8c07b52-ae40-4bca-a553-e874821fddf2': ['@2dayskr'], // 행정안전부 알립니다
-  '526fc596-e56d-4614-b3d8-0d611ee06714': ['@2dayskr'], // 고용노동부 공지사항
-  '48501db6-dc65-4d73-b341-6c6e5066a75d': ['@2dayskr'], // 문화체육관광부 보도자료
-  'fbb25bb6-10d2-4575-b66d-dc53e9170909': ['@2dayskr'], // 환경부 보도자료
-};
-const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 그 외 일반 리라이트글
+// 원래 소스 3~4개뿐이라 source_id를 코드에 하드코딩했는데, 리라이트 소스가
+// 30개 가까이로 늘면서 매번 배포해야 하는 게 안 맞아 app_settings의
+// SNS_ACCOUNT_ROUTING_BY_SOURCE(JSON: source_id -> 계정 배열)로 옮김 —
+// 대시보드/DB에서 바로 조정 가능
+const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 라우팅에 없는 소스(그 외 일반 리라이트글)
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
+
+async function getSnsAccountRouting(sourceId: string | null | undefined): Promise<string[]> {
+  if (!sourceId) return DEFAULT_SNS_ACCOUNTS;
+  try {
+    const raw = await getSetting('SNS_ACCOUNT_ROUTING_BY_SOURCE');
+    if (!raw) return DEFAULT_SNS_ACCOUNTS;
+    const routing = JSON.parse(raw) as Record<string, string[]>;
+    return routing[sourceId] || DEFAULT_SNS_ACCOUNTS;
+  } catch {
+    return DEFAULT_SNS_ACCOUNTS;
+  }
+}
 
 interface WpCreds { url: string; username: string; appPassword: string }
 
@@ -271,7 +276,7 @@ export async function publishRewrittenArticle(
     .eq('user_id', userId)
     .eq('is_active', true);
 
-  const allowedAccounts = (sourceId && SNS_ACCOUNT_ROUTING[sourceId]) || DEFAULT_SNS_ACCOUNTS;
+  const allowedAccounts = await getSnsAccountRouting(sourceId);
   const relevantConns = (conns || []).filter(c => {
     if (!SNS_PLATFORMS.includes(c.platform as Platform)) return false;
     if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
