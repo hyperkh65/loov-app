@@ -63,6 +63,22 @@ export async function POST(req: NextRequest) {
           .limit(1);
         if (existing && existing.length > 0) continue;
 
+        // 일부 게시판(예: mcee.go.kr)은 글 링크에 jsessionid가 박혀있어 매번
+        // 폴링할 때마다 같은 글인데 URL이 달라짐 — source_url 완전일치로는
+        // 못 걸러져서 실사용 중 같은 기사가 몇 시간 동안 반복 등록되는 문제가
+        // 있었음. 같은 소스에서 최근 3일 내 같은 제목이 이미 들어와 있으면
+        // URL이 달라도 건너뜀.
+        const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
+        const { data: titleDup } = await supabase
+          .from('bossai_rewrite_articles')
+          .select('id')
+          .eq('user_id', ownerId)
+          .eq('source_id', site.id)
+          .eq('title', item.title)
+          .gte('created_at', threeDaysAgo)
+          .limit(1);
+        if (titleDup && titleDup.length > 0) continue;
+
         if (site.latest_only) {
           await supabase
             .from('bossai_rewrite_articles')
