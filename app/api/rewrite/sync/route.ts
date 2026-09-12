@@ -110,6 +110,23 @@ export async function POST(req: NextRequest) {
 
       if (!title) { skipped++; continue; }
 
+      // 같은 기사가 노션 쪽에서 서로 다른 page_id로 반복 생성되는 경우가
+      // 실사용 중 확인됨(환경부 보도자료 소스에서 동일 제목이 페이지ID만 바뀐 채
+      // 계속 QUEUED로 들어옴) — notion_page_id만으로는 못 걸러지므로 최근 3일
+      // 내 같은 제목이 이미 들어와 있으면 이 페이지는 건너뜀(같은 notion_page_id로
+      // 이미 들어온 건 정상 업데이트이니 제외)
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
+      const { data: dup } = await supabase
+        .from('bossai_rewrite_articles')
+        .select('id')
+        .eq('user_id', ownerId)
+        .eq('title', title)
+        .neq('notion_page_id', page.id)
+        .gte('created_at', threeDaysAgo)
+        .limit(1)
+        .maybeSingle();
+      if (dup) { skipped++; continue; }
+
       // upsert: notion_page_id 기준
       const { error } = await supabase
         .from('bossai_rewrite_articles')
