@@ -4,6 +4,7 @@ import { pickKeywordForUser, pickFromKeywordList } from './keyword-picker';
 import { generateBlogContent } from '@/lib/blog-content-generator';
 import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
+import { publishToWordpressCom } from '@/lib/wordpress-com';
 import type { Schedule, BlogAutoConfig } from './index';
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
@@ -209,6 +210,12 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
     const msg = (e as Error).message;
     if (msg.startsWith('[')) throw e;
     throw new Error(`[발행 실패] ${msg}`);
+  }
+
+  // 블로거/워드프레스 어느 쪽으로 발행했든 워드프레스닷컴 위성 블로그에도
+  // 요약+링크를 올려 백링크/유입 경로 확보 — 실패해도 본 발행에는 영향 없음
+  if (publishedUrl) {
+    publishToWordpressCom({ title, content, articleUrl: publishedUrl }).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
