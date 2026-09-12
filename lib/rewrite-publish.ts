@@ -11,6 +11,7 @@ import type { Platform } from '@/lib/sns/platforms';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
 import { publishToLinkedIn } from '@/lib/linkedin-publish';
+import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
@@ -124,6 +125,7 @@ export interface PublishResult {
   naverCafe: string; // 'ok' | 'skip: ...' | 'error: ...'
   tumblr: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
   linkedin: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
+  wordpressCom: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
 }
 
 export async function publishRewrittenArticle(
@@ -226,8 +228,25 @@ export async function publishRewrittenArticle(
     }
   }
 
+  // 워드프레스닷컴은 무료 위성 블로그 — 요약+원문링크만 올려서 백링크/유입
+  // 경로로 활용(텀블러/링크드인과 같은 목적). 마찬가지로 워드프레스 발행 URL이
+  // 있어야 의미 있음
+  let wordpressCom = 'skip: 워드프레스 발행 URL 없음';
+  if (wordpressUrl) {
+    try {
+      const { url } = await publishToWordpressCom({
+        title: article.title,
+        content: article.content,
+        articleUrl: wordpressUrl,
+      });
+      wordpressCom = url ? `ok: ${url}` : 'ok';
+    } catch (e) {
+      wordpressCom = `error: ${(e as Error).message?.slice(0, 150)}`;
+    }
+  }
+
   const sns: Record<string, string> = {};
-  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr, linkedin };
+  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom };
 
   const { data: conns } = await admin
     .from('sns_connections')
@@ -241,7 +260,7 @@ export async function publishRewrittenArticle(
     if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
     return allowedAccounts.includes(c.platform_username || '');
   });
-  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, linkedin };
+  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom };
 
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   // AI 캡션 생성이 실패/타임아웃하면 제목 한 줄로만 폴백하던 것 — "블로그 자동화"처럼
@@ -297,5 +316,5 @@ export async function publishRewrittenArticle(
     }
   }
 
-  return { wordpressUrl, sns, naverCafe, tumblr, linkedin };
+  return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom };
 }
