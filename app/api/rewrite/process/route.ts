@@ -33,6 +33,20 @@ function err(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
+// 돈 되는 키워드 발굴 목적에 맞게, 같은 소스 내에서는 오래된 순서보다 이런
+// 단어가 제목에 들어간 글(지원금/신청 대상/가격 변동/할인·혜택 등 수익성
+// 높은 이슈)을 먼저 처리 — 소스 간 공정성(라운드로빈)은 그대로 유지하고,
+// 한 소스 안에서 "어떤 글부터"만 우선순위를 매김
+const MONEY_KEYWORDS = [
+  '지원금', '신청', '대상', '환급', '가격', '출시', '할인', '보조금', '대출',
+  '청약', '보험', '비교', '추천', '후기', '리콜', '변경', '무료', '혜택',
+];
+function moneyScore(title: string): number {
+  let score = 0;
+  for (const kw of MONEY_KEYWORDS) if (title.includes(kw)) score++;
+  return score;
+}
+
 export async function POST(req: NextRequest) {
   if (!await authOk(req)) return err('인증 실패', 401);
 
@@ -110,16 +124,22 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // 오래된 순으로 최대 15개만 후보로 뽑아서, 그 안에서 돈 되는
+      // 키워드 점수가 가장 높은 글을 우선 처리(동점이면 더 오래된 글)
       let query = supabase
         .from('bossai_rewrite_articles')
         .select(SELECT_COLS)
         .eq('user_id', ownerId)
         .eq('status', 'pending')
         .order('created_at', { ascending: true })
-        .limit(1);
+        .limit(15);
       query = bestSourceKey === 'null' ? query.is('source_id', null) : query.eq('source_id', bestSourceKey);
-      const { data } = await query.single();
-      article = data;
+      const { data: candidates } = await query;
+      if (candidates?.length) {
+        article = candidates.reduce((best, cur) =>
+          moneyScore(cur.title) > moneyScore(best.title) ? cur : best
+        );
+      }
     }
   }
 
