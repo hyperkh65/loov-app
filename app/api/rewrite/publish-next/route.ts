@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
       .from('bossai_rewrite_articles')
       .update({
         status,
-        published_urls: { wordpress: result.wordpressUrl, sns: result.sns, naver_cafe: result.naverCafe, tumblr: result.tumblr, linkedin: result.linkedin, wordpress_com: result.wordpressCom },
+        published_urls: { wordpress: result.wordpressUrl, sns: result.sns, naver_cafe: result.naverCafe, tumblr: result.tumblr, linkedin: result.linkedin, wordpress_com: result.wordpressCom, github_pages: result.githubPages },
         published_at: result.wordpressUrl ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
