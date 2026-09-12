@@ -48,6 +48,22 @@ export async function POST(req: NextRequest) {
       }
       if (!feedUrl) { perSiteResults.push({ site: site.name, newFound: 0, error: '피드 없음' }); continue; }
 
+      // latest_only 소스는 새 글 생산 속도가 처리(1시간에 소스당 1개 발행) 속도보다
+      // 훨씬 빠른 경우(위즈 데이터센터 등 고빈도 소스)가 실사용 중 확인됨 — pending
+      // 단계는 아래에서 최신글로 교체되지만, 이미 리라이팅까지 끝난 'ready'는 그
+      // 대상이 아니라서 계속 쌓여서 최대 688개(5일치)까지 밀린 적이 있었음.
+      // latest_only 소스는 애초에 "최신성"이 핵심이라 오래된 ready도 발행 의미가
+      // 없으므로 3일 넘은 건 발행 전에 정리
+      if (site.latest_only) {
+        const threeDaysAgoReady = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
+        await supabase
+          .from('bossai_rewrite_articles')
+          .delete()
+          .eq('source_id', site.id)
+          .eq('status', 'ready')
+          .lt('created_at', threeDaysAgoReady);
+      }
+
       // latest_only 소스는 오래된 글부터 밀린 순서로 처리하다 최신 이슈를 놓치는 걸
       // 방지하기 위해 피드의 최신 글 1개만 확인 — 처리 안 된 pending 백로그가
       // 있으면 이 최신 글로 교체(오래된 건 버림)
