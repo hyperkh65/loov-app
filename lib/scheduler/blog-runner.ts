@@ -5,6 +5,7 @@ import { generateBlogContent } from '@/lib/blog-content-generator';
 import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
+import { publishToGithubPages } from '@/lib/github-pages-blog';
 import type { Schedule, BlogAutoConfig } from './index';
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
@@ -216,6 +217,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   // 요약+링크를 올려 백링크/유입 경로 확보 — 실패해도 본 발행에는 영향 없음
   if (publishedUrl) {
     publishToWordpressCom({ title, content, articleUrl: publishedUrl }).catch(() => {});
+    publishToGithubPages({ title, content, articleUrl: publishedUrl }).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
