@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { fetchFeedItems, discoverFeedUrl, scrapeArticleFull } from '@/lib/rewrite-site-scraper';
+import { wasRecentlySeen, markSeen } from '@/lib/rewrite-local-cache';
 
 export const maxDuration = 120;
 
@@ -71,13 +72,17 @@ export async function POST(req: NextRequest) {
       let siteNew = 0;
 
       for (const item of items) {
+        // 컨테이너 로컬 캐시로 먼저 확인 — 직전 폴링이랑 완전히 같은 글이면
+        // Supabase를 아예 안 건드리고 스킵(대부분의 폴링이 여기서 끝남)
+        if (wasRecentlySeen(site.id, item.title, item.link)) continue;
+
         const { data: existing } = await supabase
           .from('bossai_rewrite_articles')
           .select('id')
           .eq('user_id', ownerId)
           .eq('source_url', item.link)
           .limit(1);
-        if (existing && existing.length > 0) continue;
+        if (existing && existing.length > 0) { markSeen(site.id, item.title, item.link); continue; }
 
         // 일부 게시판(예: mcee.go.kr)은 글 링크에 jsessionid가 박혀있어 매번
         // 폴링할 때마다 같은 글인데 URL이 달라짐 — source_url 완전일치로는
@@ -93,7 +98,7 @@ export async function POST(req: NextRequest) {
           .eq('title', item.title)
           .gte('created_at', threeDaysAgo)
           .limit(1);
-        if (titleDup && titleDup.length > 0) continue;
+        if (titleDup && titleDup.length > 0) { markSeen(site.id, item.title, item.link); continue; }
 
         if (site.latest_only) {
           await supabase
@@ -116,6 +121,7 @@ export async function POST(req: NextRequest) {
           image_urls: scraped.images.slice(1),
           status: 'pending',
         });
+        markSeen(site.id, item.title, item.link);
         siteNew++;
       }
 
