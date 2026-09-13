@@ -1,0 +1,35 @@
+name: Run DB Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: 'Path to SQL file (e.g. supabase/migrations/20260913_wp_auto_gsc.sql)'
+        required: true
+
+env:
+  DB_HOST: aws-1-ap-southeast-1.pooler.supabase.com
+  DB_USER: postgres.uhxkmprscovrnfigasia
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install postgres 17 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gnupg curl lsb-release
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Apply migration
+        run: |
+          export PATH=/usr/lib/postgresql/17/bin:$PATH
+          PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" psql \
+            "host=${{ env.DB_HOST }} port=5432 dbname=postgres user=${{ env.DB_USER }} sslmode=require" \
+            -v ON_ERROR_STOP=1 \
+            -f "${{ github.event.inputs.file }}"
