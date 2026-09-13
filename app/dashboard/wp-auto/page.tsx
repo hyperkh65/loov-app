@@ -41,6 +41,35 @@ export default function WpAutoPage() {
   const [result, setResult] = useState<Record<string, string> | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
   const [sitesLoading, setSitesLoading] = useState(false);
+  const [naverOpen, setNaverOpen] = useState<Record<string, boolean>>({});
+  const [naverInput, setNaverInput] = useState<Record<string, string>>({});
+  const [naverStatus, setNaverStatus] = useState<Record<string, { ok: boolean; msg: string } | undefined>>({});
+  const [naverSubmitting, setNaverSubmitting] = useState<Record<string, boolean>>({});
+
+  const submitNaverTag = async (siteUrl: string) => {
+    const tag = (naverInput[siteUrl] || '').trim();
+    if (!tag) return;
+    setNaverSubmitting(prev => ({ ...prev, [siteUrl]: true }));
+    setNaverStatus(prev => ({ ...prev, [siteUrl]: undefined }));
+    try {
+      const res = await fetch('/api/wp-auto/verification-tag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl, tag }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setNaverStatus(prev => ({ ...prev, [siteUrl]: { ok: true, msg: '적용 완료 — 이제 네이버에서 소유확인 버튼을 눌러주세요' } }));
+        setNaverInput(prev => ({ ...prev, [siteUrl]: '' }));
+      } else {
+        setNaverStatus(prev => ({ ...prev, [siteUrl]: { ok: false, msg: data.error || '적용 실패' } }));
+      }
+    } catch (e) {
+      setNaverStatus(prev => ({ ...prev, [siteUrl]: { ok: false, msg: String(e) } }));
+    } finally {
+      setNaverSubmitting(prev => ({ ...prev, [siteUrl]: false }));
+    }
+  };
 
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -525,10 +554,42 @@ export default function WpAutoPage() {
                         ⚙️ 관리자
                       </a>
                     </div>
-                    <a href={NAVER_ADVISOR_URL} target="_blank" rel="noopener noreferrer"
-                      className="block text-center py-2 text-xs bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 font-medium transition-colors">
-                      🟢 네이버 서치어드바이저에 수동 등록 ↗
-                    </a>
+                    <div className="flex gap-2 mb-2">
+                      <a href={NAVER_ADVISOR_URL} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 text-center py-2 text-xs bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 font-medium transition-colors">
+                        🟢 서치어드바이저 열기 ↗
+                      </a>
+                      <button
+                        onClick={() => setNaverOpen(prev => ({ ...prev, [site.url]: !prev[site.url] }))}
+                        className="flex-1 text-center py-2 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors">
+                        📋 인증 태그 붙여넣기
+                      </button>
+                    </div>
+                    {naverOpen[site.url] && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                        <p className="text-xs text-emerald-800">
+                          서치어드바이저 &quot;HTML 태그&quot; 방식에서 나오는 <span className="font-mono">&lt;meta name=&quot;...-site-verification&quot; ...&gt;</span> 한 줄을 그대로 붙여넣으세요.
+                        </p>
+                        <textarea
+                          value={naverInput[site.url] || ''}
+                          onChange={e => setNaverInput(prev => ({ ...prev, [site.url]: e.target.value }))}
+                          placeholder='<meta name="naver-site-verification" content="..." />'
+                          rows={2}
+                          className="w-full px-2.5 py-2 text-xs font-mono border border-emerald-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                        <button
+                          onClick={() => submitNaverTag(site.url)}
+                          disabled={!naverInput[site.url]?.trim() || naverSubmitting[site.url]}
+                          className="w-full py-2 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 font-medium transition-colors">
+                          {naverSubmitting[site.url] ? '적용 중...' : '사이트에 적용'}
+                        </button>
+                        {naverStatus[site.url] && (
+                          <p className={`text-xs ${naverStatus[site.url]?.ok ? 'text-emerald-700' : 'text-red-600'}`}>
+                            {naverStatus[site.url]?.ok ? '✅' : '⚠️'} {naverStatus[site.url]?.msg}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
