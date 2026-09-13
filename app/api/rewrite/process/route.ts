@@ -184,19 +184,23 @@ export async function POST(req: NextRequest) {
       useOwnThumbnail = !!source?.use_generated_thumbnail;
     }
 
-    // 이미지: 원문에서 스크랩된 게 있으면 그걸 쓰고, 없거나(또는 소스 설정상 항상
-    // 자체 생성해야 하면) 대표이미지를 새로 생성
+    // 본문 섹션 이미지: 원문 페이지를 통째로 스크랩해서 담아뒀던 article.image_urls는
+    // "관련기사/많이 본 뉴스" 위젯 등 기사 본문과 무관한 이미지까지 섞여 들어오는
+    // 문제가 있었음(예: 금융 기사에 정치 화보가 들어감) — "블로그 자동화"
+    // (lib/blog-content-generator.ts generateBlogContent)와 동일하게 제목으로
+    // 실제 이미지를 검색해 섹션마다 넣는 방식으로 통일.
     let content = rawContent;
+    const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(title, 6)
+      .catch(() => ({ displayUrls: [] as string[], thumbUrl: undefined as string | undefined }));
+    if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
+
+    // 대표이미지: 원문에서 스크랩된 게 있으면 그걸 쓰고, 없거나(또는 소스 설정상
+    // 항상 자체 생성해야 하면) 새로 생성
     let representativeImageUrl = useOwnThumbnail ? null : article.representative_image_url;
     if (representativeImageUrl) {
       content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
-      if (article.image_urls?.length) content = insertImagesIntoContent(content, article.image_urls, title);
     } else {
       try {
-        // 배경 없이 그라디언트+텍스트만 넣으면 밋밋해서 임팩트가 없다는 피드백 —
-        // "블로그 자동화"(lib/blog-content-generator.ts)가 하던 것과 동일하게
-        // 실제 관련 사진을 검색해 배경으로 깔아준다.
-        const { thumbUrl: bgImageUrl } = await searchInlineImages(title, 3).catch(() => ({ thumbUrl: undefined }));
         representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', bgImageUrl);
         if (representativeImageUrl) content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
       } catch { /* 썸네일은 선택사항 */ }
