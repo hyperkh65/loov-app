@@ -19,8 +19,15 @@ function genPass() {
   return Array.from({ length: 14 }, () => c[Math.floor(Math.random() * c.length)]).join('');
 }
 
+type Nas = 'hy64' | 'hy65';
+const NAS_LABEL: Record<Nas, { domain: string; box: string }> = {
+  hy64: { domain: 'aboda.kr', box: 'hy64' },
+  hy65: { domain: '2days.kr', box: 'hy65' },
+};
+
 export default function WpAutoPage() {
   const [tab, setTab] = useState<'new' | 'sites'>('new');
+  const [nas, setNas] = useState<Nas>('hy64');
   const [sub, setSub] = useState('');
   const [siteTitle, setSiteTitle] = useState('');
   const [topic, setTopic] = useState(TOPICS[0]);
@@ -44,15 +51,15 @@ export default function WpAutoPage() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
-  // 도메인 변경 시 체크 초기화
-  useEffect(() => { setDomainOk(null); setCheckMsg(''); }, [sub]);
+  // 도메인/대상 NAS 변경 시 체크 초기화
+  useEffect(() => { setDomainOk(null); setCheckMsg(''); }, [sub, nas]);
 
   const checkDomain = async () => {
     if (!sub) return;
     setChecking(true);
     setDomainOk(null);
     try {
-      const res = await fetch(`/api/wp-auto/check?domain=${sub}`);
+      const res = await fetch(`/api/wp-auto/check?domain=${sub}&nas=${nas}`);
       const data = await res.json();
       if (data.error) { setDomainOk(false); setCheckMsg(data.error); }
       else { setDomainOk(data.available); setCheckMsg(data.available ? '사용 가능!' : '이미 사용 중'); }
@@ -64,11 +71,11 @@ export default function WpAutoPage() {
   const loadSites = useCallback(async () => {
     setSitesLoading(true);
     try {
-      const res = await fetch('/api/wp-auto/sites');
+      const res = await fetch(`/api/wp-auto/sites?nas=${nas}`);
       const data = await res.json();
       setSites(data.sites || []);
     } finally { setSitesLoading(false); }
-  }, []);
+  }, [nas]);
 
   useEffect(() => { if (tab === 'sites') loadSites(); }, [tab, loadSites]);
 
@@ -83,7 +90,7 @@ export default function WpAutoPage() {
       const res = await fetch('/api/wp-auto/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subdomain: sub, title: siteTitle, topic, adminPass }),
+        body: JSON.stringify({ subdomain: sub, title: siteTitle, topic, adminPass, nas }),
         signal: abortRef.current.signal,
       });
 
@@ -132,7 +139,7 @@ export default function WpAutoPage() {
               🌐 WordPress 자동세팅
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              hy64 NAS · <span className="font-mono">*.aboda.kr</span> · GeneratePress + AdSense 최적화
+              {NAS_LABEL[nas].box} NAS · <span className="font-mono">*.{NAS_LABEL[nas].domain}</span> · GeneratePress + AdSense 최적화
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -142,8 +149,20 @@ export default function WpAutoPage() {
           </div>
         </div>
 
-        {/* 탭 */}
+        {/* NAS 선택 */}
         <div className="flex gap-1 mt-4">
+          {(['hy64', 'hy65'] as const).map(n => (
+            <button key={n} onClick={() => setNas(n)}
+              className={`px-3 py-1 text-xs font-semibold rounded-full border transition-colors ${
+                nas === n ? 'bg-gray-900 text-white border-gray-900' : 'text-gray-500 border-gray-300 hover:bg-gray-100'
+              }`}>
+              {NAS_LABEL[n].box} · {NAS_LABEL[n].domain}
+            </button>
+          ))}
+        </div>
+
+        {/* 탭 */}
+        <div className="flex gap-1 mt-3">
           {(['new', 'sites'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -178,7 +197,7 @@ export default function WpAutoPage() {
                       placeholder="myblog"
                       className="flex-1 px-3 py-2.5 text-sm outline-none"
                     />
-                    <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 whitespace-nowrap">.aboda.kr</span>
+                    <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 whitespace-nowrap">.{NAS_LABEL[nas].domain}</span>
                   </div>
                   <button
                     onClick={checkDomain}
@@ -195,7 +214,7 @@ export default function WpAutoPage() {
                     domainOk ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
                   }`}>
                     {domainOk ? '✅' : '❌'} {checkMsg}
-                    {domainOk && <span className="text-green-600 font-mono text-xs ml-auto">{sub}.aboda.kr</span>}
+                    {domainOk && <span className="text-green-600 font-mono text-xs ml-auto">{sub}.{NAS_LABEL[nas].domain}</span>}
                   </div>
                 )}
 
@@ -203,7 +222,7 @@ export default function WpAutoPage() {
                 <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
                   <strong>📌 DNS 수동 설정 필요 (dnszi.com)</strong><br />
                   설치 완료 후 dnszi.com에서 CNAME 레코드 추가:<br />
-                  <span className="font-mono">{sub || '[도메인]'} → hy64.synology.me</span>
+                  <span className="font-mono">{sub || '[도메인]'} → {nas === 'hy64' ? 'hy64.synology.me' : '2days.kr'}</span>
                 </div>
               </div>
 
@@ -256,7 +275,7 @@ export default function WpAutoPage() {
                         🔄
                       </button>
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">관리자 ID: admin · 이메일: admin@aboda.kr</p>
+                    <p className="text-xs text-gray-400 mt-1">관리자 ID: admin · 이메일: admin@{NAS_LABEL[nas].domain}</p>
                   </div>
                 </div>
               </div>
