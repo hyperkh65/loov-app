@@ -101,13 +101,22 @@ export async function POST(req: NextRequest) {
   const DB_NAME = `wp_${subdomain.replace(/-/g, '_')}`;
   const DB_USER = `wp_${subdomain.replace(/-/g, '_').slice(0, 16)}`;
   const DB_PASS = (() => {
+    // MariaDB validate_password 정책(길이10+/대소문자/숫자/특수문자 모두 포함)을
+    // 확률에 맡기면 가끔 소문자가 하나도 안 뽑혀서 실사용 중 DB 생성이 실패하는 게
+    // 확인됨 — 클래스별 최소 1개씩 강제로 넣고 섞음
     const lower = 'abcdefghijklmnopqrstuvwxyz';
     const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const digits = '0123456789';
     const special = '!@#$%^&*';
+    const all = lower + upper + digits + special;
     const rand = (s: string) => s[Math.floor(Math.random() * s.length)];
-    const base = Array.from({ length: 10 }, () => rand(lower + upper + digits)).join('');
-    return rand(upper) + rand(special) + base + rand(digits);
+    const chars = [rand(lower), rand(upper), rand(digits), rand(special)];
+    while (chars.length < 14) chars.push(rand(all));
+    for (let i = chars.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join('');
   })();
   const WP_URL = `https://${subdomain}.${target.domainSuffix}`;
   const MYSQL_ROOT = target.mysqlRootPass;
