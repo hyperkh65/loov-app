@@ -208,6 +208,10 @@ function adHeaders(apiKey: string, secret: string, customerId: string) {
   };
 }
 
+function parseQcCnt(v: number | string) {
+  return typeof v === 'number' ? v : v === '< 10' ? 5 : parseInt(String(v)) || 0;
+}
+
 async function getVolume(kw: string, apiKey: string, secret: string, cid: string) {
   try {
     const res = await fetch(
@@ -218,9 +222,31 @@ async function getVolume(kw: string, apiKey: string, secret: string, cid: string
     const data = await res.json() as { keywordList?: Array<{ relKeyword: string; monthlyPcQcCnt: number | string; monthlyMobileQcCnt: number | string }> };
     const m = (data.keywordList || []).find(k => k.relKeyword === kw) || data.keywordList?.[0];
     if (!m) return { pc: 0, mobile: 0 };
-    const parse = (v: number | string) => typeof v === 'number' ? v : v === '< 10' ? 5 : parseInt(String(v)) || 0;
-    return { pc: parse(m.monthlyPcQcCnt), mobile: parse(m.monthlyMobileQcCnt) };
+    return { pc: parseQcCnt(m.monthlyPcQcCnt), mobile: parseQcCnt(m.monthlyMobileQcCnt) };
   } catch { return { pc: 0, mobile: 0 }; }
+}
+
+// 네이버 광고 API에 시드 하나만 넣어도 그 시드와 실제로 연관성 있다고 네이버
+// 자체 광고 수요 데이터가 판단한 키워드 수십 개 + 각각의 진짜 검색량이 통째로
+// 돌아온다(keywordList 전체) — 지금까지는 이 응답에서 시드 자신의 검색량 한
+// 줄만 빼 쓰고 나머지는 버렸음. "우리가 추측한 자동완성 롱테일"이 아니라
+// "네이버가 집계한 실제 연관 검색 수요"를 바로 후보로 쓰기 위해 전체를 반환.
+async function relatedKeywordsWithVolume(
+  seed: string, apiKey: string, secret: string, cid: string, category: 'lifestyle' | 'finance'
+): Promise<Array<{ keyword: string; pc: number; mobile: number }>> {
+  try {
+    const res = await fetch(
+      `https://api.naver.com/keywordstool?hintKeywords=${encodeURIComponent(seed)}&showDetail=1`,
+      { headers: adHeaders(apiKey, secret, cid), signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json() as { keywordList?: Array<{ relKeyword: string; monthlyPcQcCnt: number | string; monthlyMobileQcCnt: number | string }> };
+    return (data.keywordList || [])
+      .map(k => ({ keyword: k.relKeyword?.trim() || '', pc: parseQcCnt(k.monthlyPcQcCnt), mobile: parseQcCnt(k.monthlyMobileQcCnt) }))
+      .filter(k => k.keyword && !isBlocked(k.keyword, category) && (k.pc + k.mobile) > 0)
+      .sort((a, b) => (b.pc + b.mobile) - (a.pc + a.mobile))
+      .slice(0, 30);
+  } catch { return []; }
 }
 
 // ── 점수 계산 ─────────────────────────────────────────────────────────────────
@@ -319,11 +345,10 @@ export async function POST(req: NextRequest) {
     ? (FINANCE_ENTRY_SEEDS[month] || FINANCE_ENTRY_SEEDS[4])
     : (ENTRY_SEEDS[month] || ENTRY_SEEDS[4]);
 
-  // ── STEP 1: 1-hop 자동완성 ────────────────────────────────────────────────
-  // 진입 시드 → Naver 자동완성 → 실제 검색어 수집
   const seen = new Set<string>();
-  type CandidateSource = 'autocomplete' | 'longtail';
+  type CandidateSource = 'ad_related' | 'autocomplete' | 'longtail';
   const hop1: Array<{ keyword: string; source: CandidateSource }> = [];
+  const adVolumeCache = new Map<string, { pc: number; mobile: number }>();
 
   const add = (kw: string, src: CandidateSource) => {
     const k = kw.trim();
@@ -332,18 +357,34 @@ export async function POST(req: NextRequest) {
     hop1.push({ keyword: k, source: src });
   };
 
-  // 진입 시드 전체 병렬 자동완성
+  // ── STEP 0: 네이버 광고 API 연관검색어 (실제 수요 데이터, 최우선) ────────
+  // "우리가 추측해서 자동완성에 넣어본 시드"가 아니라, 네이버 광고주 도구가
+  // 실제 광고 수요/검색 데이터로 집계한 연관 키워드 + 진짜 검색량을 그대로 씀
+  if (hasAd) {
+    const adResults = await Promise.all(
+      entrySeeds.map(s => relatedKeywordsWithVolume(s, adKey!, adSec!, adCust!, category))
+    );
+    adResults.forEach(list => list.forEach(({ keyword, pc, mobile }) => {
+      adVolumeCache.set(keyword, { pc, mobile });
+      add(keyword, 'ad_related');
+    }));
+  }
+
+  // ── STEP 1: 1-hop 자동완성 (보조 — 실제 수요 데이터가 부족할 때 채움) ────
   const hop1Results = await Promise.all(entrySeeds.map(s => autocomplete(s, category)));
   hop1Results.forEach(list => list.forEach(kw => add(kw, 'autocomplete')));
 
   // ── STEP 2: 2-hop 자동완성 ────────────────────────────────────────────────
   // hop1 결과를 다시 자동완성 입력으로 → 더 구체적인 롱테일 발굴
-  const hop2Seeds = hop1.slice(0, 10).map(c => c.keyword);
+  const hop2Seeds = hop1.filter(c => c.source !== 'ad_related').slice(0, 10).map(c => c.keyword);
   const hop2Results = await Promise.all(hop2Seeds.map(s => autocomplete(s, category)));
   hop2Results.forEach(list => list.forEach(kw => add(kw, 'longtail')));
 
-  // ── STEP 3: 포화도 분석 (최대 20개) ──────────────────────────────────────
-  const toAnalyze = hop1.slice(0, 20);
+  // ── STEP 3: 포화도 분석 (최대 20개, 실제 수요 데이터가 있는 ad_related 우선) ──
+  const toAnalyze = [
+    ...hop1.filter(c => c.source === 'ad_related'),
+    ...hop1.filter(c => c.source !== 'ad_related'),
+  ].slice(0, 20);
 
   const results = await Promise.all(
     toAnalyze.map(async ({ keyword, source }) => {
@@ -353,7 +394,9 @@ export async function POST(req: NextRequest) {
           : naverBlogScrape(keyword),
         daumSat(keyword, kakaoKey ?? null),
         googleCount(keyword),
-        hasAd ? getVolume(keyword, adKey!, adSec!, adCust!) : Promise.resolve({ pc: 0, mobile: 0 }),
+        adVolumeCache.has(keyword)
+          ? Promise.resolve(adVolumeCache.get(keyword)!)
+          : hasAd ? getVolume(keyword, adKey!, adSec!, adCust!) : Promise.resolve({ pc: 0, mobile: 0 }),
       ]);
 
       const monthly = vol.pc + vol.mobile;
