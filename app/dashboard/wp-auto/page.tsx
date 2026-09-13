@@ -12,7 +12,10 @@ interface LogEntry { type: string; msg: string; ts: number; }
 interface Site {
   name: string; domain: string; url: string;
   adminUrl: string; createdAt: string | null; size: string;
+  sitemapUrl?: string; gscStatus?: 'pending' | 'done' | 'failed' | null;
 }
+
+const NAVER_ADVISOR_URL = 'https://searchadvisor.naver.com/';
 
 function genPass() {
   const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#';
@@ -448,9 +451,17 @@ export default function WpAutoPage() {
                       </div>
                     )}
                     {result.searchEngineNote && (
-                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-800">
-                        <strong>🔍 검색엔진 등록 필요 (사이트당 1회)</strong><br />
-                        {result.searchEngineNote}
+                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-800 space-y-1.5">
+                        <strong>🔍 검색엔진 등록</strong>
+                        <p>✅ Google: {result.searchEngineNote}</p>
+                        <p className="flex items-center gap-2">
+                          ⚠️ Naver: 서치어드바이저에서 수동 등록 필요 —{' '}
+                          <a href={result.naverAdvisorUrl || NAVER_ADVISOR_URL} target="_blank" rel="noopener noreferrer"
+                            className="underline font-medium">서치어드바이저 열기 ↗</a>
+                        </p>
+                        {result.sitemapUrl && (
+                          <p className="font-mono bg-white/60 rounded px-2 py-1 break-all">{result.sitemapUrl}</p>
+                        )}
                       </div>
                     )}
                     <button
@@ -517,8 +528,18 @@ export default function WpAutoPage() {
                         <span>경로</span>
                         <span className="font-mono">/volume1/web/{site.name}</span>
                       </div>
+                      <div className="flex justify-between items-center">
+                        <span>Google 등록</span>
+                        <span className={`px-2 py-0.5 rounded-full font-medium ${
+                          site.gscStatus === 'done' ? 'bg-green-50 text-green-700' :
+                          site.gscStatus === 'failed' ? 'bg-red-50 text-red-600' :
+                          'bg-amber-50 text-amber-700'
+                        }`}>
+                          {site.gscStatus === 'done' ? '✅ 완료' : site.gscStatus === 'failed' ? '❌ 실패' : '⏳ 대기중'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 mb-2">
                       <a href={site.url} target="_blank" rel="noopener noreferrer"
                         className="flex-1 text-center py-2 text-xs bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium transition-colors">
                         🌐 사이트 방문
@@ -528,6 +549,10 @@ export default function WpAutoPage() {
                         ⚙️ 관리자
                       </a>
                     </div>
+                    <a href={NAVER_ADVISOR_URL} target="_blank" rel="noopener noreferrer"
+                      className="block text-center py-2 text-xs bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 font-medium transition-colors">
+                      🟢 네이버 서치어드바이저에 수동 등록 ↗
+                    </a>
                   </div>
                 ))}
               </div>

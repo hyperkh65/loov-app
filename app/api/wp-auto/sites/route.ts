@@ -1,37 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { nasExec, nas2daysExec } from '@/lib/nas-ssh';
-
-const NAS_EXEC = { hy64: nasExec, hy65: nas2daysExec } as const;
-const DOMAIN_SUFFIX = { hy64: 'aboda.kr', hy65: '2days.kr' } as const;
+import { createAdminClient } from '@/lib/supabase-server';
+import { NAS_TARGETS, WEB_ROOT, type NasKey } from '@/lib/nas-targets';
 
 export async function GET(req: NextRequest) {
-  const nas = (new URL(req.url).searchParams.get('nas') === 'hy65' ? 'hy65' : 'hy64') as keyof typeof NAS_EXEC;
-  const suffix = DOMAIN_SUFFIX[nas];
+  const nas = (new URL(req.url).searchParams.get('nas') === 'hy65' ? 'hy65' : 'hy64') as NasKey;
+  const target = NAS_TARGETS[nas];
   try {
     // List directories in /volume1/web and check if they have wp-config.php
-    const { stdout, code } = await NAS_EXEC[nas](
-      `ls -1 /volume1/web/ 2>/dev/null | while read d; do
-        if [ -f "/volume1/web/$d/wp-config.php" ]; then
-          CREATED=$(stat -c %Y /volume1/web/$d/wp-config.php 2>/dev/null || stat -f %m /volume1/web/$d/wp-config.php 2>/dev/null)
-          SIZE=$(du -sh /volume1/web/$d 2>/dev/null | cut -f1)
+    const { stdout, code } = await target.exec(
+      `ls -1 ${WEB_ROOT}/ 2>/dev/null | while read d; do
+        if [ -f "${WEB_ROOT}/$d/wp-config.php" ]; then
+          CREATED=$(stat -c %Y ${WEB_ROOT}/$d/wp-config.php 2>/dev/null || stat -f %m ${WEB_ROOT}/$d/wp-config.php 2>/dev/null)
+          SIZE=$(du -sh ${WEB_ROOT}/$d 2>/dev/null | cut -f1)
           echo "$d|$CREATED|$SIZE"
         fi
       done`
     );
     if (code !== 0) return NextResponse.json({ sites: [] });
 
+    // gsc_status는 Supabase(wordpress_sites)에 기록되므로 site_url로 조인해서 붙임
+    const supabase = createAdminClient();
+    const { data: tracked } = await supabase
+      .from('wordpress_sites')
+      .select('site_url, gsc_status, sitemap_url')
+      .eq('user_id', process.env.OWNER_USER_ID!);
+    const trackedByUrl = new Map((tracked || []).map(t => [t.site_url.replace(/\/$/, ''), t]));
+
     const sites = stdout
       .split('\n')
       .filter(Boolean)
       .map(line => {
         const [name, created, size] = line.split('|');
+        const url = `https://${name}.${target.domainSuffix}`;
+        const t = trackedByUrl.get(url);
         return {
           name,
-          domain: `${name}.${suffix}`,
-          url: `https://${name}.${suffix}`,
-          adminUrl: `https://${name}.${suffix}/wp-admin/`,
+          domain: `${name}.${target.domainSuffix}`,
+          url,
+          adminUrl: `${url}/wp-admin/`,
           createdAt: created ? new Date(parseInt(created) * 1000).toISOString() : null,
           size: size || '?',
+          sitemapUrl: t?.sitemap_url || `${url}/sitemap_index.xml`,
+          gscStatus: t?.gsc_status || null,
         };
       });
     return NextResponse.json({ sites });

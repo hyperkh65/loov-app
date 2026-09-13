@@ -131,6 +131,12 @@ export async function POST(req: NextRequest) {
     }
   } catch { /* 캐시 신선도 체크 실패는 무시 — 부가 기능 */ }
 
+  // 5. wp-auto로 만든 사이트 중 가상호스트+DNS 수동연결이 끝나서 열린 것들을
+  // 감지해 Search Console 자동등록 — fire-and-forget, 실패해도 본 크론에 영향 없음.
+  fetch(`${BASE}/api/wp-auto/gsc-sync`, {
+    method: 'POST', headers, signal: AbortSignal.timeout(50_000),
+  }).catch(() => {});
+
   return NextResponse.json({
     ok: true,
     sync: syncResult,
