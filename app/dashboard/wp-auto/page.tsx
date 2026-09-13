@@ -16,11 +16,8 @@ interface Site {
 }
 
 const NAVER_ADVISOR_URL = 'https://searchadvisor.naver.com/';
-
-function genPass() {
-  const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#';
-  return Array.from({ length: 14 }, () => c[Math.floor(Math.random() * c.length)]).join('');
-}
+const ADMIN_USER = 'urjent';
+const ADMIN_PASS = 'Aa050677##';
 
 type Nas = 'hy64' | 'hy65';
 const NAS_LABEL: Record<Nas, { domain: string; box: string }> = {
@@ -34,8 +31,6 @@ export default function WpAutoPage() {
   const [sub, setSub] = useState('');
   const [siteTitle, setSiteTitle] = useState('');
   const [topic, setTopic] = useState(TOPICS[0]);
-  const [adminPass, setAdminPass] = useState(genPass);
-  const [showPass, setShowPass] = useState(false);
 
   const [checking, setChecking] = useState(false);
   const [domainOk, setDomainOk] = useState<boolean | null>(null);
@@ -93,7 +88,7 @@ export default function WpAutoPage() {
       const res = await fetch('/api/wp-auto/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subdomain: sub, title: siteTitle, topic, adminPass, nas }),
+        body: JSON.stringify({ subdomain: sub, title: siteTitle, topic, nas }),
         signal: abortRef.current.signal,
       });
 
@@ -258,27 +253,8 @@ export default function WpAutoPage() {
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">관리자 비밀번호</label>
-                    <div className="flex gap-2">
-                      <div className="flex-1 flex items-center border border-gray-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-400 focus-within:border-transparent">
-                        <input
-                          type={showPass ? 'text' : 'password'}
-                          value={adminPass}
-                          onChange={e => setAdminPass(e.target.value)}
-                          className="flex-1 px-3 py-2.5 text-sm outline-none font-mono"
-                        />
-                        <button onClick={() => setShowPass(!showPass)}
-                          className="px-3 text-gray-400 hover:text-gray-600">
-                          {showPass ? '🙈' : '👁️'}
-                        </button>
-                      </div>
-                      <button onClick={() => setAdminPass(genPass())}
-                        className="px-3 text-sm bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-600 transition-colors" title="새 비밀번호 생성">
-                        🔄
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">관리자 ID: admin · 이메일: admin@{NAS_LABEL[nas].domain}</p>
+                  <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-600">
+                    모든 사이트가 같은 관리자 계정을 씁니다 — <span className="font-mono">{ADMIN_USER}</span> / <span className="font-mono">{ADMIN_PASS}</span>
                   </div>
                 </div>
               </div>
@@ -432,11 +408,11 @@ export default function WpAutoPage() {
                     )}
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                       <span className="text-sm text-gray-600">관리자 계정</span>
-                      <span className="text-sm font-mono text-gray-800">admin</span>
+                      <span className="text-sm font-mono text-gray-800">{result.adminUser || ADMIN_USER}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-amber-50 rounded-xl">
                       <span className="text-sm text-gray-600">비밀번호</span>
-                      <span className="text-sm font-mono text-amber-800">{adminPass}</span>
+                      <span className="text-sm font-mono text-amber-800">{result.adminPass || ADMIN_PASS}</span>
                     </div>
                     {result.webstationNote && (
                       <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-800">
@@ -467,7 +443,7 @@ export default function WpAutoPage() {
                     <button
                       onClick={() => {
                         setSub(''); setSiteTitle(''); setDomainOk(null);
-                        setLogs([]); setResult(null); setAdminPass(genPass());
+                        setLogs([]); setResult(null);
                       }}
                       className="w-full py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium transition-colors"
                     >

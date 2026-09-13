@@ -3,6 +3,10 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { NAS_TARGETS, WEB_ROOT, type NasKey } from '@/lib/nas-targets';
 
 const PUB_ID = 'ca-pub-8940400388075870';
+// 사이트마다 admin 계정을 따로 관리하기 번거로워서 고정 계정으로 통일 —
+// 아이디도 흔한 "admin" 대신 urjent로 둬서 자동화 봇의 기본 무차별 대입 표적을 피함
+const ADMIN_USER = 'urjent';
+const ADMIN_PASS = 'Aa050677##';
 
 function makeAdPlugin(fqdn: string): string {
   return `<?php
@@ -86,8 +90,8 @@ add_action('wp_head', function() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const { subdomain, title, topic, adminPass, nas } = body as {
-    subdomain: string; title: string; topic: string; adminPass: string; nas?: NasKey;
+  const { subdomain, title, topic, nas } = body as {
+    subdomain: string; title: string; topic: string; nas?: NasKey;
   };
 
   if (!subdomain || !/^[a-z0-9-]{2,30}$/.test(subdomain)) {
@@ -206,8 +210,8 @@ export async function POST(req: NextRequest) {
           `${WP} core install \
             --url="${WP_URL}" \
             --title="${title.replace(/"/g, '\\"')}" \
-            --admin_user="admin" \
-            --admin_password="${adminPass}" \
+            --admin_user="${ADMIN_USER}" \
+            --admin_password="${ADMIN_PASS}" \
             --admin_email="${target.adminEmail}" \
             --skip-email && echo ok`
         );
@@ -248,11 +252,13 @@ export async function POST(req: NextRequest) {
 
         // ── 10. 플러그인 설치 (하나씩 설치 - 실패해도 계속 진행)
         const plugins = [
-          'litespeed-cache',    // 속도
-          'seo-by-rank-math',   // SEO
-          'really-simple-ssl',  // HTTPS
-          'advanced-ads',       // AdSense
-          'wp-smushit',         // 이미지 최적화
+          'litespeed-cache',       // 속도(캐시) — 별도 속도 플러그인 추가하면 캐시끼리 충돌해서 이거 하나만 씀
+          'seo-by-rank-math',      // SEO (Rank Math)
+          'really-simple-ssl',     // HTTPS
+          'advanced-ads',          // AdSense
+          'wp-smushit',            // 이미지 최적화
+          'auto-post-thumbnail',   // 대표이미지 미설정 시 본문 첫 이미지를 자동으로 대표이미지로 지정
+          'wp-google-maps',        // 구글맵 삽입(WP Go Maps)
         ];
         for (const plugin of plugins) {
           send(`🔌 플러그인 설치: ${plugin}`, 'step');
@@ -315,7 +321,7 @@ export async function POST(req: NextRequest) {
         // → 이 사이트도 곧바로 리라이팅 자동발행 로테이션에 포함됨(SNS 계정들과 동일한 개념)
         send('🔗 자동발행 파이프라인에 등록 중...', 'step');
         const appPassResult = await nasExecFn(
-          `${WP} user application-password create admin "loov-auto" --porcelain 2>/dev/null`
+          `${WP} user application-password create ${ADMIN_USER} "loov-auto" --porcelain 2>/dev/null`
         );
         const appPassword = appPassResult.stdout.trim();
         const sitemapUrl = `${WP_URL}/sitemap_index.xml`;
@@ -326,7 +332,7 @@ export async function POST(req: NextRequest) {
               user_id: process.env.OWNER_USER_ID!,
               site_name: title,
               site_url: WP_URL,
-              wp_username: 'admin',
+              wp_username: ADMIN_USER,
               app_password: appPassword,
               nas: nas || 'hy64',
               subdomain,
@@ -368,8 +374,8 @@ export async function POST(req: NextRequest) {
         send(JSON.stringify({
           url: WP_URL,
           adminUrl: `${WP_URL}/wp-admin/`,
-          adminUser: 'admin',
-          adminPass,
+          adminUser: ADMIN_USER,
+          adminPass: ADMIN_PASS,
           domain: `${subdomain}.${target.domainSuffix}`,
           sitemapUrl,
           dnsNote: `dnszi.com에서 CNAME: ${subdomain} → ${target.ddnsHost} 추가 필요`,
