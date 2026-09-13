@@ -325,6 +325,15 @@ export async function POST(req: NextRequest) {
               gsc_status: 'pending',
             });
             send('✅ 자동발행 대상으로 등록 완료 (다음 리라이팅 글부터 이 사이트에도 자동 발행)');
+
+            send('🏠 패밀리 페이지(2days.kr/family) 갱신 중...', 'step');
+            try {
+              const { syncFamilyPage } = await import('@/lib/family-page');
+              await syncFamilyPage();
+              send('✅ 패밀리 페이지에 새 사이트 추가 완료');
+            } catch (e) {
+              send(`⚠️ 패밀리 페이지 갱신 실패(수동 확인 필요): ${String(e).slice(0, 150)}`, 'warn');
+            }
           } catch (e) {
             send(`⚠️ 자동발행 등록 실패(수동으로 워드프레스 사이트 설정에서 추가 가능): ${String(e).slice(0, 150)}`, 'warn');
           }
