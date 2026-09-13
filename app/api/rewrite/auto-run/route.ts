@@ -131,6 +131,27 @@ export async function POST(req: NextRequest) {
     }
   } catch { /* 캐시 신선도 체크 실패는 무시 — 부가 기능 */ }
 
+  // 4-1. 금융 카테고리 황금키워드도 같은 방식으로 별도 재발굴(정부지원금/대출/
+  // 보험 등 — 라이프스타일용 캐시와는 카테고리로 분리 저장됨)
+  try {
+    const { createAdminClient } = await import('@/lib/supabase-server');
+    const admin = createAdminClient();
+    const { data: latest } = await admin
+      .from('bossai_keyword_opportunities')
+      .select('created_at')
+      .eq('category', 'finance')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    const staleMs = 10 * 60 * 60 * 1000;
+    const isStale = !latest || Date.now() - new Date(latest.created_at).getTime() > staleMs;
+    if (isStale) {
+      fetch(`${BASE}/api/keyword/auto-discover?category=finance`, {
+        method: 'POST', headers, signal: AbortSignal.timeout(50_000),
+      }).catch(() => {});
+    }
+  } catch { /* 캐시 신선도 체크 실패는 무시 — 부가 기능 */ }
+
   // 5. wp-auto로 만든 사이트 중 가상호스트+DNS 수동연결이 끝나서 열린 것들을
   // 감지해 Search Console 자동등록 — fire-and-forget, 실패해도 본 크론에 영향 없음.
   fetch(`${BASE}/api/wp-auto/gsc-sync`, {

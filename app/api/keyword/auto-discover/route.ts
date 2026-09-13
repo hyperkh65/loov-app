@@ -22,15 +22,41 @@ const ENTRY_SEEDS: Record<number, string[]> = {
   12: ['크리스마스 선물', '연말 여행', '신년 목표', '겨울 다이어트', '연말 정산'],
 };
 
-// 뉴스·정치 필터
+// 뉴스·정치 필터 — 라이프스타일 카테고리 전용. 금융 카테고리는 정부/정책/
+// 대출/환율 같은 단어가 오히려 핵심이라 이 필터를 안 씀(아래 FINANCE_NEWS_BLOCK 참고)
 const NEWS_BLOCK = /대통령|국회|검찰|경찰|재판|구속|선거|투표|주가|환율|사건|사고|사망|폭행|범죄|조작|의혹|비리|갈등|폭락|급등|탄핵|정부|여당|야당/;
 
-function isBlocked(kw: string): boolean {
-  return NEWS_BLOCK.test(kw) || kw.length < 4 || kw.length > 20;
+// ── 금융 카테고리 진입 시드 — 계절보다 정책 일정(연말정산/종소세 등) 기반 ──
+const FINANCE_ENTRY_SEEDS: Record<number, string[]> = {
+  1:  ['연말정산 환급', '청년도약계좌', '대출금리 비교', '실손보험 갱신', '신용점수 올리기'],
+  2:  ['연말정산 추가납부', '전세자금대출', '자동차보험료 비교', '청약통장 금리'],
+  3:  ['종합소득세 신고', '건강보험료 조정', '대환대출', '저축은행 금리'],
+  4:  ['종합소득세 환급', '주택청약 조건', '신용카드 추천', '보험료 비교'],
+  5:  ['근로장려금 신청', '청년 정책자금', '전세보증금 대출', '실비보험 비교'],
+  6:  ['하반기 정부지원금', '대출 한도 조회', 'ISA 계좌', '연금저축 세액공제'],
+  7:  ['재산세 납부', '전세대출 금리', '카드 리볼빙', '건강보험 환급금'],
+  8:  ['종합부동산세', '주택담보대출', '보험 리모델링', '신용대출 한도'],
+  9:  ['국민연금 조기수령', '자동차세 연납', '적금 금리비교', '청년희망적금'],
+  10: ['근로장려금 정기신청', '전세사기 예방', '보험료 절약', '신용점수 관리'],
+  11: ['연말정산 미리보기', '13월의 월급', '카드 캐시백', '대출 갈아타기'],
+  12: ['연말정산 준비', '기부금 세액공제', '연금저축 추가납입', '보험 리모델링'],
+};
+
+// 금융 카테고리는 정책·정부지원 관련어가 핵심이라 라이프스타일용 뉴스 차단
+// 필터를 그대로 쓰면 안 됨 — 순수 연예/스포츠/사건사고 노이즈만 걸러냄
+const FINANCE_NEWS_BLOCK = /연예인|아이돌|드라마|예능|축구|야구|올림픽|월드컵|살인|폭행 사건|성범죄/;
+
+// 금융/보험/대출 키워드는 검색량 대비 CPC(광고 단가)가 유난히 높은 카테고리라
+// "황금점수"만으로는 실제 수익성을 못 잡음 — 이 패턴에 걸리면 가점
+const HIGH_CPC_PATTERNS = /대출|보험|카드|투자|환전|세무|절세|연금|저축은행|신용점수|리볼빙|담보대출|신용대출|이자|금리|증권|펀드|주식/;
+
+function isBlocked(kw: string, category: 'lifestyle' | 'finance'): boolean {
+  const block = category === 'finance' ? FINANCE_NEWS_BLOCK : NEWS_BLOCK;
+  return block.test(kw) || kw.length < 4 || kw.length > 20;
 }
 
 // ── Naver 자동완성 (API 키 불필요, 실제 검색어만 반환) ───────────────────────
-async function autocomplete(seed: string): Promise<string[]> {
+async function autocomplete(seed: string, category: 'lifestyle' | 'finance'): Promise<string[]> {
   try {
     const res = await fetch(
       `https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(seed)}&con=1&frm=nv&ans=2&r_format=json&r_enc=UTF-8`,
@@ -44,7 +70,7 @@ async function autocomplete(seed: string): Promise<string[]> {
     const end = inner.indexOf(']]');
     if (end === -1) return [];
     const arr = JSON.parse(inner.slice(0, end + 1)) as unknown[];
-    return (arr as string[]).filter(k => typeof k === 'string' && !isBlocked(k)).slice(0, 8);
+    return (arr as string[]).filter(k => typeof k === 'string' && !isBlocked(k, category)).slice(0, 8);
   } catch { return []; }
 }
 
@@ -282,8 +308,13 @@ export async function POST(req: NextRequest) {
   const hasAd = !!(adKey && adSec && adCust);
   const hasDaum = !!kakaoKey;
 
+  const categoryParam = req.nextUrl.searchParams.get('category');
+  const category: 'lifestyle' | 'finance' = categoryParam === 'finance' ? 'finance' : 'lifestyle';
+
   const month = new Date().getMonth() + 1;
-  const entrySeeds = ENTRY_SEEDS[month] || ENTRY_SEEDS[4];
+  const entrySeeds = category === 'finance'
+    ? (FINANCE_ENTRY_SEEDS[month] || FINANCE_ENTRY_SEEDS[4])
+    : (ENTRY_SEEDS[month] || ENTRY_SEEDS[4]);
 
   // ── STEP 1: 1-hop 자동완성 ────────────────────────────────────────────────
   // 진입 시드 → Naver 자동완성 → 실제 검색어 수집
@@ -293,19 +324,19 @@ export async function POST(req: NextRequest) {
 
   const add = (kw: string, src: CandidateSource) => {
     const k = kw.trim();
-    if (!k || seen.has(k) || isBlocked(k)) return;
+    if (!k || seen.has(k) || isBlocked(k, category)) return;
     seen.add(k);
     hop1.push({ keyword: k, source: src });
   };
 
   // 진입 시드 전체 병렬 자동완성
-  const hop1Results = await Promise.all(entrySeeds.map(s => autocomplete(s)));
+  const hop1Results = await Promise.all(entrySeeds.map(s => autocomplete(s, category)));
   hop1Results.forEach(list => list.forEach(kw => add(kw, 'autocomplete')));
 
   // ── STEP 2: 2-hop 자동완성 ────────────────────────────────────────────────
   // hop1 결과를 다시 자동완성 입력으로 → 더 구체적인 롱테일 발굴
   const hop2Seeds = hop1.slice(0, 10).map(c => c.keyword);
-  const hop2Results = await Promise.all(hop2Seeds.map(s => autocomplete(s)));
+  const hop2Results = await Promise.all(hop2Seeds.map(s => autocomplete(s, category)));
   hop2Results.forEach(list => list.forEach(kw => add(kw, 'longtail')));
 
   // ── STEP 3: 포화도 분석 (최대 20개) ──────────────────────────────────────
@@ -325,7 +356,13 @@ export async function POST(req: NextRequest) {
       const monthly = vol.pc + vol.mobile;
       const daumTotal = ds.blog + ds.cafe;
       const hasSatData = ns.blog > 0 || daumTotal > 0 || gc > 0;
-      const goldenScore = calcGoldenScore(monthly, ns.blog, daumTotal, ns.news, ns.powerRatio, hasSatData);
+      let goldenScore = calcGoldenScore(monthly, ns.blog, daumTotal, ns.news, ns.powerRatio, hasSatData);
+      // 대출/보험/카드 등은 검색량은 비슷해도 실제 광고 단가(CPC)가 훨씬 높은
+      // 카테고리라 클릭당 수익이 다름 — 순위 경쟁력만 보는 goldenScore에 가점을
+      // 얹어서 "랭킹은 비슷해도 실제 돈이 되는" 키워드가 위로 오게 함
+      if (category === 'finance' && HIGH_CPC_PATTERNS.test(keyword)) {
+        goldenScore = Math.round(goldenScore * 1.5);
+      }
       const difficulty = calcDifficulty(ns.blog, daumTotal, gc, ns.news);
       const grade = calcGrade(goldenScore, monthly);
       const { canRank1, reason } = calcCanRank1(difficulty, monthly, ns.blog, ns.powerRatio, ns.news, goldenScore);
@@ -360,15 +397,15 @@ export async function POST(req: NextRequest) {
 
   for (const r of results) {
     await adminDb.from('bossai_keyword_opportunities').upsert({
-      user_id: userId, keyword: r.keyword, source: r.source,
+      user_id: userId, keyword: r.keyword, source: r.source, category,
       monthly_total: r.monthlyTotal, monthly_pc: r.monthlyPc, monthly_mobile: r.monthlyMobile,
       naver_blog: r.naverBlog, daum_total: r.daumBlog + r.daumCafe,
       google_count: r.googleCount, competition_score: r.competitionScore,
       power_blog_ratio: r.naverPowerBlogRatio, difficulty: r.difficulty,
       can_rank1: r.canRank1, can_rank1_reason: r.canRank1Reason,
       score: r.score, grade: r.grade, created_at: now, expires_at: expiresAt,
-    }, { onConflict: 'user_id,keyword' });
+    }, { onConflict: 'user_id,keyword,category' });
   }
 
-  return NextResponse.json({ results, hasAdApi: hasAd, hasNaverApi: hasNaver, hasDaumApi: hasDaum, discoveredAt: now });
+  return NextResponse.json({ results, category, hasAdApi: hasAd, hasNaverApi: hasNaver, hasDaumApi: hasDaum, discoveredAt: now });
 }
