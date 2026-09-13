@@ -217,14 +217,16 @@ jobs:
       - name: Build Next.js (loov.2days.kr)
         run: npm run build
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          # loov.co.kr(메인)와 완전히 독립적으로 운영되는 별도 Supabase
+          # 프로젝트(loov-2days) — 메인 DB 부하/장애와 무관하게 따로 운영
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL_2DAYS }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_2DAYS }}
           NEXT_PUBLIC_APP_URL: https://loov.2days.kr
           NEXT_PUBLIC_MAIN_DOMAIN: loov.2days.kr
           NEXT_PUBLIC_SITE_URL: https://loov.2days.kr
           NEXT_PUBLIC_OWNER_DOMAIN: loov.co.kr
           NEXT_PUBLIC_SERVICE_DOMAIN: service.loov.co.kr
-          NEXT_PUBLIC_OWNER_USER_ID: ${{ secrets.OWNER_USER_ID }}
+          NEXT_PUBLIC_OWNER_USER_ID: ${{ secrets.OWNER_USER_ID_2DAYS }}
           NEXT_PUBLIC_OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
           NEXT_PUBLIC_KAKAO_CHANNEL_URL: https://pf.kakao.com/_ixeGIX
 
@@ -256,12 +258,12 @@ jobs:
         run: |
           cat > .next/standalone/.env.production << 'ENVEOF'
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          OWNER_USER_ID=${{ secrets.OWNER_USER_ID }}
+          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL_2DAYS }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_2DAYS }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY_2DAYS }}
+          OWNER_USER_ID=${{ secrets.OWNER_USER_ID_2DAYS }}
           OWNER_EMAIL=${{ secrets.OWNER_EMAIL }}
-          NEXT_PUBLIC_OWNER_USER_ID=${{ secrets.OWNER_USER_ID }}
+          NEXT_PUBLIC_OWNER_USER_ID=${{ secrets.OWNER_USER_ID_2DAYS }}
           NEXT_PUBLIC_OWNER_EMAIL=${{ secrets.OWNER_EMAIL }}
           NEXT_PUBLIC_OWNER_DOMAIN=loov.co.kr
           NEXT_PUBLIC_SERVICE_DOMAIN=service.loov.co.kr
