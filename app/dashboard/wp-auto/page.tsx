@@ -447,6 +447,12 @@ export default function WpAutoPage() {
                         {result.dnsNote}
                       </div>
                     )}
+                    {result.searchEngineNote && (
+                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-800">
+                        <strong>🔍 검색엔진 등록 필요 (사이트당 1회)</strong><br />
+                        {result.searchEngineNote}
+                      </div>
+                    )}
                     <button
                       onClick={() => {
                         setSub(''); setSiteTitle(''); setDomainOk(null);

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { nasExec, nasExecWithStdin, nas2daysExec, nasExecWithStdinCustom } from '@/lib/nas-ssh';
+import { createAdminClient } from '@/lib/supabase-server';
 
 const PUB_ID = 'ca-pub-8940400388075870';
 const WEB_ROOT = '/volume1/web';
@@ -322,12 +323,49 @@ export async function POST(req: NextRequest) {
           true
         );
 
-        // ── 15. WebStation 수동 설정 안내 (자동화 불가 - nginx reload root 권한 필요)
+        // ── 15. ads.txt 등록 (AdSense가 이 파일 없으면 자동광고 승인/노출을 안 함)
+        await run('💵 ads.txt 등록 중...',
+          `echo "google.com, ${PUB_ID}, DIRECT, f08c47fec0942fa0" > ${WP_DIR}/ads.txt && echo ok`,
+          true
+        );
+        send('✅ ads.txt 등록 완료');
+
+        // ── 16. 앱 비밀번호 발급 + 기존 자동발행 파이프라인(wordpress_sites)에 등록
+        // → 이 사이트도 곧바로 리라이팅 자동발행 로테이션에 포함됨(SNS 계정들과 동일한 개념)
+        send('🔗 자동발행 파이프라인에 등록 중...', 'step');
+        const appPassResult = await nasExecFn(
+          `${WP} user application-password create admin "loov-auto" --porcelain 2>/dev/null`
+        );
+        const appPassword = appPassResult.stdout.trim();
+        if (appPassword && appPassResult.code === 0) {
+          try {
+            const supabase = createAdminClient();
+            await supabase.from('wordpress_sites').insert({
+              user_id: process.env.OWNER_USER_ID!,
+              site_name: title,
+              site_url: WP_URL,
+              wp_username: 'admin',
+              app_password: appPassword,
+            });
+            send('✅ 자동발행 대상으로 등록 완료 (다음 리라이팅 글부터 이 사이트에도 자동 발행)');
+          } catch (e) {
+            send(`⚠️ 자동발행 등록 실패(수동으로 워드프레스 사이트 설정에서 추가 가능): ${String(e).slice(0, 150)}`, 'warn');
+          }
+        } else {
+          send('⚠️ 앱 비밀번호 발급 실패 — 자동발행 등록은 건너뜀 (수동 추가 가능)', 'warn');
+        }
+
+        // ── 17. WebStation 수동 설정 안내 (자동화 불가 - nginx reload root 권한 필요)
         send('📋 WebStation 가상호스트 수동 설정 필요 (30초)', 'step');
         send(`① DSM → WebStation → 가상호스트 → 만들기`, 'warn');
         send(`② 호스트명: ${subdomain}.${target.domainSuffix}`, 'warn');
         send(`③ 문서 루트: ${WP_DIR}`, 'warn');
         send(`④ PHP: PHP 8.2 / HTTP+HTTPS(80,443) — Let's Encrypt 자동발급 체크박스도 함께 선택`, 'warn');
+
+        // ── 18. 검색엔진 등록 안내 (Google/Naver 공식 API로 자동화 불가 — 수동)
+        send('🔍 검색엔진 등록 필요 (사이트당 1회, 약 3분)', 'step');
+        send(`Google Search Console(search.google.com/search-console) → 속성 추가 → ${WP_URL} → 소유확인 후 사이트맵 제출: ${WP_URL}/sitemap_index.xml`, 'warn');
+        send(`네이버 서치어드바이저(searchadvisor.naver.com) → 사이트 등록 → ${WP_URL} → 소유확인 후 사이트맵 제출: ${WP_URL}/sitemap_index.xml`, 'warn');
 
         // ── 완료
         send(JSON.stringify({
@@ -338,6 +376,7 @@ export async function POST(req: NextRequest) {
           domain: `${subdomain}.${target.domainSuffix}`,
           dnsNote: `dnszi.com에서 CNAME: ${subdomain} → ${target.ddnsHost} 추가 필요`,
           webstationNote: `DSM → WebStation → 가상호스트 → 만들기 → 호스트명: ${subdomain}.${target.domainSuffix} / 루트: ${WP_DIR} / PHP 8.2 (Let's Encrypt 자동발급 체크박스 함께 선택)`,
+          searchEngineNote: `Search Console·네이버 서치어드바이저에 ${WP_URL} 등록 + 사이트맵(${WP_URL}/sitemap_index.xml) 제출 필요 (공식 API 없어 수동)`,
         }), 'done');
 
       } catch (e) {
