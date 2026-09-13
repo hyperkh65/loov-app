@@ -53,12 +53,15 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    let nginxFixNote = '';
     try {
       // WebStation의 일반 PHP 서비스 프로필은 워드프레스 퍼머링크에 필요한
       // nginx try_files 폴백이 기본으로 없어서 홈 화면 말고는(사이트맵 포함) 다
       // 404가 나는 문제가 있음 — 사이트맵 제출 전에 매번 확인/자동수정
       const fqdn = site.site_url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-      await ensureWordPressRewrite((site.nas as NasKey) || 'hy64', fqdn).catch(() => {});
+      const nginxFix = await ensureWordPressRewrite((site.nas as NasKey) || 'hy64', fqdn)
+        .catch(e => ({ fixed: false, note: `예외: ${String(e).slice(0, 200)}` }));
+      nginxFixNote = `[nginx] ${nginxFix.note}`;
 
       const accessToken = await getOwnerGoogleAccessToken();
       if (!accessToken) throw new Error('Google 연결 안 됨 (재연결 필요)');
@@ -80,13 +83,15 @@ export async function POST(req: NextRequest) {
       }).eq('id', site.id);
 
       registered++;
-      results.push({ site: site.site_url, status: 'registered' });
+      results.push({ site: site.site_url, status: 'registered', error: nginxFixNote });
     } catch (e) {
+      // 실패해도 gsc_status는 'pending'으로 유지 — nginx 문제처럼 다음
+      // 크론에서 저절로 해결될 수 있는 원인이 많아서 계속 재시도하는 게 나음.
+      // 몇 번째 실패인지는 gsc_error에만 남기고 상태는 안 바꿈.
       await supabase.from('wordpress_sites').update({
-        gsc_status: 'failed',
-        gsc_error: String(e).slice(0, 500),
+        gsc_error: `${nginxFixNote} | ${String(e).slice(0, 400)}`,
       }).eq('id', site.id);
-      results.push({ site: site.site_url, status: 'failed', error: String(e).slice(0, 200) });
+      results.push({ site: site.site_url, status: 'retry_pending', error: `${nginxFixNote} | ${String(e).slice(0, 200)}` });
     }
   }
 
