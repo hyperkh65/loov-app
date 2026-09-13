@@ -258,7 +258,6 @@ export async function POST(req: NextRequest) {
           'advanced-ads',          // AdSense
           'wp-smushit',            // 이미지 최적화
           'auto-post-thumbnail',   // 대표이미지 미설정 시 본문 첫 이미지를 자동으로 대표이미지로 지정
-          'wp-google-maps',        // 구글맵 삽입(WP Go Maps)
         ];
         for (const plugin of plugins) {
           send(`🔌 플러그인 설치: ${plugin}`, 'step');
@@ -272,9 +271,14 @@ export async function POST(req: NextRequest) {
         await nasExecFn(`${WP} plugin delete hello akismet 2>/dev/null`);
         send('✅ 플러그인 설치 완료');
 
-        // ── 11. Rank Math SEO 기본 설정
-        await run('📈 SEO 설정 중...',
+        // ── 11. Rank Math SEO 기본 설정 (사이트맵 모듈 포함)
+        // Rank Math의 사이트맵 라우트(/sitemap_index.xml)는 플러그인 활성화 후
+        // 리라이트 규칙을 다시 flush해야 실제로 응답함 — 7단계에서 이미 한 번
+        // flush했지만 그때는 Rank Math가 아직 설치되기 전이라 사이트맵 규칙이
+        // 안 잡혀 있었음(실사용 중 사이트맵이 404 나는 문제로 확인됨)
+        await run('📈 SEO/사이트맵 설정 중...',
           `${WP} option update rank_math_general_settings '{"strip_category_base":"1","attachment_redirect_urls":"1"}' --format=json 2>/dev/null; \
+           ${WP} rewrite flush --hard 2>/dev/null; \
            echo ok`,
           true
         );
