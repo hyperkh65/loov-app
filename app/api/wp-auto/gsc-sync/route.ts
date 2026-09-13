@@ -10,6 +10,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { getOwnerGoogleAccessToken } from '@/lib/google-owner-token';
 import { registerSiteWithGoogle, submitSitemapToGoogle } from '@/lib/google-search-console';
 import { NAS_TARGETS, WEB_ROOT, type NasKey } from '@/lib/nas-targets';
+import { ensureWordPressRewrite } from '@/lib/nginx-rewrite-fix';
 
 export const maxDuration = 60;
 
@@ -53,6 +54,12 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+      // WebStation의 일반 PHP 서비스 프로필은 워드프레스 퍼머링크에 필요한
+      // nginx try_files 폴백이 기본으로 없어서 홈 화면 말고는(사이트맵 포함) 다
+      // 404가 나는 문제가 있음 — 사이트맵 제출 전에 매번 확인/자동수정
+      const fqdn = site.site_url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      await ensureWordPressRewrite((site.nas as NasKey) || 'hy64', fqdn).catch(() => {});
+
       const accessToken = await getOwnerGoogleAccessToken();
       if (!accessToken) throw new Error('Google 연결 안 됨 (재연결 필요)');
 
