@@ -1,36 +1,8 @@
 import { NextRequest } from 'next/server';
-import { nasExec, nasExecWithStdin, nas2daysExec, nasExecWithStdinCustom } from '@/lib/nas-ssh';
 import { createAdminClient } from '@/lib/supabase-server';
+import { NAS_TARGETS, WEB_ROOT, type NasKey } from '@/lib/nas-targets';
 
 const PUB_ID = 'ca-pub-8940400388075870';
-const WEB_ROOT = '/volume1/web';
-
-// hy64(aboda.kr)와 hy65(2days.kr) 두 NAS에 동일한 자동설치를 지원 — SSH 실행 함수와
-// 도메인/DB 접속정보만 갈아끼우면 나머지 설치 로직(WP-CLI/테마/플러그인/AdSense)은 동일
-const NAS_TARGETS = {
-  hy64: {
-    exec: nasExec,
-    execWithStdin: nasExecWithStdin,
-    domainSuffix: 'aboda.kr',
-    adminEmail: 'admin@aboda.kr',
-    ddnsHost: 'hy64.synology.me',
-    mysqlRootPass: process.env.NAS_MYSQL_ROOT_PASS || '',
-  },
-  hy65: {
-    exec: nas2daysExec,
-    execWithStdin: (cmd: string, data: Buffer | string) => nasExecWithStdinCustom(cmd, data, {
-      host: process.env.NAS2_SSH_HOST || '2days.kr',
-      port: parseInt(process.env.NAS2_SSH_PORT || '22'),
-      username: process.env.NAS2_SSH_USER || 'urjent',
-      password: process.env.NAS2_SSH_PASSWORD || 'Fpahs60577##7759',
-    }),
-    domainSuffix: '2days.kr',
-    adminEmail: 'admin@2days.kr',
-    ddnsHost: '2days.kr',
-    mysqlRootPass: process.env.NAS2_MYSQL_ROOT_PASS || 'Fpahs60577##',
-  },
-} as const;
-type NasKey = keyof typeof NAS_TARGETS;
 
 function makeAdPlugin(fqdn: string): string {
   return `<?php
@@ -337,6 +309,7 @@ export async function POST(req: NextRequest) {
           `${WP} user application-password create admin "loov-auto" --porcelain 2>/dev/null`
         );
         const appPassword = appPassResult.stdout.trim();
+        const sitemapUrl = `${WP_URL}/sitemap_index.xml`;
         if (appPassword && appPassResult.code === 0) {
           try {
             const supabase = createAdminClient();
@@ -346,6 +319,10 @@ export async function POST(req: NextRequest) {
               site_url: WP_URL,
               wp_username: 'admin',
               app_password: appPassword,
+              nas: nas || 'hy64',
+              subdomain,
+              sitemap_url: sitemapUrl,
+              gsc_status: 'pending',
             });
             send('✅ 자동발행 대상으로 등록 완료 (다음 리라이팅 글부터 이 사이트에도 자동 발행)');
           } catch (e) {
@@ -362,10 +339,12 @@ export async function POST(req: NextRequest) {
         send(`③ 문서 루트: ${WP_DIR}`, 'warn');
         send(`④ PHP: PHP 8.2 / HTTP+HTTPS(80,443) — Let's Encrypt 자동발급 체크박스도 함께 선택`, 'warn');
 
-        // ── 18. 검색엔진 등록 안내 (Google/Naver 공식 API로 자동화 불가 — 수동)
-        send('🔍 검색엔진 등록 필요 (사이트당 1회, 약 3분)', 'step');
-        send(`Google Search Console(search.google.com/search-console) → 속성 추가 → ${WP_URL} → 소유확인 후 사이트맵 제출: ${WP_URL}/sitemap_index.xml`, 'warn');
-        send(`네이버 서치어드바이저(searchadvisor.naver.com) → 사이트 등록 → ${WP_URL} → 소유확인 후 사이트맵 제출: ${WP_URL}/sitemap_index.xml`, 'warn');
+        // ── 18. 검색엔진 등록 안내 — Google은 사이트가 실제로 열리는 즉시(가상호스트+DNS
+        // 연결 후) gsc-sync 크론이 자동으로 등록+사이트맵 제출까지 해줌. 네이버는
+        // 공개 API가 없어 서치어드바이저에 수동 등록 필요.
+        send('🔍 검색엔진 등록', 'step');
+        send(`Google: 별도 작업 불필요 — 가상호스트+DNS 연결 끝나서 사이트가 열리면 자동으로 Search Console 등록 + 사이트맵 제출됨`, 'log');
+        send(`Naver: searchadvisor.naver.com 에서 수동 등록 필요 (공식 API 미제공) → 사이트: ${WP_URL} / 사이트맵: ${sitemapUrl}`, 'warn');
 
         // ── 완료
         send(JSON.stringify({
@@ -374,9 +353,11 @@ export async function POST(req: NextRequest) {
           adminUser: 'admin',
           adminPass,
           domain: `${subdomain}.${target.domainSuffix}`,
+          sitemapUrl,
           dnsNote: `dnszi.com에서 CNAME: ${subdomain} → ${target.ddnsHost} 추가 필요`,
           webstationNote: `DSM → WebStation → 가상호스트 → 만들기 → 호스트명: ${subdomain}.${target.domainSuffix} / 루트: ${WP_DIR} / PHP 8.2 (Let's Encrypt 자동발급 체크박스 함께 선택)`,
-          searchEngineNote: `Search Console·네이버 서치어드바이저에 ${WP_URL} 등록 + 사이트맵(${WP_URL}/sitemap_index.xml) 제출 필요 (공식 API 없어 수동)`,
+          searchEngineNote: `Google은 사이트가 열리면 자동 등록됩니다. 네이버는 수동 등록 필요:`,
+          naverAdvisorUrl: 'https://searchadvisor.naver.com/',
         }), 'done');
 
       } catch (e) {
