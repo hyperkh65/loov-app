@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         await target.execWithStdin(`cat > ${wpDir}/${filename}`, content);
       });
 
-      const sitemapUrl = site.sitemap_url || `${site.site_url.replace(/\/$/, '')}/sitemap_index.xml`;
+      const sitemapUrl = site.sitemap_url || `${site.site_url.replace(/\/$/, '')}/wp-sitemap.xml`;
       await submitSitemapToGoogle(accessToken, site.site_url, sitemapUrl);
 
       await supabase.from('wordpress_sites').update({

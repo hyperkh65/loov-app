@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
           adminUrl: `${url}/wp-admin/`,
           createdAt: created ? new Date(parseInt(created) * 1000).toISOString() : null,
           size: size || '?',
-          sitemapUrl: t?.sitemap_url || `${url}/sitemap_index.xml`,
+          sitemapUrl: t?.sitemap_url || `${url}/wp-sitemap.xml`,
           gscStatus: t?.gsc_status || null,
         };
       });
