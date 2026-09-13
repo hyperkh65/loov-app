@@ -1,15 +1,41 @@
 import { NextRequest } from 'next/server';
-import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
+import { nasExec, nasExecWithStdin, nas2daysExec, nasExecWithStdinCustom } from '@/lib/nas-ssh';
 
 const PUB_ID = 'ca-pub-8940400388075870';
-const ADMIN_EMAIL = 'admin@aboda.kr';
 const WEB_ROOT = '/volume1/web';
 
-function makeAdPlugin(subdomain: string): string {
+// hy64(aboda.kr)와 hy65(2days.kr) 두 NAS에 동일한 자동설치를 지원 — SSH 실행 함수와
+// 도메인/DB 접속정보만 갈아끼우면 나머지 설치 로직(WP-CLI/테마/플러그인/AdSense)은 동일
+const NAS_TARGETS = {
+  hy64: {
+    exec: nasExec,
+    execWithStdin: nasExecWithStdin,
+    domainSuffix: 'aboda.kr',
+    adminEmail: 'admin@aboda.kr',
+    ddnsHost: 'hy64.synology.me',
+    mysqlRootPass: process.env.NAS_MYSQL_ROOT_PASS || '',
+  },
+  hy65: {
+    exec: nas2daysExec,
+    execWithStdin: (cmd: string, data: Buffer | string) => nasExecWithStdinCustom(cmd, data, {
+      host: process.env.NAS2_SSH_HOST || '2days.kr',
+      port: parseInt(process.env.NAS2_SSH_PORT || '22'),
+      username: process.env.NAS2_SSH_USER || 'urjent',
+      password: process.env.NAS2_SSH_PASSWORD || 'Fpahs60577##7759',
+    }),
+    domainSuffix: '2days.kr',
+    adminEmail: 'admin@2days.kr',
+    ddnsHost: '2days.kr',
+    mysqlRootPass: process.env.NAS2_MYSQL_ROOT_PASS || 'Fpahs60577##',
+  },
+} as const;
+type NasKey = keyof typeof NAS_TARGETS;
+
+function makeAdPlugin(fqdn: string): string {
   return `<?php
 /**
  * Plugin Name: Aboda AdSense Optimizer
- * Description: aboda.kr 수익 최적화 AdSense 자동 삽입 (${subdomain}.aboda.kr)
+ * Description: 수익 최적화 AdSense 자동 삽입 (${fqdn})
  * Version: 1.0
  * Author: LOOV System
  */
@@ -87,13 +113,16 @@ add_action('wp_head', function() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const { subdomain, title, topic, adminPass } = body as {
-    subdomain: string; title: string; topic: string; adminPass: string;
+  const { subdomain, title, topic, adminPass, nas } = body as {
+    subdomain: string; title: string; topic: string; adminPass: string; nas?: NasKey;
   };
 
   if (!subdomain || !/^[a-z0-9-]{2,30}$/.test(subdomain)) {
     return new Response(JSON.stringify({ error: 'Invalid subdomain' }), { status: 400 });
   }
+
+  const target = NAS_TARGETS[nas || 'hy64'];
+  const nasExecFn = target.exec;
 
   const WP_DIR = `${WEB_ROOT}/${subdomain}`;
   const DB_NAME = `wp_${subdomain.replace(/-/g, '_')}`;
@@ -107,9 +136,8 @@ export async function POST(req: NextRequest) {
     const base = Array.from({ length: 10 }, () => rand(lower + upper + digits)).join('');
     return rand(upper) + rand(special) + base + rand(digits);
   })();
-  const WP_URL = `https://${subdomain}.aboda.kr`;
-  const MYSQL_ROOT = process.env.NAS_MYSQL_ROOT_PASS || '';
-  const SYNO_PASS = process.env.NAS_SYNO_ADMIN_PASS || process.env.NAS_SSH_PASSWORD || '';
+  const WP_URL = `https://${subdomain}.${target.domainSuffix}`;
+  const MYSQL_ROOT = target.mysqlRootPass;
   const WP_CLI = '/volume1/homes/urjent/bin/wp';
   const WP = `/usr/local/bin/php82 ${WP_CLI} --path=${WP_DIR} --allow-root`;
   const MYSQL_BIN = '/usr/local/bin/mysql';
@@ -125,7 +153,7 @@ export async function POST(req: NextRequest) {
 
       const run = async (label: string, cmd: string, allowFail = false) => {
         send(label, 'step');
-        const r = await nasExec(cmd);
+        const r = await nasExecFn(cmd);
         if (r.stderr) send(r.stderr.slice(0, 300), 'warn');
         if (r.code !== 0 && !allowFail) {
           throw new Error(`[${label}] 실패 (code ${r.code}): ${r.stderr || r.stdout}`);
@@ -136,8 +164,8 @@ export async function POST(req: NextRequest) {
       try {
         // ── 1. 중복 확인
         send('도메인 중복 확인...', 'step');
-        const chk = await nasExec(`test -d ${WP_DIR} && echo exists || echo ok`);
-        if (chk.stdout.trim() === 'exists') throw new Error(`${subdomain}.aboda.kr 이미 존재합니다`);
+        const chk = await nasExecFn(`test -d ${WP_DIR} && echo exists || echo ok`);
+        if (chk.stdout.trim() === 'exists') throw new Error(`${subdomain}.${target.domainSuffix} 이미 존재합니다`);
         send('✅ 도메인 사용 가능');
 
         // ── 2. 디렉토리 + WordPress 다운로드
@@ -154,7 +182,7 @@ export async function POST(req: NextRequest) {
 
         // ── 3. WP-CLI 확인/설치 (홈 디렉토리에 설치)
         send('🔧 WP-CLI 확인...', 'step');
-        const wpCheck = await nasExec(`ls ${WP_CLI} 2>/dev/null && echo installed || echo missing`);
+        const wpCheck = await nasExecFn(`ls ${WP_CLI} 2>/dev/null && echo installed || echo missing`);
         if (wpCheck.stdout.includes('missing')) {
           await run('WP-CLI 설치 중...',
             `mkdir -p /volume1/homes/urjent/bin && \
@@ -198,7 +226,7 @@ export async function POST(req: NextRequest) {
             --title="${title.replace(/"/g, '\\"')}" \
             --admin_user="admin" \
             --admin_password="${adminPass}" \
-            --admin_email="${ADMIN_EMAIL}" \
+            --admin_email="${target.adminEmail}" \
             --skip-email && echo ok`
         );
         send('✅ WordPress 코어 설치 완료');
@@ -246,14 +274,14 @@ export async function POST(req: NextRequest) {
         ];
         for (const plugin of plugins) {
           send(`🔌 플러그인 설치: ${plugin}`, 'step');
-          const pr = await nasExec(`${WP} plugin install ${plugin} --activate 2>&1 && echo ok`);
+          const pr = await nasExecFn(`${WP} plugin install ${plugin} --activate 2>&1 && echo ok`);
           if (pr.stdout.includes('ok') || pr.stdout.includes('Success')) {
             send(`✅ ${plugin}`);
           } else {
             send(`⚠️ ${plugin} 설치 실패 (건너뜀): ${pr.stdout.slice(0, 100)}`, 'warn');
           }
         }
-        await nasExec(`${WP} plugin delete hello akismet 2>/dev/null`);
+        await nasExecFn(`${WP} plugin delete hello akismet 2>/dev/null`);
         send('✅ 플러그인 설치 완료');
 
         // ── 11. Rank Math SEO 기본 설정
@@ -273,10 +301,10 @@ export async function POST(req: NextRequest) {
 
         // ── 13. AdSense MU 플러그인 삽입
         send('💰 AdSense 수익화 설정 중...', 'step');
-        const pluginContent = makeAdPlugin(subdomain);
-        const mkDir = await nasExec(`mkdir -p ${WP_DIR}/wp-content/mu-plugins && echo ok`);
+        const pluginContent = makeAdPlugin(`${subdomain}.${target.domainSuffix}`);
+        const mkDir = await nasExecFn(`mkdir -p ${WP_DIR}/wp-content/mu-plugins && echo ok`);
         if (mkDir.code === 0) {
-          await nasExecWithStdin(
+          await target.execWithStdin(
             `cat > ${WP_DIR}/wp-content/mu-plugins/aboda-adsense.php`,
             pluginContent
           );
@@ -297,9 +325,9 @@ export async function POST(req: NextRequest) {
         // ── 15. WebStation 수동 설정 안내 (자동화 불가 - nginx reload root 권한 필요)
         send('📋 WebStation 가상호스트 수동 설정 필요 (30초)', 'step');
         send(`① DSM → WebStation → 가상호스트 → 만들기`, 'warn');
-        send(`② 호스트명: ${subdomain}.aboda.kr`, 'warn');
+        send(`② 호스트명: ${subdomain}.${target.domainSuffix}`, 'warn');
         send(`③ 문서 루트: ${WP_DIR}`, 'warn');
-        send(`④ PHP: PHP 8.2 / HTTP+HTTPS(80,443)`, 'warn');
+        send(`④ PHP: PHP 8.2 / HTTP+HTTPS(80,443) — Let's Encrypt 자동발급 체크박스도 함께 선택`, 'warn');
 
         // ── 완료
         send(JSON.stringify({
@@ -307,17 +335,17 @@ export async function POST(req: NextRequest) {
           adminUrl: `${WP_URL}/wp-admin/`,
           adminUser: 'admin',
           adminPass,
-          domain: `${subdomain}.aboda.kr`,
-          dnsNote: `dnszi.com에서 CNAME: ${subdomain} → hy64.synology.me 추가 필요`,
-          webstationNote: `DSM → WebStation → 가상호스트 → 만들기 → 호스트명: ${subdomain}.aboda.kr / 루트: ${WP_DIR} / PHP 8.2`,
+          domain: `${subdomain}.${target.domainSuffix}`,
+          dnsNote: `dnszi.com에서 CNAME: ${subdomain} → ${target.ddnsHost} 추가 필요`,
+          webstationNote: `DSM → WebStation → 가상호스트 → 만들기 → 호스트명: ${subdomain}.${target.domainSuffix} / 루트: ${WP_DIR} / PHP 8.2 (Let's Encrypt 자동발급 체크박스 함께 선택)`,
         }), 'done');
 
       } catch (e) {
         send(String(e), 'error');
         // 실패 시 자동 롤백
         send('🧹 실패 — 생성된 파일/DB 정리 중...', 'warn');
-        await nasExec(`rm -rf ${WP_DIR}`).catch(() => {});
-        await nasExec(`${MYSQL_BIN} -u root -p"${MYSQL_ROOT}" -e "DROP DATABASE IF EXISTS \\\`${DB_NAME}\\\`; DROP USER IF EXISTS '${DB_USER}'@'localhost';" 2>/dev/null`).catch(() => {});
+        await nasExecFn(`rm -rf ${WP_DIR}`).catch(() => {});
+        await nasExecFn(`${MYSQL_BIN} -u root -p"${MYSQL_ROOT}" -e "DROP DATABASE IF EXISTS \\\`${DB_NAME}\\\`; DROP USER IF EXISTS '${DB_USER}'@'localhost';" 2>/dev/null`).catch(() => {});
         send('🧹 정리 완료 — 다시 시도할 수 있습니다', 'warn');
       } finally {
         try { controller.close(); } catch { /* ok */ }
