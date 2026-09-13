@@ -271,13 +271,15 @@ export async function POST(req: NextRequest) {
         await nasExecFn(`${WP} plugin delete hello akismet 2>/dev/null`);
         send('✅ 플러그인 설치 완료');
 
-        // ── 11. Rank Math SEO 기본 설정 (사이트맵 모듈 포함)
-        // Rank Math의 사이트맵 라우트(/sitemap_index.xml)는 플러그인 활성화 후
-        // 리라이트 규칙을 다시 flush해야 실제로 응답함 — 7단계에서 이미 한 번
-        // flush했지만 그때는 Rank Math가 아직 설치되기 전이라 사이트맵 규칙이
-        // 안 잡혀 있었음(실사용 중 사이트맵이 404 나는 문제로 확인됨)
+        // ── 11. Rank Math SEO 기본 설정 — 사이트맵은 Rank Math 대신 워드프레스
+        // 코어 내장 사이트맵(/wp-sitemap.xml)으로 통일한다. Rank Math 사이트맵
+        // 모듈을 켜두면 코어 사이트맵을 꺼버리면서(wp_sitemaps_enabled=false)
+        // 정작 자기 라우트는 제대로 응답 안 해서 "본문은 나오는데 상태코드는
+        // 404"인 상태가 되는 버그를 실사용 중(finance.2days.kr) 확인함 —
+        // 코어 내장 걸 쓰면 플러그인 의존성 없이 항상 안정적으로 동작함
         await run('📈 SEO/사이트맵 설정 중...',
           `${WP} option update rank_math_general_settings '{"strip_category_base":"1","attachment_redirect_urls":"1"}' --format=json 2>/dev/null; \
+           ${WP} eval 'update_option("rank_math_modules", array_values(array_diff(get_option("rank_math_modules", []), ["sitemap"])));' 2>/dev/null; \
            ${WP} rewrite flush --hard 2>/dev/null; \
            echo ok`,
           true
@@ -328,7 +330,7 @@ export async function POST(req: NextRequest) {
           `${WP} user application-password create ${ADMIN_USER} "loov-auto" --porcelain 2>/dev/null`
         );
         const appPassword = appPassResult.stdout.trim();
-        const sitemapUrl = `${WP_URL}/sitemap_index.xml`;
+        const sitemapUrl = `${WP_URL}/wp-sitemap.xml`;
         if (appPassword && appPassResult.code === 0) {
           try {
             const supabase = createAdminClient();
