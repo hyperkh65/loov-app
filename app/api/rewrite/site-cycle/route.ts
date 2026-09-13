@@ -12,6 +12,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 
 const BASE = 'http://172.17.0.1:3100';
+// 뉴스는 시간이 지나면 가치가 떨어짐 — 백로그가 밀려서 몇 시간 지난 기사를
+// 뒤늦게 발행하면 "이미 지난 얘기"를 새 글인 것처럼 올리는 꼴이라 의미가
+// 없음. 이 시간 넘은 pending/ready는 발행 대신 버리고 다음 걸로 넘어감.
+const STALE_MS = 6 * 60 * 60 * 1000;
 
 function authOk(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
@@ -47,8 +51,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, message: `${site_url}로 라우팅된 소스 없음` });
   }
 
+  const staleCutoff = new Date(Date.now() - STALE_MS).toISOString();
+  let staleDropped = 0;
+
+  // 오래돼서 이제 와서 발행해봐야 의미없는 ready/pending은 통째로 버림
+  const { data: staleReady } = await supabase
+    .from('bossai_rewrite_articles')
+    .select('id')
+    .in('source_id', sourceIds)
+    .eq('status', 'ready')
+    .lt('created_at', staleCutoff);
+  if (staleReady?.length) {
+    await supabase.from('bossai_rewrite_articles').delete().in('id', staleReady.map(a => a.id));
+    staleDropped += staleReady.length;
+  }
+  const { data: stalePending } = await supabase
+    .from('bossai_rewrite_articles')
+    .select('id')
+    .in('source_id', sourceIds)
+    .eq('status', 'pending')
+    .lt('created_at', staleCutoff);
+  if (stalePending?.length) {
+    await supabase.from('bossai_rewrite_articles').delete().in('id', stalePending.map(a => a.id));
+    staleDropped += stalePending.length;
+  }
+
   // 이미 리라이팅 끝난 게 있으면 그것부터 바로 발행 — 없으면 pending 중
-  // 가장 오래된 것 하나를 리라이팅부터 진행
+  // 가장 오래된 것(신선한 것만) 하나를 리라이팅부터 진행
   const { data: readyArticle } = await supabase
     .from('bossai_rewrite_articles')
     .select('id')
@@ -73,7 +102,7 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (!pendingArticle) {
-      return NextResponse.json({ ok: true, message: '대기 중인 기사 없음(다음 RSS 동기화 대기)' });
+      return NextResponse.json({ ok: true, message: '대기 중인 기사 없음(다음 RSS 동기화 대기)', staleDropped });
     }
 
     try {
@@ -97,7 +126,7 @@ export async function POST(req: NextRequest) {
       signal: AbortSignal.timeout(200_000),
     });
     const publishData = await publishRes.json();
-    return NextResponse.json({ ok: true, articleId: targetId, publish: publishData });
+    return NextResponse.json({ ok: true, articleId: targetId, publish: publishData, staleDropped });
   } catch (e) {
     return NextResponse.json({ ok: false, error: `발행 요청 실패: ${String(e)}` }, { status: 500 });
   }
