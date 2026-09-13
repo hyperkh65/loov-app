@@ -58,19 +58,22 @@ function isBlocked(kw: string, category: 'lifestyle' | 'finance'): boolean {
 // ── Naver 자동완성 (API 키 불필요, 실제 검색어만 반환) ───────────────────────
 async function autocomplete(seed: string, category: 'lifestyle' | 'finance'): Promise<string[]> {
   try {
+    // con=1&frm=nv&ans=2 파라미터 조합은 "items"가 항상 비어있고 대신
+    // "answer"(브랜드/기관 바로가기용 구조화 블록, 예: ["24","연말정산","anssit",
+    // "","","hometax.go.kr",...])만 채워지는 걸 확인 — 기존 코드가 이 "answer"를
+    // 실제 검색어 목록으로 오인해서 "anssit", URL 조각 같은 쓰레기가 섞여
+    // 들어가던 버그였음. st=100/run=2 조합이 실제 자동완성 목록("items")을 줌.
     const res = await fetch(
-      `https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(seed)}&con=1&frm=nv&ans=2&r_format=json&r_enc=UTF-8`,
+      `https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(seed)}&st=100&r_format=json&r_enc=UTF-8&r_unicode=0&t_koreng=1&run=2`,
       { signal: AbortSignal.timeout(3000) }
     );
     if (!res.ok) return [];
-    const text = await res.text();
-    const idx = text.indexOf('[[');
-    if (idx === -1) return [];
-    const inner = text.slice(idx + 1);
-    const end = inner.indexOf(']]');
-    if (end === -1) return [];
-    const arr = JSON.parse(inner.slice(0, end + 1)) as unknown[];
-    return (arr as string[]).filter(k => typeof k === 'string' && !isBlocked(k, category)).slice(0, 8);
+    const data = await res.json() as { items?: unknown[][] };
+    const raw = (data.items?.[0] || []) as unknown[];
+    const keywords = raw
+      .map(item => Array.isArray(item) ? String(item[0] ?? '') : String(item ?? ''))
+      .filter(Boolean);
+    return keywords.filter(k => !isBlocked(k, category)).slice(0, 8);
   } catch { return []; }
 }
 
