@@ -137,11 +137,27 @@ export async function POST(req: NextRequest) {
     method: 'POST', headers, signal: AbortSignal.timeout(50_000),
   }).catch(() => {});
 
+  // 6. finance.2days.kr은 전체 소스가 공유하는 발행 슬롯(위 3번, 20분당 1건을
+  // 30개 넘는 소스가 나눠 씀)과 무관하게 매 크론(20분)마다 무조건 새 글이
+  // 나가야 해서 전용 슬롯으로 따로 처리
+  let financeCycleResult: unknown = null;
+  try {
+    const res = await fetch(`${BASE}/api/rewrite/site-cycle`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ site_url: 'https://finance.2days.kr' }),
+      signal: AbortSignal.timeout(280_000),
+    });
+    financeCycleResult = await res.json();
+  } catch (e) {
+    financeCycleResult = { ok: false, error: String(e) };
+  }
+
   return NextResponse.json({
     ok: true,
     sync: syncResult,
     processed: results.filter((r) => !('error' in r)).length,
     results,
     publish: publishResult,
+    financeCycle: financeCycleResult,
   });
 }

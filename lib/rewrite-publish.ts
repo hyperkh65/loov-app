@@ -146,16 +146,18 @@ export async function publishRewrittenArticle(
   let sourcePublishWpSiteId: string | null = null;
   let publishSns = true;
   let publishTumblr = false;
+  let excludedPlatforms: string[] = [];
   if (sourceId) {
     const { data: source } = await admin
       .from('bossai_rewrite_sources')
-      .select('publish_wp_site_id, publish_sns, publish_tumblr')
+      .select('publish_wp_site_id, publish_sns, publish_tumblr, excluded_platforms')
       .eq('id', sourceId)
       .single();
     if (source) {
       sourcePublishWpSiteId = source.publish_wp_site_id;
       publishSns = source.publish_sns;
       publishTumblr = source.publish_tumblr;
+      excludedPlatforms = source.excluded_platforms || [];
     }
   }
 
@@ -278,6 +280,7 @@ export async function publishRewrittenArticle(
 
   const allowedAccounts = await getSnsAccountRouting(sourceId);
   const relevantConns = (conns || []).filter(c => {
+    if (excludedPlatforms.includes(c.platform)) return false;
     if (!SNS_PLATFORMS.includes(c.platform as Platform)) return false;
     if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
     return allowedAccounts.includes(c.platform_username || '');
