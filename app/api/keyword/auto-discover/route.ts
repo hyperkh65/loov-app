@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
+import { fetchFeedItems } from '@/lib/rewrite-site-scraper';
+import { XMLParser } from 'fast-xml-parser';
 import crypto from 'crypto';
 
 export const maxDuration = 60;
@@ -53,6 +55,54 @@ const HIGH_CPC_PATTERNS = /대출|보험|카드|투자|환전|세무|절세|연�
 function isBlocked(kw: string, category: 'lifestyle' | 'finance'): boolean {
   const block = category === 'finance' ? FINANCE_NEWS_BLOCK : NEWS_BLOCK;
   return block.test(kw) || kw.length < 4 || kw.length > 20;
+}
+
+// 시드를 "이번 달엔 이런 걸 검색하지 않을까" 하는 추측(FINANCE_ENTRY_SEEDS)에만
+// 의존하면, 아래 단계가 아무리 진짜 데이터를 가져와도 결국 추측한 시드의
+// 연관어일 뿐임 — 실제 신호 2종을 시드에 섞어서 이 한계를 줄인다.
+const TREND_FINANCE_MATCH = /대출|보험|연금|세금|정책|지원금|복지|수당|급여|금리|환율|주식|투자|부동산|전세|월세|청약|카드|적금|예금|증권|펀드|세액공제|국민연금|건강보험|실업급여|공제|납부|신고|환급/;
+
+// ── 시드 A: 구글 트렌드 실시간 급상승검색어(한국) — "지금 실제로 사람들이
+// 찾는 것" 신호. 전체 트렌드는 연예/스포츠가 대부분이라 포지티브 매칭으로 거름 ──
+async function googleTrendsFinanceSeeds(): Promise<string[]> {
+  try {
+    const res = await fetch('https://trends.google.com/trends/trendingsearches/daily/rss?geo=KR', {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const parser = new XMLParser({ ignoreAttributes: false });
+    const doc = parser.parse(xml) as { rss?: { channel?: { item?: unknown } } };
+    const items = ([] as unknown[]).concat(doc.rss?.channel?.item ?? []);
+    const titles = items
+      .map(it => String((it as Record<string, unknown>)?.title ?? '').trim())
+      .filter(Boolean);
+    return titles.filter(t => TREND_FINANCE_MATCH.test(t)).slice(0, 10);
+  } catch { return []; }
+}
+
+// ── 시드 B: 이미 finance.2days.kr로 라우팅된 실제 파이낸셜뉴스 기사 제목 —
+// 캘린더 추측이 아니라 오늘 실제 보도된 정책/금리 뉴스 자체를 시드로 씀.
+// 문장이라도 네이버 광고API가 매칭 안 되면 빈 배열만 돌아오니 안전(별도 NLP 불필요) ──
+async function financeNewsHeadlineSeeds(): Promise<string[]> {
+  try {
+    const admin = createAdminClient();
+    const { data: site } = await admin
+      .from('wordpress_sites').select('id')
+      .eq('site_url', 'https://finance.2days.kr').single();
+    if (!site) return [];
+    const { data: sources } = await admin
+      .from('bossai_rewrite_sources')
+      .select('feed_url')
+      .eq('publish_wp_site_id', site.id)
+      .eq('is_active', true);
+    if (!sources?.length) return [];
+    const feeds = await Promise.all(
+      sources.map(s => s.feed_url ? fetchFeedItems(s.feed_url, 5) : Promise.resolve([]))
+    );
+    const titles = feeds.flat().map(it => it.title.trim()).filter(Boolean);
+    return titles.slice(0, 15);
+  } catch { return []; }
 }
 
 // ── Naver 자동완성 (API 키 불필요, 실제 검색어만 반환) ───────────────────────
@@ -341,9 +391,19 @@ export async function POST(req: NextRequest) {
   const category: 'lifestyle' | 'finance' = categoryParam === 'finance' ? 'finance' : 'lifestyle';
 
   const month = new Date().getMonth() + 1;
-  const entrySeeds = category === 'finance'
-    ? (FINANCE_ENTRY_SEEDS[month] || FINANCE_ENTRY_SEEDS[4])
-    : (ENTRY_SEEDS[month] || ENTRY_SEEDS[4]);
+  let entrySeeds: string[];
+  if (category === 'finance') {
+    // 실제 신호 2종(구글트렌드 실시간, 실제 뉴스 제목) + 캘린더 시드(보조) 결합
+    const [trendSeeds, newsSeeds] = await Promise.all([
+      googleTrendsFinanceSeeds(),
+      financeNewsHeadlineSeeds(),
+    ]);
+    const seenSeed = new Set<string>();
+    entrySeeds = [...trendSeeds, ...newsSeeds, ...(FINANCE_ENTRY_SEEDS[month] || FINANCE_ENTRY_SEEDS[4])]
+      .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
+  } else {
+    entrySeeds = ENTRY_SEEDS[month] || ENTRY_SEEDS[4];
+  }
 
   const seen = new Set<string>();
   type CandidateSource = 'ad_related' | 'autocomplete' | 'longtail';
