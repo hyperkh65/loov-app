@@ -66,7 +66,9 @@ const TREND_FINANCE_MATCH = /대출|보험|연금|세금|정책|지원금|복지
 // 찾는 것" 신호. 전체 트렌드는 연예/스포츠가 대부분이라 포지티브 매칭으로 거름 ──
 async function googleTrendsFinanceSeeds(): Promise<string[]> {
   try {
-    const res = await fetch('https://trends.google.com/trends/trendingsearches/daily/rss?geo=KR', {
+    // 구글이 예전 daily/rss 엔드포인트를 없애고 /trending/rss로 옮김(2026-09 확인) —
+    // 예전 URL은 조용히 404만 뱉어서 이 함수가 항상 빈 배열만 반환하고 있었음
+    const res = await fetch('https://trends.google.com/trending/rss?geo=KR', {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
@@ -262,10 +264,27 @@ function parseQcCnt(v: number | string) {
   return typeof v === 'number' ? v : v === '< 10' ? 5 : parseInt(String(v)) || 0;
 }
 
+// Naver 광고 API의 hintKeywords는 공백이 들어간 값을 통째로 보내면 무조건
+// 400("hintKeywords 파라미터가 유효하지 않습니다")을 반환한다(직접 확인) —
+// 여러 단어짜리 후보/시드를 계속 보내던 이 함수들이 사실상 항상 실패해서
+// 매번 빈 결과로 조용히 넘어가고 있었음. 공백 기준으로 쪼개 콤마로 이어붙이면
+// (개별 단어 최대 5개, API 제한) 통과함 — 대신 결과는 원래 문구 전체가 아니라
+// 쪼개진 단어들 각각의 데이터로 옴(아래 두 함수 모두 이 형태를 가정하고 씀).
+function toHintKeywords(kw: string): string {
+  // 뉴스 제목처럼 따옴표/쉼표/말줄임표가 단어에 붙어 있으면 토큰 자체가 깨지거나
+  // (쉼표가 껴서 hintKeywords 구분자와 충돌) 이상한 문자가 섞여 API가 거절함
+  return kw
+    .split(/\s+/)
+    .map(t => t.replace(/["'“”‘’,.?!…()\[\]〈〉《》「」『』:;·]/g, ''))
+    .filter(t => t.length >= 2)
+    .slice(0, 5)
+    .join(',');
+}
+
 async function getVolume(kw: string, apiKey: string, secret: string, cid: string) {
   try {
     const res = await fetch(
-      `https://api.naver.com/keywordstool?hintKeywords=${encodeURIComponent(kw)}&showDetail=1`,
+      `https://api.naver.com/keywordstool?hintKeywords=${encodeURIComponent(toHintKeywords(kw))}&showDetail=1`,
       { headers: adHeaders(apiKey, secret, cid), signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) return { pc: 0, mobile: 0 };
@@ -286,7 +305,7 @@ async function relatedKeywordsWithVolume(
 ): Promise<Array<{ keyword: string; pc: number; mobile: number }>> {
   try {
     const res = await fetch(
-      `https://api.naver.com/keywordstool?hintKeywords=${encodeURIComponent(seed)}&showDetail=1`,
+      `https://api.naver.com/keywordstool?hintKeywords=${encodeURIComponent(toHintKeywords(seed))}&showDetail=1`,
       { headers: adHeaders(apiKey, secret, cid), signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) return [];
