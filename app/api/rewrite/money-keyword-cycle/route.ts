@@ -10,9 +10,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateBlogContent } from '@/lib/blog-content-generator';
-import { publishToWordPress, getWpCredentials } from '@/lib/scheduler/blog-runner';
+import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 
 const SITE_URL = 'https://money.2days.kr';
+// bossai_rewrite_sources의 "발행 설정 캐리어" 역할만 하는 비활성 소스 행 —
+// RSS가 없는 키워드 발행 사이트도 publishRewrittenArticle의 네이버카페/텀블러/
+// 링크드인/워드프레스닷컴/깃헙페이지/SNS 크로스포스팅을 그대로 재사용하기 위해
+// (기존 뉴스 리라이팅 사이트들과 동일하게 "새로 만드는 사이트는 다 올라가야
+// 한다"는 요구사항) 만들어둠 — is_active=false라 sync-sites RSS 폴링 대상에서는 제외됨.
+const PUBLISH_SOURCE_ID = '78df8c59-b47f-49cc-a273-09f34cf2693d';
 // 이 사이클보다 먼저 나갈 만큼 신선한 후보만 씀 — 너무 오래된 캐시는 이미
 // 경쟁 상황이 바뀌었을 수 있음
 const FRESH_MS = 24 * 60 * 60 * 1000;
@@ -76,9 +82,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { title, content, imageUrl } = await generateBlogContent(picked.keyword, ai_model);
-    const creds = await getWpCredentials(site.id);
-    const result = await publishToWordPress(creds.url, creds.username, creds.appPassword, title, content, imageUrl);
+    const { title, content, meta_description, imageUrl } = await generateBlogContent(picked.keyword, ai_model);
+    const result = await publishRewrittenArticle(
+      { title, content, representative_image_url: imageUrl, meta: meta_description },
+      ownerId, PUBLISH_SOURCE_ID,
+    );
 
     // 재사용 방지 — 캐시는 auto-discover가 계속 새로 채우니 쓴 건 지워서
     // 같은 사이클이 반복해서 같은 키워드를 다시 집지 않게 함
@@ -89,7 +97,7 @@ export async function POST(req: NextRequest) {
       .eq('keyword', picked.keyword)
       .eq('category', 'finance');
 
-    return NextResponse.json({ ok: true, keyword: picked.keyword, grade: picked.grade, title, url: result.link });
+    return NextResponse.json({ ok: true, keyword: picked.keyword, grade: picked.grade, title, ...result });
   } catch (e) {
     return NextResponse.json({ ok: false, keyword: picked.keyword, error: String(e) }, { status: 500 });
   }
