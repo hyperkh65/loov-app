@@ -44,6 +44,21 @@ async function sbInsert(table, body) {
   if (!res.ok) console.warn(`sbInsert ${table} failed: ${res.status}`);
 }
 
+// HTML을 문단 배열(순수 텍스트)로 — 클립보드 paste 이벤트 흉내는 스마트에디터
+// ONE의 내부 상태에 실제로 반영되지 않는 걸 실사용 중 확인함(제목은 채워졌는데
+// 본문은 빈 placeholder 그대로였음). 진짜 키보드 타이핑만 에디터가 인식하므로
+// 서식은 일단 포기하고(문단 구분만 유지) 텍스트만이라도 확실히 넣는다.
+function htmlToParagraphs(html) {
+  return html
+    .replace(/<\/(p|h[1-6]|div|li|figcaption)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 // ── Playwright로 네이버 블로그 발행 ───────────────────────────────────────────
 
 async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, tags, categoryNo, isPublish }) {
@@ -158,27 +173,24 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     }
     if (!titleFilled) console.warn('[Playwright] Title selector not found — 아래 진단 정보 참고');
 
-    // 3. 본문 입력 — contenteditable에 HTML을 그대로 넣을 수 있는 input 이벤트가
-    // 없으므로, 클립보드 paste 이벤트를 흉내내서 HTML을 그대로 붙여넣기(스마트
-    // 에디터가 내부적으로 paste의 text/html을 파싱해서 블록으로 변환해줌).
+    // 3. 본문 입력 — 클립보드 paste 이벤트 흉내는 스마트에디터 내부 상태에 실제로
+    // 반영 안 되는 걸 확인함(실사용 중: 제목만 채워지고 본문은 빈 placeholder
+    // 그대로였음). 진짜 키보드 타이핑만 에디터가 확실히 인식하므로 문단 단위로
+    // 입력하고 Enter로 새 블록을 만든다(서식은 이번엔 포기 — 텍스트만이라도 확실히).
     const bodySelectors = ['.se-component-content .se-text-paragraph', '.se-main-container [contenteditable="true"]', '[contenteditable="true"]'];
     let bodyFilled = false;
+    const paragraphs = htmlToParagraphs(content);
     for (const sel of bodySelectors) {
       const el = mainFrame.locator(sel).first();
       if (await el.count() > 0) {
         await dismissPopup();
         await el.click({ force: true });
-        await mainFrame.evaluate(({ selector, html }) => {
-          const target = document.querySelector(selector);
-          if (!target) return;
-          target.focus();
-          const dt = new DataTransfer();
-          dt.setData('text/html', html);
-          dt.setData('text/plain', target.textContent || '');
-          const evt = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
-          target.dispatchEvent(evt);
-        }, { selector: sel, html: content }).catch(e => console.warn('[Playwright] paste evaluate failed:', e.message));
-        console.log(`[Playwright] Body paste attempted via: ${sel}`);
+        await page.waitForTimeout(300);
+        for (const para of paragraphs) {
+          await page.keyboard.type(para, { delay: 5 });
+          await page.keyboard.press('Enter');
+        }
+        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} paragraphs)`);
         bodyFilled = true;
         break;
       }
@@ -212,10 +224,16 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     }
     await dismissPopup();
     await page.keyboard.press('Escape').catch(() => {});
-    const helpClose = page.locator('.se-help-panel button, .se-help-title').first();
-    if (await helpClose.count() > 0) {
-      await page.mouse.click(5, 5).catch(() => {}); // 도움말 패널 밖 클릭으로 닫기 시도
-      await page.waitForTimeout(300);
+    // "도움말" 패널이 실제로 화면 우측을 계속 덮고 있는 걸 스크린샷으로 확인함
+    // (Escape/모서리 클릭으로는 안 닫힘) — 패널 안의 진짜 닫기 버튼을 찾아 클릭.
+    const helpPanel = page.locator('div:has-text("도움말")').first();
+    if (await helpPanel.count() > 0 && await helpPanel.isVisible().catch(() => false)) {
+      const closeBtn = helpPanel.locator('button, [class*="close" i], [aria-label*="닫기"]').first();
+      if (await closeBtn.count() > 0) {
+        await closeBtn.click({ force: true }).catch(() => {});
+        console.log('[Playwright] Closed help panel');
+        await page.waitForTimeout(300);
+      }
     }
     await publishOpenBtn.click({ force: true, timeout: 10000 });
     await page.waitForTimeout(1000);
@@ -240,10 +258,20 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     // 6. 발행 레이어 안의 최종 확인 버튼 (레이어 안에 또 "발행" 버튼이 있는 게
     // 스마트에디터 ONE의 2단계 발행 방식) — 임시저장(isPublish=false)이면 안 누름
     if (isPublish) {
+      const allPublishBtns = await page.locator('button:has-text("발행")').all();
+      const btnInfo = await Promise.all(allPublishBtns.map(async b => ({
+        text: (await b.textContent().catch(() => '') || '').trim(),
+        visible: await b.isVisible().catch(() => false),
+      })));
+      console.log('[Playwright] All 발행 buttons:', JSON.stringify(btnInfo));
+      await page.screenshot({ path: '/tmp/naver-before-confirm.png', fullPage: true }).catch(() => {});
+
       const confirmBtn = page.locator('button:has-text("발행")').last();
       if (await confirmBtn.count() > 0) {
         await confirmBtn.click({ force: true, timeout: 10000 });
         console.log('[Playwright] Final publish confirm clicked');
+        await page.waitForTimeout(2000);
+        await page.screenshot({ path: '/tmp/naver-after-confirm.png', fullPage: true }).catch(() => {});
       }
     } else {
       console.log('[Playwright] isPublish=false — 발행 확정 단계 건너뜀(임시저장만)');
