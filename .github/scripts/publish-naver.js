@@ -56,7 +56,12 @@ function htmlToParagraphs(html) {
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
     .split('\n')
     .map(s => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // 줄 맨 앞이 "24." "3)" 같은 숫자+구두점이면 스마트에디터가 타이핑 중
+    // 자동으로 번호매기기 리스트로 바꿔버림(실사용 중 확인 — 원문 숫자와 에디터가
+    // 새로 매긴 번호가 겹쳐 보이는 버그였음). 폭 0 문자를 앞에 붙여 패턴을 깨되
+    // 렌더링 결과에는 안 보이게 함.
+    .map(s => /^\d+[.)]\s/.test(s) ? `​${s}` : s);
 }
 
 // ── Playwright로 네이버 블로그 발행 ───────────────────────────────────────────
@@ -224,19 +229,22 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     }
     await dismissPopup();
     await page.keyboard.press('Escape').catch(() => {});
-    // "도움말" 패널이 실제로 화면 우측을 계속 덮고 있는 걸 스크린샷으로 확인함
-    // (Escape/모서리 클릭으로는 안 닫힘) — 패널 안의 진짜 닫기 버튼을 찾아 클릭.
-    const helpPanel = page.locator('div:has-text("도움말")').first();
-    if (await helpPanel.count() > 0 && await helpPanel.isVisible().catch(() => false)) {
-      const closeBtn = helpPanel.locator('button, [class*="close" i], [aria-label*="닫기"]').first();
-      if (await closeBtn.count() > 0) {
-        await closeBtn.click({ force: true }).catch(() => {});
-        console.log('[Playwright] Closed help panel');
-        await page.waitForTimeout(300);
-      }
+    // "도움말" 패널이 화면 우측을 계속 덮고 있는 걸 스크린샷 2번 다 확인함 —
+    // class/aria 기반 닫기 버튼 클릭이 실제로는 안 먹혔음(엉뚱한 버튼을 집었을
+    // 가능성). 두 스크린샷 모두 같은 위치(우측 상단 ✕, 뷰포트 기준 약 1237,42)에
+    // 아이콘이 있는 걸 육안으로 확인했으므로 좌표 클릭으로 확실하게 닫는다.
+    for (let i = 0; i < 3; i++) {
+      const helpVisible = await page.locator('div:has-text("도움말")').first().isVisible().catch(() => false);
+      if (!helpVisible) break;
+      await page.mouse.click(1237, 42).catch(() => {});
+      await page.waitForTimeout(400);
     }
+    const stillHelpVisible = await page.locator('div:has-text("도움말")').first().isVisible().catch(() => false);
+    console.log(`[Playwright] Help panel still visible after close attempts: ${stillHelpVisible}`);
+
     await publishOpenBtn.click({ force: true, timeout: 10000 });
     await page.waitForTimeout(1000);
+    await page.screenshot({ path: '/tmp/naver-publish-layer.png', fullPage: true }).catch(() => {});
 
     // 5. 발행 레이어 — 카테고리 선택(있으면), 태그 입력(있으면)
     if (categoryNo > 0) {
