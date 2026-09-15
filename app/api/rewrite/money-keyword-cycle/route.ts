@@ -22,9 +22,8 @@ const PUBLISH_SOURCE_ID = '78df8c59-b47f-49cc-a273-09f34cf2693d';
 // 이 사이클보다 먼저 나갈 만큼 신선한 후보만 씀 — 너무 오래된 캐시는 이미
 // 경쟁 상황이 바뀌었을 수 있음
 const FRESH_MS = 24 * 60 * 60 * 1000;
-// 20분 크론마다 불려도 실제 발행은 하루 6회 수준으로 — "진짜 돈 되는" 글은
-// 양보다 질이라 뉴스 리라이팅처럼 매 크론 발행할 필요 없음(제안값, 조정 가능)
-const MIN_GAP_MS = 4 * 60 * 60 * 1000;
+// 20분 크론마다 불리므로 30분 간격이면 사실상 매 크론(또는 격 크론)마다 발행됨
+const MIN_GAP_MS = 30 * 60 * 1000;
 
 async function recentlyPublished(): Promise<boolean> {
   try {
