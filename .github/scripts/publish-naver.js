@@ -198,14 +198,22 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
           //
           // Ctrl+B로 소제목을 굵게 만들어보려는 시도를 두 가지 방식(타이핑 후
           // 줄 선택 / 타이핑 전후 토글) 모두 실사용으로 검증했으나, 둘 다 아직
-          // 처리 중인 타이핑 이벤트와 경쟁해서 (1) 글자 순서가 뒤섞이고
-          // ("운운영체제", "SS25울트라" 같은 중복 글자) (2) 굵게 상태가 꺼지지
-          // 않고 뒤에 오는 무관한 본문 문단들까지 줄줄이 새어나가는 걸 실제
-          // 발행 결과에서 확인함 — 서식 없는 평문보다 더 나쁜 결과라 완전히
-          // 포기함. 빈 줄로 여백만 주고 텍스트 자체는 건드리지 않는다.
-          if (para.isHeading && i > 0) await page.keyboard.press('Enter').catch(() => {});
+          // 처리 중인 타이핑 이벤트와 경쟁해서 (1) 글자 순서가 뒤섞이고 (2) 굵게
+          // 상태가 꺼지지 않고 뒤에 오는 무관한 본문 문단들까지 새어나가는 걸
+          // 실제 발행 결과에서 확인함 — 서식 없는 평문보다 더 나쁜 결과라
+          // 완전히 포기함. 빈 줄로 여백만 주고 텍스트 자체는 건드리지 않는다.
+          if (para.isHeading && i > 0) {
+            await page.keyboard.press('Enter').catch(() => {});
+            await page.waitForTimeout(80);
+          }
           await page.keyboard.type(para.text, { delay: 5 });
           await page.keyboard.press('Enter');
+          // Enter 직후 스마트에디터가 새 문단 블록을 만드는 처리가 끝나기 전에
+          // 바로 다음 문단 타이핑을 시작하면 그 문단 첫 글자가 중복 입력되는
+          // 버그를 실제 발행 글에서 확인함(예: "S25"→"SS25", "미국"→"미미국",
+          // "운영체제"→"운운영체제" — Ctrl+B 도입 전부터 있었던, 무관한 별개
+          // 버그). 다음 타이핑 전에 짧게 쉬어서 블록 생성이 끝나길 기다린다.
+          await page.waitForTimeout(80);
         }
         const headingCount = paragraphs.filter(p => p.isHeading).length;
         console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} paragraphs, ${headingCount} headings spaced)`);
