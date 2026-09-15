@@ -195,20 +195,20 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
           const para = paragraphs[i];
           // 소제목(h1~h6 출신) 앞엔 빈 줄을 하나 넣어 본문과 시각적으로 구분한다
           // (원본 템플릿의 소제목 위쪽 여백 의도를 살림). 글 맨 첫 줄이면 생략.
+          //
+          // Ctrl+B로 소제목을 굵게 만들어보려는 시도를 두 가지 방식(타이핑 후
+          // 줄 선택 / 타이핑 전후 토글) 모두 실사용으로 검증했으나, 둘 다 아직
+          // 처리 중인 타이핑 이벤트와 경쟁해서 (1) 글자 순서가 뒤섞이고
+          // ("운운영체제", "SS25울트라" 같은 중복 글자) (2) 굵게 상태가 꺼지지
+          // 않고 뒤에 오는 무관한 본문 문단들까지 줄줄이 새어나가는 걸 실제
+          // 발행 결과에서 확인함 — 서식 없는 평문보다 더 나쁜 결과라 완전히
+          // 포기함. 빈 줄로 여백만 주고 텍스트 자체는 건드리지 않는다.
           if (para.isHeading && i > 0) await page.keyboard.press('Enter').catch(() => {});
-          // 실사용 중 확인: 타이핑 끝난 뒤 Home/Shift+End로 줄 전체를 선택해서 굵게
-          // 처리하는 방식은 아직 처리 중인 타이핑 이벤트와 겹쳐서 글자 순서가
-          // 뒤섞이고(예: "운운영체제", "SS25울트라") 굵게 상태가 다음 본문 문단까지
-          // 새어나가는 심각한 버그가 있었음. 그 대신 타이핑 "전"에 Ctrl+B로 굵게를
-          // 켜고 타이핑 직후 다시 꺼서 커서 서식 상태만 토글한다 — 선택 영역을
-          // 건드리지 않으므로 진행 중인 키 입력과 경쟁할 여지가 없음.
-          if (para.isHeading) await page.keyboard.press('Control+B').catch(() => {});
           await page.keyboard.type(para.text, { delay: 5 });
-          if (para.isHeading) await page.keyboard.press('Control+B').catch(() => {});
           await page.keyboard.press('Enter');
         }
         const headingCount = paragraphs.filter(p => p.isHeading).length;
-        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} paragraphs, ${headingCount} headings bolded)`);
+        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} paragraphs, ${headingCount} headings spaced)`);
         bodyFilled = true;
         break;
       }
