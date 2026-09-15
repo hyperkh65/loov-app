@@ -52,8 +52,34 @@ const FINANCE_NEWS_BLOCK = /연예인|아이돌|드라마|예능|축구|야구|�
 // "황금점수"만으로는 실제 수익성을 못 잡음 — 이 패턴에 걸리면 가점
 const HIGH_CPC_PATTERNS = /대출|보험|카드|투자|환전|세무|절세|연금|저축은행|신용점수|리볼빙|담보대출|신용대출|이자|금리|증권|펀드|주식/;
 
-function isBlocked(kw: string, category: 'lifestyle' | 'finance'): boolean {
-  const block = category === 'finance' ? FINANCE_NEWS_BLOCK : NEWS_BLOCK;
+// ── AI/전자제품 리뷰 카테고리 진입 시드 — 제품 출시 캘린더 기반(애플 9월,
+// 갤럭시 언팩 1월/7월, CES 1월, 블랙프라이데이/연말 가전 할인 11~12월) ──
+const TECH_ENTRY_SEEDS: Record<number, string[]> = {
+  1:  ['갤럭시 언팩', 'CES 신제품', '노트북 추천', 'AI 스피커', '로봇청소기 추천'],
+  2:  ['갤럭시 S 시리즈', '무선이어폰 추천', '태블릿 추천', 'AI 기능 비교'],
+  3:  ['그래픽카드 추천', '모니터 추천', 'SSD 추천', '키보드 마우스 추천'],
+  4:  ['공기청정기 추천', '건조기 추천', 'AI 챗봇 비교', '스마트워치 추천'],
+  5:  ['캠핑용품 전자기기', '제습기 추천', '빔프로젝터 추천', '블루투스 스피커'],
+  6:  ['에어컨 추천', '냉장고 추천', 'AI 카메라', '미니PC 추천'],
+  7:  ['갤럭시 폴드 언팩', '선풍기 추천', '휴대용 에어컨', '보조배터리 추천'],
+  8:  ['노트북 신제품', 'AI 번역기', '무선청소기 추천', '가성비 이어폰'],
+  9:  ['아이폰 신제품', '아이폰 리뷰', '애플워치 리뷰', 'AI 에이전트'],
+  10: ['아이패드 신제품', '난방가전 추천', '가습기 추천', 'AI 검색엔진'],
+  11: ['블랙프라이데이 가전', '연말 가전 할인', 'AI PC', '게이밍 노트북'],
+  12: ['크리스마스 전자기기 선물', '연말 가전 세일', 'AI 스피커 선물', '스마트홈 기기'],
+};
+
+// 순수 연예/스포츠/사건사고만 걸러냄 — 정치/경제 필터는 안 씀(리뷰 글엔 무관)
+const TECH_NEWS_BLOCK = /연예인|아이돌|드라마|예능|축구|야구|올림픽|월드컵|살인|폭행 사건|성범죄|국회|검찰|탄핵/;
+
+// "리뷰/후기/비교/추천/가격" 등 구매 의도가 뚜렷한 키워드는 실제 쿠팡파트너스/
+// 애드센스 수익 전환이 더 잘 되는 편이라 가점
+const TECH_HIGH_VALUE_PATTERNS = /리뷰|후기|비교|추천|가격|구매|할인|쿠폰|언박싱|사용기|장단점|어떤게\s*좋/;
+
+type KeywordCategory = 'lifestyle' | 'finance' | 'tech';
+
+function isBlocked(kw: string, category: KeywordCategory): boolean {
+  const block = category === 'finance' ? FINANCE_NEWS_BLOCK : category === 'tech' ? TECH_NEWS_BLOCK : NEWS_BLOCK;
   return block.test(kw) || kw.length < 4 || kw.length > 20;
 }
 
@@ -61,10 +87,11 @@ function isBlocked(kw: string, category: 'lifestyle' | 'finance'): boolean {
 // 의존하면, 아래 단계가 아무리 진짜 데이터를 가져와도 결국 추측한 시드의
 // 연관어일 뿐임 — 실제 신호 2종을 시드에 섞어서 이 한계를 줄인다.
 const TREND_FINANCE_MATCH = /대출|보험|연금|세금|정책|지원금|복지|수당|급여|금리|환율|주식|투자|부동산|전세|월세|청약|카드|적금|예금|증권|펀드|세액공제|국민연금|건강보험|실업급여|공제|납부|신고|환급/;
+const TREND_TECH_MATCH = /아이폰|갤럭시|애플|삼성|노트북|이어폰|스마트워치|태블릿|AI|인공지능|챗GPT|GPT|로봇청소기|그래픽카드|모니터|스피커|가전|전자제품|출시|리뷰|언박싱/i;
 
 // ── 시드 A: 구글 트렌드 실시간 급상승검색어(한국) — "지금 실제로 사람들이
 // 찾는 것" 신호. 전체 트렌드는 연예/스포츠가 대부분이라 포지티브 매칭으로 거름 ──
-async function googleTrendsFinanceSeeds(): Promise<string[]> {
+async function googleTrendsSeeds(matchRegex: RegExp): Promise<string[]> {
   try {
     // 구글이 예전 daily/rss 엔드포인트를 없애고 /trending/rss로 옮김(2026-09 확인) —
     // 예전 URL은 조용히 404만 뱉어서 이 함수가 항상 빈 배열만 반환하고 있었음
@@ -79,7 +106,7 @@ async function googleTrendsFinanceSeeds(): Promise<string[]> {
     const titles = items
       .map(it => String((it as Record<string, unknown>)?.title ?? '').trim())
       .filter(Boolean);
-    return titles.filter(t => TREND_FINANCE_MATCH.test(t)).slice(0, 10);
+    return titles.filter(t => matchRegex.test(t)).slice(0, 10);
   } catch { return []; }
 }
 
@@ -108,7 +135,7 @@ async function financeNewsHeadlineSeeds(): Promise<string[]> {
 }
 
 // ── Naver 자동완성 (API 키 불필요, 실제 검색어만 반환) ───────────────────────
-async function autocomplete(seed: string, category: 'lifestyle' | 'finance'): Promise<string[]> {
+async function autocomplete(seed: string, category: KeywordCategory): Promise<string[]> {
   try {
     // con=1&frm=nv&ans=2 파라미터 조합은 "items"가 항상 비어있고 대신
     // "answer"(브랜드/기관 바로가기용 구조화 블록, 예: ["24","연말정산","anssit",
@@ -301,7 +328,7 @@ async function getVolume(kw: string, apiKey: string, secret: string, cid: string
 // 줄만 빼 쓰고 나머지는 버렸음. "우리가 추측한 자동완성 롱테일"이 아니라
 // "네이버가 집계한 실제 연관 검색 수요"를 바로 후보로 쓰기 위해 전체를 반환.
 async function relatedKeywordsWithVolume(
-  seed: string, apiKey: string, secret: string, cid: string, category: 'lifestyle' | 'finance'
+  seed: string, apiKey: string, secret: string, cid: string, category: KeywordCategory
 ): Promise<Array<{ keyword: string; pc: number; mobile: number }>> {
   try {
     const res = await fetch(
@@ -407,18 +434,26 @@ export async function POST(req: NextRequest) {
   const hasDaum = !!kakaoKey;
 
   const categoryParam = req.nextUrl.searchParams.get('category');
-  const category: 'lifestyle' | 'finance' = categoryParam === 'finance' ? 'finance' : 'lifestyle';
+  const category: KeywordCategory =
+    categoryParam === 'finance' ? 'finance' : categoryParam === 'tech' ? 'tech' : 'lifestyle';
 
   const month = new Date().getMonth() + 1;
   let entrySeeds: string[];
   if (category === 'finance') {
     // 실제 신호 2종(구글트렌드 실시간, 실제 뉴스 제목) + 캘린더 시드(보조) 결합
     const [trendSeeds, newsSeeds] = await Promise.all([
-      googleTrendsFinanceSeeds(),
+      googleTrendsSeeds(TREND_FINANCE_MATCH),
       financeNewsHeadlineSeeds(),
     ]);
     const seenSeed = new Set<string>();
     entrySeeds = [...trendSeeds, ...newsSeeds, ...(FINANCE_ENTRY_SEEDS[month] || FINANCE_ENTRY_SEEDS[4])]
+      .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
+  } else if (category === 'tech') {
+    // 아직 전자제품/AI 전용 뉴스 소스가 없어서(B 시드 미지원) 구글트렌드 실시간 +
+    // 캘린더 시드만 결합. 나중에 전용 리라이팅 소스 생기면 finance처럼 B도 추가 가능.
+    const trendSeeds = await googleTrendsSeeds(TREND_TECH_MATCH);
+    const seenSeed = new Set<string>();
+    entrySeeds = [...trendSeeds, ...(TECH_ENTRY_SEEDS[month] || TECH_ENTRY_SEEDS[9])]
       .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
   } else {
     entrySeeds = ENTRY_SEEDS[month] || ENTRY_SEEDS[4];
@@ -485,7 +520,10 @@ export async function POST(req: NextRequest) {
       // 대출/보험/카드 등은 검색량은 비슷해도 실제 광고 단가(CPC)가 훨씬 높은
       // 카테고리라 클릭당 수익이 다름 — 순위 경쟁력만 보는 goldenScore에 가점을
       // 얹어서 "랭킹은 비슷해도 실제 돈이 되는" 키워드가 위로 오게 함
-      if (category === 'finance' && HIGH_CPC_PATTERNS.test(keyword)) {
+      if (
+        (category === 'finance' && HIGH_CPC_PATTERNS.test(keyword)) ||
+        (category === 'tech' && TECH_HIGH_VALUE_PATTERNS.test(keyword))
+      ) {
         goldenScore = Math.round(goldenScore * 1.5);
       }
       const difficulty = calcDifficulty(ns.blog, daumTotal, gc, ns.news);
