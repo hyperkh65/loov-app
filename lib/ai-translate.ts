@@ -14,13 +14,44 @@ const TARGETS: Record<'en' | 'ja', string> = {
 };
 
 let keyIdx = 0;
-async function nextGroqKey(): Promise<string | null> {
+async function groqKeys(): Promise<string[]> {
   const raw = await getSetting('GROQ_API_KEYS');
-  const keys = raw.split(',').map(k => k.trim()).filter(Boolean);
-  if (!keys.length) return null;
-  const key = keys[keyIdx % keys.length];
-  keyIdx++;
-  return key;
+  return raw.split(',').map(k => k.trim()).filter(Boolean);
+}
+
+// 이 키의 무료 티어는 분당 8000토큰(TPM) 제한이라(직접 확인 — 429로 명시됨),
+// 기사 하나 프롬프트만으로도 5000~6000토큰을 먹어서 키 하나로는 쉽게 한도를
+// 넘긴다. 4개 키를 돌아가며 시도하고, 그래도 다 걸리면 한도가 리셋되는
+// 60초를 기다렸다가 한 바퀴 더 돈다(이 작업은 사람이 기다리는 동기 요청이
+// 아니라 발행 파이프라인 안에서 도는 거라 대기해도 무방).
+async function fetchGroqChat(body: Record<string, unknown>): Promise<{ content: string; finishReason?: string }> {
+  const keys = await groqKeys();
+  if (!keys.length) throw new Error('GROQ_API_KEYS 설정 없음');
+
+  let lastErr = '';
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[keyIdx % keys.length];
+      keyIdx++;
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(90_000),
+        });
+        if (res.status === 429) { lastErr = `429 rate limit (key ${i})`; continue; }
+        if (!res.ok) throw new Error(`Groq 번역 실패 (${res.status}): ${(await res.text()).slice(0, 200)}`);
+        const data = await res.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
+        return { content: data.choices?.[0]?.message?.content || '', finishReason: data.choices?.[0]?.finish_reason };
+      } catch (e) {
+        if ((e as Error).message?.startsWith('Groq 번역 실패')) throw e;
+        lastErr = (e as Error).message;
+      }
+    }
+    if (pass === 0) await new Promise(r => setTimeout(r, 60_000)); // TPM 한도 리셋 대기
+  }
+  throw new Error(`Groq 번역 실패 — 키 4개 모두 rate limit: ${lastErr}`);
 }
 
 const LANG_NAME: Record<'en' | 'ja', string> = { en: '영어', ja: '일본어' };
@@ -28,9 +59,6 @@ const LANG_NAME: Record<'en' | 'ja', string> = { en: '영어', ja: '일본어' }
 export async function translateArticle(
   title: string, content: string, targetLang: 'en' | 'ja',
 ): Promise<{ title: string; content: string }> {
-  const key = await nextGroqKey();
-  if (!key) throw new Error('GROQ_API_KEYS 설정 없음');
-
   const prompt = `다음은 한국어 블로그 기사다. 제목과 본문을 자연스러운 ${LANG_NAME[targetLang]}로 번역하라.
 - 본문은 HTML이다 — 모든 태그(<h2>, <figure>, <img>, style 속성 등)와 구조는 그대로 유지하고, 태그 안의 텍스트 내용만 번역하라.
 - 번역 외의 설명이나 주석을 절대 덧붙이지 마라.
@@ -48,19 +76,17 @@ ${title}
 ===원본 본문===
 ${content}`;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-    }),
-    signal: AbortSignal.timeout(60_000),
+  // Groq는 max_tokens 안 넣으면 기본값 2048에서 뚝 끊김(finish_reason:"length") —
+  // 원문 하나가 6개 섹션짜리라 실사용 중 2번째 섹션에서 잘리는 걸 직접 확인함
+  const { content: raw, finishReason } = await fetchGroqChat({
+    model: GROQ_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.3,
+    max_tokens: 8000,
   });
-  if (!res.ok) throw new Error(`Groq 번역 실패 (${res.status}): ${(await res.text()).slice(0, 200)}`);
-  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-  const raw = data.choices?.[0]?.message?.content || '';
+  if (finishReason === 'length') {
+    throw new Error('번역 응답이 max_tokens 한도에서 다시 잘림 — 원문이 예상보다 길 수 있음');
+  }
 
   const titleMatch = raw.match(/===TITLE===\s*([\s\S]*?)(?===CONTENT===)/);
   const contentMatch = raw.match(/===CONTENT===\s*([\s\S]*)/);
