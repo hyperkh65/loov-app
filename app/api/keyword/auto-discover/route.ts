@@ -55,19 +55,35 @@ const HIGH_CPC_PATTERNS = /대출|보험|카드|투자|환전|세무|절세|연�
 // ── AI/전자제품 리뷰 카테고리 진입 시드 — 제품 출시 캘린더 기반(애플 9월,
 // 갤럭시 언팩 1월/7월, CES 1월, 블랙프라이데이/연말 가전 할인 11~12월) ──
 const TECH_ENTRY_SEEDS: Record<number, string[]> = {
-  1:  ['갤럭시 언팩', 'CES 신제품', '노트북 추천', 'AI 스피커', '로봇청소기 추천'],
-  2:  ['갤럭시 S 시리즈', '무선이어폰 추천', '태블릿 추천', 'AI 기능 비교'],
+  1:  ['CES 신제품', '노트북 추천', 'AI 스피커', '로봇청소기 추천'],
+  2:  ['무선이어폰 추천', '태블릿 추천', 'AI 기능 비교'],
   3:  ['그래픽카드 추천', '모니터 추천', 'SSD 추천', '키보드 마우스 추천'],
   4:  ['공기청정기 추천', '건조기 추천', 'AI 챗봇 비교', '스마트워치 추천'],
   5:  ['캠핑용품 전자기기', '제습기 추천', '빔프로젝터 추천', '블루투스 스피커'],
   6:  ['에어컨 추천', '냉장고 추천', 'AI 카메라', '미니PC 추천'],
-  7:  ['갤럭시 폴드 언팩', '선풍기 추천', '휴대용 에어컨', '보조배터리 추천'],
+  7:  ['선풍기 추천', '휴대용 에어컨', '보조배터리 추천'],
   8:  ['노트북 신제품', 'AI 번역기', '무선청소기 추천', '가성비 이어폰'],
-  9:  ['아이폰 신제품', '아이폰 리뷰', '애플워치 리뷰', 'AI 에이전트'],
-  10: ['아이패드 신제품', '난방가전 추천', '가습기 추천', 'AI 검색엔진'],
+  9:  ['애플워치 리뷰', 'AI 에이전트'],
+  10: ['난방가전 추천', '가습기 추천', 'AI 검색엔진'],
   11: ['블랙프라이데이 가전', '연말 가전 할인', 'AI PC', '게이밍 노트북'],
   12: ['크리스마스 전자기기 선물', '연말 가전 세일', 'AI 스피커 선물', '스마트홈 기기'],
 };
+
+// "아이폰 신제품"처럼 막연한 문구로는 네이버 연관어 확장이 구형 모델(과거 누적
+// 데이터가 많은 쪽)로 쏠려서 정작 진짜 최신 모델명 자체가 시드에 없으면 못 잡는
+// 문제를 실사용 중 확인함(아이폰18 실제 월 122만 검색인데 시드가 "아이폰
+// 신제품"이라 놓침). 정확한 모델명을 직접 시드로 넣어야 하는데, 연도가 바뀌면
+// 모델 번호도 바뀌니 매번 손으로 고치지 않도록 공식 발매 주기로 계산한다
+// (애플 아이폰16=2024, 삼성 갤럭시는 S+연도뒤2자리 표기 — 둘 다 업계 표준 패턴).
+function currentYearModelSeeds(): string[] {
+  const year = new Date().getFullYear();
+  const iphoneN = 16 + (year - 2024);
+  const galaxyN = year - 2000;
+  return [
+    `아이폰${iphoneN}`, `아이폰${iphoneN}프로`, `아이폰${iphoneN}프로맥스`,
+    `갤럭시S${galaxyN}`, `갤럭시S${galaxyN}울트라`,
+  ];
+}
 
 // 순수 연예/스포츠/사건사고만 걸러냄 — 정치/경제 필터는 안 씀(리뷰 글엔 무관)
 const TECH_NEWS_BLOCK = /연예인|아이돌|드라마|예능|축구|야구|올림픽|월드컵|살인|폭행 사건|성범죄|국회|검찰|탄핵/;
@@ -450,10 +466,11 @@ export async function POST(req: NextRequest) {
       .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
   } else if (category === 'tech') {
     // 아직 전자제품/AI 전용 뉴스 소스가 없어서(B 시드 미지원) 구글트렌드 실시간 +
-    // 캘린더 시드만 결합. 나중에 전용 리라이팅 소스 생기면 finance처럼 B도 추가 가능.
+    // 캘린더 시드 + 현재 연도 기준 정확한 최신 모델명(아이폰18 등) 결합.
+    // 나중에 전용 리라이팅 소스 생기면 finance처럼 B도 추가 가능.
     const trendSeeds = await googleTrendsSeeds(TREND_TECH_MATCH);
     const seenSeed = new Set<string>();
-    entrySeeds = [...trendSeeds, ...(TECH_ENTRY_SEEDS[month] || TECH_ENTRY_SEEDS[9])]
+    entrySeeds = [...trendSeeds, ...currentYearModelSeeds(), ...(TECH_ENTRY_SEEDS[month] || TECH_ENTRY_SEEDS[9])]
       .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
   } else {
     entrySeeds = ENTRY_SEEDS[month] || ENTRY_SEEDS[4];
