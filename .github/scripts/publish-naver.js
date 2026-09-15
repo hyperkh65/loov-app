@@ -108,16 +108,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     // 지금 네이버 블로그는 옛날 form 기반 에디터가 아니라 "스마트에디터 ONE" —
     // 본문 영역은 form이 아니라 iframe(name="mainFrame") 안의 contenteditable
     // 리치텍스트 컴포넌트임(실사용 중 확인: 상위 문서엔 document.forms가 아예 0개).
-    // 첫 진입 시 "이어서 작성하시겠습니까?" 임시저장 팝업이 뜰 수 있어 먼저 닫는다.
-    await page.keyboard.press('Escape').catch(() => {});
-    for (const label of ['취소', '작성취소', '새로작성']) {
-      const btn = page.getByText(label, { exact: false }).first();
-      if (await btn.count() > 0 && await btn.isVisible().catch(() => false)) {
-        await btn.click().catch(() => {});
-        break;
-      }
-    }
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
 
     const mainFrame = page.frame({ name: 'mainFrame' }) || page.frames().find(f => /PostWriteFormV3|PostWriteForm/.test(f.url()));
     const frameList = page.frames().map(f => ({ name: f.name(), url: f.url() }));
@@ -128,13 +119,34 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       throw new Error(`에디터 프레임(mainFrame)을 찾지 못했습니다. frames: ${JSON.stringify(frameList)}`);
     }
 
+    // "이어서 작성하시겠습니까?" 등 se-popup 확인창은 최상위 문서가 아니라
+    // mainFrame 안에서 뜬다(실사용 중 확인 — 상위 document에서 찾던 이전 시도가
+    // 안 먹혔던 이유). 정확한 버튼 문구를 모르니 팝업 안 아무 버튼이나 눌러서
+    // 우선 닫고, 어느 쪽을 골랐든 이후 로직이 title/body를 채우거나 덮어씀.
+    const dismissPopup = async () => {
+      const popup = mainFrame.locator('.se-popup-alert-confirm, .se-popup-alert, [data-group="popupLayer"]').first();
+      if (await popup.count() > 0 && await popup.isVisible().catch(() => false)) {
+        const btn = popup.locator('button').first();
+        if (await btn.count() > 0) {
+          await btn.click({ force: true }).catch(() => {});
+          console.log('[Playwright] Dismissed a se-popup');
+          await mainFrame.page().waitForTimeout(500);
+          return true;
+        }
+      }
+      return false;
+    };
+    await dismissPopup();
+    await page.keyboard.press('Escape').catch(() => {});
+
     // 2. 제목 입력 — 스마트에디터 ONE은 제목도 프레임 안 contenteditable(.se-title-text)
     const titleSelectors = ['.se-title-text', '.se-placeholder-focused .se-title-text', 'input[name="title"]', '#title'];
     let titleFilled = false;
     for (const sel of titleSelectors) {
       const el = mainFrame.locator(sel).first();
       if (await el.count() > 0) {
-        await el.click();
+        await dismissPopup(); // 클릭 직전에 한 번 더 — 팝업이 뒤늦게 뜨는 경우 대비
+        await el.click({ force: true });
         const tag = await el.evaluate(n => n.tagName).catch(() => '');
         if (tag === 'INPUT' || tag === 'TEXTAREA') await el.fill(title);
         else if (typeof el.pressSequentially === 'function') await el.pressSequentially(title);
@@ -154,7 +166,8 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     for (const sel of bodySelectors) {
       const el = mainFrame.locator(sel).first();
       if (await el.count() > 0) {
-        await el.click();
+        await dismissPopup();
+        await el.click({ force: true });
         await mainFrame.evaluate(({ selector, html }) => {
           const target = document.querySelector(selector);
           if (!target) return;
@@ -197,6 +210,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     if (await publishOpenBtn.count() === 0) {
       throw new Error('발행 버튼을 찾지 못했습니다.');
     }
+    await dismissPopup();
     await page.keyboard.press('Escape').catch(() => {});
     const helpClose = page.locator('.se-help-panel button, .se-help-title').first();
     if (await helpClose.count() > 0) {
