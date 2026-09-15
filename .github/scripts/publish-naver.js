@@ -44,24 +44,39 @@ async function sbInsert(table, body) {
   if (!res.ok) console.warn(`sbInsert ${table} failed: ${res.status}`);
 }
 
-// HTML을 문단 배열(순수 텍스트)로 — 클립보드 paste 이벤트 흉내는 스마트에디터
-// ONE의 내부 상태에 실제로 반영되지 않는 걸 실사용 중 확인함(제목은 채워졌는데
-// 본문은 빈 placeholder 그대로였음). 진짜 키보드 타이핑만 에디터가 인식하므로
-// 서식은 일단 포기하고(문단 구분만 유지) 텍스트만이라도 확실히 넣는다.
+// HTML을 문단 배열로 — 클립보드 paste 이벤트 흉내는 스마트에디터 ONE의 내부
+// 상태에 실제로 반영되지 않는 걸 실사용 중 확인함(제목은 채워졌는데 본문은 빈
+// placeholder 그대로였음). 진짜 키보드 타이핑만 에디터가 인식하므로 리치 HTML
+// 붙여넣기는 포기하되, 원본이 h1~h6(소제목)였는지는 태그별로 따로 파싱해서
+// 남겨둔다 — 타이핑 후 그 줄만 골라 굵게 처리해서 본문과 구분되게 하기 위함
+// (전부 뭉개서 순수 텍스트로만 넣으면 소제목과 본문이 똑같아 보이는 문제가 있었음).
 function htmlToParagraphs(html) {
-  return html
-    .replace(/<\/(p|h[1-6]|div|li|figcaption)>/gi, '\n')
+  const stripInline = (s) => s
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-    .split('\n')
-    .map(s => s.trim())
-    .filter(Boolean)
-    // 줄 맨 앞이 "24." "3)" 같은 숫자+구두점이면 스마트에디터가 타이핑 중
-    // 자동으로 번호매기기 리스트로 바꿔버림(실사용 중 확인 — 원문 숫자와 에디터가
-    // 새로 매긴 번호가 겹쳐 보이는 버그였음). 폭 0 문자를 앞에 붙여 패턴을 깨되
-    // 렌더링 결과에는 안 보이게 함.
-    .map(s => /^\d+[.)]\s/.test(s) ? `​${s}` : s);
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  // 줄 맨 앞이 "24." "3)" 같은 숫자+구두점이면 스마트에디터가 타이핑 중 자동으로
+  // 번호매기기 리스트로 바꿔버림(실사용 중 확인 — 원문 숫자와 에디터가 새로 매긴
+  // 번호가 겹쳐 보이는 버그였음). 폭 0 문자를 앞에 붙여 패턴을 깨되 렌더링
+  // 결과에는 안 보이게 함.
+  const dodgeAutoNumber = (s) => /^\d+[.)]\s/.test(s) ? `​${s}` : s;
+
+  const blockRe = /<(p|h[1-6]|li|figcaption)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  const results = [];
+  let m;
+  while ((m = blockRe.exec(html))) {
+    const isHeading = /^h[1-6]$/i.test(m[1]);
+    for (const line of stripInline(m[2]).split('\n').map(s => s.trim()).filter(Boolean)) {
+      results.push({ text: dodgeAutoNumber(line), isHeading });
+    }
+  }
+  if (results.length > 0) return results;
+
+  // 위 블록 태그가 하나도 안 잡힌 예외적인 입력(순수 텍스트 등) — 줄바꿈 기준
+  // 폴백, 전부 본문(굵게 처리 없음) 취급.
+  return stripInline(html.replace(/<\/div>/gi, '\n'))
+    .split('\n').map(s => s.trim()).filter(Boolean)
+    .map(text => ({ text: dodgeAutoNumber(text), isHeading: false }));
 }
 
 // ── Playwright로 네이버 블로그 발행 ───────────────────────────────────────────
@@ -167,10 +182,19 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       if (await el.count() > 0) {
         await dismissPopup(); // 클릭 직전에 한 번 더 — 팝업이 뒤늦게 뜨는 경우 대비
         await el.click({ force: true });
+        await page.waitForTimeout(200);
         const tag = await el.evaluate(n => n.tagName).catch(() => '');
-        if (tag === 'INPUT' || tag === 'TEXTAREA') await el.fill(title);
-        else if (typeof el.pressSequentially === 'function') await el.pressSequentially(title);
-        else await page.keyboard.type(title);
+        if (tag === 'INPUT' || tag === 'TEXTAREA') {
+          await el.fill(title);
+        } else {
+          // contenteditable — 실사용 중 확인: 본문 타이핑을 바로 이어가면 포커스가
+          // 완전히 안 넘어간 채로 겹쳐서 제목 한가운데에 본문 일부가 섞여 들어감.
+          // 타이핑 끝나고 Tab으로 포커스를 명시적으로 다른 곳으로 옮겨 커밋시킨다.
+          if (typeof el.pressSequentially === 'function') await el.pressSequentially(title);
+          else await page.keyboard.type(title);
+          await page.keyboard.press('Tab').catch(() => {});
+        }
+        await page.waitForTimeout(500);
         console.log(`[Playwright] Title filled via: ${sel}`);
         titleFilled = true;
         break;
@@ -191,11 +215,38 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         await dismissPopup();
         await el.click({ force: true });
         await page.waitForTimeout(300);
-        for (const para of paragraphs) {
-          await page.keyboard.type(para, { delay: 5 });
+        // 실사용 중 확인: 클릭 직후에도 포커스가 아직 제목 쪽에 남아있는 경우가
+        // 있어 타이핑 초반부가 제목으로 새어 들어감 — 포커스가 진짜 본문 쪽
+        // contenteditable로 넘어왔는지 확인하고, 아니면 한 번 더 클릭.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const focusedInTitle = await mainFrame.evaluate(() => {
+            const active = document.activeElement;
+            return !!active && !!active.closest && !!active.closest('.se-title-text');
+          }).catch(() => false);
+          if (!focusedInTitle) break;
+          console.warn('[Playwright] Focus still in title — re-clicking body');
+          await el.click({ force: true });
+          await page.waitForTimeout(300);
+        }
+        for (let i = 0; i < paragraphs.length; i++) {
+          const para = paragraphs[i];
+          // 소제목(h1~h6 출신) 앞엔 빈 줄을 하나 넣어 본문과 시각적으로 구분한다
+          // (원본 템플릿의 소제목 위쪽 여백 의도를 살림). 글 맨 첫 줄이면 생략.
+          if (para.isHeading && i > 0) await page.keyboard.press('Enter').catch(() => {});
+          await page.keyboard.type(para.text, { delay: 5 });
+          if (para.isHeading) {
+            // 방금 친 줄 전체를 선택해서 굵게 — 소제목이 소제목처럼 보이게(본문과
+            // 완전히 동일한 텍스트로 나오던 문제 수정). 스마트에디터 ONE도 표준
+            // contenteditable이라 Ctrl+B가 먹힘.
+            await page.keyboard.press('Home').catch(() => {});
+            await page.keyboard.press('Shift+End').catch(() => {});
+            await page.keyboard.press('Control+B').catch(() => {});
+            await page.keyboard.press('End').catch(() => {});
+          }
           await page.keyboard.press('Enter');
         }
-        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} paragraphs)`);
+        const headingCount = paragraphs.filter(p => p.isHeading).length;
+        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} paragraphs, ${headingCount} headings bolded)`);
         bodyFilled = true;
         break;
       }
