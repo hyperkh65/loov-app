@@ -174,38 +174,14 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     await dismissPopup();
     await page.keyboard.press('Escape').catch(() => {});
 
-    // 2. 제목 입력 — 스마트에디터 ONE은 제목도 프레임 안 contenteditable(.se-title-text)
-    const titleSelectors = ['.se-title-text', '.se-placeholder-focused .se-title-text', 'input[name="title"]', '#title'];
-    let titleFilled = false;
-    for (const sel of titleSelectors) {
-      const el = mainFrame.locator(sel).first();
-      if (await el.count() > 0) {
-        await dismissPopup(); // 클릭 직전에 한 번 더 — 팝업이 뒤늦게 뜨는 경우 대비
-        await el.click({ force: true });
-        await page.waitForTimeout(200);
-        const tag = await el.evaluate(n => n.tagName).catch(() => '');
-        if (tag === 'INPUT' || tag === 'TEXTAREA') {
-          await el.fill(title);
-        } else {
-          // contenteditable — 실사용 중 확인: 본문 타이핑을 바로 이어가면 포커스가
-          // 완전히 안 넘어간 채로 겹쳐서 제목 한가운데에 본문 일부가 섞여 들어감.
-          // 타이핑 끝나고 Tab으로 포커스를 명시적으로 다른 곳으로 옮겨 커밋시킨다.
-          if (typeof el.pressSequentially === 'function') await el.pressSequentially(title);
-          else await page.keyboard.type(title);
-          await page.keyboard.press('Tab').catch(() => {});
-        }
-        await page.waitForTimeout(500);
-        console.log(`[Playwright] Title filled via: ${sel}`);
-        titleFilled = true;
-        break;
-      }
-    }
-    if (!titleFilled) console.warn('[Playwright] Title selector not found — 아래 진단 정보 참고');
-
-    // 3. 본문 입력 — 클립보드 paste 이벤트 흉내는 스마트에디터 내부 상태에 실제로
-    // 반영 안 되는 걸 확인함(실사용 중: 제목만 채워지고 본문은 빈 placeholder
-    // 그대로였음). 진짜 키보드 타이핑만 에디터가 확실히 인식하므로 문단 단위로
-    // 입력하고 Enter로 새 블록을 만든다(서식은 이번엔 포기 — 텍스트만이라도 확실히).
+    // 2. 본문을 먼저 입력한다 — 실사용 중 확인: 제목을 먼저 채운 뒤 본문을 타이핑하면
+    // "본문에서 뽑은 문구를 제목에 자동 제안" 같은 스마트에디터 내부 동작(디바운스로
+    // 뒤늦게 실행되는 듯)이 제목 타이핑 도중 커서 위치에 본문 일부를 끼워넣는 사고가
+    // 재현됐다(제목 앞부분+본문 첫 문단 일부+제목 뒷부분이 그대로 섞여 발행된 실제
+    // 사례로 확인). 본문을 먼저 완전히 채우고 안정될 시간을 준 뒤 제목을 맨 마지막에
+    // 입력하면 그 시점엔 본문발 자동 제안이 이미 다 끝난 뒤라 더는 끼어들 수 없다.
+    // 클립보드 paste 이벤트 흉내는 에디터 내부 상태에 실제로 반영 안 되는 걸 확인함
+    // (제목만 채워지고 본문은 빈 placeholder 그대로였음) — 진짜 키보드 타이핑만 씀.
     const bodySelectors = ['.se-component-content .se-text-paragraph', '.se-main-container [contenteditable="true"]', '[contenteditable="true"]'];
     let bodyFilled = false;
     const paragraphs = htmlToParagraphs(content);
@@ -215,19 +191,6 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         await dismissPopup();
         await el.click({ force: true });
         await page.waitForTimeout(300);
-        // 실사용 중 확인: 클릭 직후에도 포커스가 아직 제목 쪽에 남아있는 경우가
-        // 있어 타이핑 초반부가 제목으로 새어 들어감 — 포커스가 진짜 본문 쪽
-        // contenteditable로 넘어왔는지 확인하고, 아니면 한 번 더 클릭.
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const focusedInTitle = await mainFrame.evaluate(() => {
-            const active = document.activeElement;
-            return !!active && !!active.closest && !!active.closest('.se-title-text');
-          }).catch(() => false);
-          if (!focusedInTitle) break;
-          console.warn('[Playwright] Focus still in title — re-clicking body');
-          await el.click({ force: true });
-          await page.waitForTimeout(300);
-        }
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
           // 소제목(h1~h6 출신) 앞엔 빈 줄을 하나 넣어 본문과 시각적으로 구분한다
@@ -252,6 +215,55 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       }
     }
     if (!bodyFilled) console.warn('[Playwright] Body selector not found — 아래 진단 정보 참고');
+
+    // 본문 관련 비동기 동작(자동저장, 제목 제안 등)이 다 정리될 시간을 준다 —
+    // 이게 끝난 뒤에 제목을 입력해야 그 사이에 끼어들 여지가 없어짐.
+    await page.waitForTimeout(1500);
+
+    // 3. 제목 입력 — 스마트에디터 ONE은 제목도 프레임 안 contenteditable(.se-title-text).
+    // 본문을 다 채운 뒤 마지막에 입력해서, 본문발 자동 제안이 제목 타이핑 도중
+    // 끼어드는 걸 원천적으로 막는다(위 설명 참고).
+    const titleSelectors = ['.se-title-text', '.se-placeholder-focused .se-title-text', 'input[name="title"]', '#title'];
+    let titleFilled = false;
+    for (const sel of titleSelectors) {
+      const el = mainFrame.locator(sel).first();
+      if (await el.count() > 0) {
+        await dismissPopup(); // 클릭 직전에 한 번 더 — 팝업이 뒤늦게 뜨는 경우 대비
+        await el.click({ force: true });
+        await page.waitForTimeout(200);
+        const tag = await el.evaluate(n => n.tagName).catch(() => '');
+        if (tag === 'INPUT' || tag === 'TEXTAREA') {
+          await el.fill(title);
+        } else {
+          if (typeof el.pressSequentially === 'function') await el.pressSequentially(title);
+          else await page.keyboard.type(title);
+          await page.keyboard.press('Tab').catch(() => {});
+        }
+        await page.waitForTimeout(500);
+
+        // 검증: 실제로 입력된 텍스트가 의도한 제목과 정확히 같은지 확인. 다르면
+        // (여전히 뭔가 끼어들었거나 이전 임시저장 잔여 텍스트가 남아있는 경우)
+        // 전체 선택 후 지우고 한 번 더 깨끗하게 재입력한다.
+        const actualText = await el.evaluate(n => (n.innerText || n.textContent || '').trim()).catch(() => null);
+        if (actualText !== null && actualText !== title.trim()) {
+          console.warn(`[Playwright] Title mismatch after typing — expected="${title}" actual="${actualText}" — retrying with clean overwrite`);
+          await el.click({ clickCount: 3, force: true }).catch(() => {});
+          await page.keyboard.press('Backspace').catch(() => {});
+          await page.waitForTimeout(200);
+          if (typeof el.pressSequentially === 'function') await el.pressSequentially(title);
+          else await page.keyboard.type(title);
+          await page.keyboard.press('Tab').catch(() => {});
+          await page.waitForTimeout(500);
+          const retryText = await el.evaluate(n => (n.innerText || n.textContent || '').trim()).catch(() => null);
+          console.log(`[Playwright] Title after retry: "${retryText}"`);
+        }
+
+        console.log(`[Playwright] Title filled via: ${sel}`);
+        titleFilled = true;
+        break;
+      }
+    }
+    if (!titleFilled) console.warn('[Playwright] Title selector not found — 아래 진단 정보 참고');
 
     // 진단 정보 — 실패 시 다음 수정에 바로 쓸 수 있게 항상 남김
     const diag = await mainFrame.evaluate(() => ({
