@@ -190,11 +190,20 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
 
     // 4. 발행 버튼(최상위 문서, 우측 상단) — 클래스명이 해시라 안 바뀌는 한글
     // 텍스트로 찾음. 클릭하면 카테고리/태그/공개설정 있는 발행 레이어가 뜸.
+    // 실사용 중 확인: 편집기 진입 시 뜨는 "도움말" 툴팁이 이 버튼을 가려서 일반
+    // 클릭이 막힘(intercepts pointer events) — Escape로 먼저 닫아보고, 그래도
+    // 남아있으면 force 클릭으로 우회(툴팁일 뿐 실제 모달 차단이 아니라 안전함).
     const publishOpenBtn = page.getByRole('button', { name: '발행', exact: true }).first();
     if (await publishOpenBtn.count() === 0) {
       throw new Error('발행 버튼을 찾지 못했습니다.');
     }
-    await publishOpenBtn.click();
+    await page.keyboard.press('Escape').catch(() => {});
+    const helpClose = page.locator('.se-help-panel button, .se-help-title').first();
+    if (await helpClose.count() > 0) {
+      await page.mouse.click(5, 5).catch(() => {}); // 도움말 패널 밖 클릭으로 닫기 시도
+      await page.waitForTimeout(300);
+    }
+    await publishOpenBtn.click({ force: true, timeout: 10000 });
     await page.waitForTimeout(1000);
 
     // 5. 발행 레이어 — 카테고리 선택(있으면), 태그 입력(있으면)
@@ -219,7 +228,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     if (isPublish) {
       const confirmBtn = page.locator('button:has-text("발행")').last();
       if (await confirmBtn.count() > 0) {
-        await confirmBtn.click();
+        await confirmBtn.click({ force: true, timeout: 10000 });
         console.log('[Playwright] Final publish confirm clicked');
       }
     } else {
