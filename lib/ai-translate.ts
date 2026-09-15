@@ -6,6 +6,10 @@
 import { getSetting } from '@/lib/get-setting';
 import { publishToWordPress, getWpCredentials } from '@/lib/scheduler/blog-runner';
 import { createAdminClient } from '@/lib/supabase-server';
+import { publishToTumblr } from '@/lib/tumblr-publish';
+import { publishToLinkedIn } from '@/lib/linkedin-publish';
+import { publishToWordpressCom } from '@/lib/wordpress-com';
+import { publishToGithubPages } from '@/lib/github-pages-blog';
 
 const GROQ_MODEL = 'qwen/qwen3.8-27b';
 const TARGETS: Record<'en' | 'ja', string> = {
@@ -124,6 +128,14 @@ export async function translateAndCrossPost(
         translated.title, translated.content, article.representative_image_url,
       );
       results[lang] = `ok: ${result.link}`;
+
+      // 네이버카페는 한국 독자 전용이라 제외 — 대신 이미 연동된 국제 채널
+      // (텀블러/링크드인/워드프레스닷컴/깃헙페이지)로 해외 유입/백링크 확보.
+      // 실패해도 본 발행에는 영향 없음(fire-and-forget, 기존 blog-runner.ts 패턴과 동일)
+      publishToTumblr({ title: translated.title, canonical_url: result.link }).catch(() => {});
+      publishToLinkedIn({ title: translated.title, canonical_url: result.link }).catch(() => {});
+      publishToWordpressCom({ title: translated.title, content: translated.content, articleUrl: result.link }).catch(() => {});
+      publishToGithubPages({ title: translated.title, content: translated.content, articleUrl: result.link }).catch(() => {});
     } catch (e) {
       results[lang] = `error: ${(e as Error).message?.slice(0, 150)}`;
     }
