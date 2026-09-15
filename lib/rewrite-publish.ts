@@ -14,6 +14,7 @@ import { publishToLinkedIn } from '@/lib/linkedin-publish';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
+import { translateAndCrossPost } from '@/lib/ai-translate';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
@@ -133,6 +134,7 @@ export interface PublishResult {
   linkedin: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
   wordpressCom: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
   githubPages: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
+  translate: Record<'en' | 'ja', string>; // engmag/japmag 크로스 발행 결과
 }
 
 export async function publishRewrittenArticle(
@@ -187,6 +189,19 @@ export async function publishRewrittenArticle(
       );
       wordpressUrl = wpResult.link;
       if (wpResult.featuredImageUrl) snsImageUrl = wpResult.featuredImageUrl;
+    }
+  }
+
+  // 원문이 나간 모든 사이트를 영어/일본어로 번역해서 engmag/japmag에도 크로스 발행 —
+  // 새로 만드는 사이트도 이 함수를 통해 발행하는 한 자동으로 포함됨(별도 설정 불필요)
+  const translate: Record<'en' | 'ja', string> = { en: 'skip', ja: 'skip' };
+  if (wordpressUrl) {
+    try {
+      const result = await translateAndCrossPost({ title: article.title, content: article.content, representative_image_url: snsImageUrl });
+      translate.en = result.en;
+      translate.ja = result.ja;
+    } catch (e) {
+      translate.en = translate.ja = `error: ${(e as Error).message?.slice(0, 150)}`;
     }
   }
 
@@ -270,7 +285,7 @@ export async function publishRewrittenArticle(
   }
 
   const sns: Record<string, string> = {};
-  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages };
+  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages, translate };
 
   const { data: conns } = await admin
     .from('sns_connections')
@@ -285,7 +300,7 @@ export async function publishRewrittenArticle(
     if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
     return allowedAccounts.includes(c.platform_username || '');
   });
-  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages };
+  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages, translate };
 
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   // AI 캡션 생성이 실패/타임아웃하면 제목 한 줄로만 폴백하던 것 — "블로그 자동화"처럼
@@ -341,5 +356,5 @@ export async function publishRewrittenArticle(
     }
   }
 
-  return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages };
+  return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages, translate };
 }

@@ -6,6 +6,7 @@ import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
+import { translateAndCrossPost } from '@/lib/ai-translate';
 import type { Schedule, BlogAutoConfig } from './index';
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
@@ -218,6 +219,8 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   if (publishedUrl) {
     publishToWordpressCom({ title, content, articleUrl: publishedUrl }).catch(() => {});
     publishToGithubPages({ title, content, articleUrl: publishedUrl }).catch(() => {});
+    // 영어/일본어로 번역해서 engmag.2days.kr / japmag.2days.kr에도 크로스 발행
+    translateAndCrossPost({ title, content, representative_image_url: imageUrl }).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
