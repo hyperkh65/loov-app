@@ -312,6 +312,13 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         const imageCount = paragraphs.filter(p => p.type === 'image').length;
         console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings spaced, ${imagesInserted}/${imageCount} images inserted)`);
 
+        // 진단용 임시 코드: 소제목 굵게 표시를 다시 시도하기 전에 실제 "굵게"
+        // 버튼의 HTML 구조를 확인한다(서체 버튼도 이렇게 확인해서 진짜 원인을
+        // 찾았음 — 매번 엉뚱한 요소를 클릭하고 있었다는 걸 이 방식으로만 알아냄).
+        const boldBtnDiag = await page.locator('button[data-name="bold"], button[title*="굵게"], [class*="bold"]').first()
+          .evaluate(el => el.outerHTML).catch(() => null);
+        console.log(`[Playwright] 굵게 버튼 진단 HTML: ${boldBtnDiag}`);
+
         // 서체(폰트) 자동 변경 시도는 9차례(타이핑 전/후, 선택영역 있음/없음,
         // 셀렉터 여러 버전) 전부 실패로 포기함 — 툴바 라벨은 매번 "나눔고딕"으로
         // 바뀌었다고 표시되는데 실제 발행된 글의 span엔 한 번도 반영된 적이
