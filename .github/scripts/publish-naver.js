@@ -286,7 +286,14 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
           // "나눔바른고딕"은 "나눔고딕"을 부분 문자열로 포함하지 않으므로 안전함.
           const fontOption = page.locator('li').filter({ hasText: '나눔고딕' }).first();
           if (await fontOption.count() > 0) {
-            await fontOption.click({ force: true }).catch(() => {});
+            // 실사용 확인: 여기서 force 클릭 후 본문을 다시 클릭해 포커스를 복귀
+            // 시켰더니 서체 변경이 무효화되는 걸 발견함(재클릭이 커서를 리셋시켜
+            // 방금 지정한 서식이 안 먹히는 것으로 보임) — force 없이 실제 보이는
+            // 요소를 클릭해서 커서/선택을 유지한 채로 서식만 바뀌게 한다.
+            await fontOption.click().catch(async (e) => {
+              console.warn(`[Playwright] 서체 옵션 일반 클릭 실패, force로 재시도: ${e.message}`);
+              await fontOption.click({ force: true }).catch(() => {});
+            });
             console.log('[Playwright] 서체를 나눔고딕으로 변경');
           } else {
             const optionTexts = await page.locator('li, [role="option"]').evaluateAll(
@@ -299,8 +306,17 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         } else {
           console.warn('[Playwright] 서체 변경 버튼을 못 찾음');
         }
-        await el.click({ force: true });
-        await page.waitForTimeout(200);
+        // 포커스가 이미 본문에 있으면 재클릭하지 않는다 — 재클릭이 방금 바꾼
+        // 서체 서식을 리셋시키는 걸 확인했기 때문(위 설명 참고).
+        const focusedInBody = await mainFrame.evaluate((sel) => {
+          const active = document.activeElement;
+          const bodyEl = document.querySelector(sel);
+          return !!active && !!bodyEl && (bodyEl === active || bodyEl.contains(active));
+        }, sel).catch(() => false);
+        if (!focusedInBody) {
+          await el.click({ force: true });
+          await page.waitForTimeout(200);
+        }
 
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
