@@ -286,8 +286,26 @@ export async function runCoupangAuto(
     : products
   ).filter(p => p.productImage);
   const ranked = [...(pool.length ? pool : products)].sort((a, b) => (b.discountRate || 0) - (a.discountRate || 0));
-  const candidates = ranked.filter(p => !recentProductIds.includes(String(p.productId)));
-  const product = (candidates.length ? candidates : ranked)[0] as {
+  let candidates = ranked.filter(p => !recentProductIds.includes(String(p.productId)));
+
+  // 골드박스는 하루 몇 번 안 바뀌는 소규모 목록이라, 발행 주기를 짧게(매시간
+  // 등) 잡으면 하루 안에 다 써버려서 예전엔 candidates가 비면 그냥 ranked[0]
+  // (직전과 똑같은 1위 상품)을 다시 올려버렸음 — 이게 "같은 상품 중복 발행"의
+  // 원인. 골드박스가 소진됐으면 키워드 검색으로 새 후보를 보충 시도하고,
+  // 그래도 없으면 중복을 감수하고 올리는 대신 이번 회차는 건너뛴다.
+  if (!candidates.length) {
+    const fallbackKeywords = ['생활용품', '주방용품', '가전', '식품', '뷰티', '패션잡화'];
+    const kw = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
+    const extra = await searchProducts(kw, accessKey, secretKey).catch(() => []);
+    candidates = extra
+      .filter(p => p.productImage && !recentProductIds.includes(String(p.productId)))
+      .sort((a, b) => (b.discountRate || 0) - (a.discountRate || 0));
+  }
+  if (!candidates.length) {
+    throw new Error('오늘 발행 가능한 새 상품이 없어 이번 회차는 건너뜀(중복 방지)');
+  }
+
+  const product = candidates[0] as {
     productId: number | string;
     productName: string;
     productPrice: number;
