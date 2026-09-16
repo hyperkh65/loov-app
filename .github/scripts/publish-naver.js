@@ -288,41 +288,20 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
 
           // 소제목(h1~h6 출신) 앞엔 빈 줄을 하나 넣어 본문과 시각적으로 구분한다
           // (원본 템플릿의 소제목 위쪽 여백 의도를 살림). 글 맨 첫 줄이면 생략.
+          //
+          // 굵게 표시는 세 번 시도해서 세 번 다 실패했다 — 키보드 Ctrl+B(서식이
+          // 다음 문단까지 새어나감), Home/Shift+End 선택 후 Ctrl+B(글자 뒤섞임),
+          // 마지막으로 실제 툴바 버튼(`button[data-name="bold"]`)을 선택 영역에
+          // 클릭(이번엔 소제목뿐 아니라 무관한 앞 문단까지 통째로 사라지는 데이터
+          // 유실로 이어짐 — 실사용 확인, 지금까지 중 가장 심각한 결과). 세 번째는
+          // 이론상 맞는 방법이었는데도 실패해서 이 에디터의 서식 처리 자체가
+          // 자동화 키/클릭 입력과 근본적으로 안 맞는 것으로 보고 완전히 포기함.
+          // 빈 줄로 여백만 주고 텍스트 자체는 절대 건드리지 않는다.
           if (para.isHeading && i > 0) {
             await page.keyboard.press('Enter').catch(() => {});
             await page.waitForTimeout(80);
           }
           await page.keyboard.type(para.text, { delay: 5 });
-
-          if (para.isHeading) {
-            // Ctrl+B 키보드 단축키로 굵게를 시도했던 예전 시도는 실패했었다 —
-            // 그런데 그 실패 원인으로 지목했던 "글자 순서 뒤섞임"은 나중에
-            // 밝혀진 바로는 숫자로 시작하는 소제목이 스마트에디터의 자동
-            // 번호매기기를 트리거해서 생긴 별개 문제였다(지금은 소제목 번호를
-            // 아예 안 보내서 해결됨). 서체 버튼을 고칠 때 배운 것처럼 이 에디터는
-            // 키보드 단축키가 아니라 실제 툴바 버튼(`button[data-name="bold"]`)을
-            // 실제 선택 영역에 대고 클릭해야 서식이 먹힌다 — 그 방식으로 다시
-            // 시도한다. 방금 친 줄이 완전히 안정된 뒤 선택해야 하므로 타이핑
-            // 직후 짧게 대기한다.
-            await page.waitForTimeout(150);
-            await page.keyboard.press('Home').catch(() => {});
-            await page.keyboard.press('Shift+End').catch(() => {});
-            const boldBtn = page.locator('button[data-name="bold"]').first();
-            if (await boldBtn.count() > 0) {
-              await boldBtn.click().catch(async (e) => {
-                console.warn(`[Playwright] 굵게 버튼 클릭 실패, force로 재시도: ${e.message}`);
-                await boldBtn.click({ force: true }).catch(() => {});
-              });
-            } else {
-              console.warn('[Playwright] 굵게 버튼을 못 찾음 — 이 소제목은 굵게 건너뜀');
-            }
-            await page.waitForTimeout(100);
-            // 선택 영역을 반드시 풀고 커서를 줄 끝으로 옮긴다 — 선택된 채로
-            // Enter를 누르면 선택된 텍스트가 통째로 개행으로 대체되어
-            // 소제목이 사라지는 사고로 이어짐.
-            await page.keyboard.press('End').catch(() => {});
-          }
-
           await page.keyboard.press('Enter');
           // Enter 직후 스마트에디터가 새 문단 블록을 만드는 처리가 끝나기 전에
           // 바로 다음 문단 타이핑을 시작하면 그 문단 첫 글자가 중복 입력되는
@@ -333,7 +312,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         }
         const headingCount = paragraphs.filter(p => p.isHeading).length;
         const imageCount = paragraphs.filter(p => p.type === 'image').length;
-        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings bolded, ${imagesInserted}/${imageCount} images inserted)`);
+        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings spaced, ${imagesInserted}/${imageCount} images inserted)`);
 
         // 서체(폰트) 자동 변경 시도는 9차례(타이핑 전/후, 선택영역 있음/없음,
         // 셀렉터 여러 버전) 전부 실패로 포기함 — 툴바 라벨은 매번 "나눔고딕"으로
