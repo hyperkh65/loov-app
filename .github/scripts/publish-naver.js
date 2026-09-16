@@ -273,6 +273,34 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         ).catch(() => -1);
         console.log(`[Playwright] Body pre-clear length: ${preClearLen} -> post-clear: ${postClearLen}`);
 
+        // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
+        // 손글씨체로 맞춰져 있어서, 우리가 타이핑한 숫자·스펙 위주 정보성 글이
+        // 전부 삐뚤빼뚤한 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인).
+        // 타이핑 시작 전에 서체 드롭다운에서 일반 고딕체로 바꿔둔다.
+        const fontBtn = page.getByRole('button', { name: /서체 변경/ }).first();
+        if (await fontBtn.count() > 0) {
+          await fontBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(300);
+          const fontOption = page.getByRole('option', { name: /^나눔고딕$/ }).or(
+            page.locator('li, [role="option"], button').filter({ hasText: /^나눔고딕$/ })
+          ).first();
+          if (await fontOption.count() > 0) {
+            await fontOption.click({ force: true }).catch(() => {});
+            console.log('[Playwright] 서체를 나눔고딕으로 변경');
+          } else {
+            const optionTexts = await page.locator('li, [role="option"]').evaluateAll(
+              els => els.map(e => (e.textContent || '').trim()).filter(Boolean).slice(0, 30)
+            ).catch(() => []);
+            console.warn(`[Playwright] "나눔고딕" 옵션을 못 찾음 — 서체 변경 건너뜀. 실제 옵션들: ${JSON.stringify(optionTexts)}`);
+            await page.keyboard.press('Escape').catch(() => {});
+          }
+          await page.waitForTimeout(200);
+        } else {
+          console.warn('[Playwright] 서체 변경 버튼을 못 찾음');
+        }
+        await el.click({ force: true });
+        await page.waitForTimeout(200);
+
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
