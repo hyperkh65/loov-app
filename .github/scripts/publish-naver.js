@@ -330,6 +330,13 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       if (await fontBtn.count() > 0) {
         await page.keyboard.press('Control+A').catch(() => {});
         await page.waitForTimeout(200);
+        // 진단: Ctrl+A가 실제로 뭔가 선택했는지 확인 — 선택 길이가 0이면
+        // 이후 서체 적용이 안 먹히는 게 당연함.
+        const selLenBefore = await mainFrame.evaluate(() => {
+          const s = window.getSelection?.();
+          return s ? s.toString().length : -1;
+        }).catch(() => -2);
+        console.log(`[Playwright] Ctrl+A 후 선택된 텍스트 길이: ${selLenBefore}`);
         await fontBtn.click({ force: true }).catch(() => {});
         await page.waitForTimeout(300);
         // 실제 옵션 텍스트는 이름+툴팁이 겹쳐서 "나눔고딕나눔고딕"처럼 나옴
@@ -337,10 +344,21 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // "나눔고딕"을 부분 문자열로 포함하지 않으므로 안전함.
         const fontOption = page.locator('li').filter({ hasText: '나눔고딕' }).first();
         if (await fontOption.count() > 0) {
+          const optionInfo = await fontOption.evaluate(el => ({
+            tag: el.tagName, cls: el.className, html: el.outerHTML.slice(0, 200), visible: !!(el.offsetWidth || el.offsetHeight),
+          })).catch(() => null);
+          console.log(`[Playwright] 서체 옵션 요소 정보: ${JSON.stringify(optionInfo)}`);
           await fontOption.click().catch(async (e) => {
             console.warn(`[Playwright] 서체 옵션 일반 클릭 실패, force로 재시도: ${e.message}`);
             await fontOption.click({ force: true }).catch(() => {});
           });
+          await page.waitForTimeout(300);
+          const selLenAfter = await mainFrame.evaluate(() => {
+            const s = window.getSelection?.();
+            return s ? s.toString().length : -1;
+          }).catch(() => -2);
+          console.log(`[Playwright] 서체 클릭 후 선택된 텍스트 길이: ${selLenAfter}`);
+          await page.screenshot({ path: '/tmp/naver-after-font.png', fullPage: true }).catch(() => {});
           console.log('[Playwright] 서체를 나눔고딕으로 변경(전체 선택 후 일괄 적용)');
         } else {
           const optionTexts = await page.locator('li, [role="option"]').evaluateAll(
