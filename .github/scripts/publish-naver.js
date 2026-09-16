@@ -273,41 +273,6 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         ).catch(() => -1);
         console.log(`[Playwright] Body pre-clear length: ${preClearLen} -> post-clear: ${postClearLen}`);
 
-        // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
-        // 손글씨체로 맞춰져 있어서, 숫자·스펙 위주 정보성 글이 전부 삐뚤빼뚤한
-        // 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인). 처음엔 "서식
-        // 명령이라 선택 영역이 필요할 것"이라 추측하고 Ctrl+A 후 적용을 시도했지만
-        // 계속 실패했는데, 실제 드롭다운 HTML을 통째로 찍어보니 원인은 선택 영역이
-        // 아니라 셀렉터였다 — 이 드롭다운엔 `<li>`가 컨테이너 하나뿐이고, 진짜
-        // 클릭해야 할 옵션들은 전부 `data-value="nanumgothic"` 같은 속성이 붙은
-        // `<button>`이었다. 즉 매번 "나눔고딕" 텍스트를 포함하는 첫 `<li>`(바깥
-        // 정적 컨테이너 자체)만 반복해서 클릭했던 것 — 지금까지의 실패는 타이밍
-        // 문제가 아니라 처음부터 엉뚱한 요소를 누르고 있었던 것뿐이었다. 발행된
-        // 글의 실제 HTML을 보면 각 span에 서체 클래스가 타이핑 시점에 바로
-        // 박히므로(나중에 통째로 안 바뀜), 타이핑을 시작하기 "전" 지금 여기서
-        // 바꿔야 새로 치는 글자부터 반영된다.
-        const fontToggleBtn = page.getByRole('button', { name: /서체 변경/ }).first();
-        if (await fontToggleBtn.count() > 0) {
-          // 옵션 버튼들은 드롭다운을 연 뒤에야 DOM에 존재/조회 가능하므로 반드시
-          // 토글을 먼저 클릭한 다음에 옵션을 찾아야 한다(순서 바꿔서 실패했었음).
-          await fontToggleBtn.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(300);
-          const fontOptionBtn = page.locator('button[data-name="font-family"][data-value="nanumgothic"]').first();
-          if (await fontOptionBtn.count() > 0) {
-            await fontOptionBtn.click().catch(async (e) => {
-              console.warn(`[Playwright] 서체 옵션 클릭 실패, force로 재시도: ${e.message}`);
-              await fontOptionBtn.click({ force: true }).catch(() => {});
-            });
-            console.log('[Playwright] 서체를 나눔고딕으로 변경');
-          } else {
-            console.warn('[Playwright] 나눔고딕 서체 버튼을 못 찾음(드롭다운 연 뒤에도) — 서체 변경 건너뜀');
-            await page.keyboard.press('Escape').catch(() => {});
-          }
-          await page.waitForTimeout(200);
-        } else {
-          console.warn('[Playwright] 서체 변경 토글 버튼을 못 찾음');
-        }
-
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
@@ -346,6 +311,42 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         const headingCount = paragraphs.filter(p => p.isHeading).length;
         const imageCount = paragraphs.filter(p => p.type === 'image').length;
         console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings spaced, ${imagesInserted}/${imageCount} images inserted)`);
+
+        // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
+        // 손글씨체로 맞춰져 있어서, 숫자·스펙 위주 정보성 글이 전부 삐뚤빼뚤한
+        // 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인). 실제 옵션 버튼
+        // (`data-value="nanumgothic"`)을 정확히 찾아 클릭해도 툴바 라벨은
+        // "나눔고딕"으로 바뀌었다고 나오는데 실제 발행 글의 span엔 여전히 예전
+        // 서체 클래스가 박혀 있었다 — 빈 커서 상태(선택 영역 없음)에서는 클릭이
+        // 그냥 "마지막으로 고른 항목" 표시만 갱신할 뿐 실제 서식엔 반영 안 되는
+        // 것으로 보인다(처음 추측이 맞았지만 그땐 엉뚱한 요소를 클릭하고 있었음).
+        // 본문을 다 채운 지금, 본문을 다시 클릭해 포커스를 확실히 되돌린 뒤
+        // 전체를 실제로 선택한 상태에서 서체를 적용한다.
+        await el.click({ force: true });
+        await page.waitForTimeout(200);
+        await page.keyboard.press('Control+A').catch(() => {});
+        await page.waitForTimeout(200);
+        const fontToggleBtn = page.getByRole('button', { name: /서체 변경/ }).first();
+        if (await fontToggleBtn.count() > 0) {
+          await fontToggleBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(300);
+          const fontOptionBtn = page.locator('button[data-name="font-family"][data-value="nanumgothic"]').first();
+          if (await fontOptionBtn.count() > 0) {
+            await fontOptionBtn.click().catch(async (e) => {
+              console.warn(`[Playwright] 서체 옵션 클릭 실패, force로 재시도: ${e.message}`);
+              await fontOptionBtn.click({ force: true }).catch(() => {});
+            });
+            console.log('[Playwright] 서체를 나눔고딕으로 변경(전체 선택 후 적용)');
+          } else {
+            console.warn('[Playwright] 나눔고딕 서체 버튼을 못 찾음(드롭다운 연 뒤에도) — 서체 변경 건너뜀');
+            await page.keyboard.press('Escape').catch(() => {});
+          }
+          await page.waitForTimeout(200);
+        } else {
+          console.warn('[Playwright] 서체 변경 토글 버튼을 못 찾음');
+        }
+        await page.keyboard.press('End').catch(() => {});
+
         bodyFilled = true;
         break;
       }
