@@ -284,6 +284,15 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         await page.keyboard.press('Enter');
         await page.waitForTimeout(80);
 
+        // 진단용 임시 코드: 소제목을 인라인 굵게가 아니라 "문단 서식"(블록
+        // 타입) 자체를 제목으로 바꾸는 방법이 있는지 확인한다 — 있다면 선택
+        // 영역 없이 커서 위치만으로 적용되는 진짜 블록 명령이라 지금까지 겪은
+        // 선택 기반 사고(글자 뒤섞임, 문단 통째로 삭제)를 피할 수 있을 것으로
+        // 예상됨. 툴바 전체를 통째로 찍어서 실제로 그런 옵션이 있는지 본다.
+        const toolbarDiag = await page.locator('.se-toolbar, [class*="toolbar"]').first()
+          .evaluate(el => el.outerHTML).catch(() => null);
+        console.log(`[Playwright] 툴바 전체 HTML 진단: ${toolbarDiag}`);
+
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
