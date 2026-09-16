@@ -286,19 +286,26 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // 글의 실제 HTML을 보면 각 span에 서체 클래스가 타이핑 시점에 바로
         // 박히므로(나중에 통째로 안 바뀜), 타이핑을 시작하기 "전" 지금 여기서
         // 바꿔야 새로 치는 글자부터 반영된다.
-        const fontOptionBtn = page.locator('button[data-name="font-family"][data-value="nanumgothic"]').first();
-        if (await fontOptionBtn.count() > 0) {
-          const fontToggleBtn = page.getByRole('button', { name: /서체 변경/ }).first();
+        const fontToggleBtn = page.getByRole('button', { name: /서체 변경/ }).first();
+        if (await fontToggleBtn.count() > 0) {
+          // 옵션 버튼들은 드롭다운을 연 뒤에야 DOM에 존재/조회 가능하므로 반드시
+          // 토글을 먼저 클릭한 다음에 옵션을 찾아야 한다(순서 바꿔서 실패했었음).
           await fontToggleBtn.click({ force: true }).catch(() => {});
           await page.waitForTimeout(300);
-          await fontOptionBtn.click().catch(async (e) => {
-            console.warn(`[Playwright] 서체 옵션 클릭 실패, force로 재시도: ${e.message}`);
-            await fontOptionBtn.click({ force: true }).catch(() => {});
-          });
-          console.log('[Playwright] 서체를 나눔고딕으로 변경');
+          const fontOptionBtn = page.locator('button[data-name="font-family"][data-value="nanumgothic"]').first();
+          if (await fontOptionBtn.count() > 0) {
+            await fontOptionBtn.click().catch(async (e) => {
+              console.warn(`[Playwright] 서체 옵션 클릭 실패, force로 재시도: ${e.message}`);
+              await fontOptionBtn.click({ force: true }).catch(() => {});
+            });
+            console.log('[Playwright] 서체를 나눔고딕으로 변경');
+          } else {
+            console.warn('[Playwright] 나눔고딕 서체 버튼을 못 찾음(드롭다운 연 뒤에도) — 서체 변경 건너뜀');
+            await page.keyboard.press('Escape').catch(() => {});
+          }
           await page.waitForTimeout(200);
         } else {
-          console.warn('[Playwright] 나눔고딕 서체 버튼을 못 찾음 — 서체 변경 건너뜀');
+          console.warn('[Playwright] 서체 변경 토글 버튼을 못 찾음');
         }
 
         let imagesInserted = 0;
