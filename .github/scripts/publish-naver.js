@@ -273,51 +273,6 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         ).catch(() => -1);
         console.log(`[Playwright] Body pre-clear length: ${preClearLen} -> post-clear: ${postClearLen}`);
 
-        // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
-        // 손글씨체로 맞춰져 있어서, 우리가 타이핑한 숫자·스펙 위주 정보성 글이
-        // 전부 삐뚤빼뚤한 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인).
-        // 타이핑 시작 전에 서체 드롭다운에서 일반 고딕체로 바꿔둔다.
-        const fontBtn = page.getByRole('button', { name: /서체 변경/ }).first();
-        if (await fontBtn.count() > 0) {
-          await fontBtn.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(300);
-          // 실사용으로 확인한 실제 드롭다운 옵션 텍스트는 이름+툴팁이 겹쳐서
-          // "나눔고딕나눔고딕"처럼 나옴 — exact 매치가 아니라 포함 매치로 찾는다.
-          // "나눔바른고딕"은 "나눔고딕"을 부분 문자열로 포함하지 않으므로 안전함.
-          const fontOption = page.locator('li').filter({ hasText: '나눔고딕' }).first();
-          if (await fontOption.count() > 0) {
-            // 실사용 확인: 여기서 force 클릭 후 본문을 다시 클릭해 포커스를 복귀
-            // 시켰더니 서체 변경이 무효화되는 걸 발견함(재클릭이 커서를 리셋시켜
-            // 방금 지정한 서식이 안 먹히는 것으로 보임) — force 없이 실제 보이는
-            // 요소를 클릭해서 커서/선택을 유지한 채로 서식만 바뀌게 한다.
-            await fontOption.click().catch(async (e) => {
-              console.warn(`[Playwright] 서체 옵션 일반 클릭 실패, force로 재시도: ${e.message}`);
-              await fontOption.click({ force: true }).catch(() => {});
-            });
-            console.log('[Playwright] 서체를 나눔고딕으로 변경');
-          } else {
-            const optionTexts = await page.locator('li, [role="option"]').evaluateAll(
-              els => els.map(e => (e.textContent || '').trim()).filter(Boolean).slice(0, 30)
-            ).catch(() => []);
-            console.warn(`[Playwright] "나눔고딕" 옵션을 못 찾음 — 서체 변경 건너뜀. 실제 옵션들: ${JSON.stringify(optionTexts)}`);
-            await page.keyboard.press('Escape').catch(() => {});
-          }
-          await page.waitForTimeout(200);
-        } else {
-          console.warn('[Playwright] 서체 변경 버튼을 못 찾음');
-        }
-        // 포커스가 이미 본문에 있으면 재클릭하지 않는다 — 재클릭이 방금 바꾼
-        // 서체 서식을 리셋시키는 걸 확인했기 때문(위 설명 참고).
-        const focusedInBody = await mainFrame.evaluate((sel) => {
-          const active = document.activeElement;
-          const bodyEl = document.querySelector(sel);
-          return !!active && !!bodyEl && (bodyEl === active || bodyEl.contains(active));
-        }, sel).catch(() => false);
-        if (!focusedInBody) {
-          await el.click({ force: true });
-          await page.waitForTimeout(200);
-        }
-
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
@@ -361,6 +316,46 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       }
     }
     if (!bodyFilled) console.warn('[Playwright] Body selector not found — 아래 진단 정보 참고');
+
+    // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
+    // 손글씨체로 맞춰져 있어서, 숫자·스펙 위주 정보성 글이 전부 삐뚤빼뚤한
+    // 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인). 타이핑 "도중"에
+    // 커서만 있는 상태(선택 영역 없음)에서 서체를 바꿔봤더니 실제로는 전혀
+    // 적용이 안 됐다 — 이 에디터는 서식 명령을 실제 선택 영역에만 적용하는
+    // 것으로 보임(굵게 버튼도 같은 이유로 실패했었음). 그래서 본문을 전부 다
+    // 채운 "뒤에" 전체를 선택하고 한 번에 서체를 바꾼다 — 이미 확정된 텍스트를
+    // 대상으로 하는 단일 동작이라 타이핑 이벤트와 경쟁할 여지가 없다.
+    if (bodyFilled) {
+      const fontBtn = page.getByRole('button', { name: /서체 변경/ }).first();
+      if (await fontBtn.count() > 0) {
+        await page.keyboard.press('Control+A').catch(() => {});
+        await page.waitForTimeout(200);
+        await fontBtn.click({ force: true }).catch(() => {});
+        await page.waitForTimeout(300);
+        // 실제 옵션 텍스트는 이름+툴팁이 겹쳐서 "나눔고딕나눔고딕"처럼 나옴
+        // (실사용으로 확인) — exact 매치 대신 포함 매치로 찾는다. "나눔바른고딕"은
+        // "나눔고딕"을 부분 문자열로 포함하지 않으므로 안전함.
+        const fontOption = page.locator('li').filter({ hasText: '나눔고딕' }).first();
+        if (await fontOption.count() > 0) {
+          await fontOption.click().catch(async (e) => {
+            console.warn(`[Playwright] 서체 옵션 일반 클릭 실패, force로 재시도: ${e.message}`);
+            await fontOption.click({ force: true }).catch(() => {});
+          });
+          console.log('[Playwright] 서체를 나눔고딕으로 변경(전체 선택 후 일괄 적용)');
+        } else {
+          const optionTexts = await page.locator('li, [role="option"]').evaluateAll(
+            els => els.map(e => (e.textContent || '').trim()).filter(Boolean).slice(0, 30)
+          ).catch(() => []);
+          console.warn(`[Playwright] "나눔고딕" 옵션을 못 찾음 — 서체 변경 건너뜀. 실제 옵션들: ${JSON.stringify(optionTexts)}`);
+          await page.keyboard.press('Escape').catch(() => {});
+        }
+        await page.waitForTimeout(300);
+        // 전체 선택 해제 — 안 풀면 이어지는 제목 입력 단계와 간섭할 수 있음.
+        await page.keyboard.press('End').catch(() => {});
+      } else {
+        console.warn('[Playwright] 서체 변경 버튼을 못 찾음');
+      }
+    }
 
     // 본문 관련 비동기 동작(자동저장, 제목 제안 등)이 다 정리될 시간을 준다 —
     // 이게 끝난 뒤에 제목을 입력해야 그 사이에 끼어들 여지가 없어짐.
