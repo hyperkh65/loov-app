@@ -284,28 +284,30 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         await page.keyboard.press('Enter');
         await page.waitForTimeout(80);
 
-        // 진단용 임시 코드: 소제목을 인라인 굵게가 아니라 "문단 서식"(블록
-        // 타입) 자체를 제목으로 바꾸는 방법이 있는지 확인한다 — 있다면 선택
-        // 영역 없이 커서 위치만으로 적용되는 진짜 블록 명령이라 지금까지 겪은
-        // 선택 기반 사고(글자 뒤섞임, 문단 통째로 삭제)를 피할 수 있을 것으로
-        // 예상됨. 툴바 전체를 통째로 찍어서 실제로 그런 옵션이 있는지 본다.
-        // 첫 시도에서 잡힌 건 "documentToolbar"(사진/파일/구분선 등 삽입용
-        // 툴바)였다 — 서체/굵게가 있던 곳은 텍스트에 포커스가 있을 때만 보이는
-        // 별도의 "propertyToolbar"다. 그 컨테이너를 정확히 지정해서 다시 찍는다.
-        // "본문" / "문단 서식 변경" 버튼(data-name="text-format")을 찾음 —
-        // 진짜 "제목" 블록 서식이 있는지 드롭다운을 열어서 옵션을 확인한다.
-        const textFormatBtn = page.locator('button[data-name="text-format"]').first();
-        if (await textFormatBtn.count() > 0) {
-          await textFormatBtn.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(300);
-          const textFormatOptions = await page.locator('[data-name="text-format"][data-role="option"], [data-group="propertyToolbar"][data-value]').evaluateAll(
-            els => els.map(e => ({ value: e.getAttribute('data-value'), text: (e.textContent || '').trim() }))
-          ).catch(() => []);
-          console.log(`[Playwright] 문단 서식 옵션 목록: ${JSON.stringify(textFormatOptions)}`);
-          await page.keyboard.press('Escape').catch(() => {});
-        } else {
-          console.warn('[Playwright] 문단 서식 버튼을 못 찾음');
-        }
+        // 소제목을 인라인 굵게로 흉내내려던 세 번의 시도는 전부 실패(글자
+        // 뒤섞임, 서식 새어나감, 문단 통째로 삭제)했다. 알고 보니 이 에디터엔
+        // 아예 진짜 블록 서식으로 "소제목"이 내장돼 있었다(문단 서식 변경
+        // 드롭다운 → data-value="sectionTitle", "본문"/"인용구"와 나란히 있는
+        // 정식 옵션 — 실사용으로 덤프해서 확인함). 이건 선택 영역이 아니라 커서가
+        // 그 문단 안에 있기만 하면 적용되는 블록 단위 명령이라, 지금까지 겪은
+        // 선택 기반 사고들과 애초에 종류가 다른 안전한 방법이다.
+        const applySectionTitle = async () => {
+          const btn = page.locator('button[data-name="text-format"]').first();
+          if (await btn.count() === 0) return false;
+          await btn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(200);
+          const opt = page.locator('button[data-name="text-format"][data-value="sectionTitle"]').first();
+          if (await opt.count() === 0) {
+            await page.keyboard.press('Escape').catch(() => {});
+            return false;
+          }
+          await opt.click().catch(async (e) => {
+            console.warn(`[Playwright] 소제목 서식 클릭 실패, force로 재시도: ${e.message}`);
+            await opt.click({ force: true }).catch(() => {});
+          });
+          await page.waitForTimeout(150);
+          return true;
+        };
 
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
@@ -322,31 +324,56 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
 
           // 소제목(h1~h6 출신) 앞엔 빈 줄을 하나 넣어 본문과 시각적으로 구분한다
           // (원본 템플릿의 소제목 위쪽 여백 의도를 살림). 글 맨 첫 줄이면 생략.
-          //
-          // 굵게 표시는 세 번 시도해서 세 번 다 실패했다 — 키보드 Ctrl+B(서식이
-          // 다음 문단까지 새어나감), Home/Shift+End 선택 후 Ctrl+B(글자 뒤섞임),
-          // 마지막으로 실제 툴바 버튼(`button[data-name="bold"]`)을 선택 영역에
-          // 클릭(이번엔 소제목뿐 아니라 무관한 앞 문단까지 통째로 사라지는 데이터
-          // 유실로 이어짐 — 실사용 확인, 지금까지 중 가장 심각한 결과). 세 번째는
-          // 이론상 맞는 방법이었는데도 실패해서 이 에디터의 서식 처리 자체가
-          // 자동화 키/클릭 입력과 근본적으로 안 맞는 것으로 보고 완전히 포기함.
-          // 빈 줄로 여백만 주고 텍스트 자체는 절대 건드리지 않는다.
           if (para.isHeading && i > 0) {
             await page.keyboard.press('Enter').catch(() => {});
             await page.waitForTimeout(80);
           }
           await page.keyboard.type(para.text, { delay: 5 });
+
+          let sectionTitleApplied = false;
+          if (para.isHeading) {
+            // 굵게로 흉내내려던 세 번의 시도는 전부 실패(글자 뒤섞임, 서식
+            // 새어나감, 문단 통째로 삭제)했다 — 전부 "선택 영역"에 서식을
+            // 적용하는 방식이었던 게 문제였다. 이 에디터엔 진짜 "소제목" 블록
+            // 서식이 내장되어 있어서(문단 서식 드롭다운 → data-value=
+            // "sectionTitle") 커서가 이 문단 안에 있기만 하면 적용된다 — 선택
+            // 영역이 필요 없는 블록 단위 명령이라 안전하다.
+            sectionTitleApplied = await applySectionTitle();
+            if (!sectionTitleApplied) {
+              console.warn('[Playwright] 소제목 서식 적용 실패 — 평문으로 남음');
+            }
+          }
+
           await page.keyboard.press('Enter');
           // Enter 직후 스마트에디터가 새 문단 블록을 만드는 처리가 끝나기 전에
           // 바로 다음 문단 타이핑을 시작하면 그 문단 첫 글자가 중복 입력되는
           // 버그를 실제 발행 글에서 확인함(예: "S25"→"SS25", "미국"→"미미국",
-          // "운영체제"→"운운영체제" — Ctrl+B 도입 전부터 있었던, 무관한 별개
-          // 버그). 다음 타이핑 전에 짧게 쉬어서 블록 생성이 끝나길 기다린다.
+          // "운영체제"→"운운영체제"). 다음 타이핑 전에 짧게 쉬어서 블록 생성이
+          // 끝나길 기다린다.
           await page.waitForTimeout(80);
+
+          // 소제목 블록 뒤에 이어지는 일반 문단이 "소제목" 서식을 물려받을 수
+          // 있으므로(줄바꿈 직후 커서가 새 문단으로 넘어간 상태), 명시적으로
+          // "본문"으로 되돌린다. 다음 블록이 또 소제목이면 곧 다시 바뀌므로
+          // 무해하다.
+          if (sectionTitleApplied) {
+            const backBtn = page.locator('button[data-name="text-format"]').first();
+            if (await backBtn.count() > 0) {
+              await backBtn.click({ force: true }).catch(() => {});
+              await page.waitForTimeout(150);
+              const bodyOpt = page.locator('button[data-name="text-format"][data-value="text"]').first();
+              if (await bodyOpt.count() > 0) {
+                await bodyOpt.click().catch(() => {});
+              } else {
+                await page.keyboard.press('Escape').catch(() => {});
+              }
+              await page.waitForTimeout(150);
+            }
+          }
         }
         const headingCount = paragraphs.filter(p => p.isHeading).length;
         const imageCount = paragraphs.filter(p => p.type === 'image').length;
-        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings spaced, ${imagesInserted}/${imageCount} images inserted)`);
+        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings section-titled, ${imagesInserted}/${imageCount} images inserted)`);
 
         // 서체(폰트) 자동 변경 시도는 9차례(타이핑 전/후, 선택영역 있음/없음,
         // 셀렉터 여러 버전) 전부 실패로 포기함 — 툴바 라벨은 매번 "나눔고딕"으로
