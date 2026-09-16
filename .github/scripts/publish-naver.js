@@ -328,6 +328,11 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     if (bodyFilled) {
       const fontBtn = page.getByRole('button', { name: /서체 변경/ }).first();
       if (await fontBtn.count() > 0) {
+        const activeBefore = await mainFrame.evaluate(() => {
+          const a = document.activeElement;
+          return a ? { tag: a.tagName, cls: a.className, editable: a.isContentEditable } : null;
+        }).catch(() => null);
+        console.log(`[Playwright] Ctrl+A 직전 activeElement: ${JSON.stringify(activeBefore)}`);
         await page.keyboard.press('Control+A').catch(() => {});
         await page.waitForTimeout(200);
         // 진단: Ctrl+A가 실제로 뭔가 선택했는지 확인 — 선택 길이가 0이면
@@ -342,6 +347,9 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // 실제 옵션 텍스트는 이름+툴팁이 겹쳐서 "나눔고딕나눔고딕"처럼 나옴
         // (실사용으로 확인) — exact 매치 대신 포함 매치로 찾는다. "나눔바른고딕"은
         // "나눔고딕"을 부분 문자열로 포함하지 않으므로 안전함.
+        const fullDropdownHtml = await page.locator('li.se-toolbar-item-font-family').first()
+          .evaluate(el => el.outerHTML).catch(() => null);
+        console.log(`[Playwright] 서체 드롭다운 전체 HTML: ${fullDropdownHtml}`);
         const fontOption = page.locator('li').filter({ hasText: '나눔고딕' }).first();
         if (await fontOption.count() > 0) {
           const optionInfo = await fontOption.evaluate(el => ({
