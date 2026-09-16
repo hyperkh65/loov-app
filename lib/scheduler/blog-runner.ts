@@ -7,7 +7,46 @@ import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { translateAndCrossPost } from '@/lib/ai-translate';
+import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
+import { publishToNaverCafe } from '@/lib/naver-cafe';
+import { publishToTumblr } from '@/lib/tumblr-publish';
+import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
+
+// 스레드만 계정이 사이트 목적별로 나뉘어 있어(여행/쿠팡 전용 계정까지 블로그
+// 글로 도배되는 걸 막으려고) 전용 계정으로 라우팅. 인스타/트위터/페이스북은
+// 계정 수가 적거나 사이트 구분이 없어서 연결된 계정 전부에 공통으로 발행.
+function threadsAccountFor(siteUrl: string): string {
+  if (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) return '@aboda_miracool';
+  return '@2dayskr'; // 2days.kr 계열 + 블로거(사이트 URL 없음) 전부 이 계정으로
+}
+
+async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from('sns_connections')
+    .select('platform, platform_user_id, platform_username, access_token')
+    .eq('user_id', userId)
+    .eq('is_active', true);
+  const connections = data || [];
+
+  const threadsAccount = threadsAccountFor(siteUrl);
+  const text = `${title}\n\n${articleUrl}`;
+  const targets = connections.filter((c) => {
+    if (c.platform === 'threads') return c.platform_username === threadsAccount;
+    return ['instagram', 'twitter', 'facebook'].includes(c.platform); // 공통 — 필터 없이 전부
+  });
+
+  await Promise.all(targets.map(async (conn) => {
+    try {
+      await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, text);
+    } catch { /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
+  }));
+
+  // 네이버 카페 + 텀블러도 공통으로(부분 실패 허용 — rewrite-publish.ts와 동일 패턴)
+  publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl }).catch(() => {});
+  publishToTumblr({ title, canonical_url: articleUrl }).catch(() => {});
+}
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
   const supabase = createAdminClient();
@@ -186,6 +225,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
 
   // 발행
   let publishedUrl = '';
+  let publishedSiteUrl = ''; // SNS 계정 매칭용(사이트별 전용 스레드/인스타 계정 라우팅)
   try {
     if (config.blog_platform === 'blogger') {
       const accessToken = await getBloggerTokenAdmin(schedule.user_id);
@@ -202,6 +242,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
       } else {
         throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
       }
+      publishedSiteUrl = wpUrl;
       // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
       // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행은 진행
       const crossLink = await findCrossSiteLink(wpUrl, keyword).catch(() => null);
@@ -221,6 +262,10 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
     publishToGithubPages({ title, content, articleUrl: publishedUrl }).catch(() => {});
     // 영어/일본어로 번역해서 engmag.2days.kr / japmag.2days.kr에도 크로스 발행
     translateAndCrossPost({ title, content, representative_image_url: imageUrl }).catch(() => {});
+    // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
+    // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
+    // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
+    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
