@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   const { data: pending } = await supabase
     .from('wordpress_sites')
-    .select('id, site_url, subdomain, nas, sitemap_url')
+    .select('id, site_url, subdomain, web_dir, nas, sitemap_url')
     .eq('user_id', ownerId)
     .eq('gsc_status', 'pending');
 
@@ -67,7 +67,14 @@ export async function POST(req: NextRequest) {
       if (!accessToken) throw new Error('Google 연결 안 됨 (재연결 필요)');
 
       const target = NAS_TARGETS[(site.nas as NasKey) || 'hy64'];
-      const wpDir = `${WEB_ROOT}/${site.subdomain}`;
+      // subdomain이 없는 레거시 사이트는 실제 폴더명이 다를 수 있어 web_dir로 오버라이드.
+      // 둘 다 없으면 어차피 리버스프록시(Next.js 등) 앱이라 파일 방식 자체가 안 통하니 건너뜀.
+      const dirName = site.web_dir || site.subdomain;
+      if (!dirName) {
+        results.push({ site: site.site_url, status: 'skip_no_dir(리버스프록시 앱 — 메타태그 방식 필요)' });
+        continue;
+      }
+      const wpDir = `${WEB_ROOT}/${dirName}`;
 
       await registerSiteWithGoogle(accessToken, site.site_url, async (filename, content) => {
         await target.execWithStdin(`cat > ${wpDir}/${filename}`, content);
