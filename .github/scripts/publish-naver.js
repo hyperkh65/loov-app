@@ -212,9 +212,15 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       const localPath = path.join(tmpImgDir, `img-${imgCounter++}.${ext}`);
       fs.writeFileSync(localPath, buf);
 
-      const photoBtn = page.getByRole('button', { name: '사진', exact: true }).first();
+      // "사진" 하나만 정확히 매치하는 접근성 이름을 못 찾음(버튼엔 "사진"과
+      // "사진 추가"라는 두 개의 텍스트 노드가 같이 붙어있는 걸로 보임) — exact
+      // 매치 대신 정규식으로 느슨하게 찾는다.
+      const photoBtn = page.getByRole('button', { name: /^사진(\s*추가)?$/ }).first();
       if (await photoBtn.count() === 0) {
-        console.warn('[Playwright] "사진" 버튼을 못 찾음 — 이미지 삽입 건너뜀');
+        const btnNames = await page.locator('button').evaluateAll(
+          els => els.map(e => (e.textContent || e.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0, 40)
+        ).catch(() => []);
+        console.warn(`[Playwright] "사진" 버튼을 못 찾음 — 이미지 삽입 건너뜀. 실제 버튼 이름들: ${JSON.stringify(btnNames)}`);
         return false;
       }
       try {
