@@ -243,7 +243,16 @@ def html_to_components(body_html):
             if i < len(paras) - 1:
                 components.append({
                     'id': se_id(), 'layout': 'default', '@ctype': 'text',
-                    'value': [{'id': se_id(), '@ctype': 'paragraph', 'nodes': []}],
+                    # 빈 문단을 nodes: [] 로 보내면 네이버가 documentModel 전체를
+                    # 거부한다("parse fail") — 문단이 2개 이상 연속될 때마다 이
+                    # 간격용 컴포넌트가 들어가서 긴 글은 사실상 항상 실패했다
+                    # (2026-09-16 실측: 문단 1개면 성공, 2개 이상이면 무조건 실패).
+                    # 값이 빈 텍스트 노드를 하나 넣어주면 정상 통과한다.
+                    'value': [{'id': se_id(), '@ctype': 'paragraph', 'nodes': [{
+                        'id': se_id(), 'value': '', '@ctype': 'textNode',
+                        'style': {'fontColor': '#000000', 'fontFamily': 'nanumbareunhipi',
+                                  'fontSizeCode': 'fs19', '@ctype': 'nodeStyle'},
+                    }]}],
                 })
         pending_texts.clear()
 
