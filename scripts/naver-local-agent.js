@@ -146,58 +146,40 @@ const USER_AGENTS = [
 // ── 콘텐츠 파싱 / 이미지 처리 ─────────────────────────────────────────────────
 
 /**
- * HTML을 텍스트/이미지 세그먼트 배열로 파싱
- * @returns {{ type: 'text'|'image', text?: string, url?: string, alt?: string }[]}
+ * HTML을 텍스트/이미지 세그먼트 배열로 파싱 — .github/scripts/publish-naver.js의
+ * htmlToParagraphs()와 동일 로직(소제목 인식 + 자동 번호매기기 방지 포함)을
+ * 그대로 포팅. 예전엔 이 함수가 <h2> 등 소제목 태그를 그냥 다 벗겨서 본문과
+ * 구분 없이 타이핑해버렸음 — 그래서 소제목 서식이 하나도 안 먹었던 것.
+ * @returns {{ type: 'text'|'image', text?: string, isHeading?: boolean, url?: string, alt?: string }[]}
  */
 function parseContentSegments(html) {
-  const segments = [];
-  const imgRegex = /<img\s[^>]*>/gi;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = imgRegex.exec(html)) !== null) {
-    // img 앞 텍스트 블록
-    const textHtml = html.slice(lastIndex, match.index);
-    const text = textHtml
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, ' ')
-      .trim();
-    if (text) segments.push({ type: 'text', text });
-
-    // 이미지 블록
-    const imgTag = match[0];
-    const srcMatch = imgTag.match(/src=["']([^"']+)["']/i);
-    const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
-    if (srcMatch) {
-      segments.push({ type: 'image', url: srcMatch[1], alt: altMatch?.[1] || '' });
-    }
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  // 마지막 텍스트 블록
-  const tailHtml = html.slice(lastIndex);
-  const tail = tailHtml
+  const stripInline = (s) => s
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
     .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .trim();
-  if (tail) segments.push({ type: 'text', text: tail });
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  const stripHeadingNumber = (s) => s.replace(/^\d+[.)]\s*/, '');
+  const dodgeAutoNumber = (s) => s.replace(/^(\d+)([.)])/, `$1​$2`);
 
-  return segments;
+  const blockRe = /<figure\b[^>]*>[\s\S]*?<img\b[^>]*\bsrc="([^"]+)"[^>]*>[\s\S]*?<\/figure>|<img\b[^>]*\bsrc="([^"]+)"[^>]*>|<(p|h[1-6]|li)\b[^>]*>([\s\S]*?)<\/\3>/gi;
+  const results = [];
+  let m;
+  while ((m = blockRe.exec(html))) {
+    if (m[1] || m[2]) {
+      results.push({ type: 'image', url: m[1] || m[2] });
+      continue;
+    }
+    const isHeading = /^h[1-6]$/i.test(m[3]);
+    for (const line of stripInline(m[4]).split('\n').map((s) => s.trim()).filter(Boolean)) {
+      const text = isHeading ? stripHeadingNumber(line) : dodgeAutoNumber(line);
+      results.push({ type: 'text', text, isHeading });
+    }
+  }
+  if (results.length > 0) return results;
+
+  // 블록 태그가 하나도 안 잡힌 예외적 입력 — 줄바꿈 기준 폴백
+  return stripInline(html.replace(/<\/div>/gi, '\n'))
+    .split('\n').map((s) => s.trim()).filter(Boolean)
+    .map((text) => ({ type: 'text', text: dodgeAutoNumber(text), isHeading: false }));
 }
 
 /**
@@ -329,20 +311,70 @@ async function sbGetAppSettings() {
       GEMINI_API_KEY: settings.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '',
       CLAUDE_API_KEY: settings.CLAUDE_API_KEY || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '',
       OPENAI_API_KEY: settings.OPENAI_API_KEY || process.env.OPENAI_API_KEY || '',
+      NAVER_CLIENT_ID: settings.NAVER_CLIENT_ID || process.env.NAVER_CLIENT_ID || '',
+      NAVER_CLIENT_SECRET: settings.NAVER_CLIENT_SECRET || process.env.NAVER_CLIENT_SECRET || '',
+      GROQ_API_KEYS: settings.GROQ_API_KEYS || process.env.GROQ_API_KEYS || '',
     };
   } catch {
     return {
       GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
       CLAUDE_API_KEY: process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '',
       OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+      NAVER_CLIENT_ID: process.env.NAVER_CLIENT_ID || '',
+      NAVER_CLIENT_SECRET: process.env.NAVER_CLIENT_SECRET || '',
+      GROQ_API_KEYS: process.env.GROQ_API_KEYS || '',
     };
   }
 }
 
 /**
- * AI API 호출 (gemini / claude / gpt4o / gpt4 / gpt35)
+ * Groq 라운드로빈 호출 (lib/ai-translate.ts의 fetchGroqChat과 동일 패턴 —
+ * 무료 티어 키 하나로는 분당 토큰 한도(TPM)에 쉽게 걸려서 4개 키를 돌려씀).
+ */
+let groqKeyIdx = 0;
+async function callGroq(prompt, apiKeys) {
+  const keys = (apiKeys.GROQ_API_KEYS || '').split(',').map((k) => k.trim()).filter(Boolean);
+  if (!keys.length) throw new Error('GROQ_API_KEYS 설정 없음');
+
+  let lastErr = '';
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[groqKeyIdx % keys.length];
+      groqKeyIdx++;
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'qwen/qwen3.8-27b',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.7,
+            max_tokens: 8192,
+          }),
+          signal: AbortSignal.timeout(90000),
+        });
+        if (res.status === 429) { lastErr = `429 rate limit (key ${i})`; continue; }
+        if (!res.ok) throw new Error(`Groq API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || '';
+      } catch (e) {
+        if (e.message?.startsWith('Groq API')) throw e;
+        lastErr = e.message;
+      }
+    }
+    if (pass === 0) await new Promise((r) => setTimeout(r, 60000)); // TPM 한도 리셋 대기
+  }
+  throw new Error(`Groq 호출 실패 — 키 ${keys.length}개 모두 rate limit: ${lastErr}`);
+}
+
+/**
+ * AI API 호출 (groq / gemini / claude / gpt4o / gpt4 / gpt35)
  */
 async function callAI(prompt, provider = 'gemini', apiKeys = {}) {
+  if (provider === 'groq') {
+    return callGroq(prompt, apiKeys);
+  }
+
   if (provider === 'claude') {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -353,7 +385,7 @@ async function callAI(prompt, provider = 'gemini', apiKeys = {}) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
+        max_tokens: 8192, // 4000~5000자 한국어 출력이 잘리지 않도록 여유있게
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -373,7 +405,7 @@ async function callAI(prompt, provider = 'gemini', apiKeys = {}) {
       body: JSON.stringify({
         model: modelMap[provider],
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 4096,
+        max_tokens: 8192, // 4000~5000자 한국어 출력이 잘리지 않도록 여유있게
       }),
     });
     if (!res.ok) throw new Error(`OpenAI API ${res.status}: ${await res.text()}`);
@@ -383,11 +415,14 @@ async function callAI(prompt, provider = 'gemini', apiKeys = {}) {
 
   // gemini (default)
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKeys.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKeys.GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 8192 }, // 4000~5000자 한국어 출력이 잘리지 않도록 여유있게
+      }),
     }
   );
   if (!res.ok) throw new Error(`Gemini API ${res.status}: ${await res.text()}`);
@@ -396,9 +431,32 @@ async function callAI(prompt, provider = 'gemini', apiKeys = {}) {
 }
 
 /**
- * HTML 초안을 AI로 리라이팅 → 네이버 블로그용 HTML 반환
+ * 네이버 뉴스/블로그 검색 (lib/blog-content-generator.ts의 searchNaver와 동일) —
+ * 원문 하나만 리라이팅하면 그 글을 그대로 따라 쓴 것처럼 보이므로, 같은 주제의
+ * 다른 기사·블로그를 같이 참고자료로 넣어 여러 소스를 종합한 글이 되게 한다.
  */
-async function rewriteContent(title, rawHtml, aiPrompt, provider, apiKeys) {
+async function searchNaver(type, query, clientId, clientSecret) {
+  if (!clientId || !clientSecret || !query) return [];
+  try {
+    const res = await fetch(
+      `https://openapi.naver.com/v1/search/${type}.json?query=${encodeURIComponent(query)}&display=10&sort=date`,
+      { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.items || []).map((item) => ({
+      title: item.title.replace(/<[^>]+>/g, ''),
+      description: item.description.replace(/<[^>]+>/g, ''),
+      link: item.link || '',
+    }));
+  } catch { return []; }
+}
+
+/**
+ * HTML 초안을 AI로 리라이팅 → 네이버 블로그용 HTML 반환
+ * (lib/blog-content-generator.ts의 buildBlogPrompt와 동일한 규칙/분량 기준 — 블로그자동화 프롬프트와 통일)
+ */
+async function rewriteContent(title, rawHtml, aiPrompt, provider, apiKeys, refItems = []) {
   const plainText = rawHtml
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
@@ -407,21 +465,44 @@ async function rewriteContent(title, rawHtml, aiPrompt, provider, apiKeys) {
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
     .trim();
 
-  const prompt = `다음 초안을 네이버 블로그 포스팅 형식으로 리라이팅해주세요.
-제목: ${title}
-규칙:
-- <p> 태그를 사용해 단락 구분
-- 2000자 내외 (한국어 기준)
-- 자연스럽고 친근한 블로그 문체
-- HTML만 출력 (다른 설명 없이)
-${aiPrompt ? `추가 지시사항: ${aiPrompt}` : ''}
+  const refBlock = refItems.length
+    ? `\n참고자료(같은 주제의 다른 기사·블로그 — 맥락 보강 및 다각도 종합용, 베끼지 말고 사실관계만 참고):\n${refItems.map((r, i) => `[참고${i + 1}] ${r.title} — ${r.description}`).join('\n')}\n`
+    : '';
 
-초안:
-${plainText}`;
+  const prompt = `한국어 SEO 블로그 작가입니다. 아래 원문 초안을 리라이팅해 "${title}" 블로그 글을 작성하세요.
+
+원문 초안(리라이팅 대상 — 표절 금지, 사실·정보는 유지하되 문장은 완전히 새롭게 재구성. 원문이 영어 등 외국어라면 단순 직역하지 말고, 그 내용을 완전히 이해한 한국인 전문 블로거가 정성껏 직접 쓴 것처럼 자연스러운 한국어 문장으로 재구성할 것 — 번역투 어색한 문장 금지):
+${plainText.slice(0, 6000) || '(본문 없음 — 제목 기반으로 작성)'}
+${refBlock}
+[규칙]
+1. 한국어만 사용. 한국어 동의어가 있는 영어 단어 절대 금지(content→콘텐츠, marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, data→데이터, trend→트렌드, user→사용자, review→리뷰 등). 고유 브랜드명만 예외.
+2. 존재하지 않는 회사·보고서·연구 절대 지어내지 말 것
+3. 전체 분량은 반드시 4000~5000자(한국어 기준, 공백 포함). 짧게 끝내지 말 것.
+4. 소제목(h2) 5~6개, 각 소제목 아래 단락 2개, 각 단락 6문장 이상
+5. 첫 문단(도입부)은 핵심 결론부터 (서론식 "~에 대해 알아봅니다" 금지), 6문장 이상
+6. 친근한 구어체, 독자가 무릎 칠 구체적 사례 포함
+7. 글 마지막에 자주 묻는 질문 3~4개(질문+답변 2~3문장)
+8. 참고자료가 있으면 원문 초안 하나만 따라 쓰지 말고, 참고자료의 사실관계도 같이 종합해서 더 폭넓은 글로 재구성할 것
+
+[출력 형식 — 순수 HTML만 출력, 다른 설명·마크다운 코드블록 없이. 반드시 첫 줄에 제목 주석부터]
+<!--TITLE: (키워드 포함 한국어 SEO 제목 40~60자)-->
+<h2>(소제목1)</h2>
+<p>(단락1: 6문장 이상)</p>
+<p>(단락2: 6문장 이상)</p>
+... (h2 5~6개 반복) ...
+<h2>자주 묻는 질문</h2>
+<p><strong>Q. (질문1)</strong><br/>(답변 2~3문장)</p>
+<p><strong>Q. (질문2)</strong><br/>(답변 2~3문장)</p>
+${aiPrompt ? `\n추가 지시사항: ${aiPrompt}` : ''}`;
 
   const result = await callAI(prompt, provider, apiKeys);
   // 코드블록 감싸기 제거
-  return result.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
+  const cleaned = result.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
+  // 첫 줄의 <!--TITLE: ...--> 추출 (외국어 원문일 때 한국어 제목이 필요한 경우 사용)
+  const titleMatch = cleaned.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i);
+  const aiTitle = titleMatch ? titleMatch[1].trim() : '';
+  const html = cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, '');
+  return { html, aiTitle };
 }
 
 /**
@@ -432,7 +513,7 @@ async function generateThumbnail(jobId, title, thumbnailPrompt, geminiApiKey) {
   const prompt = thumbnailPrompt || `"${title}" 블로그 대표이미지, 깔끔한 일러스트, 16:9 비율, 고화질`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${geminiApiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${geminiApiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -523,46 +604,44 @@ async function scrapeSourceUrl(url) {
 }
 
 /**
- * 리라이팅된 HTML에 스크랩 이미지를 균등 배분
+ * 리라이팅된 HTML의 소제목(h2)마다 스크랩 원본 사진을 순서대로 배치.
+ * publish-naver.js는 <figure><img></figure> 블록만 이미지로 인식하므로
+ * (htmlToParagraphs 참고) 반드시 이 형태로 감싸야 한다. 스톡사진(Pixabay 등)은
+ * 글 내용과 무관해서 안 씀 — 원본 기사에 있던 사진만, 있는 만큼만 사용.
  */
-function mixContentWithImages(rewrittenHtml, imageUrls) {
-  if (!imageUrls || imageUrls.length === 0) return rewrittenHtml;
+function mixContentWithImages(rewrittenHtml, scrapedImageUrls) {
+  if (!scrapedImageUrls || scrapedImageUrls.length === 0) return rewrittenHtml;
 
-  // <p> 태그 기준 단락 분리
-  const paragraphRegex = /(<p[^>]*>[\s\S]*?<\/p>)/gi;
-  const paragraphs = [];
-  let match;
-  let lastIndex = 0;
-
-  while ((match = paragraphRegex.exec(rewrittenHtml)) !== null) {
-    paragraphs.push(match[1]);
-    lastIndex = match.index + match[0].length;
+  const headings = [...rewrittenHtml.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)];
+  if (headings.length === 0) {
+    const imgs = scrapedImageUrls.map(url => `<figure><img src="${url}"/></figure>`).join('\n');
+    return `${rewrittenHtml}\n${imgs}`;
   }
 
-  // p 태그가 없으면 원본 반환
-  if (paragraphs.length === 0) {
-    const imgTags = imageUrls.map(url => `<p><img src="${url}" /></p>`).join('\n');
-    return rewrittenHtml + '\n' + imgTags;
-  }
-
-  const M = imageUrls.length;
-  const N = paragraphs.length;
-  // 이미지 삽입 위치: 단락 사이에 균등 배분
-  const interval = N / (M + 1);
-  const result = [];
-
-  paragraphs.forEach((para, i) => {
-    result.push(para);
-    // 이미지 삽입 여부 확인
-    for (let j = 0; j < M; j++) {
-      const insertPos = Math.round(interval * (j + 1));
-      if (i + 1 === insertPos) {
-        result.push(`<p><img src="${imageUrls[j]}" /></p>`);
-      }
-    }
+  let i = 0;
+  return rewrittenHtml.replace(/(<h2[^>]*>[\s\S]*?<\/h2>)/gi, (match) => {
+    const url = scrapedImageUrls[i++];
+    if (!url) return match;
+    const alt = match.replace(/<[^>]+>/g, '').trim();
+    return `${match}\n<figure><img src="${url}" alt="${alt}"/><figcaption>${alt}</figcaption></figure>`;
   });
+}
 
-  return result.join('\n');
+/**
+ * 글 마지막에 참고 사이트/사진 출처를 텍스트로만 추가한다 — 링크(<a href>)로
+ * 걸면 독자가 원문 사이트로 빠져나가버리므로, 클릭 안 되는 일반 텍스트로만
+ * 주소를 적어둔다(어차피 publish-naver.js가 발행 시 태그를 다 벗겨 순수
+ * 텍스트로 타이핑하지만, 의도를 코드에도 명확히 남겨둠).
+ */
+function appendSourcesFooter(html, { primarySource, refItems = [], imageUrls = [] } = {}) {
+  const lines = [];
+  if (primarySource) lines.push(`원문: ${primarySource}`);
+  for (const r of refItems) {
+    if (r.link) lines.push(`참고: ${r.title} - ${r.link}`);
+  }
+  if (imageUrls.length) lines.push(`사진 출처: ${imageUrls.join(', ')}`);
+  if (lines.length === 0) return html;
+  return `${html}\n<h2>출처</h2>\n<p>${lines.join('<br/>')}</p>`;
 }
 
 /**
@@ -587,18 +666,31 @@ async function prepareContent(job) {
   const provider = job.ai_provider || 'gemini';
 
   if (jobType === 'rewrite') {
+    console.log('  → [rewrite] 관련 기사·블로그 검색 중...');
+    const [newsItems, blogItems] = await Promise.all([
+      searchNaver('news', job.title, apiKeys.NAVER_CLIENT_ID, apiKeys.NAVER_CLIENT_SECRET),
+      searchNaver('blog', job.title, apiKeys.NAVER_CLIENT_ID, apiKeys.NAVER_CLIENT_SECRET),
+    ]);
+    const refItems = [...newsItems.slice(0, 5), ...blogItems.slice(0, 5)];
+    console.log(`  → [rewrite] 참고자료 ${refItems.length}건 확보`);
+
     console.log('  → [rewrite] AI 리라이팅 시작...');
-    const rewrittenHtml = await rewriteContent(
-      job.title, job.content, job.ai_prompt, provider, apiKeys
+    const { html: rewrittenHtml } = await rewriteContent(
+      job.title, job.content, job.ai_prompt, provider, apiKeys, refItems
     );
     console.log('  → [rewrite] 리라이팅 완료');
 
-    console.log('  → [rewrite] 썸네일 생성 시작...');
-    const thumbPath = await generateThumbnail(
-      job.id, job.title, job.thumbnail_prompt, apiKeys.GEMINI_API_KEY
-    );
+    const withSources = appendSourcesFooter(rewrittenHtml, { refItems });
 
-    return { ...job, content: rewrittenHtml, _thumbnailLocalPath: thumbPath };
+    console.log('  → [rewrite] 썸네일 생성 시작...');
+    let thumbPath;
+    try {
+      thumbPath = await generateThumbnail(job.id, job.title, job.thumbnail_prompt, apiKeys.GEMINI_API_KEY);
+    } catch (e) {
+      console.warn(`  ⚠️  썸네일 생성 실패(발행은 계속 진행): ${e.message}`);
+    }
+
+    return { ...job, content: withSources, _thumbnailLocalPath: thumbPath };
   }
 
   if (jobType === 'scrape') {
@@ -609,23 +701,41 @@ async function prepareContent(job) {
     // 스크랩 원본 DB 저장
     await sbPatch('naver_publish_jobs', `id=eq.${job.id}`, { raw_content: scraped.bodyHtml });
 
-    // 제목이 비어있으면 스크랩 제목 사용
-    const finalTitle = job.title?.trim() || scraped.title;
+    // AI 리라이팅용 임시 제목(검색 시드로도 사용) — 실제 발행 제목은 아래 publishTitle에서 결정
+    const seedTitle = job.title?.trim() || scraped.title;
+
+    console.log('  → [scrape] 관련 기사·블로그 검색 중...');
+    const [newsItems, blogItems] = await Promise.all([
+      searchNaver('news', seedTitle, apiKeys.NAVER_CLIENT_ID, apiKeys.NAVER_CLIENT_SECRET),
+      searchNaver('blog', seedTitle, apiKeys.NAVER_CLIENT_ID, apiKeys.NAVER_CLIENT_SECRET),
+    ]);
+    const refItems = [...newsItems.slice(0, 5), ...blogItems.slice(0, 5)];
+    console.log(`  → [scrape] 참고자료 ${refItems.length}건 확보`);
 
     console.log('  → [scrape] AI 리라이팅 시작...');
-    const rewrittenHtml = await rewriteContent(
-      finalTitle, scraped.bodyHtml, job.ai_prompt, provider, apiKeys
+    const { html: rewrittenHtml, aiTitle } = await rewriteContent(
+      seedTitle, scraped.bodyHtml, job.ai_prompt, provider, apiKeys, refItems
     );
     console.log('  → [scrape] 리라이팅 완료');
 
+    // 발행 제목: 사람이 직접 넣었으면 그걸 우선, 아니면 AI가 뽑은 한국어 제목
+    // (원문이 외국어 사이트였어도 aiTitle은 항상 한국어라 그대로 씀)
+    const publishTitle = job.title?.trim() || aiTitle || seedTitle;
+
     const mixedHtml = mixContentWithImages(rewrittenHtml, scraped.imageUrls);
+    const withSources = appendSourcesFooter(mixedHtml, {
+      primarySource: job.source_url, refItems, imageUrls: scraped.imageUrls,
+    });
 
     console.log('  → [scrape] 썸네일 생성 시작...');
-    const thumbPath = await generateThumbnail(
-      job.id, finalTitle, job.thumbnail_prompt, apiKeys.GEMINI_API_KEY
-    );
+    let thumbPath;
+    try {
+      thumbPath = await generateThumbnail(job.id, publishTitle, job.thumbnail_prompt, apiKeys.GEMINI_API_KEY);
+    } catch (e) {
+      console.warn(`  ⚠️  썸네일 생성 실패(발행은 계속 진행): ${e.message}`);
+    }
 
-    return { ...job, title: finalTitle, content: mixedHtml, _thumbnailLocalPath: thumbPath };
+    return { ...job, title: publishTitle, content: withSources, _thumbnailLocalPath: thumbPath };
   }
 
   return job;
@@ -828,26 +938,42 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     }
     if (!bodyFocused) console.warn('  ⚠️ 본문 영역 포커스 실패');
 
-    // 세그먼트 순회 입력
+    // 소제목 블록 서식 적용/해제 — .github/scripts/publish-naver.js와 동일 방식.
+    // 굵게(인라인 서식)로 흉내내려던 시도는 전부 실패(글자 뒤섞임, 서식 새어나감,
+    // 문단 삭제)했었고, 에디터에 내장된 진짜 "소제목" 블록 서식(문단 서식 드롭다운
+    // → data-value="sectionTitle")을 써야 안전하다 — 커서가 문단 안에 있기만
+    // 하면 적용되는 블록 단위 명령이라 선택 영역 기반 사고가 안 생김.
+    const applySectionTitle = async () => {
+      const btn = page.locator('button[data-name="text-format"]').first();
+      if (await btn.count() === 0) return false;
+      await btn.click({ force: true }).catch(() => {});
+      await humanWait(150, 250);
+      const opt = page.locator('button[data-name="text-format"][data-value="sectionTitle"]').first();
+      if (await opt.count() === 0) {
+        await page.keyboard.press('Escape').catch(() => {});
+        return false;
+      }
+      await opt.click().catch(async () => { await opt.click({ force: true }).catch(() => {}); });
+      await humanWait(100, 200);
+      return true;
+    };
+    const revertToBody = async () => {
+      const backBtn = page.locator('button[data-name="text-format"]').first();
+      if (await backBtn.count() === 0) return;
+      await backBtn.click({ force: true }).catch(() => {});
+      await humanWait(120, 200);
+      const bodyOpt = page.locator('button[data-name="text-format"][data-value="text"]').first();
+      if (await bodyOpt.count() > 0) await bodyOpt.click().catch(() => {});
+      else await page.keyboard.press('Escape').catch(() => {});
+      await humanWait(120, 200);
+    };
+
+    // 세그먼트 순회 입력 (문단 단위 — 소제목은 블록 서식 적용)
     let imgIndex = 0;
-    let lastType = null;
     let bodyFilled = false;
-    for (const seg of segments) {
-      if (seg.type === 'text') {
-        if (lastType === 'image') {
-          // 이미지 다음 텍스트: insertImageToSE4에서 이미 Enter로 커서를 아래에 위치시켰음
-          // 클릭 재포커스 금지 → 커서가 이미지 위로 올라가는 문제 발생
-          // End 키로 현재 줄 끝 확인 후 바로 타이핑
-          await page.keyboard.press('End');
-          await humanWait(100, 200);
-        }
-        await humanType(page, seg.text);
-        bodyFilled = true;
-      } else if (seg.type === 'image') {
-        if (lastType === 'text') {
-          await page.keyboard.press('Enter');
-          await humanWait(200, 400);
-        }
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.type === 'image') {
         let tmpPath = null;
         try {
           tmpPath = await downloadImage(seg.url, imgIndex++);
@@ -861,9 +987,38 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
             console.log(`  → 임시파일 삭제: ${tmpPath}`);
           }
         }
+        // insertImageToSE4가 캡션용 빈 줄을 자동으로 만들어두므로 별도 Enter 불필요
+        continue;
       }
-      lastType = seg.type;
+
+      // 텍스트 세그먼트
+      if (i > 0 && segments[i - 1].type === 'image') {
+        // 이미지 다음 텍스트: 재클릭 금지(커서가 이미지 위로 튐) — End로 줄 끝 확인 후 타이핑
+        await page.keyboard.press('End');
+        await humanWait(100, 200);
+      }
+      if (seg.isHeading && i > 0) {
+        // 소제목 앞엔 빈 줄 하나로 본문과 시각적으로 구분(첫 줄이면 생략)
+        await page.keyboard.press('Enter').catch(() => {});
+        await humanWait(60, 100);
+      }
+      await humanType(page, seg.text);
+      bodyFilled = true;
+
+      let sectionTitleApplied = false;
+      if (seg.isHeading) {
+        sectionTitleApplied = await applySectionTitle();
+        if (!sectionTitleApplied) console.warn('  ⚠️ 소제목 서식 적용 실패 — 평문으로 남음');
+      }
+
+      await page.keyboard.press('Enter');
+      await humanWait(80, 150);
+
+      // 소제목 블록 뒤에 이어지는 문단이 소제목 서식을 물려받을 수 있어 명시적으로 되돌림
+      if (sectionTitleApplied) await revertToBody();
     }
+    const headingCount = segments.filter((s) => s.isHeading).length;
+    console.log(`  → 소제목 ${headingCount}개 서식 적용 시도됨`);
     console.log(bodyFilled ? '  → 본문 입력 완료' : '  ⚠️ 본문 입력 실패');
 
     // ── 태그 입력 (SE4: 본문에 #태그명 직접 입력 방식) ──────────────────────
@@ -1161,6 +1316,145 @@ async function processJob(job) {
   }
 }
 
+// ── 전자제품 자동 발행 (해외 뉴스 소스 → 1시간마다 자동 기사 생성) ───────────────
+// NAVER_AUTO_TECH=0 으로 끌 수 있음 (기본은 켜짐)
+const AUTO_TECH_ENABLED = process.env.NAVER_AUTO_TECH !== '0';
+const AUTO_TECH_MARKER = '__auto_tech__'; // notion_page_id 컬럼을 표식으로 재사용
+const AUTO_TECH_INTERVAL_MS = 60 * 60 * 1000; // 1시간
+const AUTO_TECH_LOOKBACK_HOURS = 24; // "최근 트렌드만" — 이 기간 안에 올라온 기사만 후보
+
+const TECH_RSS_SOURCES = [
+  { name: 'Apple Newsroom', url: 'https://www.apple.com/newsroom/rss-feed.rss' },
+  { name: 'Samsung Newsroom', url: 'https://news.samsung.com/global/feed' },
+  { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml' },
+  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
+  { name: 'Engadget', url: 'https://www.engadget.com/rss.xml' },
+  { name: '9to5Mac', url: 'https://9to5mac.com/feed/' },
+  { name: '9to5Google', url: 'https://9to5google.com/feed/' },
+  { name: 'Android Authority', url: 'https://www.androidauthority.com/feed/' },
+  { name: 'GSMArena', url: 'https://www.gsmarena.com/rss-news-reviews.php3' },
+];
+
+/**
+ * RSS 2.0 <item> 블록에서 title/link/pubDate만 정규식으로 추출.
+ * 이 스크립트는 XML 파서 의존성이 없고, RSS item 구조가 단순해 정규식으로 충분함.
+ */
+function parseRssItems(xml, sourceName) {
+  const items = [];
+  // RSS 2.0 <item> + Atom <entry> 둘 다 지원 (Apple Newsroom, The Verge는 Atom)
+  const blocks = xml.match(/<item\b[\s\S]*?<\/item>|<entry\b[\s\S]*?<\/entry>/gi) || [];
+  for (const block of blocks) {
+    const titleM = block.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+    // RSS: <link>url</link> / Atom: <link ... href="url" .../>
+    const linkTextM = block.match(/<link>([\s\S]*?)<\/link>/i);
+    const linkHrefM = block.match(/<link\b[^>]*\brel=["']?alternate["']?[^>]*\bhref=["']([^"']+)["']/i)
+      || block.match(/<link\b[^>]*\bhref=["']([^"']+)["']/i);
+    const dateM = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)
+      || block.match(/<published>([\s\S]*?)<\/published>/i)
+      || block.match(/<updated>([\s\S]*?)<\/updated>/i);
+    const title = titleM ? titleM[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : '';
+    const link = (linkTextM ? linkTextM[1].trim() : '') || (linkHrefM ? linkHrefM[1].trim() : '');
+    const rawDate = dateM ? dateM[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : '';
+    const pubDate = rawDate ? new Date(rawDate) : null;
+    if (title && link && pubDate && !isNaN(pubDate.getTime())) {
+      items.push({ title, link, pubDate, source: sourceName });
+    }
+  }
+  return items;
+}
+
+/** 해외 전자제품 사이트 RSS를 모아 최근(기본 24시간 이내) 기사만 최신순으로 반환 */
+async function fetchRecentTechArticles(hoursBack = AUTO_TECH_LOOKBACK_HOURS) {
+  const cutoff = Date.now() - hoursBack * 60 * 60 * 1000;
+  const perSource = await Promise.all(TECH_RSS_SOURCES.map(async (src) => {
+    try {
+      const res = await fetch(src.url, {
+        headers: { 'User-Agent': USER_AGENTS[0] },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return [];
+      return parseRssItems(await res.text(), src.name);
+    } catch { return []; }
+  }));
+  return perSource.flat()
+    .filter((item) => item.pubDate.getTime() >= cutoff)
+    .sort((a, b) => b.pubDate - a.pubDate);
+}
+
+/** 이미 발행에 쓴 기사(source_url)는 제외하고 최신 기사 하나를 고른다 */
+async function pickAutoTechTopic() {
+  const candidates = await fetchRecentTechArticles();
+  if (candidates.length === 0) return null;
+  // 최근 auto-tech 작업들의 source_url만 가져와 로컬에서 비교 (후보 URL 수가
+  // 많을 때 or=() 필터를 그만큼 길게 만드는 것보다 안전하고 간단함)
+  const cutoffIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const usedRows = await sbGet(
+    'naver_publish_jobs',
+    `notion_page_id=eq.${AUTO_TECH_MARKER}&created_at=gte.${cutoffIso}&select=source_url`
+  ).catch(() => []);
+  const used = new Set(usedRows.map((r) => r.source_url));
+  return candidates.find((c) => !used.has(c.link)) || null;
+}
+
+async function getAutoTechUserId() {
+  const rows = await sbGet('naver_connections', 'select=user_id&limit=1').catch(() => []);
+  return rows[0]?.user_id || null;
+}
+
+/** 1시간에 한 번, 최근 해외 전자제품 뉴스에서 새 글감을 찾아 자동으로 발행 작업을 만들고 바로 처리 */
+async function maybeRunAutoTech() {
+  if (!AUTO_TECH_ENABLED) return;
+  try {
+    const last = await sbGet(
+      'naver_publish_jobs',
+      `notion_page_id=eq.${AUTO_TECH_MARKER}&order=created_at.desc&limit=1&select=created_at`
+    );
+    const lastAt = last[0]?.created_at ? new Date(last[0].created_at).getTime() : 0;
+    if (Date.now() - lastAt < AUTO_TECH_INTERVAL_MS) return;
+
+    console.log('\n⏰ [auto-tech] 1시간 주기 도달 — 최근 24시간 내 전자제품 뉴스 탐색 중...');
+    const topic = await pickAutoTechTopic();
+    if (!topic) {
+      console.log('   → 새로 쓸 만한 최근 기사가 없음, 이번 회차는 건너뜀');
+      return;
+    }
+    console.log(`   → 선정: [${topic.source}] ${topic.title}`);
+
+    const userId = await getAutoTechUserId();
+    if (!userId) {
+      console.log('   → naver_connections에 연결된 계정이 없어 건너뜀');
+      return;
+    }
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/naver_publish_jobs`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json', Prefer: 'return=representation',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        title: '',
+        content: '',
+        job_type: 'scrape',
+        source_url: topic.link,
+        ai_provider: 'groq',
+        category_no: 18, // 전자제품
+        is_publish: true,
+        notion_page_id: AUTO_TECH_MARKER,
+        status: 'pending',
+      }),
+    });
+    const rows = await res.json();
+    const job = rows[0];
+    if (!job) { console.log('   → 작업 생성 실패'); return; }
+    console.log(`   → 작업 생성됨(${job.id}) — 바로 처리 시작`);
+    await processJob(job);
+  } catch (e) {
+    console.error('[auto-tech] 오류:', e.message);
+  }
+}
+
 // ── 메인 루프 ─────────────────────────────────────────────────────────────────
 
 async function run() {
@@ -1193,6 +1487,8 @@ async function run() {
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify({ status: 'pending' }),
       }).catch(() => {});
+
+      await maybeRunAutoTech();
 
       let jobs = [];
       if (FORCE) {

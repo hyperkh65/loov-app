@@ -18,6 +18,7 @@ import { runCoupangAuto } from '@/lib/scheduler/coupang-runner';
 import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
 import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
 import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
+import { runNaverTechAuto } from '@/lib/scheduler/naver-tech-runner';
 import type { Schedule } from '@/lib/scheduler';
 
 export const maxDuration = 300;
@@ -91,6 +92,12 @@ async function executeSchedule(schedule: Schedule) {
         const r = await runInstagramAuto(schedule);
         result = r as unknown as Record<string, unknown>;
         summary = `"${r.topic}" 인스타 ${r.published ? '발행 완료' : '캡션 생성(미발행)'}`;
+        break;
+      }
+      case 'naver_tech_auto': {
+        const r = await runNaverTechAuto(schedule.user_id);
+        result = r as unknown as Record<string, unknown>;
+        summary = r.summary;
         break;
       }
     }
