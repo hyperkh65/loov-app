@@ -273,6 +273,17 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         ).catch(() => -1);
         console.log(`[Playwright] Body pre-clear length: ${preClearLen} -> post-clear: ${postClearLen}`);
 
+        // 실사용 중 확인: 본문의 "첫 번째" 문단이 통째로 사라지는 사고가 있었다
+        // — 제목을 나중에 입력할 때 "본문에서 뽑아 제목으로 제안"하는 스마트
+        // 에디터 동작이 단순히 복사가 아니라 본문에서 잘라내는(cut) 방식으로
+        // 보인다(제목 검증 단계의 "actual" 값이 정확히 본문 1번째 문단 전체와
+        // 일치했던 사례로 확인). 진짜 첫 문단이 희생되는 걸 막기 위해 버릴 수
+        // 있는 더미 문단을 먼저 하나 타이핑해서 이 동작이 그걸 대신 가져가게
+        // 한다 — 화면엔 위쪽에 빈 줄 하나 더 생기는 정도의 부작용만 남는다.
+        await page.keyboard.type('​', { delay: 5 });
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(80);
+
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
