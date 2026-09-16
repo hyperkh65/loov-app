@@ -273,6 +273,34 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         ).catch(() => -1);
         console.log(`[Playwright] Body pre-clear length: ${preClearLen} -> post-clear: ${postClearLen}`);
 
+        // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
+        // 손글씨체로 맞춰져 있어서, 숫자·스펙 위주 정보성 글이 전부 삐뚤빼뚤한
+        // 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인). 처음엔 "서식
+        // 명령이라 선택 영역이 필요할 것"이라 추측하고 Ctrl+A 후 적용을 시도했지만
+        // 계속 실패했는데, 실제 드롭다운 HTML을 통째로 찍어보니 원인은 선택 영역이
+        // 아니라 셀렉터였다 — 이 드롭다운엔 `<li>`가 컨테이너 하나뿐이고, 진짜
+        // 클릭해야 할 옵션들은 전부 `data-value="nanumgothic"` 같은 속성이 붙은
+        // `<button>`이었다. 즉 매번 "나눔고딕" 텍스트를 포함하는 첫 `<li>`(바깥
+        // 정적 컨테이너 자체)만 반복해서 클릭했던 것 — 지금까지의 실패는 타이밍
+        // 문제가 아니라 처음부터 엉뚱한 요소를 누르고 있었던 것뿐이었다. 발행된
+        // 글의 실제 HTML을 보면 각 span에 서체 클래스가 타이핑 시점에 바로
+        // 박히므로(나중에 통째로 안 바뀜), 타이핑을 시작하기 "전" 지금 여기서
+        // 바꿔야 새로 치는 글자부터 반영된다.
+        const fontOptionBtn = page.locator('button[data-name="font-family"][data-value="nanumgothic"]').first();
+        if (await fontOptionBtn.count() > 0) {
+          const fontToggleBtn = page.getByRole('button', { name: /서체 변경/ }).first();
+          await fontToggleBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(300);
+          await fontOptionBtn.click().catch(async (e) => {
+            console.warn(`[Playwright] 서체 옵션 클릭 실패, force로 재시도: ${e.message}`);
+            await fontOptionBtn.click({ force: true }).catch(() => {});
+          });
+          console.log('[Playwright] 서체를 나눔고딕으로 변경');
+          await page.waitForTimeout(200);
+        } else {
+          console.warn('[Playwright] 나눔고딕 서체 버튼을 못 찾음 — 서체 변경 건너뜀');
+        }
+
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
@@ -316,72 +344,6 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       }
     }
     if (!bodyFilled) console.warn('[Playwright] Body selector not found — 아래 진단 정보 참고');
-
-    // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
-    // 손글씨체로 맞춰져 있어서, 숫자·스펙 위주 정보성 글이 전부 삐뚤빼뚤한
-    // 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인). 타이핑 "도중"에
-    // 커서만 있는 상태(선택 영역 없음)에서 서체를 바꿔봤더니 실제로는 전혀
-    // 적용이 안 됐다 — 이 에디터는 서식 명령을 실제 선택 영역에만 적용하는
-    // 것으로 보임(굵게 버튼도 같은 이유로 실패했었음). 그래서 본문을 전부 다
-    // 채운 "뒤에" 전체를 선택하고 한 번에 서체를 바꾼다 — 이미 확정된 텍스트를
-    // 대상으로 하는 단일 동작이라 타이핑 이벤트와 경쟁할 여지가 없다.
-    if (bodyFilled) {
-      const fontBtn = page.getByRole('button', { name: /서체 변경/ }).first();
-      if (await fontBtn.count() > 0) {
-        const activeBefore = await mainFrame.evaluate(() => {
-          const a = document.activeElement;
-          return a ? { tag: a.tagName, cls: a.className, editable: a.isContentEditable } : null;
-        }).catch(() => null);
-        console.log(`[Playwright] Ctrl+A 직전 activeElement: ${JSON.stringify(activeBefore)}`);
-        await page.keyboard.press('Control+A').catch(() => {});
-        await page.waitForTimeout(200);
-        // 진단: Ctrl+A가 실제로 뭔가 선택했는지 확인 — 선택 길이가 0이면
-        // 이후 서체 적용이 안 먹히는 게 당연함.
-        const selLenBefore = await mainFrame.evaluate(() => {
-          const s = window.getSelection?.();
-          return s ? s.toString().length : -1;
-        }).catch(() => -2);
-        console.log(`[Playwright] Ctrl+A 후 선택된 텍스트 길이: ${selLenBefore}`);
-        await fontBtn.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(300);
-        // 실제 옵션 텍스트는 이름+툴팁이 겹쳐서 "나눔고딕나눔고딕"처럼 나옴
-        // (실사용으로 확인) — exact 매치 대신 포함 매치로 찾는다. "나눔바른고딕"은
-        // "나눔고딕"을 부분 문자열로 포함하지 않으므로 안전함.
-        const fullDropdownHtml = await page.locator('li.se-toolbar-item-font-family').first()
-          .evaluate(el => el.outerHTML).catch(() => null);
-        console.log(`[Playwright] 서체 드롭다운 전체 HTML: ${fullDropdownHtml}`);
-        const fontOption = page.locator('li').filter({ hasText: '나눔고딕' }).first();
-        if (await fontOption.count() > 0) {
-          const optionInfo = await fontOption.evaluate(el => ({
-            tag: el.tagName, cls: el.className, html: el.outerHTML.slice(0, 200), visible: !!(el.offsetWidth || el.offsetHeight),
-          })).catch(() => null);
-          console.log(`[Playwright] 서체 옵션 요소 정보: ${JSON.stringify(optionInfo)}`);
-          await fontOption.click().catch(async (e) => {
-            console.warn(`[Playwright] 서체 옵션 일반 클릭 실패, force로 재시도: ${e.message}`);
-            await fontOption.click({ force: true }).catch(() => {});
-          });
-          await page.waitForTimeout(300);
-          const selLenAfter = await mainFrame.evaluate(() => {
-            const s = window.getSelection?.();
-            return s ? s.toString().length : -1;
-          }).catch(() => -2);
-          console.log(`[Playwright] 서체 클릭 후 선택된 텍스트 길이: ${selLenAfter}`);
-          await page.screenshot({ path: '/tmp/naver-after-font.png', fullPage: true }).catch(() => {});
-          console.log('[Playwright] 서체를 나눔고딕으로 변경(전체 선택 후 일괄 적용)');
-        } else {
-          const optionTexts = await page.locator('li, [role="option"]').evaluateAll(
-            els => els.map(e => (e.textContent || '').trim()).filter(Boolean).slice(0, 30)
-          ).catch(() => []);
-          console.warn(`[Playwright] "나눔고딕" 옵션을 못 찾음 — 서체 변경 건너뜀. 실제 옵션들: ${JSON.stringify(optionTexts)}`);
-          await page.keyboard.press('Escape').catch(() => {});
-        }
-        await page.waitForTimeout(300);
-        // 전체 선택 해제 — 안 풀면 이어지는 제목 입력 단계와 간섭할 수 있음.
-        await page.keyboard.press('End').catch(() => {});
-      } else {
-        console.warn('[Playwright] 서체 변경 버튼을 못 찾음');
-      }
-    }
 
     // 본문 관련 비동기 동작(자동저장, 제목 제안 등)이 다 정리될 시간을 준다 —
     // 이게 끝난 뒤에 제목을 입력해야 그 사이에 끼어들 여지가 없어짐.
