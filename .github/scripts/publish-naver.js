@@ -292,9 +292,20 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // 첫 시도에서 잡힌 건 "documentToolbar"(사진/파일/구분선 등 삽입용
         // 툴바)였다 — 서체/굵게가 있던 곳은 텍스트에 포커스가 있을 때만 보이는
         // 별도의 "propertyToolbar"다. 그 컨테이너를 정확히 지정해서 다시 찍는다.
-        const propToolbarDiag = await page.locator('[data-group="propertyToolbar"]').first()
-          .evaluate(el => el.closest('ul,div[class*="toolbar"]')?.outerHTML || el.outerHTML).catch(() => null);
-        console.log(`[Playwright] 속성 툴바(propertyToolbar) HTML 진단: ${propToolbarDiag}`);
+        // "본문" / "문단 서식 변경" 버튼(data-name="text-format")을 찾음 —
+        // 진짜 "제목" 블록 서식이 있는지 드롭다운을 열어서 옵션을 확인한다.
+        const textFormatBtn = page.locator('button[data-name="text-format"]').first();
+        if (await textFormatBtn.count() > 0) {
+          await textFormatBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(300);
+          const textFormatOptions = await page.locator('[data-name="text-format"][data-role="option"], [data-group="propertyToolbar"][data-value]').evaluateAll(
+            els => els.map(e => ({ value: e.getAttribute('data-value'), text: (e.textContent || '').trim() }))
+          ).catch(() => []);
+          console.log(`[Playwright] 문단 서식 옵션 목록: ${JSON.stringify(textFormatOptions)}`);
+          await page.keyboard.press('Escape').catch(() => {});
+        } else {
+          console.warn('[Playwright] 문단 서식 버튼을 못 찾음');
+        }
 
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
