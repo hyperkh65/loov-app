@@ -384,6 +384,18 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // 한 번 나눔고딕을 선택해두면 계정 기본값으로 남을 가능성이 있음(현재
         // "바른히피"가 그런 식으로 몇 시간째 유지되고 있는 것과 같은 패턴).
 
+        // 실사용 중 확인: 소제목 블록 서식(sectionTitle)을 여러 번 켰다 껐다
+        // 반복한 뒤 제목을 입력했더니, 제목 span의 글자 크기 클래스가
+        // `se-fs-fs19`가 아니라 숫자 없이 `se-fs-`로 비어 있는 상태로 발행돼서
+        // 제목이 사실상 안 보이는(글자 크기 0에 가까움) 사고로 이어짐 — 문단
+        // 서식 드롭다운을 반복 조작하면서 에디터의 "현재 글자 크기" 내부
+        // 상태가 깨지는 것으로 보인다. 제목을 입력하기 전에 평범한 본문
+        // 문단을 한 번 클릭해서 이 상태를 정상값으로 되돌린다.
+        await el.click({ force: true }).catch(() => {});
+        await page.waitForTimeout(150);
+        await page.keyboard.press('End').catch(() => {});
+        await page.waitForTimeout(150);
+
         bodyFilled = true;
         break;
       }
