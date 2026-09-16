@@ -289,9 +289,12 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // 영역 없이 커서 위치만으로 적용되는 진짜 블록 명령이라 지금까지 겪은
         // 선택 기반 사고(글자 뒤섞임, 문단 통째로 삭제)를 피할 수 있을 것으로
         // 예상됨. 툴바 전체를 통째로 찍어서 실제로 그런 옵션이 있는지 본다.
-        const toolbarDiag = await page.locator('.se-toolbar, [class*="toolbar"]').first()
-          .evaluate(el => el.outerHTML).catch(() => null);
-        console.log(`[Playwright] 툴바 전체 HTML 진단: ${toolbarDiag}`);
+        // 첫 시도에서 잡힌 건 "documentToolbar"(사진/파일/구분선 등 삽입용
+        // 툴바)였다 — 서체/굵게가 있던 곳은 텍스트에 포커스가 있을 때만 보이는
+        // 별도의 "propertyToolbar"다. 그 컨테이너를 정확히 지정해서 다시 찍는다.
+        const propToolbarDiag = await page.locator('[data-group="propertyToolbar"]').first()
+          .evaluate(el => el.closest('ul,div[class*="toolbar"]')?.outerHTML || el.outerHTML).catch(() => null);
+        console.log(`[Playwright] 속성 툴바(propertyToolbar) HTML 진단: ${propToolbarDiag}`);
 
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
