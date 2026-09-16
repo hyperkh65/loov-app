@@ -5,6 +5,9 @@
  */
 
 const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -44,22 +47,17 @@ async function sbInsert(table, body) {
   if (!res.ok) console.warn(`sbInsert ${table} failed: ${res.status}`);
 }
 
-// HTML을 문단 배열로 — 클립보드 paste 이벤트 흉내는 스마트에디터 ONE의 내부
-// 상태에 실제로 반영되지 않는 걸 실사용 중 확인함(제목은 채워졌는데 본문은 빈
-// placeholder 그대로였음). 진짜 키보드 타이핑만 에디터가 인식하므로 리치 HTML
-// 붙여넣기는 포기하되, 원본이 h1~h6(소제목)였는지는 태그별로 따로 파싱해서
-// 남겨둔다 — 타이핑 후 그 줄만 골라 굵게 처리해서 본문과 구분되게 하기 위함
-// (전부 뭉개서 순수 텍스트로만 넣으면 소제목과 본문이 똑같아 보이는 문제가 있었음).
+// HTML을 { type: 'text'|'image', ... } 블록 배열로 — 클립보드 paste 이벤트
+// 흉내는 스마트에디터 ONE의 내부 상태에 실제로 반영되지 않는 걸 실사용 중
+// 확인함(제목은 채워졌는데 본문은 빈 placeholder 그대로였음). 진짜 키보드
+// 타이핑만 에디터가 인식하므로 리치 HTML 붙여넣기는 포기하되, 원본이 h1~h6
+// (소제목)였는지, <figure><img>였는지는 따로 파싱해서 남겨둔다 — 이미지는
+// 실제 파일 업로드로 별도 삽입해야 하고, 소제목은 앞뒤 빈 줄로 구분하기 위함.
 function htmlToParagraphs(html) {
   const stripInline = (s) => s
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-  // 줄 맨 앞이 "24." "3)" 같은 숫자+구두점+스페이스면 스마트에디터가 타이핑 중
-  // 자동으로 번호매기기 리스트(<ol><li>)로 바꿔버린다 — 원문 숫자와 에디터가
-  // 새로 매긴 번호가 겹쳐 보이는 것뿐 아니라, 발행된 글의 실제 HTML을 까본 결과
-  // 그 줄 뒤에 오는 모든 문단이 통째로 같은 리스트에 편입되고 글자가 겹쳐
-  // 입력되는(예: "SS25울트라") 훨씬 심각한 사고로 이어지는 걸 확인함. 폭 0 문자를
   // 줄 맨 앞이 "24." "3)" 같은 숫자+구두점이면 스마트에디터가 타이핑 중 자동으로
   // 번호매기기 리스트(<ol><li>)로 바꿔버린다 — 원문 숫자와 에디터가 새로 매긴
   // 번호가 겹쳐 보이는 것뿐 아니라, 발행된 글의 실제 HTML을 까본 결과 그 줄
@@ -73,14 +71,22 @@ function htmlToParagraphs(html) {
   const stripHeadingNumber = (s) => s.replace(/^\d+[.)]\s*/, '');
   const dodgeAutoNumber = (s) => s.replace(/^(\d+)([.)])/, `$1​$2`);
 
-  const blockRe = /<(p|h[1-6]|li|figcaption)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  // <figure>...<img src="...">...</figure> 통째로 먼저 매치해서 이미지 블록으로
+  // 뽑아낸다(그 안의 <figcaption>은 소제목과 똑같은 텍스트를 다시 넣는 것뿐이라
+  // 별도 본문 문단으로 안 만듦 — 예전엔 이게 문단으로 잡혀서 소제목이 중복
+  // 타이핑되는 부작용이 있었음). 그 외엔 기존대로 p/h1~6/li 블록.
+  const blockRe = /<figure\b[^>]*>[\s\S]*?<img\b[^>]*\bsrc="([^"]+)"[^>]*>[\s\S]*?<\/figure>|<(p|h[1-6]|li)\b[^>]*>([\s\S]*?)<\/\2>/gi;
   const results = [];
   let m;
   while ((m = blockRe.exec(html))) {
-    const isHeading = /^h[1-6]$/i.test(m[1]);
-    for (const line of stripInline(m[2]).split('\n').map(s => s.trim()).filter(Boolean)) {
+    if (m[1]) {
+      results.push({ type: 'image', src: m[1] });
+      continue;
+    }
+    const isHeading = /^h[1-6]$/i.test(m[2]);
+    for (const line of stripInline(m[3]).split('\n').map(s => s.trim()).filter(Boolean)) {
       const text = isHeading ? stripHeadingNumber(line) : dodgeAutoNumber(line);
-      results.push({ text, isHeading });
+      results.push({ type: 'text', text, isHeading });
     }
   }
   if (results.length > 0) return results;
@@ -89,7 +95,7 @@ function htmlToParagraphs(html) {
   // 폴백, 전부 본문(굵게 처리 없음) 취급.
   return stripInline(html.replace(/<\/div>/gi, '\n'))
     .split('\n').map(s => s.trim()).filter(Boolean)
-    .map(text => ({ text: dodgeAutoNumber(text), isHeading: false }));
+    .map(text => ({ type: 'text', text: dodgeAutoNumber(text), isHeading: false }));
 }
 
 // ── Playwright로 네이버 블로그 발행 ───────────────────────────────────────────
@@ -187,6 +193,45 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     await dismissPopup();
     await page.keyboard.press('Escape').catch(() => {});
 
+    // 이미지 삽입 — 텍스트와 달리 클립보드/붙여넣기 흉내가 아니라 실제 파일
+    // 업로드로 넣는다. "사진" 툴바 버튼을 누르면 네이티브 파일 선택창이 뜨는
+    // 표준 <input type=file> 흐름이라(사람이 실제로 쓰는 것과 동일한 경로),
+    // 스마트에디터 내부 상태를 못 속이던 클립보드 이벤트 흉내보다 훨씬 안정적일
+    // 것으로 예상됨 — 본문 텍스트를 리치 HTML paste로 못 넣었던 것과 같은 이유로
+    // 이미지도 paste event 흉내로는 실패할 가능성이 높아 처음부터 이 방식을 씀.
+    const tmpImgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'naver-img-'));
+    let imgCounter = 0;
+    const insertImageAtCursor = async (imageUrl) => {
+      const res = await fetch(imageUrl).catch(() => null);
+      if (!res || !res.ok) {
+        console.warn(`[Playwright] 이미지 다운로드 실패, 건너뜀: ${imageUrl}`);
+        return false;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      const ext = (imageUrl.match(/\.(jpg|jpeg|png|gif|webp)(?:[?#]|$)/i)?.[1] || 'jpg').toLowerCase();
+      const localPath = path.join(tmpImgDir, `img-${imgCounter++}.${ext}`);
+      fs.writeFileSync(localPath, buf);
+
+      const photoBtn = page.getByRole('button', { name: '사진', exact: true }).first();
+      if (await photoBtn.count() === 0) {
+        console.warn('[Playwright] "사진" 버튼을 못 찾음 — 이미지 삽입 건너뜀');
+        return false;
+      }
+      try {
+        const [chooser] = await Promise.all([
+          page.waitForEvent('filechooser', { timeout: 8000 }),
+          photoBtn.click({ force: true }),
+        ]);
+        await chooser.setFiles(localPath);
+        await page.waitForTimeout(2000); // 업로드 + 에디터 삽입 처리 대기
+        console.log(`[Playwright] 이미지 삽입 완료: ${imageUrl}`);
+        return true;
+      } catch (e) {
+        console.warn(`[Playwright] 이미지 삽입 실패(${imageUrl}): ${e.message}`);
+        return false;
+      }
+    };
+
     // 2. 본문을 먼저 입력한다 — 실사용 중 확인: 제목을 먼저 채운 뒤 본문을 타이핑하면
     // "본문에서 뽑은 문구를 제목에 자동 제안" 같은 스마트에디터 내부 동작(디바운스로
     // 뒤늦게 실행되는 듯)이 제목 타이핑 도중 커서 위치에 본문 일부를 끼워넣는 사고가
@@ -222,8 +267,19 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         ).catch(() => -1);
         console.log(`[Playwright] Body pre-clear length: ${preClearLen} -> post-clear: ${postClearLen}`);
 
+        let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
+
+          if (para.type === 'image') {
+            const ok = await insertImageAtCursor(para.src);
+            if (ok) imagesInserted++;
+            // 이미지 삽입 뒤 스마트에디터가 캡션 입력용 빈 줄을 자동으로 만들어
+            // 주므로, 다음 문단은 그 줄에 이어서 타이핑하면 됨 — 별도 Enter 불필요.
+            await page.waitForTimeout(300);
+            continue;
+          }
+
           // 소제목(h1~h6 출신) 앞엔 빈 줄을 하나 넣어 본문과 시각적으로 구분한다
           // (원본 템플릿의 소제목 위쪽 여백 의도를 살림). 글 맨 첫 줄이면 생략.
           //
@@ -247,7 +303,8 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
           await page.waitForTimeout(80);
         }
         const headingCount = paragraphs.filter(p => p.isHeading).length;
-        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} paragraphs, ${headingCount} headings spaced)`);
+        const imageCount = paragraphs.filter(p => p.type === 'image').length;
+        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings spaced, ${imagesInserted}/${imageCount} images inserted)`);
         bodyFilled = true;
         break;
       }
