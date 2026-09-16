@@ -204,6 +204,24 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         await dismissPopup();
         await el.click({ force: true });
         await page.waitForTimeout(300);
+
+        // 실사용 중 확인: 같은 계정으로 반복 발행하다 보면 매번 완전히 새 글
+        // 페이지로 이동해도 본문에 예전 임시저장 내용(예: 몇 번 전 테스트에서
+        // 깨진 채로 남은 소제목 문단)이 남아있는 경우가 있고, 우리가 새로
+        // 타이핑한 내용과 나란히 섞여서 발행됨 — 새 글인데도 완전히 빈 상태가
+        // 아닐 수 있다는 뜻. 타이핑 시작 전에 무조건 전체 선택 후 삭제해서
+        // 편집기를 확실히 비운다.
+        const preClearLen = await mainFrame.evaluate(() =>
+          (document.querySelector('.se-main-container')?.innerText || '').length
+        ).catch(() => -1);
+        await page.keyboard.press('Control+A').catch(() => {});
+        await page.keyboard.press('Backspace').catch(() => {});
+        await page.waitForTimeout(300);
+        const postClearLen = await mainFrame.evaluate(() =>
+          (document.querySelector('.se-main-container')?.innerText || '').length
+        ).catch(() => -1);
+        console.log(`[Playwright] Body pre-clear length: ${preClearLen} -> post-clear: ${postClearLen}`);
+
         for (let i = 0; i < paragraphs.length; i++) {
           const para = paragraphs[i];
           // 소제목(h1~h6 출신) 앞엔 빈 줄을 하나 넣어 본문과 시각적으로 구분한다
