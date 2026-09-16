@@ -317,8 +317,10 @@ export async function POST(req: NextRequest) {
         );
 
         // ── 15. ads.txt 등록 (AdSense가 이 파일 없으면 자동광고 승인/노출을 안 함)
+        // ads.txt 스펙은 "pub-..." 형식만 유효 — 광고 태그용 "ca-pub-..." 그대로 쓰면
+        // 구글이 인증된 판매자로 인식 못 해 수익에 영향(2026-09-17 4개 사이트에서 실측 확인).
         await run('💵 ads.txt 등록 중...',
-          `echo "google.com, ${PUB_ID}, DIRECT, f08c47fec0942fa0" > ${WP_DIR}/ads.txt && echo ok`,
+          `echo "google.com, ${PUB_ID.replace(/^ca-/, '')}, DIRECT, f08c47fec0942fa0" > ${WP_DIR}/ads.txt && echo ok`,
           true
         );
         send('✅ ads.txt 등록 완료');
