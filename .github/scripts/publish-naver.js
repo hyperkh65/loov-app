@@ -284,30 +284,17 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         await page.keyboard.press('Enter');
         await page.waitForTimeout(80);
 
-        // 소제목을 인라인 굵게로 흉내내려던 세 번의 시도는 전부 실패(글자
-        // 뒤섞임, 서식 새어나감, 문단 통째로 삭제)했다. 알고 보니 이 에디터엔
-        // 아예 진짜 블록 서식으로 "소제목"이 내장돼 있었다(문단 서식 변경
-        // 드롭다운 → data-value="sectionTitle", "본문"/"인용구"와 나란히 있는
-        // 정식 옵션 — 실사용으로 덤프해서 확인함). 이건 선택 영역이 아니라 커서가
-        // 그 문단 안에 있기만 하면 적용되는 블록 단위 명령이라, 지금까지 겪은
-        // 선택 기반 사고들과 애초에 종류가 다른 안전한 방법이다.
-        const applySectionTitle = async () => {
-          const btn = page.locator('button[data-name="text-format"]').first();
-          if (await btn.count() === 0) return false;
-          await btn.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(200);
-          const opt = page.locator('button[data-name="text-format"][data-value="sectionTitle"]').first();
-          if (await opt.count() === 0) {
-            await page.keyboard.press('Escape').catch(() => {});
-            return false;
-          }
-          await opt.click().catch(async (e) => {
-            console.warn(`[Playwright] 소제목 서식 클릭 실패, force로 재시도: ${e.message}`);
-            await opt.click({ force: true }).catch(() => {});
-          });
-          await page.waitForTimeout(150);
-          return true;
-        };
+        // 소제목에 진짜 "소제목" 블록 서식(문단 서식 드롭다운 →
+        // data-value="sectionTitle")을 적용하는 방법을 찾아서 시도했다 —
+        // 선택 영역이 필요 없는 블록 단위 명령이라 지금까지 겪은 선택 기반
+        // 사고(글자 뒤섞임, 서식 새어나감, 문단 삭제)는 실제로 안 났다. 그런데
+        // 이 드롭다운을 반복 조작한 뒤 제목을 입력했더니 제목 span의 글자
+        // 크기 클래스가 `se-fs-fs19`가 아니라 숫자 없는 `se-fs-`로 발행되는
+        // 새로운 사고로 이어졌다(제목이 사실상 안 보이게 됨 — 실제 발행 결과
+        // 2건 연속 확인). 본문 문단 재클릭으로 상태를 되돌리려 했지만 안 먹혀서
+        // 원인 불명 상태로 포기함 — 소제목 스타일보다 제목이 제대로 보이는 게
+        // 더 중요하므로 이 기능은 완전히 뺀다. 빈 줄로 여백만 주는 방식으로
+        // 되돌린다.
 
         let imagesInserted = 0;
         for (let i = 0; i < paragraphs.length; i++) {
@@ -329,21 +316,6 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
             await page.waitForTimeout(80);
           }
           await page.keyboard.type(para.text, { delay: 5 });
-
-          let sectionTitleApplied = false;
-          if (para.isHeading) {
-            // 굵게로 흉내내려던 세 번의 시도는 전부 실패(글자 뒤섞임, 서식
-            // 새어나감, 문단 통째로 삭제)했다 — 전부 "선택 영역"에 서식을
-            // 적용하는 방식이었던 게 문제였다. 이 에디터엔 진짜 "소제목" 블록
-            // 서식이 내장되어 있어서(문단 서식 드롭다운 → data-value=
-            // "sectionTitle") 커서가 이 문단 안에 있기만 하면 적용된다 — 선택
-            // 영역이 필요 없는 블록 단위 명령이라 안전하다.
-            sectionTitleApplied = await applySectionTitle();
-            if (!sectionTitleApplied) {
-              console.warn('[Playwright] 소제목 서식 적용 실패 — 평문으로 남음');
-            }
-          }
-
           await page.keyboard.press('Enter');
           // Enter 직후 스마트에디터가 새 문단 블록을 만드는 처리가 끝나기 전에
           // 바로 다음 문단 타이핑을 시작하면 그 문단 첫 글자가 중복 입력되는
@@ -351,29 +323,10 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
           // "운영체제"→"운운영체제"). 다음 타이핑 전에 짧게 쉬어서 블록 생성이
           // 끝나길 기다린다.
           await page.waitForTimeout(80);
-
-          // 소제목 블록 뒤에 이어지는 일반 문단이 "소제목" 서식을 물려받을 수
-          // 있으므로(줄바꿈 직후 커서가 새 문단으로 넘어간 상태), 명시적으로
-          // "본문"으로 되돌린다. 다음 블록이 또 소제목이면 곧 다시 바뀌므로
-          // 무해하다.
-          if (sectionTitleApplied) {
-            const backBtn = page.locator('button[data-name="text-format"]').first();
-            if (await backBtn.count() > 0) {
-              await backBtn.click({ force: true }).catch(() => {});
-              await page.waitForTimeout(150);
-              const bodyOpt = page.locator('button[data-name="text-format"][data-value="text"]').first();
-              if (await bodyOpt.count() > 0) {
-                await bodyOpt.click().catch(() => {});
-              } else {
-                await page.keyboard.press('Escape').catch(() => {});
-              }
-              await page.waitForTimeout(150);
-            }
-          }
         }
         const headingCount = paragraphs.filter(p => p.isHeading).length;
         const imageCount = paragraphs.filter(p => p.type === 'image').length;
-        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings section-titled, ${imagesInserted}/${imageCount} images inserted)`);
+        console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings spaced, ${imagesInserted}/${imageCount} images inserted)`);
 
         // 서체(폰트) 자동 변경 시도는 9차례(타이핑 전/후, 선택영역 있음/없음,
         // 셀렉터 여러 버전) 전부 실패로 포기함 — 툴바 라벨은 매번 "나눔고딕"으로
@@ -383,18 +336,6 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         // 재현 가능한 원인을 못 찾음. 사용자가 네이버 블로그 에디터에서 수동으로
         // 한 번 나눔고딕을 선택해두면 계정 기본값으로 남을 가능성이 있음(현재
         // "바른히피"가 그런 식으로 몇 시간째 유지되고 있는 것과 같은 패턴).
-
-        // 실사용 중 확인: 소제목 블록 서식(sectionTitle)을 여러 번 켰다 껐다
-        // 반복한 뒤 제목을 입력했더니, 제목 span의 글자 크기 클래스가
-        // `se-fs-fs19`가 아니라 숫자 없이 `se-fs-`로 비어 있는 상태로 발행돼서
-        // 제목이 사실상 안 보이는(글자 크기 0에 가까움) 사고로 이어짐 — 문단
-        // 서식 드롭다운을 반복 조작하면서 에디터의 "현재 글자 크기" 내부
-        // 상태가 깨지는 것으로 보인다. 제목을 입력하기 전에 평범한 본문
-        // 문단을 한 번 클릭해서 이 상태를 정상값으로 되돌린다.
-        await el.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(150);
-        await page.keyboard.press('End').catch(() => {});
-        await page.waitForTimeout(150);
 
         bodyFilled = true;
         break;
