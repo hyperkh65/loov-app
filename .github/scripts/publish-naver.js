@@ -312,40 +312,14 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         const imageCount = paragraphs.filter(p => p.type === 'image').length;
         console.log(`[Playwright] Body typed via keyboard: ${sel} (${paragraphs.length} blocks, ${headingCount} headings spaced, ${imagesInserted}/${imageCount} images inserted)`);
 
-        // 실사용 중 확인: 이 블로그 계정 에디터의 기본/직전 서체가 "바른히피"라는
-        // 손글씨체로 맞춰져 있어서, 숫자·스펙 위주 정보성 글이 전부 삐뚤빼뚤한
-        // 손글씨로 발행되는 사고가 있었음(스크린샷으로 확인). 실제 옵션 버튼
-        // (`data-value="nanumgothic"`)을 정확히 찾아 클릭해도 툴바 라벨은
-        // "나눔고딕"으로 바뀌었다고 나오는데 실제 발행 글의 span엔 여전히 예전
-        // 서체 클래스가 박혀 있었다 — 빈 커서 상태(선택 영역 없음)에서는 클릭이
-        // 그냥 "마지막으로 고른 항목" 표시만 갱신할 뿐 실제 서식엔 반영 안 되는
-        // 것으로 보인다(처음 추측이 맞았지만 그땐 엉뚱한 요소를 클릭하고 있었음).
-        // 본문을 다 채운 지금, 본문을 다시 클릭해 포커스를 확실히 되돌린 뒤
-        // 전체를 실제로 선택한 상태에서 서체를 적용한다.
-        await el.click({ force: true });
-        await page.waitForTimeout(200);
-        await page.keyboard.press('Control+A').catch(() => {});
-        await page.waitForTimeout(200);
-        const fontToggleBtn = page.getByRole('button', { name: /서체 변경/ }).first();
-        if (await fontToggleBtn.count() > 0) {
-          await fontToggleBtn.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(300);
-          const fontOptionBtn = page.locator('button[data-name="font-family"][data-value="nanumgothic"]').first();
-          if (await fontOptionBtn.count() > 0) {
-            await fontOptionBtn.click().catch(async (e) => {
-              console.warn(`[Playwright] 서체 옵션 클릭 실패, force로 재시도: ${e.message}`);
-              await fontOptionBtn.click({ force: true }).catch(() => {});
-            });
-            console.log('[Playwright] 서체를 나눔고딕으로 변경(전체 선택 후 적용)');
-          } else {
-            console.warn('[Playwright] 나눔고딕 서체 버튼을 못 찾음(드롭다운 연 뒤에도) — 서체 변경 건너뜀');
-            await page.keyboard.press('Escape').catch(() => {});
-          }
-          await page.waitForTimeout(200);
-        } else {
-          console.warn('[Playwright] 서체 변경 토글 버튼을 못 찾음');
-        }
-        await page.keyboard.press('End').catch(() => {});
+        // 서체(폰트) 자동 변경 시도는 9차례(타이핑 전/후, 선택영역 있음/없음,
+        // 셀렉터 여러 버전) 전부 실패로 포기함 — 툴바 라벨은 매번 "나눔고딕"으로
+        // 바뀌었다고 표시되는데 실제 발행된 글의 span엔 한 번도 반영된 적이
+        // 없음(계정 기본 서체 "바른히피"가 그대로 박힘). 클릭 자체는 등록되는데
+        // 실제 서식 적용 로직까지는 안 이어지는 것으로 보이며, 이 이상은 자동화로
+        // 재현 가능한 원인을 못 찾음. 사용자가 네이버 블로그 에디터에서 수동으로
+        // 한 번 나눔고딕을 선택해두면 계정 기본값으로 남을 가능성이 있음(현재
+        // "바른히피"가 그런 식으로 몇 시간째 유지되고 있는 것과 같은 패턴).
 
         bodyFilled = true;
         break;
