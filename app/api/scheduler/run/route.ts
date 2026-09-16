@@ -184,11 +184,29 @@ export async function POST(req: NextRequest) {
   // 안 돌아가는 문제가 실사용 중 확인됨(쿠팡/아고다 스케줄이 며칠째 멈춰있었음).
   // 30분 넘게 running이면 죽은 것으로 보고 다시 시도
   const STALE_RUNNING_MS = 30 * 60 * 1000;
-  const schedules = (allSchedules || []).filter((s) => {
+  const eligible = (allSchedules || []).filter((s) => {
     if (s.last_status !== 'running') return true;
     const runningSince = s.last_run_at ? new Date(s.last_run_at).getTime() : 0;
     return Date.now() - runningSince > STALE_RUNNING_MS;
   });
+
+  // 이 GET~UPDATE 사이에 동시에 들어온 다른 호출(NAS 크론 + GitHub Actions 크론이
+  // 겹치는 등)이 같은 스케줄을 같이 집어가서 똑같은 글이 초 단위로 두 번 발행되는
+  // 사고가 실제로 확인됨(2days.kr "실손보험 비교" 글 6초 간격 중복). 실행 전에
+  // "내가 먼저 running으로 바꿀 수 있었는지"를 원자적 UPDATE로 확인해서 선점 —
+  // 못 바꾼(이미 다른 요청이 방금 가져간) 스케줄은 이번 회차에서 제외한다.
+  const staleCutoffIso = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
+  const claimed: typeof eligible = [];
+  for (const s of eligible) {
+    const { data: claim } = await supabase
+      .from('bossai_schedules')
+      .update({ last_status: 'running', last_run_at: now })
+      .eq('id', s.id)
+      .or(`last_status.neq.running,last_run_at.lt.${staleCutoffIso}`)
+      .select('id');
+    if (claim?.length) claimed.push(s);
+  }
+  const schedules = claimed;
 
   if (!schedules.length) return NextResponse.json({ ran: 0, message: '실행할 스케줄 없음' });
 
