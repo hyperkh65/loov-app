@@ -281,9 +281,10 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         if (await fontBtn.count() > 0) {
           await fontBtn.click({ force: true }).catch(() => {});
           await page.waitForTimeout(300);
-          const fontOption = page.getByRole('option', { name: /^나눔고딕$/ }).or(
-            page.locator('li, [role="option"], button').filter({ hasText: /^나눔고딕$/ })
-          ).first();
+          // 실사용으로 확인한 실제 드롭다운 옵션 텍스트는 이름+툴팁이 겹쳐서
+          // "나눔고딕나눔고딕"처럼 나옴 — exact 매치가 아니라 포함 매치로 찾는다.
+          // "나눔바른고딕"은 "나눔고딕"을 부분 문자열로 포함하지 않으므로 안전함.
+          const fontOption = page.locator('li').filter({ hasText: '나눔고딕' }).first();
           if (await fontOption.count() > 0) {
             await fontOption.click({ force: true }).catch(() => {});
             console.log('[Playwright] 서체를 나눔고딕으로 변경');
