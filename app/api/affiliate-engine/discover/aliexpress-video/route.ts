@@ -22,10 +22,11 @@ async function toKoreanSearchKeyword(englishTitle: string): Promise<string> {
 }
 
 /**
- * 알리익스프레스에 실제 홍보 영상이 붙어있는(=영상 만들 가치가 있다고 이미 검증된) 인기
- * 상품을 찾아서, 그 상품명으로 쿠팡을 검색해 같은 카테고리의 매칭 상품을 찾는다.
- * 알리 영상 자체는 절대 재사용/다운로드하지 않음 — "이 종류 상품은 영상화할 만하다"는
- * 신호 + 참고용으로만 쓰고, 실제로 우리가 만드는 영상은 매칭된 쿠팡 상품 사진으로 렌더링.
+ * 알리익스프레스에 실제 홍보 영상이 붙어있는 인기 상품을 찾아서, 그 상품명으로
+ * 쿠팡을 검색해 같은 카테고리의 매칭 상품을 찾는다. 발견된 영상 URL은
+ * affiliate_source_items.raw_metrics.video_url에 저장해두고, 렌더링 단계
+ * (app/api/affiliate-engine/render)에서 실제로 다운로드해 장면별 소스로 사용
+ * (사용자 확정 — 저작권 리스크는 감수하고 원본 영상을 그대로 씀).
  *
  * RapidAPI 무료 플랜은 월 100회 요청 한도라 검색 1회 + 후보당 상세조회 1회씩 소모됨 —
  * limit을 낮게 유지해야 함(기본 5 = 최대 6회 소모).
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
       user_id: user.id, name: SOURCE_NAME, source_type: 'ecommerce',
       discovery_method: 'API', usage_mode: 'PRODUCT_DISCOVERY',
       connector_status: 'CONNECTED', commercial_use_status: 'ALLOWED', enabled: true, priority: 30,
-      notes: 'RapidAPI Aliexpress DataHub로 영상 보유 인기상품 탐색 — 알리 영상은 신호로만 사용, 재배포 안 함.',
+      notes: 'RapidAPI Aliexpress DataHub로 영상 보유 인기상품 탐색 — 영상은 렌더링 단계에서 실제로 다운로드해 사용.',
     }).select('id').single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     source = created;

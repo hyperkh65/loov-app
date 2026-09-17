@@ -25,6 +25,10 @@ export interface RenderOptions {
   title?: string;
   addSubtitles?: boolean;
   kenBurns?: boolean;
+  // 알리익스프레스 등에서 발굴된 실제 소스 영상 — 있으면 정적 사진+Ken Burns 대신
+  // 이 영상에서 장면별로 연속 구간을 잘라 쓴다(원본 음성/배경음은 버리고 우리
+  // 나레이션만 입힘 — 저작권상 원본 음원 재배포는 하지 않되 영상 자체는 사용).
+  sourceVideoUrl?: string;
   onProgress?: (step: number, total: number, message: string) => void;
 }
 
@@ -67,7 +71,7 @@ function getKenBurnsVf(sceneIndex: number, dur: number): string {
 }
 
 export async function renderShortsVideo(scenes: RenderScene[], options: RenderOptions = {}): Promise<RenderResult> {
-  const { voice = 'ko-KR-SunHiNeural', rate = 10, title = 'Shorts', addSubtitles = true, kenBurns = true, onProgress } = options;
+  const { voice = 'ko-KR-SunHiNeural', rate = 10, title = 'Shorts', addSubtitles = true, kenBurns = true, sourceVideoUrl, onProgress } = options;
   const progress = (step: number, total: number, message: string) => { try { onProgress?.(step, total, message); } catch { /* 무시 */ } };
 
   if (!scenes?.length) throw new Error('장면 데이터가 없습니다');
@@ -93,6 +97,16 @@ export async function renderShortsVideo(scenes: RenderScene[], options: RenderOp
 
   const lines: string[] = [`#!/bin/bash`, `set -e`, `DIR="${dir}"`];
 
+  // 소스 영상(알리익스프레스 등에서 발굴)이 있으면 다운로드 시도 — 실패해도
+  // 스크립트 전체가 죽지 않게 하고(set -e 우회), 다운로드 성공 여부를 SRC_OK로
+  // 남겨서 장면별 ffmpeg 명령에서 실패 시 기존 사진/Ken Burns 방식으로 폴백.
+  if (sourceVideoUrl) {
+    lines.push(`curl -sL --max-time 60 "${sourceVideoUrl}" -o "$DIR/source.mp4" || true`);
+    lines.push(`SRC_OK=0; [ -s "$DIR/source.mp4" ] && SRC_OK=1`);
+  } else {
+    lines.push(`SRC_OK=0`);
+  }
+
   for (let i = 0; i < scenes.length; i++) {
     const s = scenes[i];
     if (s.image_url) {
@@ -111,10 +125,21 @@ export async function renderShortsVideo(scenes: RenderScene[], options: RenderOp
     lines.push(`IMG_${i}=$(ls "$DIR/img_${i}".{jpg,png} 2>/dev/null | head -1)`);
   }
 
+  let sourceOffsetSec = 0;
   for (let i = 0; i < scenes.length; i++) {
     const s = scenes[i];
     const dur = Math.max(1, s.duration);
     const subtitle = escapeDrawtext(s.subtitle || '');
+    const startSec = sourceOffsetSec;
+    sourceOffsetSec += dur;
+
+    // 자막 drawtext는 소스영상/사진 두 경로 공통 — plain scale+crop 위에 얹는다
+    // (Ken Burns 쪽은 자체 prescale 체인 위에 얹으므로 별도로 계산)
+    const plainSubtitleFilter = addSubtitles && subtitle
+      ? fontPath
+        ? `,drawtext=fontfile='${fontPath}':text='${subtitle}':fontsize=52:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.8:shadowx=3:shadowy=3:box=1:boxcolor=black@0.55:boxborderw=18`
+        : `,drawtext=text='${subtitle}':fontsize=46:fontcolor=white:x=(w-text_w)/2:y=h-220:shadowcolor=black@0.9:shadowx=3:shadowy=3`
+      : '';
 
     let vfStr: string;
     if (kenBurns) {
@@ -126,28 +151,33 @@ export async function renderShortsVideo(scenes: RenderScene[], options: RenderOp
         : '';
       vfStr = kbBase + subtitleFilter;
     } else {
-      const vfParts = ['scale=1080:1920:force_original_aspect_ratio=increase', 'crop=1080:1920'];
-      if (addSubtitles && subtitle && fontPath) {
-        vfParts.push(
-          `drawtext=fontfile='${fontPath}':text='${subtitle}':fontsize=52:fontcolor=white:` +
-          `x=(w-text_w)/2:y=h-220:shadowcolor=black@0.8:shadowx=3:shadowy=3:` +
-          `box=1:boxcolor=black@0.55:boxborderw=18`
-        );
-      } else if (addSubtitles && subtitle) {
-        vfParts.push(
-          `drawtext=text='${subtitle}':fontsize=46:fontcolor=white:` +
-          `x=(w-text_w)/2:y=h-220:shadowcolor=black@0.9:shadowx=3:shadowy=3`
-        );
-      }
-      vfStr = vfParts.join(',');
+      vfStr = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920' + plainSubtitleFilter;
     }
 
-    lines.push(
-      `${ffmpeg} -hide_banner -loglevel error -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
-      `-vf "${vfStr}" ` +
-      `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p ` +
-      `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4"`
-    );
+    // 소스 영상 다운로드에 성공했으면(SRC_OK=1) 정적 사진+Ken Burns 대신 그
+    // 지점(startSec)부터 이 장면 길이만큼 실제 영상을 잘라 쓴다 — 원본
+    // 음성/배경음(-map으로 제외)은 버리고 우리 나레이션(TTS)만 입힌다.
+    // -ss를 -i 앞에 둬서 입력 단위로 탐색하고, 영상이 짧아 끝에 도달하면
+    // -stream_loop -1로 처음부터 이어서 채운 뒤 출력 -t로 정확히 dur초로 자른다.
+    if (sourceVideoUrl) {
+      // 영상 구간 추출이 실패해도(손상된 소스 등) 이 장면만 기존 사진 방식으로
+      // 폴백 — set -e 하에서 전체 렌더가 죽지 않도록 || 로 같은 줄에 이어붙임.
+      const videoSegCmd =
+        `${ffmpeg} -hide_banner -loglevel error -ss ${startSec} -stream_loop -1 -i "$DIR/source.mp4" -i "$DIR/tts_${i}.mp3" ` +
+        `-t ${dur} -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${plainSubtitleFilter}" ` +
+        `-map 0:v -map 1:a -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p -c:a aac -b:a 128k -y "$DIR/scene_${i}.mp4"`;
+      const imgFallbackCmd =
+        `${ffmpeg} -hide_banner -loglevel error -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
+        `-vf "${vfStr}" -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4"`;
+      lines.push(`if [ "$SRC_OK" = "1" ]; then ${videoSegCmd} || ${imgFallbackCmd}; else ${imgFallbackCmd}; fi`);
+    } else {
+      lines.push(
+        `${ffmpeg} -hide_banner -loglevel error -loop 1 -i "$IMG_${i}" -i "$DIR/tts_${i}.mp3" ` +
+        `-vf "${vfStr}" ` +
+        `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p ` +
+        `-c:a aac -b:a 128k -shortest -y "$DIR/scene_${i}.mp4"`
+      );
+    }
   }
 
   const filelistLines = scenes.map((_, i) => `file '${dir}/scene_${i}.mp4'`);
