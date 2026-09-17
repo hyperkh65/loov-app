@@ -92,7 +92,7 @@ ${content}`;
     throw new Error('번역 응답이 max_tokens 한도에서 다시 잘림 — 원문이 예상보다 길 수 있음');
   }
 
-  const titleMatch = raw.match(/===TITLE===\s*([\s\S]*?)(?===CONTENT===)/);
+  const titleMatch = raw.match(/===TITLE===\s*([\s\S]*?)\s*===CONTENT===/);
   const contentMatch = raw.match(/===CONTENT===\s*([\s\S]*)/);
   const translatedTitle = titleMatch?.[1]?.trim();
   const translatedContent = contentMatch?.[1]?.trim();
