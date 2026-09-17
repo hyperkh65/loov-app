@@ -19,6 +19,7 @@ import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
 import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
 import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
 import { runNaverTechAuto } from '@/lib/scheduler/naver-tech-runner';
+import { runAffiliatePublishAuto } from '@/lib/scheduler/affiliate-publish-runner';
 import type { Schedule } from '@/lib/scheduler';
 
 export const maxDuration = 300;
@@ -98,6 +99,12 @@ async function executeSchedule(schedule: Schedule) {
         const r = await runNaverTechAuto(schedule.user_id);
         result = r as unknown as Record<string, unknown>;
         summary = r.summary;
+        break;
+      }
+      case 'affiliate_publish_auto': {
+        const r = await runAffiliatePublishAuto(schedule.user_id);
+        result = r as unknown as Record<string, unknown>;
+        summary = `${r.published}건 발행 — ${r.results.join(' / ')}`.slice(0, 500);
         break;
       }
     }
