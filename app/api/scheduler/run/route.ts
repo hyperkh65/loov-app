@@ -51,6 +51,89 @@ function buildAffiliateCaption(hook: string | undefined, productName: string | u
   ].filter(Boolean).join('\n');
 }
 
+async function refreshYoutubeToken(refreshToken: string): Promise<string> {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error('YouTube 토큰 갱신 실패: ' + (data.error_description || data.error));
+  return data.access_token;
+}
+
+// app/api/youtube/upload/route.ts와 동일한 resumable upload 로직을 인라인 —
+// 별도 파일로 빼면 위에서 실측한 Turbopack 청크 버그를 다시 겪을 위험이 있어
+// 이 라우트 안에 그대로 둔다. 유튜브 쇼핑 제품태그는 파트너 심사가 별도로
+// 필요해서(사용자 확인) 설명란에 쿠팡 링크를 텍스트로만 넣는다.
+async function uploadToYoutube(params: {
+  userId: string; videoUrl: string; title: string; description: string;
+}): Promise<{ videoId: string; url: string }> {
+  const supabase = createAdminClient();
+  const { data: conn } = await supabase
+    .from('sns_connections')
+    .select('access_token, refresh_token, extra')
+    .eq('user_id', params.userId)
+    .eq('platform', 'youtube')
+    .eq('is_active', true)
+    .single();
+  if (!conn) throw new Error('YouTube 연결 없음 — 허브에서 재연결 필요');
+
+  let accessToken = conn.access_token;
+  const expiresAt = conn.extra?.expires_at ? new Date(conn.extra.expires_at) : null;
+  if (!expiresAt || expiresAt <= new Date()) {
+    if (!conn.refresh_token) throw new Error('YouTube 토큰 만료 + refresh_token 없음 — 재연결 필요');
+    accessToken = await refreshYoutubeToken(conn.refresh_token);
+    await supabase.from('sns_connections').update({
+      access_token: accessToken,
+      extra: { expires_at: new Date(Date.now() + 3600 * 1000).toISOString() },
+    }).eq('user_id', params.userId).eq('platform', 'youtube');
+  }
+
+  const videoRes = await fetch(params.videoUrl);
+  if (!videoRes.ok) throw new Error('영상 다운로드 실패: ' + videoRes.status);
+  const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+
+  const initRes = await fetch(
+    'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Upload-Content-Type': 'video/mp4',
+        'X-Upload-Content-Length': String(videoBuffer.byteLength),
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: params.title.slice(0, 100),
+          description: params.description.slice(0, 5000),
+          tags: ['쿠팡', '쿠팡추천', '생활꿀템', 'shorts'],
+          categoryId: '22',
+        },
+        status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+      }),
+    }
+  );
+  if (!initRes.ok) throw new Error('YouTube 업로드 시작 실패: ' + (await initRes.text()).slice(0, 200));
+  const uploadUrl = initRes.headers.get('Location');
+  if (!uploadUrl) throw new Error('YouTube upload URL 없음');
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(videoBuffer.byteLength) },
+    body: videoBuffer,
+  });
+  if (!uploadRes.ok) throw new Error('YouTube 업로드 실패: ' + (await uploadRes.text()).slice(0, 200));
+  const videoData = await uploadRes.json();
+  return { videoId: videoData.id, url: `https://www.youtube.com/shorts/${videoData.id}` };
+}
+
 async function runAffiliatePublishAuto(userId: string): Promise<{ published: number; results: string[] }> {
   const supabase = createAdminClient();
 
@@ -62,7 +145,7 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
 
   if (!projects?.length) return { published: 0, results: ['발행 대기 중인 영상 없음'] };
 
-  const { data: conn } = await supabase
+  const { data: igConn } = await supabase
     .from('sns_connections')
     .select('access_token, platform_user_id')
     .eq('user_id', userId)
@@ -70,10 +153,26 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
     .eq('platform_user_id', AFFILIATE_IG_PLATFORM_USER_ID)
     .eq('is_active', true)
     .single();
-  if (!conn) throw new Error('@2dayskr 인스타그램 연결 없음 — 허브에서 재연결 필요');
 
   const results: string[] = [];
   let published = 0;
+
+  // 발행 기록(publication_jobs/publications) 남기고 프로젝트 상태를 갱신 —
+  // 인스타/유튜브 각각 독립적으로 시도해서 한쪽이 실패/한도초과여도 다른 쪽은
+  // 그대로 올라가게 함(오늘 인스타 하루 게시 한도로 실제로 막힌 적 있음).
+  async function recordPublication(renderId: string, platform: string, postId: string) {
+    const { data: job } = await supabase
+      .from('affiliate_publication_jobs')
+      .insert({ user_id: userId, render_id: renderId, platform, status: 'completed' })
+      .select('id')
+      .single();
+    if (job) {
+      await supabase.from('affiliate_publications').insert({
+        user_id: userId, publication_job_id: job.id, platform,
+        platform_post_id: postId, disclosure_template: AFFILIATE_DISCLOSURE,
+      });
+    }
+  }
 
   for (const project of projects) {
     try {
@@ -105,28 +204,40 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
         : { data: null };
 
       const caption = buildAffiliateCaption(script?.hook_text, product?.product_name, listing?.affiliate_url);
-      const pub = await postToPlatformWithMedia('instagram', conn.access_token, conn.platform_user_id, caption, [render.public_url]);
+      const label = product?.product_name || project.id;
+      let anySuccess = false;
 
-      const { data: job } = await supabase
-        .from('affiliate_publication_jobs')
-        .insert({ user_id: userId, render_id: render.id, platform: 'instagram', status: 'completed' })
-        .select('id')
-        .single();
-
-      if (job) {
-        await supabase.from('affiliate_publications').insert({
-          user_id: userId,
-          publication_job_id: job.id,
-          platform: 'instagram',
-          platform_post_id: pub.id,
-          disclosure_template: AFFILIATE_DISCLOSURE,
-        });
+      if (igConn) {
+        try {
+          const pub = await postToPlatformWithMedia('instagram', igConn.access_token, igConn.platform_user_id, caption, [render.public_url]);
+          await recordPublication(render.id, 'instagram', pub.id);
+          anySuccess = true;
+          results.push(`${label}: 인스타 발행 완료 (ig:${pub.id})`);
+        } catch (e) {
+          results.push(`${label}: 인스타 실패 — ${(e as Error).message?.slice(0, 150)}`);
+        }
+      } else {
+        results.push(`${label}: 인스타 연결 없음, 스킵`);
       }
 
-      await supabase.from('affiliate_video_projects').update({ status: 'PUBLISHED' }).eq('id', project.id);
+      try {
+        const yt = await uploadToYoutube({
+          userId,
+          videoUrl: render.public_url,
+          title: (script?.hook_text || product?.product_name || '오늘의 추천템').slice(0, 100),
+          description: caption,
+        });
+        await recordPublication(render.id, 'youtube', yt.videoId);
+        anySuccess = true;
+        results.push(`${label}: 유튜브 발행 완료 (${yt.url})`);
+      } catch (e) {
+        results.push(`${label}: 유튜브 실패 — ${(e as Error).message?.slice(0, 150)}`);
+      }
 
-      published++;
-      results.push(`${product?.product_name || project.id}: 발행 완료 (ig:${pub.id})`);
+      if (anySuccess) {
+        await supabase.from('affiliate_video_projects').update({ status: 'PUBLISHED' }).eq('id', project.id);
+        published++;
+      }
     } catch (e) {
       results.push(`${project.id}: 실패 — ${(e as Error).message?.slice(0, 150)}`);
     }
@@ -140,12 +251,36 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
 // 발굴된 상품은 스크립트 생성→렌더링(실제 소스영상 사용)까지 바로 이어서
 // affiliate_publish_auto가 물려받을 READY_TO_PUBLISH 상태까지 만든다.
 // RapidAPI Aliexpress DataHub 무료 플랜은 월 100회 한도라(검색 1회+상세조회
-// 후보당 1회) limit을 낮게 유지 — 이 스케줄은 하루 1회로만 등록할 것.
+// 후보당 1회) 하루 호출량은 못 늘림(사용자 확정 — 유료 전환 안 함) — 대신 키워드
+// 풀 자체를 넓혀서 몇 주에 걸쳐 커버하는 카테고리를 늘린다. "생활용품" 같은
+// 범용 단어 대신 "신박함/데모 가능"한 니치 가젯 위주로 골라야 (1) 알리 쪽에 실제
+// 홍보영상이 붙어있을 확률이 높고 (2) 쿠팡 베스트셀러처럼 이미 레드오션인
+// 범용 생필품과 안 겹쳐서 매칭도 잘 되고 콘텐츠로도 더 흥미로움(사용자 피드백).
 const AFFILIATE_DISCOVERY_KEYWORDS = [
-  'car phone holder', 'kitchen gadget', 'led light strip', 'desk organizer',
-  'portable fan', 'cleaning brush', 'bathroom organizer', 'travel accessories',
-  'pet grooming tool', 'phone accessories', 'home storage box', 'outdoor camping gear',
-  'baby care gadget', 'fitness accessories', 'car cleaning tool',
+  // 차량용 신박한 아이템
+  'car gadget accessory', 'car phone holder magnetic', 'car organizer gadget',
+  'car vacuum cleaner mini', 'car air freshener gadget', 'car charger multifunction',
+  // 휴대폰/전자기기 액세서리
+  'phone gadget accessory', 'phone camera lens clip', 'wireless charger stand gadget',
+  'cable organizer gadget', 'phone cooling fan gadget', 'selfie gadget tool',
+  // 주방 신박 도구
+  'kitchen gadget tool multifunction', 'vegetable cutter gadget', 'kitchen storage gadget',
+  'coffee gadget tool', 'food sealer gadget',
+  // 청소/생활 신박 도구
+  'cleaning gadget tool', 'multifunctional cleaning brush', 'window cleaning gadget',
+  'shoe cleaning gadget',
+  // 캠핑/아웃도어
+  'camping gadget tool', 'outdoor multifunction tool', 'portable camping light gadget',
+  // 홈/데스크 정리 가젯
+  'desk organizer gadget', 'cable management gadget', 'led light strip smart',
+  // 반려동물 신박 아이템
+  'pet gadget tool', 'pet grooming gadget', 'pet feeder gadget',
+  // 헬스/피트니스 가젯
+  'fitness gadget tool', 'massage gadget tool', 'posture corrector gadget',
+  // 육아 신박 아이템
+  'baby gadget tool', 'baby feeding gadget',
+  // 신박 아이디어 상품 (범용 최후순위)
+  'creative gadget idea', 'as seen on tv gadget', 'life hack tool gadget',
 ];
 
 async function toKoreanSearchKeyword(englishTitle: string): Promise<string> {
