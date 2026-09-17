@@ -155,7 +155,8 @@ async function toKoreanSearchKeyword(englishTitle: string): Promise<string> {
     );
     const cleaned = raw.trim().split('\n')[0].replace(/["'.]/g, '').trim();
     return cleaned || englishTitle;
-  } catch {
+  } catch (e) {
+    console.error('[affiliate_discover_auto] 한글 키워드 번역 실패, 영문 원문으로 검색:', e);
     return englishTitle;
   }
 }
