@@ -19,10 +19,115 @@ import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
 import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
 import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
 import { runNaverTechAuto } from '@/lib/scheduler/naver-tech-runner';
-import { runAffiliatePublishAuto } from '@/lib/scheduler/affiliate-publish-runner';
+import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
 import type { Schedule } from '@/lib/scheduler';
 
 export const maxDuration = 300;
+
+// affiliate_video_projects가 READY_TO_PUBLISH(QA 게이트 통과)까지는 가는데 발행이
+// 이어지지 않던 지점을 연결 — 인스타그램 릴스로 자동 발행(사용자 확정: @2dayskr 계정).
+// 별도 파일(lib/scheduler/affiliate-publish-runner.ts)로 뺐다가 Turbopack 프로덕션
+// 빌드에서 이 라우트가 아닌 엉뚱한 라우트(coupang/auto-post)의 청크에 코드가 묶여버려
+// 런타임에 실행 자체가 안 되는 버그를 실측 확인 — 이 라우트 파일에 직접 인라인해서 회피.
+const AFFILIATE_IG_PLATFORM_USER_ID = '34489947500650071'; // @2dayskr
+const AFFILIATE_DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
+
+function buildAffiliateCaption(hook: string | undefined, productName: string | undefined, affiliateUrl: string | undefined): string {
+  return [
+    hook || productName || '오늘의 추천템',
+    '',
+    productName ? `▶ ${productName}` : '',
+    affiliateUrl ? `구매 링크: ${affiliateUrl}` : '',
+    '',
+    AFFILIATE_DISCLOSURE,
+    '',
+    '#쿠팡 #쿠팡추천 #생활꿀템 #가성비템 #추천템',
+  ].filter(Boolean).join('\n');
+}
+
+async function runAffiliatePublishAuto(userId: string): Promise<{ published: number; results: string[] }> {
+  const supabase = createAdminClient();
+
+  const { data: projects } = await supabase
+    .from('affiliate_video_projects')
+    .select('id, product_id')
+    .eq('user_id', userId)
+    .eq('status', 'READY_TO_PUBLISH');
+
+  if (!projects?.length) return { published: 0, results: ['발행 대기 중인 영상 없음'] };
+
+  const { data: conn } = await supabase
+    .from('sns_connections')
+    .select('access_token, platform_user_id')
+    .eq('user_id', userId)
+    .eq('platform', 'instagram')
+    .eq('platform_user_id', AFFILIATE_IG_PLATFORM_USER_ID)
+    .eq('is_active', true)
+    .single();
+  if (!conn) throw new Error('@2dayskr 인스타그램 연결 없음 — 허브에서 재연결 필요');
+
+  const results: string[] = [];
+  let published = 0;
+
+  for (const project of projects) {
+    try {
+      const { data: variant } = await supabase
+        .from('affiliate_video_variants')
+        .select('id, script_id')
+        .eq('project_id', project.id)
+        .limit(1)
+        .single();
+      if (!variant) { results.push(`${project.id}: variant 없음`); continue; }
+
+      const { data: render } = await supabase
+        .from('affiliate_renders')
+        .select('id, public_url')
+        .eq('variant_id', variant.id)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (!render?.public_url) { results.push(`${project.id}: 완료된 렌더 없음`); continue; }
+
+      const [{ data: product }, { data: script }, { data: match }] = await Promise.all([
+        supabase.from('affiliate_products').select('product_name').eq('id', project.product_id).single(),
+        supabase.from('affiliate_scripts').select('hook_text').eq('id', variant.script_id).single(),
+        supabase.from('affiliate_product_matches').select('listing_id').eq('product_id', project.product_id).limit(1).single(),
+      ]);
+      const { data: listing } = match?.listing_id
+        ? await supabase.from('affiliate_listings').select('affiliate_url').eq('id', match.listing_id).single()
+        : { data: null };
+
+      const caption = buildAffiliateCaption(script?.hook_text, product?.product_name, listing?.affiliate_url);
+      const pub = await postToPlatformWithMedia('instagram', conn.access_token, conn.platform_user_id, caption, [render.public_url]);
+
+      const { data: job } = await supabase
+        .from('affiliate_publication_jobs')
+        .insert({ user_id: userId, render_id: render.id, platform: 'instagram', status: 'completed' })
+        .select('id')
+        .single();
+
+      if (job) {
+        await supabase.from('affiliate_publications').insert({
+          user_id: userId,
+          publication_job_id: job.id,
+          platform: 'instagram',
+          platform_post_id: pub.id,
+          disclosure_template: AFFILIATE_DISCLOSURE,
+        });
+      }
+
+      await supabase.from('affiliate_video_projects').update({ status: 'PUBLISHED' }).eq('id', project.id);
+
+      published++;
+      results.push(`${product?.product_name || project.id}: 발행 완료 (ig:${pub.id})`);
+    } catch (e) {
+      results.push(`${project.id}: 실패 — ${(e as Error).message?.slice(0, 150)}`);
+    }
+  }
+
+  return { published, results };
+}
 
 async function executeSchedule(schedule: Schedule) {
   const supabase = createAdminClient();
@@ -202,6 +307,9 @@ export async function POST(req: NextRequest) {
   // 사고가 실제로 확인됨(2days.kr "실손보험 비교" 글 6초 간격 중복). 실행 전에
   // "내가 먼저 running으로 바꿀 수 있었는지"를 원자적 UPDATE로 확인해서 선점 —
   // 못 바꾼(이미 다른 요청이 방금 가져간) 스케줄은 이번 회차에서 제외한다.
+  // last_status.is.null 분기 필수 — SQL에서 NULL <> 'running'은 NULL(거짓 취급)이라
+  // 한 번도 실행 안 된 새 스케줄(last_status가 NULL)은 neq만으로는 영원히 선점 불가
+  // (affiliate_publish_auto 첫 등록 때 실제로 이 버그로 "실행할 스케줄 없음"만 나옴).
   const staleCutoffIso = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
   const claimed: typeof eligible = [];
   for (const s of eligible) {
@@ -209,7 +317,7 @@ export async function POST(req: NextRequest) {
       .from('bossai_schedules')
       .update({ last_status: 'running', last_run_at: now })
       .eq('id', s.id)
-      .or(`last_status.neq.running,last_run_at.lt.${staleCutoffIso}`)
+      .or(`last_status.is.null,last_status.neq.running,last_run_at.lt.${staleCutoffIso}`)
       .select('id');
     if (claim?.length) claimed.push(s);
   }
