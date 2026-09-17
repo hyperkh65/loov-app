@@ -5,8 +5,10 @@
  * 업로드)를 같은 프로세스 안에서 직접 함수 호출로 재사용한다 — 자기 자신을
  * HTTP로 호출하는 방식은 hairpin NAT, undici bodyTimeout, 리버스 프록시
  * 타임아웃이 전부 실사용 중 확인되어 폐기.
- * 각 장면 이미지는 쿠팡 상품 페이지를 스크랩한 실제 사진 여러 장을 순환 배정한다
- * (스크랩 실패/타임아웃 시에만 리스팅 대표사진 1장을 전 장면에 재사용하는 폴백).
+ * 알리익스프레스 등에서 발굴 시 붙어온 실제 홍보 영상이 있으면(사용자 확정: 저작권
+ * 신경쓰지 말고 그대로 사용) 그 영상에서 장면별로 구간을 잘라 쓴다 — 없을 때만
+ * 쿠팡 상품 페이지를 스크랩한 실제 사진 여러 장을 순환 배정(그마저 실패/타임아웃
+ * 시엔 리스팅 대표사진 1장을 전 장면에 재사용).
  *
  * 렌더링(TTS 9개+ffmpeg 합성)은 몇 분씩 걸려서 동기 응답으로 두면 안 됨 —
  * self-hosted Docker라 Node 프로세스가 계속 살아있는 걸 이용해 요청은 즉시
@@ -26,16 +28,19 @@ async function runRenderInBackground(params: {
   scenes: Scene[]; title: string;
   scriptId: string; variantLabel: string;
   fallbackImageUrl: string | null; networkProductId: string | null; affiliateUrl: string | null;
+  sourceVideoUrl: string | null;
 }) {
   const admin = createAdminClient();
 
   try {
-    // 장면마다 같은 사진 하나만 우려먹으면 "사진에 줌만 넣은 영상"처럼 보임 —
-    // 쿠팡 상품 페이지를 스크랩해서 실제 상품 사진 여러 장을 장면별로 다르게 배정.
-    // 스크랩(브라우저 렌더링 포함)은 봇 차단 등으로 길게는 수 분 걸릴 수 있어
-    // (lib/scheduler/coupang-runner.ts와 동일한 이유) 실패해도 넘어가게 타임아웃.
+    // 소스 영상이 있으면 사진 슬라이드쇼 자체를 건너뛴다(render-core가 영상
+    // 구간 추출 실패 시에도 자체적으로 사진 폴백을 하므로 여기선 스크랩 생략).
     let sceneImageUrls: string[] = params.fallbackImageUrl ? [params.fallbackImageUrl] : [];
-    if (params.networkProductId) {
+    if (!params.sourceVideoUrl && params.networkProductId) {
+      // 장면마다 같은 사진 하나만 우려먹으면 "사진에 줌만 넣은 영상"처럼 보임 —
+      // 쿠팡 상품 페이지를 스크랩해서 실제 상품 사진 여러 장을 장면별로 다르게 배정.
+      // 스크랩(브라우저 렌더링 포함)은 봇 차단 등으로 길게는 수 분 걸릴 수 있어
+      // (lib/scheduler/coupang-runner.ts와 동일한 이유) 실패해도 넘어가게 타임아웃.
       try {
         const scraped = await Promise.race([
           scrapeProductData(params.networkProductId, { affiliateUrl: params.affiliateUrl || undefined }),
@@ -51,7 +56,10 @@ async function runRenderInBackground(params: {
       image_url: sceneImageUrls.length > 0 ? sceneImageUrls[i % sceneImageUrls.length] : null,
     }));
 
-    const result = await renderShortsVideo(scenesWithImages, { title: params.title });
+    const result = await renderShortsVideo(scenesWithImages, {
+      title: params.title,
+      sourceVideoUrl: params.sourceVideoUrl || undefined,
+    });
 
     const totalDuration = params.scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
 
@@ -109,6 +117,17 @@ export async function POST(req: NextRequest) {
   const listing = match?.affiliate_listings as unknown as
     { image_url: string | null; network_product_id: string | null; affiliate_url: string | null } | null;
 
+  // 알리익스프레스 등에서 발굴 시 붙어온 실제 홍보 영상이 있으면(사용자 확정:
+  // 저작권 신경쓰지 말고 그대로 사용) 사진 슬라이드쇼 대신 그 영상에서 장면별로
+  // 잘라 쓴다 — affiliate_source_items.raw_metrics.video_url에 저장돼 있음.
+  const { data: aliases } = await supabase
+    .from('affiliate_product_aliases')
+    .select('affiliate_source_items(raw_metrics)')
+    .eq('product_id', script.product_id)
+    .limit(1);
+  const sourceVideoUrl = (aliases?.[0]?.affiliate_source_items as unknown as { raw_metrics?: { video_url?: string } } | null)
+    ?.raw_metrics?.video_url || null;
+
   const { data: project, error: projectErr } = await supabase.from('affiliate_video_projects').insert({
     user_id: user.id,
     product_id: script.product_id,
@@ -132,6 +151,7 @@ export async function POST(req: NextRequest) {
     fallbackImageUrl: listing?.image_url || null,
     networkProductId: listing?.network_product_id || null,
     affiliateUrl: listing?.affiliate_url || null,
+    sourceVideoUrl,
   }));
 
   return NextResponse.json({ ok: true, project_id: project.id, status: 'CREATING' });
