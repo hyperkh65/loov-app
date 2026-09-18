@@ -26,6 +26,7 @@ import { searchProducts } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
 import { callAI, callAISimple } from '@/lib/ai-call';
 import { renderShortsVideo } from '@/lib/shorts/render-core';
+import { nasExec } from '@/lib/nas-ssh';
 import type { Schedule } from '@/lib/scheduler';
 
 export const maxDuration = 300;
@@ -497,6 +498,28 @@ async function pickRandom<T>(arr: T[], n: number): Promise<T[]> {
   return shuffled.slice(0, n);
 }
 
+// x-notion-api 스크레이퍼는 video_url을 컨테이너 내부 상대경로(/downloads/유저명/파일)로
+// 저장함(app/api/x-videos/migrate-to-nas가 이미 처리하는 것과 동일 문제) — 업로드하려면
+// 실제로 다운로드 가능한 공개 URL이어야 해서, NAS 웹루트(xmedia)로 파일을 복사하고
+// video_url을 공개 URL로 갱신한 뒤 그 값을 반환한다(이미 변환된 건 그대로 통과).
+async function ensurePublicVideoUrl(supabase: ReturnType<typeof createAdminClient>, video: { id: string; username: string; video_url: string }): Promise<string> {
+  if (!video.video_url.startsWith('/downloads/')) return video.video_url;
+
+  const rel = video.video_url.replace(/^\/downloads\//, '');
+  const slashIdx = rel.indexOf('/');
+  if (slashIdx < 0) throw new Error('video_url 경로 형식 이상: ' + video.video_url);
+  const username = rel.slice(0, slashIdx);
+  const filename = rel.slice(slashIdx + 1);
+  const NAS_DIR = '/volume1/web/xmedia';
+  const DOWNLOADS_DIR = '/volume1/docker/x-notion/downloads';
+
+  await nasExec(`mkdir -p "${NAS_DIR}/${username}" && cp -n "${DOWNLOADS_DIR}/${username}/${filename}" "${NAS_DIR}/${username}/${filename}"`, 60_000);
+
+  const publicUrl = `https://hy64.synology.me/xmedia/${username}/${encodeURIComponent(filename)}`;
+  await supabase.from('bossai_x_videos').update({ video_url: publicUrl }).eq('id', video.id);
+  return publicUrl;
+}
+
 async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded: number; results: string[] }> {
   const supabase = createAdminClient();
   const config = (schedule.config as { usernames?: string[] }) || {};
@@ -528,6 +551,7 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
 
   for (const video of picked) {
     try {
+      const publicVideoUrl = await ensurePublicVideoUrl(supabase, video);
       let koTitle = video.tweet_text?.slice(0, 80) || '오늘의 화제 영상';
       let koDesc = video.tweet_text || '';
       try {
@@ -544,7 +568,7 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
 
       const yt = await uploadToYoutube({
         userId: schedule.user_id,
-        videoUrl: video.video_url,
+        videoUrl: publicVideoUrl,
         title: koTitle,
         description,
         channelId: VIRAL_YOUTUBE_CHANNEL_ID,
