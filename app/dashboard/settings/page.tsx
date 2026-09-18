@@ -15,6 +15,7 @@ const PLATFORM_INFO: Record<string, { label: string; icon: string; color: string
 
 interface SNSConnection {
   platform: string;
+  platform_user_id?: string;
   platform_username: string;
   platform_display_name: string;
   platform_avatar: string | null;
@@ -565,10 +566,10 @@ export default function SettingsPage() {
     }
   }, [activeTab]);
 
-  const disconnectSNS = async (platform: string) => {
+  const disconnectSNS = async (platform: string, platformUserId?: string) => {
     if (!confirm(`${PLATFORM_INFO[platform]?.label} 연결을 해제하시겠습니까?`)) return;
-    await fetch('/api/sns/connections', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform }) });
-    setSnsConnections((prev) => prev.filter((c) => c.platform !== platform));
+    await fetch('/api/sns/connections', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform, platform_user_id: platformUserId }) });
+    setSnsConnections((prev) => prev.filter((c) => !(c.platform === platform && (!platformUserId || c.platform_user_id === platformUserId))));
   };
   const [saved, setSaved] = useState(false);
 
@@ -2010,7 +2011,7 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500">소셜 미디어 계정을 연결하면 LOOV에서 직접 게시글을 발행할 수 있습니다.</p>
             <div className="grid md:grid-cols-3 gap-4">
               {Object.entries(PLATFORM_INFO).map(([platform, info]) => {
-                const conn = snsConnections.find((c) => c.platform === platform);
+                const conns = snsConnections.filter((c) => c.platform === platform && c.is_active);
                 return (
                   <div key={platform} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                     <div className={`h-1.5 bg-gradient-to-r ${info.color}`} />
@@ -2022,29 +2023,33 @@ export default function SettingsPage() {
                         <div>
                           <div className="font-bold text-gray-800 text-sm">{info.label}</div>
                           <div className="flex items-center gap-1">
-                            <div className={`w-1.5 h-1.5 rounded-full ${conn?.is_active ? 'bg-emerald-400' : 'bg-gray-200'}`} />
-                            <span className="text-xs text-gray-400">{conn?.is_active ? '연결됨' : '미연결'}</span>
+                            <div className={`w-1.5 h-1.5 rounded-full ${conns.length ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                            <span className="text-xs text-gray-400">{conns.length ? `연결됨 (${conns.length}개 계정)` : '미연결'}</span>
                           </div>
                         </div>
                       </div>
-                      {conn?.is_active ? (
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
-                            {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-8 h-8 rounded-full" />}
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium text-gray-700 truncate">{conn.platform_display_name || conn.platform_username}</div>
-                              {conn.platform_display_name && <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>}
+                      <div className="space-y-3">
+                        {conns.map((conn) => (
+                          <div key={conn.platform_user_id || conn.platform_username} className="space-y-2">
+                            <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5">
+                              {conn.platform_avatar && <img src={conn.platform_avatar} alt="" className="w-8 h-8 rounded-full" />}
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-gray-700 truncate">{conn.platform_display_name || conn.platform_username}</div>
+                                {conn.platform_display_name && <div className="text-xs text-gray-400 truncate">{conn.platform_username}</div>}
+                              </div>
                             </div>
+                            <button onClick={() => disconnectSNS(platform, conn.platform_user_id)} className="w-full text-xs text-red-500 border border-red-100 hover:border-red-200 rounded-xl py-2 transition-colors">
+                              연결 해제
+                            </button>
                           </div>
-                          <button onClick={() => disconnectSNS(platform)} className="w-full text-xs text-red-500 border border-red-100 hover:border-red-200 rounded-xl py-2 transition-colors">
-                            연결 해제
-                          </button>
-                        </div>
-                      ) : (
+                        ))}
+                        {/* 계정을 여러 개 붙일 수 있어야 하는 경우가 있음(예: 쿠팡용 유튜브 채널 +
+                            바이럴영상용 유튜브 채널을 동시에) — 이미 연결된 게 있어도 항상 추가
+                            가능하게 노출. 콜백은 platform_user_id로 범위를 좁혀서 다른 계정을 덮어쓰지 않음. */}
                         <a href={info.connectUrl ?? `/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition-opacity`}>
-                          연결하기
+                          {conns.length ? '+ 계정 추가' : '연결하기'}
                         </a>
-                      )}
+                      </div>
                     </div>
                   </div>
                 );
