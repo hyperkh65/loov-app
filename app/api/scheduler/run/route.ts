@@ -530,23 +530,31 @@ async function editViralVideoForShorts(params: {
   sourceUrl: string; lineTop1: string; lineTop2: string; caption: string;
 }): Promise<string> {
   const ffmpeg = await findFfmpeg();
-  const fontPath = await findKoreanFont();
+  // findKoreanFont()는 다른 파이프라인(상품영상)도 같이 쓰는 공용 검색이라 새로
+  // 설치한 볼드 폰트 때문에 그쪽 결과가 흔들리면 안 됨 — 이 용도로만 직접 경로 지정.
+  // (요청사항: "글자도 좀 크고 볼드처리하는게 핵심" — 일반체는 두꺼워 보이지 않아서
+  // Nanum Gothic Bold를 별도로 받아 설치함)
+  // ponytail: 경로 하드코딩 + 존재 확인 없음 — NAS에 직접 설치해둔 폰트라 자체적으로
+  // 사라질 일은 없지만, 없어지면 이 파이프라인만 실패(다른 파이프라인은 무관).
+  const BOLD_FONT_PATH = '/volume1/homes/urjent/bin/fonts/NanumGothicBold.ttf';
   const jobId = `viral_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const dir = `/tmp/${jobId}`;
 
   const top1 = escapeDrawtext(params.lineTop1);
   const top2 = escapeDrawtext(params.lineTop2);
   const bottom = escapeDrawtext(params.caption);
-  const fontArg = fontPath ? `fontfile='${fontPath}':` : '';
+  const fontArg = `fontfile='${BOLD_FONT_PATH}':`;
 
-  // ponytail: 원본 비율이 이미 9:16에 가까우면 검정 여백이 거의 없어 자막이
-  // 영상 위에 얹힐 수 있음 — box=1(반투명 검정 박스)로 최소한의 가독성만 보장.
+  // 요청사항: 영상은 더 작게 가운데로, 검정 배경이 확실히 더 넓게 보이게, 글자는
+  // 크고 굵게. 900x1250 박스 안으로만 축소(비율 유지)한 뒤 1080x1920 검정
+  // 캔버스 가운데에 배치 — 위/아래뿐 아니라 좌우에도 검정 여백이 생김.
+  // borderw(외곽선)까지 더해 폰트 자체보다 훨씬 굵고 도드라져 보이게 함.
   const vf = [
-    'scale=1080:1920:force_original_aspect_ratio=decrease',
+    'scale=900:1250:force_original_aspect_ratio=decrease',
     'pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black',
-    `drawtext=${fontArg}text='${top1}':fontsize=60:fontcolor=white:x=(w-text_w)/2:y=h*0.06:box=1:boxcolor=black@0.35:boxborderw=12`,
-    `drawtext=${fontArg}text='${top2}':fontsize=76:fontcolor=yellow:x=(w-text_w)/2:y=h*0.13:box=1:boxcolor=black@0.35:boxborderw=14`,
-    `drawtext=${fontArg}text='${bottom}':fontsize=54:fontcolor=white:x=(w-text_w)/2:y=h*0.87:box=1:boxcolor=black@0.4:boxborderw=16`,
+    `drawtext=${fontArg}text='${top1}':fontsize=70:fontcolor=white:borderw=6:bordercolor=black:x=(w-text_w)/2:y=h*0.05`,
+    `drawtext=${fontArg}text='${top2}':fontsize=92:fontcolor=yellow:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h*0.13`,
+    `drawtext=${fontArg}text='${bottom}':fontsize=66:fontcolor=white:borderw=7:bordercolor=black:x=(w-text_w)/2:y=h*0.90`,
   ].join(',');
 
   const outFile = `${jobId}.mp4`;
@@ -613,12 +621,15 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
       try {
         const translated = await callAISimple(
           `다음은 영상에 달린 원문 캡션이다(외국어일 수 있음). 이 영상을 한국 쇼츠 채널에 소개하려고 한다.\n` +
-          `반드시 이 형식으로만 출력(각 줄 그대로, 설명 추가 금지):\n` +
-          `윗줄1: (영상 상황을 짧게 설명하는 문구, 12자 내외)\n` +
-          `윗줄2: (핵심 포인트/감탄 키워드, 6~10자, 임팩트 있게)\n` +
-          `아랫말: (보고 난 반응 한 줄, 12자 내외)\n` +
-          `제목: (유튜브 쇼츠 제목 1줄, 25자 이내)\n` +
-          `설명: (유튜브 설명란 2~3문장)\n\n` +
+          `요즘 인스타/유튜브 쇼츠에서 유행하는 "커뮤니티 짤 요약"체로 써야 한다 — 실제 사람이 재밌어서\n` +
+          `공유하듯이 유쾌하고 친근한 말투로. 딱딱한 설명체 절대 금지, 존댓말도 금지(반말/구어체).\n` +
+          `ㅋㅋㅋ, ㄷㄷ, !, ? 같은 감탄 표현을 자연스럽게 섞어도 좋음.\n` +
+          `반드시 이 형식으로만 출력(각 줄 그대로, 예시 문구 그대로 베끼지 말고 이 영상 내용에 맞게):\n` +
+          `윗줄1: (영상 상황을 궁금증 유발하듯 짧게, 12자 내외. 예: "산책하던 강아지가", "이 남자가 한 짓")\n` +
+          `윗줄2: (핵심 포인트/감탄 키워드, 6~10자, 임팩트 있게. 예: "실화냐;;", "충격 결말", "완전 반전")\n` +
+          `아랫말: (보고 난 반응을 사람처럼 한 줄로, 12자 내외. 예: "이거 실화임?ㅋㅋㅋ", "진짜 대박이다", "나만 소름?")\n` +
+          `제목: (유튜브 쇼츠 제목 1줄, 25자 이내, 클릭하고 싶게)\n` +
+          `설명: (유튜브 설명란 2~3문장, 친근한 반말체)\n\n` +
           `원문: ${video.tweet_text || '(텍스트 없음)'}`,
         );
         const m = (re: RegExp) => translated.match(re)?.[1]?.trim();
