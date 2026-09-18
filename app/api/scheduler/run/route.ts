@@ -489,7 +489,7 @@ async function runAffiliateDiscoverAuto(schedule: Schedule): Promise<{ discovere
 // 영상(bossai_x_videos, x-notion-api 스크레이퍼가 채움)을 랜덤하게 골라 유튜브
 // 쇼츠로 올린다. 별도 채널(2days_movie)에만 올려서 쿠팡 수익화 채널(현가젯)이
 // 저작권 문제로 스트라이크/정지되는 걸 방지(사용자 확정). posted_at으로 중복 방지.
-const VIRAL_YOUTUBE_CHANNEL_ID = 'REPLACE_WITH_2DAYS_MOVIE_CHANNEL_ID'; // @2days_movie 연결 후 채워야 함
+const VIRAL_YOUTUBE_CHANNEL_ID = 'UC1xCt7o1CXWe4EVVdWYxkxQ'; // @2days_movie (채널명 "투데이즈케이알")
 const VIRAL_VIDEO_DISCLOSURE = '원본 출처가 있는 영상입니다. 저작권 문제 시 연락 주시면 즉시 조치하겠습니다.';
 
 async function pickRandom<T>(arr: T[], n: number): Promise<T[]> {
