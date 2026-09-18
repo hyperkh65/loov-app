@@ -36,6 +36,7 @@ export const maxDuration = 300;
 // 빌드에서 이 라우트가 아닌 엉뚱한 라우트(coupang/auto-post)의 청크에 코드가 묶여버려
 // 런타임에 실행 자체가 안 되는 버그를 실측 확인 — 이 라우트 파일에 직접 인라인해서 회피.
 const AFFILIATE_IG_PLATFORM_USER_ID = '34489947500650071'; // @2dayskr
+const AFFILIATE_THREADS_PLATFORM_USER_ID = '25203934249239577'; // @2dayskr (사용자 확정 — 쿠팡 발행용 계정과 동일 이름)
 const AFFILIATE_DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
 function buildAffiliateCaption(hook: string | undefined, productName: string | undefined, affiliateUrl: string | undefined): string {
@@ -154,6 +155,15 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
     .eq('is_active', true)
     .single();
 
+  const { data: threadsConn } = await supabase
+    .from('sns_connections')
+    .select('access_token, platform_user_id')
+    .eq('user_id', userId)
+    .eq('platform', 'threads')
+    .eq('platform_user_id', AFFILIATE_THREADS_PLATFORM_USER_ID)
+    .eq('is_active', true)
+    .single();
+
   const results: string[] = [];
   let published = 0;
 
@@ -220,6 +230,19 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
         results.push(`${label}: 인스타 연결 없음, 스킵`);
       }
 
+      if (threadsConn) {
+        try {
+          const pub = await postToPlatformWithMedia('threads', threadsConn.access_token, threadsConn.platform_user_id, caption, [render.public_url]);
+          await recordPublication(render.id, 'threads', pub.id);
+          anySuccess = true;
+          results.push(`${label}: 스레드 발행 완료 (${pub.id})`);
+        } catch (e) {
+          results.push(`${label}: 스레드 실패 — ${(e as Error).message?.slice(0, 150)}`);
+        }
+      } else {
+        results.push(`${label}: 스레드 연결 없음, 스킵`);
+      }
+
       try {
         const yt = await uploadToYoutube({
           userId,
@@ -235,7 +258,7 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
       }
 
       if (anySuccess) {
-        await supabase.from('affiliate_video_projects').update({ status: 'PUBLISHED' }).eq('id', project.id);
+        await supabase.from('affiliate_video_projects').update({ status: 'PUBLISHED', updated_at: new Date().toISOString() }).eq('id', project.id);
         published++;
       }
     } catch (e) {
