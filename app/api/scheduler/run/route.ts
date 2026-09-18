@@ -604,8 +604,11 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
       const publicVideoUrl = await ensurePublicVideoUrl(supabase, video);
 
       // 자막 3줄(윗줄1/윗줄2/아랫말) + 유튜브 제목/설명을 한 번의 AI 호출로 생성
-      let top1 = '요즘 화제라는', top2 = video.tweet_text?.slice(0, 12) || '이 영상', caption = '완전 신기하지 않아?';
-      let koTitle = video.tweet_text?.slice(0, 80) || '오늘의 화제 영상';
+      // AI 번역 실패 시에도 원문(외국어일 수 있음)이 자막/제목에 그대로 노출되면 안 됨 —
+      // 전부 안전한 한국어 기본 문구로 폴백(실제로 AI 호출 전체가 실패해서 이 기본값이
+      // 그대로 나간 사고가 있었음).
+      let top1 = '요즘 화제라는', top2 = '이 영상', caption = '완전 신기하지 않아?';
+      let koTitle = '오늘의 화제 영상';
       let koDesc = video.tweet_text || '';
       try {
         const translated = await callAISimple(
@@ -624,7 +627,9 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
         caption = m(/아랫말:\s*(.+)/) || caption;
         koTitle = (m(/제목:\s*(.+)/) || koTitle).slice(0, 80);
         koDesc = m(/설명:\s*([\s\S]+?)(?=\n\S+:|$)/) || koDesc;
-      } catch { /* 번역 실패 시 기본값/원문 그대로 사용 */ }
+      } catch (e) {
+        console.error('[viral_video_youtube_auto] 자막/제목 생성 실패, 기본 문구로 폴백:', e);
+      }
 
       const editedVideoUrl = await editViralVideoForShorts({ sourceUrl: publicVideoUrl, lineTop1: top1, lineTop2: top2, caption });
 
