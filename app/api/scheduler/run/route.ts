@@ -485,6 +485,86 @@ async function runAffiliateDiscoverAuto(schedule: Schedule): Promise<{ discovere
   return { discovered: results.length, results };
 }
 
+// 바이럴 영상 재업로드 자동화 — X(트위터) 계정(momentoviral 등)에서 이미 수집해둔
+// 영상(bossai_x_videos, x-notion-api 스크레이퍼가 채움)을 랜덤하게 골라 유튜브
+// 쇼츠로 올린다. 별도 채널(2days_movie)에만 올려서 쿠팡 수익화 채널(현가젯)이
+// 저작권 문제로 스트라이크/정지되는 걸 방지(사용자 확정). posted_at으로 중복 방지.
+const VIRAL_YOUTUBE_CHANNEL_ID = 'REPLACE_WITH_2DAYS_MOVIE_CHANNEL_ID'; // @2days_movie 연결 후 채워야 함
+const VIRAL_VIDEO_DISCLOSURE = '원본 출처가 있는 영상입니다. 저작권 문제 시 연락 주시면 즉시 조치하겠습니다.';
+
+async function pickRandom<T>(arr: T[], n: number): Promise<T[]> {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
+async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded: number; results: string[] }> {
+  const supabase = createAdminClient();
+  const config = (schedule.config as { usernames?: string[] }) || {};
+  const usernames = config.usernames?.length ? config.usernames : ['momentoviral'];
+
+  // 배경에서 새 영상 계속 수집(현재 실행을 기다리게 하지 않음) — 다음 회차 재고 보충용
+  for (const username of usernames) {
+    fetch('http://aboda.kr:5053/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': 'xc-aboda-2026' },
+      body: JSON.stringify({ username, count: 30, force: false }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => { /* 재고 보충 실패는 이번 회차와 무관, 무시 */ });
+  }
+
+  const { data: candidates } = await supabase
+    .from('bossai_x_videos')
+    .select('id, username, tweet_id, tweet_text, tweet_url, video_url')
+    .in('username', usernames)
+    .is('posted_at', null)
+    .order('collected_at', { ascending: false })
+    .limit(50);
+
+  if (!candidates?.length) return { uploaded: 0, results: ['업로드할 새 영상 없음 (재고 소진 — 다음 회차에 자동 보충됨)'] };
+
+  const picked = await pickRandom(candidates, 2);
+  const results: string[] = [];
+  let uploaded = 0;
+
+  for (const video of picked) {
+    try {
+      let koTitle = video.tweet_text?.slice(0, 80) || '오늘의 화제 영상';
+      let koDesc = video.tweet_text || '';
+      try {
+        const translated = await callAISimple(
+          `다음 트윗 문구를 자연스러운 한국어 유튜브 쇼츠 제목(1줄, 25자 이내, 후킹감 있게)과 설명(2~3문장)으로 만들어줘. 반드시 이 형식으로만 출력:\n제목: ...\n설명: ...\n\n원문: ${video.tweet_text || '(텍스트 없음)'}`,
+        );
+        const titleMatch = translated.match(/제목:\s*(.+)/);
+        const descMatch = translated.match(/설명:\s*([\s\S]+)/);
+        if (titleMatch) koTitle = titleMatch[1].trim().slice(0, 80);
+        if (descMatch) koDesc = descMatch[1].trim();
+      } catch { /* 번역 실패 시 원문 그대로 사용 */ }
+
+      const description = [koDesc, '', `원본: ${video.tweet_url}`, VIRAL_VIDEO_DISCLOSURE].filter(Boolean).join('\n');
+
+      const yt = await uploadToYoutube({
+        userId: schedule.user_id,
+        videoUrl: video.video_url,
+        title: koTitle,
+        description,
+        channelId: VIRAL_YOUTUBE_CHANNEL_ID,
+      });
+
+      await supabase.from('bossai_x_videos').update({
+        posted_at: new Date().toISOString(),
+        posted_platforms: ['youtube_2days_movie'],
+      }).eq('id', video.id);
+
+      uploaded++;
+      results.push(`@${video.username} ${video.tweet_id}: 업로드 완료 (${yt.url})`);
+    } catch (e) {
+      results.push(`@${video.username} ${video.tweet_id}: 실패 — ${(e as Error).message?.slice(0, 150)}`);
+    }
+  }
+
+  return { uploaded, results };
+}
+
 async function executeSchedule(schedule: Schedule) {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
@@ -572,6 +652,12 @@ async function executeSchedule(schedule: Schedule) {
         const r = await runAffiliateDiscoverAuto(schedule);
         result = r as unknown as Record<string, unknown>;
         summary = `${r.discovered}건 처리 — ${r.results.join(' / ')}`.slice(0, 500);
+        break;
+      }
+      case 'viral_video_youtube_auto': {
+        const r = await runViralVideoYoutubeAuto(schedule);
+        result = r as unknown as Record<string, unknown>;
+        summary = `${r.uploaded}건 업로드 — ${r.results.join(' / ')}`.slice(0, 500);
         break;
       }
     }

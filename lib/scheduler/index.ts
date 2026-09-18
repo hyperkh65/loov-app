@@ -32,7 +32,7 @@
  * );
  */
 
-export type ScheduleType = 'blog_auto' | 'coupang_auto' | 'agoda_auto' | 'shorts_auto' | 'instagram_auto' | 'naver_tech_auto' | 'affiliate_publish_auto' | 'affiliate_discover_auto';
+export type ScheduleType = 'blog_auto' | 'coupang_auto' | 'agoda_auto' | 'shorts_auto' | 'instagram_auto' | 'naver_tech_auto' | 'affiliate_publish_auto' | 'affiliate_discover_auto' | 'viral_video_youtube_auto';
 
 export interface BlogAutoConfig {
   content_type: 'product' | 'info';
