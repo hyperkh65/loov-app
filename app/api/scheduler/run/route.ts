@@ -583,6 +583,16 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
   const config = (schedule.config as { usernames?: string[] }) || {};
   const usernames = config.usernames?.length ? config.usernames : ['momentoviral'];
 
+  // 쿠팡 발행에 쓰던 것과 같은 스레드 계정(@2dayskr)에도 같이 올림(사용자 확정).
+  const { data: threadsConn } = await supabase
+    .from('sns_connections')
+    .select('access_token, platform_user_id')
+    .eq('user_id', schedule.user_id)
+    .eq('platform', 'threads')
+    .eq('platform_user_id', AFFILIATE_THREADS_PLATFORM_USER_ID)
+    .eq('is_active', true)
+    .single();
+
   // 배경에서 새 영상 계속 수집(현재 실행을 기다리게 하지 않음) — 다음 회차 재고 보충용
   for (const username of usernames) {
     fetch('http://aboda.kr:5053/scrape', {
@@ -654,13 +664,26 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
         channelId: VIRAL_YOUTUBE_CHANNEL_ID,
       });
 
+      const postedPlatforms = ['youtube_2days_movie'];
+      let threadsNote = '';
+      if (threadsConn) {
+        try {
+          const threadsCaption = [koTitle, '', koDesc].filter(Boolean).join('\n');
+          const pub = await postToPlatformWithMedia('threads', threadsConn.access_token, threadsConn.platform_user_id, threadsCaption, [editedVideoUrl]);
+          postedPlatforms.push('threads_2dayskr');
+          threadsNote = ` / 스레드 발행 완료 (${pub.id})`;
+        } catch (e) {
+          threadsNote = ` / 스레드 실패 — ${(e as Error).message?.slice(0, 100)}`;
+        }
+      }
+
       await supabase.from('bossai_x_videos').update({
         posted_at: new Date().toISOString(),
-        posted_platforms: ['youtube_2days_movie'],
+        posted_platforms: postedPlatforms,
       }).eq('id', video.id);
 
       uploaded++;
-      results.push(`@${video.username} ${video.tweet_id}: 업로드 완료 (${yt.url})`);
+      results.push(`@${video.username} ${video.tweet_id}: 업로드 완료 (${yt.url})${threadsNote}`);
     } catch (e) {
       results.push(`@${video.username} ${video.tweet_id}: 실패 — ${(e as Error).message?.slice(0, 150)}`);
     }
