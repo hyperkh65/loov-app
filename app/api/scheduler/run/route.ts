@@ -26,7 +26,8 @@ import { searchProducts } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
 import { callAI, callAISimple } from '@/lib/ai-call';
 import { renderShortsVideo } from '@/lib/shorts/render-core';
-import { nasExec } from '@/lib/nas-ssh';
+import { findFfmpeg, findKoreanFont, escapeDrawtext } from '@/lib/shorts/nas-ffmpeg';
+import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
 import type { Schedule } from '@/lib/scheduler';
 
 export const maxDuration = 300;
@@ -520,6 +521,54 @@ async function ensurePublicVideoUrl(supabase: ReturnType<typeof createAdminClien
   return publicUrl;
 }
 
+// 원본을 그냥 재업로드하지 말고 편집해서 올리자는 요청(사용자 확정) — 검정
+// 배경 레터박스 + 위쪽 2줄 후킹 문구(흰색+노란 강조) + 아래쪽 반응 자막, 요즘
+// 커뮤니티 이슈요약 숏폼에서 흔한 스타일. 세로 꽉 채우는 크롭이 아니라
+// force_original_aspect_ratio=decrease+pad로 원본 비율은 그대로 두고 위아래
+// 검정으로 채운다 — 그래야 저 스타일의 "검정 바탕" 느낌이 남.
+async function editViralVideoForShorts(params: {
+  sourceUrl: string; lineTop1: string; lineTop2: string; caption: string;
+}): Promise<string> {
+  const ffmpeg = await findFfmpeg();
+  const fontPath = await findKoreanFont();
+  const jobId = `viral_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const dir = `/tmp/${jobId}`;
+
+  const top1 = escapeDrawtext(params.lineTop1);
+  const top2 = escapeDrawtext(params.lineTop2);
+  const bottom = escapeDrawtext(params.caption);
+  const fontArg = fontPath ? `fontfile='${fontPath}':` : '';
+
+  // ponytail: 원본 비율이 이미 9:16에 가까우면 검정 여백이 거의 없어 자막이
+  // 영상 위에 얹힐 수 있음 — box=1(반투명 검정 박스)로 최소한의 가독성만 보장.
+  const vf = [
+    'scale=1080:1920:force_original_aspect_ratio=decrease',
+    'pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black',
+    `drawtext=${fontArg}text='${top1}':fontsize=60:fontcolor=white:x=(w-text_w)/2:y=h*0.06:box=1:boxcolor=black@0.35:boxborderw=12`,
+    `drawtext=${fontArg}text='${top2}':fontsize=76:fontcolor=yellow:x=(w-text_w)/2:y=h*0.13:box=1:boxcolor=black@0.35:boxborderw=14`,
+    `drawtext=${fontArg}text='${bottom}':fontsize=54:fontcolor=white:x=(w-text_w)/2:y=h*0.87:box=1:boxcolor=black@0.4:boxborderw=16`,
+  ].join(',');
+
+  const outFile = `${jobId}.mp4`;
+  const script = [
+    '#!/bin/bash', 'set -e',
+    `mkdir -p "${dir}"`,
+    `curl -sL --max-time 60 "${params.sourceUrl}" -o "${dir}/source.mp4"`,
+    `${ffmpeg} -hide_banner -loglevel error -i "${dir}/source.mp4" -vf "${vf}" ` +
+      `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -y "${dir}/${outFile}"`,
+    `mkdir -p /volume1/web/xmedia/_edited`,
+    `cp "${dir}/${outFile}" "/volume1/web/xmedia/_edited/${outFile}"`,
+    `rm -rf "${dir}"`,
+    'echo EDIT_DONE',
+  ].join('\n');
+
+  await nasExecWithStdin(`cat > /tmp/${jobId}.sh`, script);
+  const result = await nasExec(`bash /tmp/${jobId}.sh; rm -f /tmp/${jobId}.sh`, 120_000);
+  if (!result.stdout.includes('EDIT_DONE')) throw new Error('영상 편집 실패: ' + (result.stderr || result.stdout).slice(0, 300));
+
+  return `https://hy64.synology.me/xmedia/_edited/${outFile}`;
+}
+
 async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded: number; results: string[] }> {
   const supabase = createAdminClient();
   const config = (schedule.config as { usernames?: string[] }) || {};
@@ -552,23 +601,37 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
   for (const video of picked) {
     try {
       const publicVideoUrl = await ensurePublicVideoUrl(supabase, video);
+
+      // 자막 3줄(윗줄1/윗줄2/아랫말) + 유튜브 제목/설명을 한 번의 AI 호출로 생성
+      let top1 = '요즘 화제라는', top2 = video.tweet_text?.slice(0, 12) || '이 영상', caption = '완전 신기하지 않아?';
       let koTitle = video.tweet_text?.slice(0, 80) || '오늘의 화제 영상';
       let koDesc = video.tweet_text || '';
       try {
         const translated = await callAISimple(
-          `다음 트윗 문구를 자연스러운 한국어 유튜브 쇼츠 제목(1줄, 25자 이내, 후킹감 있게)과 설명(2~3문장)으로 만들어줘. 반드시 이 형식으로만 출력:\n제목: ...\n설명: ...\n\n원문: ${video.tweet_text || '(텍스트 없음)'}`,
+          `다음은 영상에 달린 원문 캡션이다(외국어일 수 있음). 이 영상을 한국 쇼츠 채널에 소개하려고 한다.\n` +
+          `반드시 이 형식으로만 출력(각 줄 그대로, 설명 추가 금지):\n` +
+          `윗줄1: (영상 상황을 짧게 설명하는 문구, 12자 내외)\n` +
+          `윗줄2: (핵심 포인트/감탄 키워드, 6~10자, 임팩트 있게)\n` +
+          `아랫말: (보고 난 반응 한 줄, 12자 내외)\n` +
+          `제목: (유튜브 쇼츠 제목 1줄, 25자 이내)\n` +
+          `설명: (유튜브 설명란 2~3문장)\n\n` +
+          `원문: ${video.tweet_text || '(텍스트 없음)'}`,
         );
-        const titleMatch = translated.match(/제목:\s*(.+)/);
-        const descMatch = translated.match(/설명:\s*([\s\S]+)/);
-        if (titleMatch) koTitle = titleMatch[1].trim().slice(0, 80);
-        if (descMatch) koDesc = descMatch[1].trim();
-      } catch { /* 번역 실패 시 원문 그대로 사용 */ }
+        const m = (re: RegExp) => translated.match(re)?.[1]?.trim();
+        top1 = m(/윗줄1:\s*(.+)/) || top1;
+        top2 = m(/윗줄2:\s*(.+)/) || top2;
+        caption = m(/아랫말:\s*(.+)/) || caption;
+        koTitle = (m(/제목:\s*(.+)/) || koTitle).slice(0, 80);
+        koDesc = m(/설명:\s*([\s\S]+?)(?=\n\S+:|$)/) || koDesc;
+      } catch { /* 번역 실패 시 기본값/원문 그대로 사용 */ }
+
+      const editedVideoUrl = await editViralVideoForShorts({ sourceUrl: publicVideoUrl, lineTop1: top1, lineTop2: top2, caption });
 
       const description = [koDesc, '', `원본: ${video.tweet_url}`, VIRAL_VIDEO_DISCLOSURE].filter(Boolean).join('\n');
 
       const yt = await uploadToYoutube({
         userId: schedule.user_id,
-        videoUrl: publicVideoUrl,
+        videoUrl: editedVideoUrl,
         title: koTitle,
         description,
         channelId: VIRAL_YOUTUBE_CHANNEL_ID,
