@@ -641,8 +641,8 @@ export default function QuotesPage() {
                                         <th style={{ padding: '15px', width: '100px' }}>Lumen</th>
                                         <th style={{ padding: '15px', width: '100px' }}>CCT</th>
                                         <th style={{ padding: '15px', width: '90px' }}>Unit</th>
-                                        <th style={{ padding: '15px', width: '150px', textAlign: 'right' }}>Price</th>
-                                        <th style={{ padding: '15px', width: '110px', textAlign: 'right' }}>Qty</th>
+                                        <th style={{ padding: '15px', width: '160px', textAlign: 'right' }}>Price</th>
+                                        <th style={{ padding: '15px', width: '140px', textAlign: 'right' }}>Qty</th>
                                         <th style={{ padding: '15px', width: '140px', textAlign: 'right' }}>Total</th>
                                         <th style={{ padding: '15px' }}>Remarks</th>
                                         <th style={{ padding: '15px', width: '40px' }}></th>
@@ -685,14 +685,14 @@ export default function QuotesPage() {
                                                 </select>
                                             </td>
                                             <td style={{ padding: '12px' }}>
-                                                <input type="number" value={it.unitPrice} onChange={e => {
+                                                <input type="number" className="no-spinner" value={it.unitPrice} onChange={e => {
                                                     const updated = [...form.items];
                                                     updated[idx].unitPrice = Number(e.target.value);
                                                     setForm({ ...form, items: updated });
                                                 }} style={{ width: '100%', background: 'transparent', border: 'none', color: 'white', textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', padding: '4px 2px' }} />
                                             </td>
                                             <td style={{ padding: '12px' }}>
-                                                <input type="number" value={it.qty} onChange={e => {
+                                                <input type="number" className="no-spinner" value={it.qty} onChange={e => {
                                                     const updated = [...form.items];
                                                     updated[idx].qty = Number(e.target.value);
                                                     setForm({ ...form, items: updated });

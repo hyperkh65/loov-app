@@ -507,8 +507,8 @@ export default function SalesManagementPage() {
                                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', textAlign: 'left' }}>
                                     <th style={{ padding: '10px' }}>제품명</th>
                                     <th style={{ padding: '10px' }}>규격 (Specification)</th>
-                                    <th style={{ padding: '10px', width: '130px' }}>수량</th>
-                                    <th style={{ padding: '10px', width: '170px' }}>단가</th>
+                                    <th style={{ padding: '10px', width: '150px' }}>수량</th>
+                                    <th style={{ padding: '10px', width: '180px' }}>단가</th>
                                     <th style={{ padding: '10px', width: '150px', textAlign: 'right' }}>금액</th>
                                     <th style={{ padding: '10px', width: '50px' }}></th>
                                 </tr>
@@ -525,10 +525,10 @@ export default function SalesManagementPage() {
                                             <input value={item.specification} onChange={e => updateItem(idx, { specification: e.target.value })} style={{ width: '100%', padding: '0.6rem', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: '0.85rem' }} />
                                         </td>
                                         <td style={{ padding: '12px 10px' }}>
-                                            <input type="number" value={item.qty} onChange={e => updateItem(idx, { qty: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', textAlign: 'right', fontSize: '0.95rem' }} />
+                                            <input type="number" className="no-spinner" value={item.qty} onChange={e => updateItem(idx, { qty: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', textAlign: 'right', fontSize: '0.95rem' }} />
                                         </td>
                                         <td style={{ padding: '12px 10px' }}>
-                                            <input type="number" value={item.unitPrice} onChange={e => updateItem(idx, { unitPrice: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', textAlign: 'right', fontSize: '0.95rem' }} />
+                                            <input type="number" className="no-spinner" value={item.unitPrice} onChange={e => updateItem(idx, { unitPrice: Number(e.target.value) })} style={{ width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', textAlign: 'right', fontSize: '0.95rem' }} />
                                         </td>
                                         <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 700, fontSize: '0.95rem' }}>
                                             ₩{item.amount.toLocaleString()}

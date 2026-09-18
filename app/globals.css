@@ -157,3 +157,14 @@ body {
   box-shadow: 0 4px 20px rgba(99, 102, 241, 0.1);
   transform: translateY(-1px);
 }
+
+/* ERP 견적/발주/인보이스 수량·단가 입력 — 직접 타이핑만 하므로 스피너 화살표(위/아래
+   버튼)가 안 그래도 좁은 칸을 더 좁게 만드는 걸 없앰(사용자 확정) */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner {
+  -moz-appearance: textfield;
+}
