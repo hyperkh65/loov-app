@@ -613,7 +613,10 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
 
   if (!candidates?.length) return { uploaded: 0, results: ['업로드할 새 영상 없음 (재고 소진 — 다음 회차에 자동 보충됨)'] };
 
-  const picked = await pickRandom(candidates, 2);
+  // 1시간마다 2개씩 올리던 걸 3시간마다 1개로 줄임 — 양보다 질(사용자 확정): 매 회차 AI
+  // 파싱이 실패하면 정체돼 보이는 기본 문구가 그대로 나가던 문제와 겹쳐 "티 나는 자동화"로
+  // 보였음. 빈도를 줄이고(스케줄 interval_hours를 3으로 별도 변경) 아래 파싱도 견고화함.
+  const picked = await pickRandom(candidates, 1);
   const results: string[] = [];
   let uploaded = 0;
 
@@ -621,33 +624,37 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
     try {
       const publicVideoUrl = await ensurePublicVideoUrl(supabase, video);
 
-      // 자막 3줄(윗줄1/윗줄2/아랫말) + 유튜브 제목/설명을 한 번의 AI 호출로 생성
-      // AI 번역 실패 시에도 원문(외국어일 수 있음)이 자막/제목에 그대로 노출되면 안 됨 —
-      // 전부 안전한 한국어 기본 문구로 폴백(실제로 AI 호출 전체가 실패해서 이 기본값이
-      // 그대로 나간 사고가 있었음).
+      // 자막 3줄(윗줄1/윗줄2/아랫말) + 유튜브 제목/설명을 한 번의 AI 호출로 생성.
+      // 예전엔 "라벨: 값" 줄 단위 정규식 파싱이었는데, 매번 기본 문구만 나가는 사고가
+      // 반복 확인됨 — 종교/문화적 소재(예: 기도하는 사람 영상)에서 라벨 형식을 안 지키고
+      // 딴 얘기를 하는 경우가 있었던 것으로 추정. JSON 강제 출력으로 바꿔 신뢰도를 높이고,
+      // koDesc 기본값도 원문(외국어일 수 있음) 대신 안전한 한국어 문구로 고정
+      // (예전엔 여기만 원문 그대로 노출되는 사고가 있었음).
       let top1 = '요즘 화제라는', top2 = '이 영상', caption = '완전 신기하지 않아?';
       let koTitle = '오늘의 화제 영상';
-      let koDesc = video.tweet_text || '';
+      let koDesc = '오늘 알고리즘에 뜬 영상인데 진짜 신기해서 가져와봤어!';
       try {
-        const translated = await callAISimple(
-          `다음은 영상에 달린 원문 캡션이다(외국어일 수 있음). 이 영상을 한국 쇼츠 채널에 소개하려고 한다.\n` +
-          `요즘 인스타/유튜브 쇼츠에서 유행하는 "커뮤니티 짤 요약"체로 써야 한다 — 실제 사람이 재밌어서\n` +
-          `공유하듯이 유쾌하고 친근한 말투로. 딱딱한 설명체 절대 금지, 존댓말도 금지(반말/구어체).\n` +
-          `ㅋㅋㅋ, ㄷㄷ, !, ? 같은 감탄 표현을 자연스럽게 섞어도 좋음.\n` +
-          `반드시 이 형식으로만 출력(각 줄 그대로, 예시 문구 그대로 베끼지 말고 이 영상 내용에 맞게):\n` +
-          `윗줄1: (영상 상황을 궁금증 유발하듯 짧게, 12자 내외. 예: "산책하던 강아지가", "이 남자가 한 짓")\n` +
-          `윗줄2: (핵심 포인트/감탄 키워드, 6~10자, 임팩트 있게. 예: "실화냐;;", "충격 결말", "완전 반전")\n` +
-          `아랫말: (보고 난 반응을 사람처럼 한 줄로, 12자 내외. 예: "이거 실화임?ㅋㅋㅋ", "진짜 대박이다", "나만 소름?")\n` +
-          `제목: (유튜브 쇼츠 제목 1줄, 25자 이내, 클릭하고 싶게)\n` +
-          `설명: (유튜브 설명란 2~3문장, 친근한 반말체)\n\n` +
-          `원문: ${video.tweet_text || '(텍스트 없음)'}`,
+        const raw = await callAISimple(
+          `다음은 영상에 달린 원문 캡션이다(외국어일 수 있음, 종교/문화 등 어떤 소재든 담담하고 정중하게 소개하면 됨).\n` +
+          `이 영상을 한국 쇼츠 채널에 소개하려 한다. 요즘 인스타/유튜브 쇼츠에서 유행하는 "커뮤니티 짤 요약"체로 —\n` +
+          `실제 사람이 재밌어서 공유하듯 유쾌하고 친근한 말투로. 딱딱한 설명체·존댓말 절대 금지(반말/구어체만).\n` +
+          `ㅋㅋㅋ, ㄷㄷ, !, ? 같은 감탄 표현을 자연스럽게 섞어도 좋음.\n\n` +
+          `원문: ${video.tweet_text || '(텍스트 없음)'}\n\n` +
+          `다른 설명이나 코드블록 없이, 반드시 아래 키를 모두 포함한 JSON 객체 하나만 출력해라:\n` +
+          `{"top1": "영상 상황을 궁금증 유발하듯 짧게(12자 내외, 예: 산책하던 강아지가)", ` +
+          `"top2": "핵심 포인트/감탄 키워드(6~10자, 예: 실화냐;;)", ` +
+          `"caption": "보고 난 반응을 사람처럼 한 줄(12자 내외, 예: 이거 실화임?ㅋㅋㅋ)", ` +
+          `"title": "유튜브 쇼츠 제목(25자 이내, 클릭하고 싶게)", ` +
+          `"desc": "유튜브 설명란(2~3문장, 친근한 반말체)"}`,
         );
-        const m = (re: RegExp) => translated.match(re)?.[1]?.trim();
-        top1 = m(/윗줄1:\s*(.+)/) || top1;
-        top2 = m(/윗줄2:\s*(.+)/) || top2;
-        caption = m(/아랫말:\s*(.+)/) || caption;
-        koTitle = (m(/제목:\s*(.+)/) || koTitle).slice(0, 80);
-        koDesc = m(/설명:\s*([\s\S]+?)(?=\n\S+:|$)/) || koDesc;
+        const jsonStr = raw.match(/\{[\s\S]*\}/)?.[0];
+        if (!jsonStr) throw new Error('JSON 응답 아님: ' + raw.slice(0, 200));
+        const parsed = JSON.parse(jsonStr) as Record<string, string>;
+        top1 = parsed.top1?.trim() || top1;
+        top2 = parsed.top2?.trim() || top2;
+        caption = parsed.caption?.trim() || caption;
+        koTitle = (parsed.title?.trim() || koTitle).slice(0, 80);
+        koDesc = parsed.desc?.trim() || koDesc;
       } catch (e) {
         console.error('[viral_video_youtube_auto] 자막/제목 생성 실패, 기본 문구로 폴백:', e);
       }
