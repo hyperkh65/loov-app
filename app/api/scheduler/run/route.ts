@@ -692,6 +692,118 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
   return { uploaded, results };
 }
 
+// 무신사 큐레이터 — 쿠팡/알리익스프레스와 달리 오픈 API가 없지만, 큐레이터
+// 대시보드(curator.29cm.co.kr)가 내부적으로 쓰는 api.one.musinsa.com JSON API를
+// 브라우저 네트워크 탭에서 실측 확인함(로그인 세션 쿠키 app_atk + X-Platform:MUSINSA
+// 헤더만 있으면 인증됨). 리프레시 플로우는 못 찾아서 app_atk가 언젠가 만료되면
+// 브라우저에서 재로그인 후 값을 다시 저장해야 함(X 스크래퍼 쿠키와 동일한 리스크).
+const MUSINSA_THREADS_PLATFORM_USER_ID = '28733238669628153'; // @seanonthemail — 무신사 큐레이터 전용 신규 계정(쿠팡용 계정과 분리, 사용자 확정)
+const MUSINSA_DISCLOSURE = '이 포스팅은 무신사 큐레이터 활동의 일환으로, 구매가 발생할 경우 일정 수수료를 제공받습니다.';
+const MUSINSA_KEYWORDS = [
+  '후드티', '맨투맨', '니트', '가디건', '청바지', '슬랙스', '자켓', '코트', '무스탕', '패딩',
+  '원피스', '스커트', '블라우스', '반팔티', '긴팔티', '스니커즈', '로퍼', '부츠', '크로스백',
+  '볼캡', '비니', '머플러', '트레이닝세트', '카고팬츠', '와이드팬츠',
+];
+
+async function musinsaApi(path: string, method: 'GET' | 'POST' = 'GET'): Promise<Record<string, unknown>> {
+  const atk = await getSetting('MUSINSA_APP_ATK');
+  if (!atk) throw new Error('무신사 로그인 토큰(MUSINSA_APP_ATK 설정) 없음');
+  const res = await fetch(`https://api.one.musinsa.com${path}`, {
+    method,
+    headers: { 'X-Platform': 'MUSINSA', 'Cookie': `app_atk=${atk}` },
+  });
+  const json = await res.json().catch(() => null) as { data?: Record<string, unknown>; meta?: { result?: string; message?: string } } | null;
+  if (!res.ok || json?.meta?.result !== 'SUCCESS') {
+    throw new Error(`무신사 API 실패(${res.status}): ${json?.meta?.message || res.statusText}`);
+  }
+  return json.data || {};
+}
+
+interface MusinsaProduct {
+  goodsNo: number; goodsName: string; brandName: string | null; imageUrl: string;
+  originalPrice: number; finalPrice: number; finalDiscount: number;
+  expectedEarnings: number; isSoldOut: boolean;
+}
+
+async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: number; goodsNo?: number; results: string[] }> {
+  const supabase = createAdminClient();
+
+  const { data: threadsConn } = await supabase
+    .from('sns_connections')
+    .select('access_token, platform_user_id')
+    .eq('user_id', schedule.user_id)
+    .eq('platform', 'threads')
+    .eq('platform_user_id', MUSINSA_THREADS_PLATFORM_USER_ID)
+    .eq('is_active', true)
+    .single();
+
+  if (!threadsConn) return { posted: 0, results: ['@seanonthemail 스레드 계정 연결 안 됨'] };
+
+  const idx = schedule.keyword_index % MUSINSA_KEYWORDS.length;
+  const keyword = MUSINSA_KEYWORDS[idx];
+  await supabase.from('bossai_schedules').update({ keyword_index: (idx + 1) % MUSINSA_KEYWORDS.length }).eq('id', schedule.id);
+
+  // 최근에 이미 올린 상품은 제외(중복 방지) — 쿠팡 파이프라인과 동일하게 이력 전체를 확인
+  const { data: recentLogs } = await supabase
+    .from('bossai_schedule_logs')
+    .select('result')
+    .eq('schedule_id', schedule.id)
+    .eq('status', 'success')
+    .order('started_at', { ascending: false })
+    .limit(5000);
+  const recentGoodsNo = new Set(
+    (recentLogs || []).map(l => (l.result as { goodsNo?: number })?.goodsNo).filter(Boolean)
+  );
+
+  let list: MusinsaProduct[];
+  try {
+    const data = await musinsaApi(`/api2/affiliate/v2/products/search?keyword=${encodeURIComponent(keyword)}&page=1&size=30`);
+    list = (data.list || []) as MusinsaProduct[];
+  } catch (e) {
+    return { posted: 0, results: [`"${keyword}" 검색 실패 — ${(e as Error).message}`] };
+  }
+
+  const picked = list
+    .filter(p => !p.isSoldOut && !recentGoodsNo.has(p.goodsNo))
+    .sort((a, b) => b.expectedEarnings - a.expectedEarnings)[0];
+
+  if (!picked) return { posted: 0, results: [`"${keyword}" 후보 없음(품절 제외/이미 게시된 상품만 있음)`] };
+
+  let link: string;
+  try {
+    const linkData = await musinsaApi(`/api2/affiliate/v2/link/product/${picked.goodsNo}`, 'POST');
+    link = linkData.link as string;
+  } catch (e) {
+    return { posted: 0, goodsNo: picked.goodsNo, results: [`"${picked.goodsName}" 링크 생성 실패 — ${(e as Error).message}`] };
+  }
+
+  let caption = '';
+  try {
+    caption = (await callAISimple(
+      `너는 패션 계정을 운영하는 20대 인플루언서다. 아래 무신사 상품을 소개하는 스레드(Threads) 게시물 문구를 써라.\n` +
+      `광고 티 나는 딱딱한 카피 금지, 진짜 갖고 싶어서 자랑하듯 반말/구어체로 3~5줄. 이모지는 1~2개만.\n` +
+      `가격/할인율 정보를 자연스럽게 녹여서 "이 가격에 안 사면 손해"라는 느낌을 줘. 브랜드명도 자연스럽게 언급.\n` +
+      `상품명: ${picked.goodsName}\n브랜드: ${picked.brandName || '무신사'}\n정가: ${picked.originalPrice.toLocaleString()}원\n` +
+      `할인가: ${picked.finalPrice.toLocaleString()}원 (${picked.finalDiscount}% 할인)\n\n` +
+      `마지막에 링크나 해시태그는 넣지 마(내가 따로 붙일 거임). 본문만 출력해.`,
+    )).trim();
+  } catch (e) {
+    console.error('[musinsa_curator_auto] 캡션 생성 실패, 기본 문구로 폴백:', e);
+    caption = `${picked.brandName ? `[${picked.brandName}] ` : ''}${picked.goodsName}\n${picked.finalDiscount}% 할인 중 — ${picked.finalPrice.toLocaleString()}원`;
+  }
+
+  const fullCaption = [
+    caption, '', link, '', MUSINSA_DISCLOSURE, '', '#무신사 #무신사큐레이터 #패션추천 #오오티디',
+  ].join('\n');
+
+  try {
+    const pub = await postToPlatformWithMedia('threads', threadsConn.access_token, threadsConn.platform_user_id, fullCaption, [picked.imageUrl]);
+    return { posted: 1, goodsNo: picked.goodsNo, results: [`"${picked.goodsName}" 발행 완료 (${pub.id})`] };
+  } catch (e) {
+    return { posted: 0, goodsNo: picked.goodsNo, results: [`"${picked.goodsName}" 스레드 발행 실패 — ${(e as Error).message?.slice(0, 150)}`] };
+  }
+}
+
 async function executeSchedule(schedule: Schedule) {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
@@ -785,6 +897,12 @@ async function executeSchedule(schedule: Schedule) {
         const r = await runViralVideoYoutubeAuto(schedule);
         result = r as unknown as Record<string, unknown>;
         summary = `${r.uploaded}건 업로드 — ${r.results.join(' / ')}`.slice(0, 500);
+        break;
+      }
+      case 'musinsa_curator_auto': {
+        const r = await runMusinsaCuratorAuto(schedule);
+        result = r as unknown as Record<string, unknown>;
+        summary = `${r.posted}건 발행 — ${r.results.join(' / ')}`.slice(0, 500);
         break;
       }
     }
