@@ -16,8 +16,14 @@ import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
 const PUBLISH_INTERVAL_MS = 30 * 60 * 1000;
-const MAX_PUBLISHES_PER_CALL = 8;
-const TIME_BUDGET_MS = 170_000; // auto-run의 200s abort보다 여유 있게 끊어서 부분 응답을 보장
+const MAX_PUBLISHES_PER_CALL = 5;
+// 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
+// 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
+// 이 체크는 "다음 건을 시작하기 전"에만 걸리고 진행 중인 발행을 끊지는 못하므로,
+// 남은 예산 + 발행 1건 최악 소요시간(~90초)의 합이 auto-run의 200s abort보다
+// 작아야 안전함 — 처음 배포 때 8건/170초로 잡았다가 실제로 크론 1틱이 5분
+// 넘게 안 끝나는 걸 실측 확인해서 보수적으로 낮춤.
+const TIME_BUDGET_MS = 100_000;
 
 // one.yoosol/yoonfree — 생성 속도가 빨라 일반 라운드로빈으로는 계속 밀리는 게
 // 실측 확인됨(사용자 확정 우선순위). 둘 다 준비돼 있으면 대기시간과 무관하게
