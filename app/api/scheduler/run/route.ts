@@ -38,7 +38,7 @@ export const maxDuration = 300;
 // 빌드에서 이 라우트가 아닌 엉뚱한 라우트(coupang/auto-post)의 청크에 코드가 묶여버려
 // 런타임에 실행 자체가 안 되는 버그를 실측 확인 — 이 라우트 파일에 직접 인라인해서 회피.
 const AFFILIATE_IG_PLATFORM_USER_ID = '34489947500650071'; // @2dayskr
-const AFFILIATE_THREADS_PLATFORM_USER_ID = '25203934249239577'; // @2dayskr (사용자 확정 — 쿠팡 발행용 계정과 동일 이름)
+const AFFILIATE_THREADS_PLATFORM_USER_ID = '25873039292318366'; // @2days.kr (표시명 "투데이s" — 사용자가 스크린샷으로 재확인한 실제 계정, @2dayskr 아님)
 const AFFILIATE_YOUTUBE_CHANNEL_ID = 'UCOThNyCRe20_Qz1m65NYzfA'; // 현가젯 — 쿠팡 발행용 채널
 const AFFILIATE_DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
