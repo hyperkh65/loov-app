@@ -19,7 +19,7 @@ import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
 import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
 import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
 import { runNaverTechAuto } from '@/lib/scheduler/naver-tech-runner';
-import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { searchAliExpressItems, getAliExpressItemDetail } from '@/lib/affiliate-engine/aliexpress-datahub';
 import { upsertCoupangMatch } from '@/lib/affiliate-engine/coupang-match';
 import { searchProducts } from '@/lib/coupang/api';
@@ -698,6 +698,8 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
 // 헤더만 있으면 인증됨). 리프레시 플로우는 못 찾아서 app_atk가 언젠가 만료되면
 // 브라우저에서 재로그인 후 값을 다시 저장해야 함(X 스크래퍼 쿠키와 동일한 리스크).
 const MUSINSA_THREADS_PLATFORM_USER_ID = '28733238669628153'; // @seanonthemail — 무신사 큐레이터 전용 신규 계정(쿠팡용 계정과 분리, 사용자 확정)
+const MUSINSA_INSTAGRAM_PLATFORM_USER_ID = '29046724018350449'; // @seanonthemail
+const MUSINSA_FACEBOOK_PLATFORM_USER_ID = '33857054073943353'; // 김현
 const MUSINSA_DISCLOSURE = '이 포스팅은 무신사 큐레이터 활동의 일환으로, 구매가 발생할 경우 일정 수수료를 제공받습니다.';
 const MUSINSA_KEYWORDS = [
   '후드티', '맨투맨', '니트', '가디건', '청바지', '슬랙스', '자켓', '코트', '무스탕', '패딩',
@@ -727,19 +729,34 @@ interface MusinsaProduct {
   expectedEarnings: number; isSoldOut: boolean;
 }
 
+// 검색 API의 imageUrl은 대표 이미지 1장뿐 — goods-detail(공개 API, 로그인/쿠키 불필요)에서
+// 실제 등록된 상품 이미지 전체를 긁어와 캐러셀로 올림. 개수는 상품마다 다름(실측 2~8장 정도).
+async function getMusinsaProductImages(goodsNo: number, fallback: string): Promise<string[]> {
+  try {
+    const res = await fetch(`https://goods-detail.musinsa.com/api2/goods/${goodsNo}`);
+    if (!res.ok) return [fallback];
+    const json = await res.json() as { data?: unknown };
+    const matches = [...JSON.stringify(json.data || {}).matchAll(/\/images\/goods_img\/[^"]+/g)].map(m => m[0]);
+    const unique = [...new Set(matches)].map(p => `https://image.msscdn.net/thumbnails${p}`);
+    return unique.length ? unique.slice(0, 5) : [fallback];
+  } catch {
+    return [fallback];
+  }
+}
+
 async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: number; goodsNo?: number; results: string[] }> {
   const supabase = createAdminClient();
 
-  const { data: threadsConn } = await supabase
-    .from('sns_connections')
-    .select('access_token, platform_user_id')
-    .eq('user_id', schedule.user_id)
-    .eq('platform', 'threads')
-    .eq('platform_user_id', MUSINSA_THREADS_PLATFORM_USER_ID)
-    .eq('is_active', true)
-    .single();
+  const [{ data: threadsConn }, { data: igConn }, { data: fbConn }] = await Promise.all([
+    supabase.from('sns_connections').select('access_token, platform_user_id').eq('user_id', schedule.user_id)
+      .eq('platform', 'threads').eq('platform_user_id', MUSINSA_THREADS_PLATFORM_USER_ID).eq('is_active', true).single(),
+    supabase.from('sns_connections').select('access_token, platform_user_id').eq('user_id', schedule.user_id)
+      .eq('platform', 'instagram').eq('platform_user_id', MUSINSA_INSTAGRAM_PLATFORM_USER_ID).eq('is_active', true).single(),
+    supabase.from('sns_connections').select('access_token, platform_user_id').eq('user_id', schedule.user_id)
+      .eq('platform', 'facebook').eq('platform_user_id', MUSINSA_FACEBOOK_PLATFORM_USER_ID).eq('is_active', true).single(),
+  ]);
 
-  if (!threadsConn) return { posted: 0, results: ['@seanonthemail 스레드 계정 연결 안 됨'] };
+  if (!threadsConn && !igConn && !fbConn) return { posted: 0, results: ['무신사 발행용 SNS 계정 연결 안 됨(스레드/인스타/페북 전부)'] };
 
   const idx = schedule.keyword_index % MUSINSA_KEYWORDS.length;
   const keyword = MUSINSA_KEYWORDS[idx];
@@ -794,16 +811,37 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
     caption = `${picked.brandName ? `[${picked.brandName}] ` : ''}${picked.goodsName}\n${picked.finalDiscount}% 할인 중 — ${picked.finalPrice.toLocaleString()}원`;
   }
 
-  const fullCaption = [
-    caption, '', link, '', MUSINSA_DISCLOSURE, '', '#무신사 #무신사큐레이터 #패션추천 #오오티디',
-  ].join('\n');
+  // 링크/고지문은 본문이 아니라 댓글로 — 본문은 순수 후기 톤만 남겨서 광고 티를 줄임(사용자 확정).
+  const mainCaption = [caption, '', '#무신사 #무신사큐레이터 #패션추천 #오오티디'].join('\n');
+  const linkComment = [link, '', MUSINSA_DISCLOSURE].join('\n');
+  const images = await getMusinsaProductImages(picked.goodsNo, picked.imageUrl);
 
-  try {
-    const pub = await postToPlatformWithMedia('threads', threadsConn.access_token, threadsConn.platform_user_id, fullCaption, [picked.imageUrl]);
-    return { posted: 1, goodsNo: picked.goodsNo, results: [`"${picked.goodsName}" 발행 완료 (${pub.id})`] };
-  } catch (e) {
-    return { posted: 0, goodsNo: picked.goodsNo, results: [`"${picked.goodsName}" 스레드 발행 실패 — ${(e as Error).message?.slice(0, 150)}`] };
+  const results: string[] = [];
+  let posted = 0;
+
+  const targets: Array<{ platform: 'threads' | 'instagram' | 'facebook'; conn: { access_token: string; platform_user_id: string } | null | undefined; label: string }> = [
+    { platform: 'threads', conn: threadsConn, label: '스레드' },
+    { platform: 'instagram', conn: igConn, label: '인스타' },
+    { platform: 'facebook', conn: fbConn, label: '페이스북' },
+  ];
+
+  for (const { platform, conn, label } of targets) {
+    if (!conn) continue;
+    try {
+      const pub = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, mainCaption, images);
+      posted++;
+      results.push(`${label} 발행 완료 (${pub.id})`);
+      try {
+        await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, pub.id, linkComment);
+      } catch (e) {
+        results[results.length - 1] += ` / 링크 댓글 실패 — ${(e as Error).message?.slice(0, 80)}`;
+      }
+    } catch (e) {
+      results.push(`${label} 발행 실패 — ${(e as Error).message?.slice(0, 120)}`);
+    }
   }
+
+  return { posted: posted > 0 ? 1 : 0, goodsNo: picked.goodsNo, results: [`"${picked.goodsName}" — ${results.join(' / ')}`] };
 }
 
 async function executeSchedule(schedule: Schedule) {

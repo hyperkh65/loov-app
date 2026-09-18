@@ -7,7 +7,7 @@ import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { translateAndCrossPost } from '@/lib/ai-translate';
-import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
 import type { Platform } from '@/lib/sns/platforms';
@@ -31,7 +31,8 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
   const connections = data || [];
 
   const threadsAccount = threadsAccountFor(siteUrl);
-  const text = `${title}\n\n${articleUrl}`;
+  // 본문에 링크를 넣으면 SNS 알고리즘이 외부링크 게시물로 판단해 노출을 줄이는
+  // 페널티가 있음(사용자 확정) — rewrite-publish.ts와 동일하게 링크는 댓글로 분리.
   const targets = connections.filter((c) => {
     if (c.platform === 'threads') return c.platform_username === threadsAccount;
     return ['instagram', 'twitter', 'facebook'].includes(c.platform); // 공통 — 필터 없이 전부
@@ -39,7 +40,9 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
 
   await Promise.all(targets.map(async (conn) => {
     try {
-      await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, text);
+      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, title);
+      try { await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, articleUrl); }
+      catch { /* 댓글 실패는 무시 — 본문 발행은 이미 성공 */ }
     } catch { /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
   }));
 
