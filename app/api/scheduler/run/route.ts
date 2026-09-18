@@ -603,7 +603,7 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
     }).catch(() => { /* 재고 보충 실패는 이번 회차와 무관, 무시 */ });
   }
 
-  const { data: candidates } = await supabase
+  const { data: rawCandidates } = await supabase
     .from('bossai_x_videos')
     .select('id, username, tweet_id, tweet_text, tweet_url, video_url')
     .in('username', usernames)
@@ -611,7 +611,13 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
     .order('collected_at', { ascending: false })
     .limit(50);
 
-  if (!candidates?.length) return { uploaded: 0, results: ['업로드할 새 영상 없음 (재고 소진 — 다음 회차에 자동 보충됨)'] };
+  // momentoviral과 달리 buitengebieden/AMAZlNGNATURE 등은 이미지 게시물도 섞여 있어서
+  // 스크래퍼가 정적 이미지(.png 등)까지 "영상"으로 주워담는 게 실측 확인됨 — ffmpeg가
+  // 이미지를 영상으로 편집해도 유튜브에서 "재생할 수 없음" 처리되는 깨진 파일이 나옴.
+  // 실제 영상 확장자만 후보로 남김.
+  const candidates = (rawCandidates || []).filter(c => /\.(mp4|mov|webm|m4v|avi|mkv)(\?|$)/i.test(c.video_url || ''));
+
+  if (!candidates.length) return { uploaded: 0, results: ['업로드할 새 영상 없음 (재고 소진 — 다음 회차에 자동 보충됨)'] };
 
   // 1시간마다 2개씩 올리던 걸 3시간마다 1개로 줄임 — 양보다 질(사용자 확정): 매 회차 AI
   // 파싱이 실패하면 정체돼 보이는 기본 문구가 그대로 나가던 문제와 겹쳐 "티 나는 자동화"로
