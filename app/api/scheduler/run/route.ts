@@ -563,7 +563,8 @@ async function editViralVideoForShorts(params: {
   ].join('\n');
 
   await nasExecWithStdin(`cat > /tmp/${jobId}.sh`, script);
-  const result = await nasExec(`bash /tmp/${jobId}.sh; rm -f /tmp/${jobId}.sh`, 120_000);
+  // 큰 원본(20MB대)은 -preset fast 인코딩도 2분을 넘기는 게 실측 확인돼 넉넉히 잡음
+  const result = await nasExec(`bash /tmp/${jobId}.sh; rm -f /tmp/${jobId}.sh`, 240_000);
   if (!result.stdout.includes('EDIT_DONE')) throw new Error('영상 편집 실패: ' + (result.stderr || result.stdout).slice(0, 300));
 
   return `https://hy64.synology.me/xmedia/_edited/${outFile}`;
