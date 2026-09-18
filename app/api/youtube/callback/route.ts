@@ -6,7 +6,10 @@ export async function GET(req: NextRequest) {
   const code = searchParams.get('code');
   const stateRaw = searchParams.get('state');
   const error = searchParams.get('error');
-  const baseUrl = req.nextUrl.origin;
+  // req.nextUrl.origin은 리버스 프록시 뒤에서 도커 컨테이너 내부 호스트명으로
+  // 잘못 해석되는 게 실측 확인됨(구글 invalid_request의 실제 원인) — 사용자에게
+  // 돌려보내는 URL과 토큰교환 redirect_uri 둘 다 공개 도메인 env로 고정해야 함.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
 
   // state format: "userId:returnPath" or legacy "userId"
   const colonIdx = stateRaw?.indexOf(':') ?? -1;

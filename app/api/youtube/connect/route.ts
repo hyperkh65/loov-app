@@ -11,7 +11,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'GOOGLE_CLIENT_ID 환경변수가 없습니다' }, { status: 500 });
   }
 
-  const redirectUri = `${req.nextUrl.origin}/api/youtube/callback`;
+  // req.nextUrl.origin은 리버스 프록시 뒤에서 도커 컨테이너 내부 호스트명(예:
+  // cf8972e170a3:3000)으로 잘못 해석되는 게 실측 확인됨 — 구글이 공개 도메인이
+  // 아니라며 "invalid_request"로 막아버림. 반드시 공개 도메인 env로 고정.
+  const redirectUri = process.env.GOOGLE_YOUTUBE_REDIRECT_URI || `${req.nextUrl.origin}/api/youtube/callback`;
 
   const returnPath = req.nextUrl.searchParams.get('return') || '/dashboard/insta-service';
   const stateData = `${user.id}:${returnPath}`;
