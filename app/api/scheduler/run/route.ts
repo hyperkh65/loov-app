@@ -37,6 +37,7 @@ export const maxDuration = 300;
 // 런타임에 실행 자체가 안 되는 버그를 실측 확인 — 이 라우트 파일에 직접 인라인해서 회피.
 const AFFILIATE_IG_PLATFORM_USER_ID = '34489947500650071'; // @2dayskr
 const AFFILIATE_THREADS_PLATFORM_USER_ID = '25203934249239577'; // @2dayskr (사용자 확정 — 쿠팡 발행용 계정과 동일 이름)
+const AFFILIATE_YOUTUBE_CHANNEL_ID = 'UCOThNyCRe20_Qz1m65NYzfA'; // 현가젯 — 쿠팡 발행용 채널
 const AFFILIATE_DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
 function buildAffiliateCaption(hook: string | undefined, productName: string | undefined, affiliateUrl: string | undefined): string {
@@ -73,7 +74,7 @@ async function refreshYoutubeToken(refreshToken: string): Promise<string> {
 // 이 라우트 안에 그대로 둔다. 유튜브 쇼핑 제품태그는 파트너 심사가 별도로
 // 필요해서(사용자 확인) 설명란에 쿠팡 링크를 텍스트로만 넣는다.
 async function uploadToYoutube(params: {
-  userId: string; videoUrl: string; title: string; description: string;
+  userId: string; videoUrl: string; title: string; description: string; channelId: string;
 }): Promise<{ videoId: string; url: string }> {
   const supabase = createAdminClient();
   const { data: conn } = await supabase
@@ -81,9 +82,10 @@ async function uploadToYoutube(params: {
     .select('access_token, refresh_token, extra')
     .eq('user_id', params.userId)
     .eq('platform', 'youtube')
+    .eq('platform_user_id', params.channelId)
     .eq('is_active', true)
     .single();
-  if (!conn) throw new Error('YouTube 연결 없음 — 허브에서 재연결 필요');
+  if (!conn) throw new Error(`YouTube 채널(${params.channelId}) 연결 없음 — 허브에서 재연결 필요`);
 
   let accessToken = conn.access_token;
   const expiresAt = conn.extra?.expires_at ? new Date(conn.extra.expires_at) : null;
@@ -93,7 +95,7 @@ async function uploadToYoutube(params: {
     await supabase.from('sns_connections').update({
       access_token: accessToken,
       extra: { expires_at: new Date(Date.now() + 3600 * 1000).toISOString() },
-    }).eq('user_id', params.userId).eq('platform', 'youtube');
+    }).eq('user_id', params.userId).eq('platform', 'youtube').eq('platform_user_id', params.channelId);
   }
 
   const videoRes = await fetch(params.videoUrl);
@@ -249,6 +251,7 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
           videoUrl: render.public_url,
           title: (script?.hook_text || product?.product_name || '오늘의 추천템').slice(0, 100),
           description: caption,
+          channelId: AFFILIATE_YOUTUBE_CHANNEL_ID,
         });
         await recordPublication(render.id, 'youtube', yt.videoId);
         anySuccess = true;

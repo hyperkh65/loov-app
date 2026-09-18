@@ -56,11 +56,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${returnUrl}_error=auth_mismatch`);
     }
 
-    // 기존 YouTube 연결 삭제 후 새로 저장 (upsert 충돌 방지)
+    // 같은 채널(channelId) 재연결분만 삭제 후 새로 저장 — 예전엔 platform='youtube'
+    // 전체를 지워버려서 채널을 두 개 이상 쓰려고 하면(예: 쿠팡용 "현가젯" +
+    // 바이럴영상용 "2days_movie") 새로 연결할 때마다 기존 채널 연결이 사라지는
+    // 문제가 있었음(인스타/스레드는 이미 계정별로 여러 개 공존 가능).
     await supabase.from('sns_connections')
       .delete()
       .eq('user_id', user.id)
-      .eq('platform', 'youtube');
+      .eq('platform', 'youtube')
+      .eq('platform_user_id', channelId);
 
     const { error: insertError } = await supabase.from('sns_connections').insert({
       user_id: user.id,
