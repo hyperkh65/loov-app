@@ -706,11 +706,13 @@ const MUSINSA_KEYWORDS = [
 ];
 
 async function musinsaApi(path: string, method: 'GET' | 'POST' = 'GET'): Promise<Record<string, unknown>> {
-  const atk = await getSetting('MUSINSA_APP_ATK');
-  if (!atk) throw new Error('무신사 로그인 토큰(MUSINSA_APP_ATK 설정) 없음');
+  // app_atk 단일 쿠키만으로는 401 — musinsa.com 도메인의 세션 관련 쿠키 전체를
+  // (브라우저의 credentials:'include'와 동등하게) 실어 보내야 인증됨(실측 확인).
+  const cookie = await getSetting('MUSINSA_COOKIE');
+  if (!cookie) throw new Error('무신사 로그인 쿠키(MUSINSA_COOKIE 설정) 없음');
   const res = await fetch(`https://api.one.musinsa.com${path}`, {
     method,
-    headers: { 'X-Platform': 'MUSINSA', 'Cookie': `app_atk=${atk}` },
+    headers: { 'X-Platform': 'MUSINSA', 'Cookie': cookie },
   });
   const json = await res.json().catch(() => null) as { data?: Record<string, unknown>; meta?: { result?: string; message?: string } } | null;
   if (!res.ok || json?.meta?.result !== 'SUCCESS') {
