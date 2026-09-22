@@ -93,19 +93,23 @@ function getSection(text: string, tag: string, allTags: string[]): string {
   return text.slice(from, end).trim();
 }
 
-/** 플랫폼별 후킹 캡션 생성 — URL은 절대 포함하지 않음(댓글로 따로 붙임) */
+const CAFE_TAG = 'CAFE';
+const CAPTION_TAGS_WITH_CAFE = [...CAPTION_TAGS, CAFE_TAG];
+
+/** 플랫폼별 후킹 캡션 생성 — URL은 절대 포함하지 않음(댓글/링크는 따로 붙임) */
 async function buildHookCaptions(title: string, summary: string): Promise<Record<string, string>> {
-  const prompt = `너는 SNS 마케팅 전문가야. 아래 기사를 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
+  const prompt = `너는 SNS 마케팅 전문가야. 아래 기사를 각 채널에 맞는 후킹성 멘트로 작성해줘.
 반드시 한국어로만 작성하고, 중국어·일본어 등 외국 문자 절대 사용 금지. 기사 제목을 그대로 베끼지 말고 호기심을 자극하는 문장으로 새로 써.
 
 기사 제목: ${title}
 기사 요약: ${summary.slice(0, 300)}
 
-[플랫폼별 작성 규칙]
+[채널별 작성 규칙]
 - THREADS: 줄바꿈으로 리듬감. 2~4줄 짧은 문장. 이모지 1~2개. URL 없이 (댓글로 추가)
 - TWITTER: 한 방에 꽂히는 문장 + 해시태그 2~3개. 240자 이내. URL 없이 (댓글로 추가)
 - FACEBOOK: 친근하게 250자 내외. 이모지 적당히. URL 없이 (댓글로 추가)
 - INSTAGRAM: 감성적, 이모지 풍부, 해시태그 8개. URL 없이 (댓글로 추가)
+- CAFE: 카페 게시글 서두에 쓸 문구. 첫 문장은 호기심을 자극하는 후킹 멘트로 시작(딱딱한 요약문 금지). 이어서 2~3문장으로 자연스럽게 핵심 내용을 풀고, 마지막엔 "더 자세한 내용/전체 글은 아래에서 확인하세요" 같은 자연스러운 문장으로 블로그 이동을 유도. 200자 내외, 이모지는 1개 이하로 절제. URL 없이 (내가 따로 붙임)
 
 반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):
 [[[THREADS]]]
@@ -115,14 +119,17 @@ async function buildHookCaptions(title: string, summary: string): Promise<Record
 [[[FACEBOOK]]]
 페이스북용 텍스트
 [[[INSTAGRAM]]]
-인스타그램용 텍스트`;
+인스타그램용 텍스트
+[[[CAFE]]]
+카페용 텍스트`;
 
   const raw = await generateText(prompt, 'qwen3');
   return {
-    threads: getSection(raw, 'THREADS', CAPTION_TAGS),
-    twitter: getSection(raw, 'TWITTER', CAPTION_TAGS),
-    facebook: getSection(raw, 'FACEBOOK', CAPTION_TAGS),
-    instagram: getSection(raw, 'INSTAGRAM', CAPTION_TAGS),
+    threads: getSection(raw, 'THREADS', CAPTION_TAGS_WITH_CAFE),
+    twitter: getSection(raw, 'TWITTER', CAPTION_TAGS_WITH_CAFE),
+    facebook: getSection(raw, 'FACEBOOK', CAPTION_TAGS_WITH_CAFE),
+    instagram: getSection(raw, 'INSTAGRAM', CAPTION_TAGS_WITH_CAFE),
+    cafe: getSection(raw, CAFE_TAG, CAPTION_TAGS_WITH_CAFE),
   };
 }
 
@@ -205,12 +212,29 @@ export async function publishRewrittenArticle(
     }
   }
 
+  // SNS/카페용 후킹 캡션은 카페 발행에도 필요해서 여기서 미리 생성해둔다 —
+  // 예전엔 카페가 이 캡션 없이 article.meta(딱딱한 SEO 요약문)를 그대로 써서
+  // 카페 글이 광고 문구처럼 읽힌다는 피드백이 있었음.
+  const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const fallbackCaption = (article.meta || plainSummary || article.title).slice(0, 150);
+  let captions: Record<string, string>;
+  try {
+    // generateText는 provider 폴백 체인이 길어 최악의 경우 수 분 걸릴 수 있음 —
+    // 캡션은 없어도 요약으로 폴백 가능하니 60초 넘으면 바로 포기하고 진행
+    captions = await Promise.race([
+      buildHookCaptions(article.title, plainSummary),
+      new Promise<Record<string, string>>((_, reject) => setTimeout(() => reject(new Error('caption timeout')), 60_000)),
+    ]);
+  } catch {
+    captions = {}; // 실패/타임아웃하면 아래에서 요약으로 폴백
+  }
+
   // 카페 발행은 SNS 연결 여부와 무관하게 시도 — 부분 실패 허용(다른 채널 발행에 영향 없음)
   let naverCafe = 'skip: 연결 없음';
   try {
     const { articleUrl } = await publishToNaverCafe(admin, {
       userId, title: article.title, content: article.content, blogUrl: wordpressUrl || undefined,
-      hook: article.meta || undefined,
+      hook: captions.cafe || article.meta || undefined,
     });
     naverCafe = articleUrl ? `ok: ${articleUrl}` : 'ok';
   } catch (e) {
@@ -302,23 +326,6 @@ export async function publishRewrittenArticle(
     return allowedAccounts.includes(c.platform_username || '');
   });
   if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages, translate };
-
-  const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  // AI 캡션 생성이 실패/타임아웃하면 제목 한 줄로만 폴백하던 것 — "블로그 자동화"처럼
-  // 글 요약(메타디스크립션, 없으면 본문 앞부분)으로 폴백해서 캡션이 너무 짧아지는
-  // 문제 방지
-  const fallbackCaption = (article.meta || plainSummary || article.title).slice(0, 150);
-  let captions: Record<string, string>;
-  try {
-    // generateText는 provider 폴백 체인이 길어 최악의 경우 수 분 걸릴 수 있음 —
-    // 캡션은 없어도 요약으로 폴백 가능하니 60초 넘으면 바로 포기하고 진행
-    captions = await Promise.race([
-      buildHookCaptions(article.title, plainSummary),
-      new Promise<Record<string, string>>((_, reject) => setTimeout(() => reject(new Error('caption timeout')), 60_000)),
-    ]);
-  } catch {
-    captions = {}; // 실패/타임아웃하면 아래에서 요약으로 폴백
-  }
 
   const images = snsImageUrl ? [snsImageUrl] : [];
   // 캡션에 링크를 텍스트로 넣으면 하이퍼링크가 안 걸려서 클릭이 안 되는 문제가
