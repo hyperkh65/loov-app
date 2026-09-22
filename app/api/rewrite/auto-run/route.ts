@@ -92,15 +92,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3. 발행 대기열에서 하나 발행 시도 (간격 15분은 publish-next가 자체 체크)
+  // 3. 발행 대기열 처리 (호출당 최대 5건, 소스별 30분 간격은 publish-next가 자체 체크)
   let publishResult: unknown = null;
   try {
-    // 워드프레스+SNS 4종+네이버카페까지 순차 발행하면 60초로는 부족한 경우가
-    // 실사용 중 확인돼 늘림 (전체 라우트 maxDuration=300, NAS cron --max-time 280과 맞춤)
+    // publish-next가 호출 1번에 최대 5건까지 순차 발행(각 건당 워드프레스+SNS
+    // 여러 개+네이버카페+텀블러 등 실측 60~120초)하도록 바뀐 뒤로, 이 fetch의
+    // 200초 제한이 먼저 끊겨버려 실제로는 서버가 백그라운드로 계속 발행을
+    // 완료하고 있는데도 이쪽 로그에는 "타임아웃 실패"만 찍히는 게 실사용 중
+    // 확인됨(원인은 방치, 결과는 안 놓침 — publish-next 응답을 못 받았을
+    // 뿐 DB 업데이트는 이미 끝난 상태). publish-next 자체 시간예산(100초)
+    // + 최악의 경우 진행 중이던 마지막 1건(~120초)을 합친 것보다 넉넉하게
+    // 잡아서, 정상적으로 끝난 응답을 받아 로그에 실제 결과가 남게 함 — NAS
+    // 크론 --max-time 550과 뒤 단계(6·7번, 각 280초 한도)를 고려해도 여유 있음.
     const res = await fetch(`${BASE}/api/rewrite/publish-next`, {
       method: 'POST',
       headers,
-      signal: AbortSignal.timeout(200_000),
+      signal: AbortSignal.timeout(260_000),
     });
     publishResult = await res.json();
   } catch (e) {
