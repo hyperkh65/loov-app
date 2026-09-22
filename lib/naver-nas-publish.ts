@@ -174,13 +174,21 @@ def upload_image(img_url):
         img_errors.append('up:' + str(e)[:60])
         return None
 
+represent_assigned = False
+
 def make_image_component(src, alt=''):
+    global represent_assigned
     info = None
     if not ('pstatic.net' in src or 'naver.com' in src or src.startswith('data:')):
         info = upload_image(src)
     if info:
         uploaded_images.append(info['url'])
         img_domain = info['url'].split('/')[2] if info['url'].startswith('http') else 'postfiles.pstatic.net'
+        # represent=False가 모든 이미지에 고정돼 있으면 네이버가 대표이미지 후보를
+        # 하나도 못 찾아 목록/공유 썸네일이 비게 된다(실사용 확인) — 이 글에서 처음
+        # 업로드에 성공한 이미지 하나에만 True를 줘서 대표이미지로 지정되게 한다.
+        is_represent = not represent_assigned
+        represent_assigned = True
         return {
             'id': se_id(), 'layout': 'default', '@ctype': 'text',
             'value': [{
@@ -195,7 +203,7 @@ def make_image_component(src, alt=''):
                     'fileSize': 0,
                     'fileName': info['filename'],
                     'internalResource': False,
-                    'represent': False,
+                    'represent': is_represent,
                     'ai': False,
                 }]
             }]
