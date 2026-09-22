@@ -48,13 +48,14 @@ export interface NaverCafePublishParams {
   menuId?: string | number;
   openYn?: 'Y' | 'N';
   blogUrl?: string; // 있으면 "원문 보기" 링크로 덧붙임
+  hook?: string; // SNS 스타일 짧은 요약 한두 줄 — 있으면 본문 발췌 대신 이걸 먼저 보여줌
 }
 
 export async function publishToNaverCafe(
   admin: AdminClient,
   params: NaverCafePublishParams,
 ): Promise<{ articleUrl: string | null }> {
-  const { userId, title, content, blogUrl, openYn = 'Y' } = params;
+  const { userId, title, content, blogUrl, hook, openYn = 'Y' } = params;
 
   const { data: conn } = await admin.from('naver_cafe_connections')
     .select('*')
@@ -82,10 +83,18 @@ export async function publishToNaverCafe(
   const targetMenuId = params.menuId || (conn.menu_list as { menuId: number }[] | null)?.[0]?.menuId;
   if (!targetMenuId) throw new Error('게시판을 선택하거나 설정에서 게시판을 추가하세요');
 
-  const stripped = htmlToPlainText(content);
-  const excerpt = stripped.slice(0, 400) + (stripped.length > 400 ? '...' : '');
-  const linkLine = blogUrl ? `\n\n▶ 원문 보기: ${blogUrl}` : '';
-  const textContent = excerpt + linkLine;
+  // 본문 앞부분 400자를 그대로 발췌해서 붙이면 "▶ 원문 보기" 링크까지 한 문단으로
+  // 이어져 가독성이 떨어진다는 사용자 피드백 — hook(SNS 스타일 짧은 요약)이 있으면
+  // 발췌 대신 그걸 먼저 보여주고, 링크는 줄바꿈으로 분리해 다음 줄에 넣음.
+  const linkLine = blogUrl ? `▶ 원문 보기: ${blogUrl}` : '';
+  let textContent: string;
+  if (hook?.trim()) {
+    textContent = [hook.trim(), linkLine].filter(Boolean).join('\n\n');
+  } else {
+    const stripped = htmlToPlainText(content);
+    const excerpt = stripped.slice(0, 400) + (stripped.length > 400 ? '...' : '');
+    textContent = [excerpt, linkLine].filter(Boolean).join('\n\n');
+  }
 
   const apiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${targetMenuId}/articles`;
 
