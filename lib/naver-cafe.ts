@@ -86,7 +86,9 @@ export async function publishToNaverCafe(
   // 본문 앞부분 400자를 그대로 발췌해서 붙이면 "▶ 원문 보기" 링크까지 한 문단으로
   // 이어져 가독성이 떨어진다는 사용자 피드백 — hook(SNS 스타일 짧은 요약)이 있으면
   // 발췌 대신 그걸 먼저 보여주고, 링크는 줄바꿈으로 분리해 다음 줄에 넣음.
-  const linkLine = blogUrl ? `▶ 원문 보기: ${blogUrl}` : '';
+  // "▶ 원문 보기:" 같은 딱딱한 라벨보다 자연스러운 유도 문구가 클릭을 더
+  // 이끌어낸다는 게 확인된 사실이라(쿠팡/무신사 캡션과 동일한 원칙) 문구를 바꿈.
+  const linkLine = blogUrl ? `👉 전체 내용은 여기서 확인하세요\n${blogUrl}` : '';
   let textContent: string;
   if (hook?.trim()) {
     textContent = [hook.trim(), linkLine].filter(Boolean).join('\n\n');
