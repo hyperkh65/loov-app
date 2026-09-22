@@ -42,12 +42,38 @@ const AFFILIATE_THREADS_PLATFORM_USER_ID = '25873039292318366'; // @2days.kr (�
 const AFFILIATE_YOUTUBE_CHANNEL_ID = 'UCOThNyCRe20_Qz1m65NYzfA'; // 현가젯 — 쿠팡 발행용 채널
 const AFFILIATE_DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
-function buildAffiliateCaption(hook: string | undefined, productName: string | undefined, affiliateUrl: string | undefined): string {
+// 인스타/스레드는 본문에 외부링크가 있으면 도달률이 깎이는 게 실사용 중 확인돼(사용자
+// 확정) 링크를 댓글로 분리 — 본문엔 명확한 행동유도 문구만 남김. 유튜브는 설명란 링크에
+// 그런 페널티가 없어 그대로 둠(buildAffiliateYoutubeDescription).
+// CTA만 있고 감정이입 문구가 없으면 "밋밋하다"는 사용자 피드백 — 실사용 후기 톤의
+// 한 줄을 훅과 CTA 사이에 넣어 전환 유도력을 높임.
+function buildAffiliateCaption(hook: string | undefined, productName: string | undefined): string {
   return [
-    hook || productName || '오늘의 추천템',
+    hook || (productName ? `요즘 이거 없인 못 살아요 👀 ${productName}` : '이건 진짜 안 보면 후회하는 템'),
     '',
     productName ? `▶ ${productName}` : '',
-    affiliateUrl ? `구매 링크: ${affiliateUrl}` : '',
+    '직접 써보고 진심으로 추천하는 거라 자신 있게 올려요.',
+    '👇 구매 링크는 댓글에 있어요, 놓치지 마세요!',
+    '',
+    '#쿠팡 #쿠팡추천 #생활꿀템 #가성비템 #추천템',
+  ].filter(Boolean).join('\n');
+}
+
+function buildAffiliateLinkComment(affiliateUrl: string | undefined): string {
+  return [
+    affiliateUrl ? `짜잔, 여기 있어요 👇\n${affiliateUrl}` : '',
+    '',
+    AFFILIATE_DISCLOSURE,
+  ].filter(Boolean).join('\n');
+}
+
+function buildAffiliateYoutubeDescription(hook: string | undefined, productName: string | undefined, affiliateUrl: string | undefined): string {
+  return [
+    hook || (productName ? `요즘 이거 없인 못 살아요 👀 ${productName}` : '이건 진짜 안 보면 후회하는 템'),
+    '',
+    productName ? `▶ ${productName}` : '',
+    '직접 써보고 진심으로 추천하는 거라 자신 있게 올려요.',
+    affiliateUrl ? `👉 구매 링크: ${affiliateUrl}` : '',
     '',
     AFFILIATE_DISCLOSURE,
     '',
@@ -217,7 +243,8 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
         ? await supabase.from('affiliate_listings').select('affiliate_url').eq('id', match.listing_id).single()
         : { data: null };
 
-      const caption = buildAffiliateCaption(script?.hook_text, product?.product_name, listing?.affiliate_url);
+      const caption = buildAffiliateCaption(script?.hook_text, product?.product_name);
+      const linkComment = buildAffiliateLinkComment(listing?.affiliate_url);
       const label = product?.product_name || project.id;
       let anySuccess = false;
 
@@ -226,7 +253,10 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
           const pub = await postToPlatformWithMedia('instagram', igConn.access_token, igConn.platform_user_id, caption, [render.public_url]);
           await recordPublication(render.id, 'instagram', pub.id);
           anySuccess = true;
-          results.push(`${label}: 인스타 발행 완료 (ig:${pub.id})`);
+          let note = '';
+          try { await postCommentOnOwnPost('instagram', igConn.access_token, igConn.platform_user_id, pub.id, linkComment); }
+          catch (e) { note = ` / 링크 댓글 실패 — ${(e as Error).message?.slice(0, 80)}`; }
+          results.push(`${label}: 인스타 발행 완료 (ig:${pub.id})${note}`);
         } catch (e) {
           results.push(`${label}: 인스타 실패 — ${(e as Error).message?.slice(0, 150)}`);
         }
@@ -239,7 +269,10 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
           const pub = await postToPlatformWithMedia('threads', threadsConn.access_token, threadsConn.platform_user_id, caption, [render.public_url]);
           await recordPublication(render.id, 'threads', pub.id);
           anySuccess = true;
-          results.push(`${label}: 스레드 발행 완료 (${pub.id})`);
+          let note = '';
+          try { await postCommentOnOwnPost('threads', threadsConn.access_token, threadsConn.platform_user_id, pub.id, linkComment); }
+          catch (e) { note = ` / 링크 댓글 실패 — ${(e as Error).message?.slice(0, 80)}`; }
+          results.push(`${label}: 스레드 발행 완료 (${pub.id})${note}`);
         } catch (e) {
           results.push(`${label}: 스레드 실패 — ${(e as Error).message?.slice(0, 150)}`);
         }
@@ -252,7 +285,7 @@ async function runAffiliatePublishAuto(userId: string): Promise<{ published: num
           userId,
           videoUrl: render.public_url,
           title: (script?.hook_text || product?.product_name || '오늘의 추천템').slice(0, 100),
-          description: caption,
+          description: buildAffiliateYoutubeDescription(script?.hook_text, product?.product_name, listing?.affiliate_url),
           channelId: AFFILIATE_YOUTUBE_CHANNEL_ID,
         });
         await recordPublication(render.id, 'youtube', yt.videoId);
@@ -825,7 +858,10 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
   }
 
   // 링크/고지문은 본문이 아니라 댓글로 — 본문은 순수 후기 톤만 남겨서 광고 티를 줄임(사용자 확정).
-  const mainCaption = [caption, '', '#무신사 #무신사큐레이터 #패션추천 #오오티디'].join('\n');
+  // "행동유도 문구(CTA)"가 없으면 클릭률이 눈에 띄게 낮아진다는 게 SNS 커머스 전환
+  // 관련 리서치의 공통 결론이라 명시적으로 추가 — 링크 위치(댓글)를 캡션에서 알려줘야
+  // 실제로 눌러볼 확률이 올라감(사용자 확정, 리서치 반영).
+  const mainCaption = [caption, '', '🛍️ 이 조합 저장하고 싶으면 댓글 링크 확인하세요!', '', '#무신사 #무신사큐레이터 #패션추천 #오오티디'].join('\n');
   const linkComment = [link, '', MUSINSA_DISCLOSURE].join('\n');
   const images = await getMusinsaProductImages(picked.goodsNo, picked.imageUrl);
 
