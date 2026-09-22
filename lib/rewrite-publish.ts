@@ -210,6 +210,7 @@ export async function publishRewrittenArticle(
   try {
     const { articleUrl } = await publishToNaverCafe(admin, {
       userId, title: article.title, content: article.content, blogUrl: wordpressUrl || undefined,
+      hook: article.meta || undefined,
     });
     naverCafe = articleUrl ? `ok: ${articleUrl}` : 'ok';
   } catch (e) {
