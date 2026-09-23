@@ -194,6 +194,7 @@ export default function KeywordPage() {
   const [generatedArticle, setGeneratedArticle] = useState<{ keyword: string; article_id: string; title: string } | null>(null);
 
   // Intelligence (auto-discover)
+  const [intelCategory, setIntelCategory] = useState<'lifestyle' | 'finance' | 'tech' | 'twenties'>('lifestyle');
   const [intelLoading, setIntelLoading] = useState(false);
   const [intelResults, setIntelResults] = useState<SeoOpportunityResult[]>([]);
   const [intelError, setIntelError] = useState('');
@@ -399,10 +400,11 @@ export default function KeywordPage() {
   }, [aiModel]);
 
   // Intelligence handlers
-  const loadIntelligence = useCallback(async () => {
+  const loadIntelligence = useCallback(async (category?: typeof intelCategory) => {
+    const cat = category || intelCategory;
     setIntelLoading(true); setIntelError('');
     try {
-      const res = await fetch('/api/keyword/auto-discover', { method: 'POST' });
+      const res = await fetch(`/api/keyword/auto-discover?category=${cat}`, { method: 'POST' });
       const data = await res.json() as { results?: SeoOpportunityResult[]; error?: string; hasNaverApi?: boolean; hasAdApi?: boolean; hasDaumApi?: boolean };
       if (data.error) { setIntelError(data.error); return; }
       setIntelResults(data.results || []);
@@ -415,7 +417,7 @@ export default function KeywordPage() {
     } finally {
       setIntelLoading(false);
     }
-  }, []);
+  }, [intelCategory]);
 
   const loadTracking = useCallback(async () => {
     try {
@@ -525,7 +527,23 @@ export default function KeywordPage() {
 
         {/* ── Intelligence ── */}
         {tab === 'intelligence' && (
-          <IntelligenceTab
+          <>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {([
+                { id: 'lifestyle', label: '🏠 라이프스타일' },
+                { id: 'finance', label: '💰 금융' },
+                { id: 'tech', label: '📱 전자제품' },
+                { id: 'twenties', label: '🧡 20대' },
+              ] as const).map(c => (
+                <button key={c.id} onClick={() => { setIntelCategory(c.id); loadIntelligence(c.id); }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    intelCategory === c.id ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                  }`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <IntelligenceTab
             loading={intelLoading}
             results={intelResults}
             error={intelError}
@@ -558,6 +576,7 @@ export default function KeywordPage() {
             onCheckRank={checkRank}
             onRemoveTracking={removeTracking}
           />
+          </>
         )}
 
         {/* ── 실시간 랭킹 ── */}
