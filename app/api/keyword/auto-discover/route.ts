@@ -111,10 +111,16 @@ const TWENTIES_ENTRY_SEEDS: Record<number, string[]> = {
 
 // 정치·범죄·사건사고만 차단 — 20대 콘텐츠에서 아이돌/연예/드라마는 오히려
 // 핵심 소재라 다른 카테고리와 달리 연예 필터를 걸지 않음
-const TWENTIES_NEWS_BLOCK = /국회|검찰|경찰|재판|구속|선거|투표|탄핵|정부|여당|야당|사망|폭행|범죄|조작|의혹|비리|폭락|급등/;
+const TWENTIES_NEWS_BLOCK = /국회|검찰|경찰|재판|구속|선거|투표|탄핵|정부|여당|야당|사망|부고|숨져|숨진|별세|타계|폭행|범죄|조작|의혹|비리|폭락|급등|참사|화재|자살/;
 
 // 구글트렌드 KR RSS는 전연령 혼합이라 20대 관심사 패턴으로만 걸러서 씀
 const TWENTIES_MATCH = /연애|소개팅|자취|원룸|다이어트|헬스|취준|자소서|면접|알바|아이돌|콘서트|페스티벌|축제|게임|유행|밈|챌린지|OOTD|여행|굿즈|콜라보|팝업스토어|대학생|캠퍼스/i;
+
+// 커뮤니티 원문 제목이 자동완성/광고API를 거치며 HTML 엔티티가 안 풀리거나
+// (&quot; 등) 특수문자가 섞인 채로 나오는 걸 실사용 중 확인(2026-09-23,
+// "&QUOT부캉이" 같은 깨진 키워드가 실제로 결과에 섞여 나옴) — 이런 잡음은
+// 애초에 후보에서 제외
+const GARBAGE_CHARS = /[&"'<>]/;
 
 type KeywordCategory = 'lifestyle' | 'finance' | 'tech' | 'twenties';
 
@@ -123,7 +129,7 @@ function isBlocked(kw: string, category: KeywordCategory): boolean {
     : category === 'tech' ? TECH_NEWS_BLOCK
     : category === 'twenties' ? TWENTIES_NEWS_BLOCK
     : NEWS_BLOCK;
-  return block.test(kw) || kw.length < 4 || kw.length > 20;
+  return block.test(kw) || kw.length < 4 || kw.length > 20 || GARBAGE_CHARS.test(kw);
 }
 
 // 시드를 "이번 달엔 이런 걸 검색하지 않을까" 하는 추측(FINANCE_ENTRY_SEEDS)에만
@@ -185,6 +191,17 @@ async function financeNewsHeadlineSeeds(): Promise<string[]> {
 // 직접 확인해서 실제로 동작하는 선택자만 채택함(2026-09-23 확인). 원문
 // 제목을 그대로 최종 키워드로 쓰지 않고 financeNewsHeadlineSeeds()와 같은
 // 방식으로 자동완성 입력용 시드로만 사용 ──
+// 커뮤니티 원문 제목엔 &quot;/&amp; 같은 HTML 엔티티, 따옴표가 섞여 있는 경우가
+// 많아 그대로 시드로 쓰면 자동완성/광고API 응답까지 깨진 채로 전파됨(실사용
+// 확인) — 시드 단계에서 미리 정리
+function cleanCommunityTitle(t: string): string {
+  return t
+    .replace(/&quot;/gi, '').replace(/&amp;/gi, '&').replace(/&#39;|&apos;/gi, '')
+    .replace(/&lt;/gi, '').replace(/&gt;/gi, '')
+    .replace(/["'“”‘’]/g, '')
+    .trim();
+}
+
 async function communityTrendingSeeds(): Promise<string[]> {
   const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   const fetchTitles = async (url: string, pattern: RegExp): Promise<string[]> => {
@@ -196,7 +213,7 @@ async function communityTrendingSeeds(): Promise<string[]> {
       if (!res.ok) return [];
       const html = await res.text();
       return [...html.matchAll(pattern)]
-        .map(m => m[1].trim())
+        .map(m => cleanCommunityTitle(m[1]))
         .filter(t => t && t.length <= 60);
     } catch { return []; }
   };
