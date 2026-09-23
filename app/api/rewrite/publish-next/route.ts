@@ -4,12 +4,13 @@
  * 라운드로빈으로 골라 설정된 WordPress 사이트 + 연결된 SNS 전체에 발행
  * (2026-09-23, 사용자 확정 — 예전엔 소스별 로테이션이라 같은 계정으로 나가는
  * 소스끼리 서로 순서를 다퉈서 결국 한 계정만 자주 발행되던 문제가 있었음).
- * 그룹 하나가 한 번에 몰아서 쏟아지지 않도록 그룹별 발행 간격은 20분으로
- * 제한(2026-09-23: one.yoosol 적체 대응으로 잠시 10분까지 줄였다가, Supabase
- * Disk IO 예산 고갈로 사이트 전체가 느려지는 걸 겪고 다시 20분으로 되돌림 —
- * 이 크론 주기를 너무 짧게 잡으면 DB 부하가 누적된다는 걸 실측으로 확인함).
+ * 그룹 하나가 한 번에 몰아서 쏟아지지 않도록 그룹별 발행 간격은 30분으로
+ * 제한(2026-09-23: one.yoosol 적체 대응으로 10분까지 줄였다가 Supabase Disk IO
+ * 예산 고갈 → 20분으로 되돌림 → 2026-09-24: hy64 NAS 자체 디스크 I/O 포화까지
+ * 겹쳐서 원래 기본값인 30분으로 복귀, 사용자 확정).
  * 호출 한 번에 여러 건을 순서대로 처리해서 크론 1틱당 1건만 나가던 처리량
- * 한계는 그대로 유지.
+ * 한계는 그대로 유지 — translateAndCrossPost를 fire-and-forget으로 바꾼 뒤로
+ * (2026-09-24) 기사 1건당 소요시간이 줄어서 처리 건수/시간예산을 소폭 상향.
  * Auth: Bearer CRON_SECRET
  */
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,15 +19,16 @@ import { publishRewrittenArticle, getSnsAccountRouting } from '@/lib/rewrite-pub
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 20 * 60 * 1000;
-const MAX_PUBLISHES_PER_CALL = 5;
+const PUBLISH_INTERVAL_MS = 30 * 60 * 1000;
+const MAX_PUBLISHES_PER_CALL = 8;
 // 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
 // 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
 // 이 체크는 "다음 건을 시작하기 전"에만 걸리고 진행 중인 발행을 끊지는 못하므로,
-// 남은 예산 + 발행 1건 최악 소요시간(~90초)의 합이 auto-run의 200s abort보다
-// 작아야 안전함 — 처음 배포 때 8건/170초로 잡았다가 실제로 크론 1틱이 5분
-// 넘게 안 끝나는 걸 실측 확인해서 보수적으로 낮춤.
-const TIME_BUDGET_MS = 100_000;
+// 남은 예산 + 발행 1건 최악 소요시간(~90초)의 합이 auto-run의 260s abort보다
+// 작아야 안전함(2026-09-24: translateAndCrossPost가 더 이상 이 시간에 안 끼어들어서
+// 예전보다 여유가 생겨 100초→150초로 상향 — 밀린 백로그를 hy64에 무리 안 가게
+// 조금씩 더 빨리 줄이려는 목적, 사용자 확정).
+const TIME_BUDGET_MS = 150_000;
 
 // one.yoosol/yoonfree 우선순위는 폐지함(2026-09-23) — 소스별 30개가 경쟁하던
 // 예전 구조에서 이 둘이 밀리는 걸 막으려던 장치였는데, 이제 계정 그룹
