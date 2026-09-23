@@ -728,6 +728,9 @@ export async function POST(req: NextRequest) {
         const bonus = twentiesBonusMap.get(keyword);
         if (bonus) goldenScore = Math.round(goldenScore * bonus);
       }
+      // calcGoldenScore 내부 상한(9999)이 위 가점들 때문에 뚫릴 수 있음(실사용 중
+      // "대마도배편" 13999점 발견 — 9999 × 1.4 20대 가점) — 여기서 다시 한번 클램프.
+      goldenScore = Math.min(goldenScore, 9999);
       const difficulty = calcDifficulty(ns.blog, daumTotal, gc, ns.news);
       const grade = calcGrade(goldenScore, monthly);
       const { canRank1, reason } = calcCanRank1(difficulty, monthly, ns.blog, ns.powerRatio, ns.news, goldenScore);
