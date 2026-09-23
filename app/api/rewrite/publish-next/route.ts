@@ -2,11 +2,12 @@
  * POST /api/rewrite/publish-next
  * "ready" 상태 기사를 소스별 라운드로빈으로 골라 설정된 WordPress 사이트 +
  * 연결된 SNS 전체에 발행. 소스 하나가 한 번에 몰아서 쏟아지지 않도록 소스별
- * 발행 간격은 30분으로 제한하되(사용자 확정 — 기존 1시간에서 단축), 호출
- * 한 번에 여러 소스를 순서대로 처리해서 20분 간격 크론 1틱당 1건만 나가던
- * 처리량 한계를 풂 — 19개 소스가 각자 1시간(→30분)에 한 번씩 자기 차례를
- * 원하는데 크론이 20분마다 1건만 처리하면 산술적으로 못 따라가는 게
- * 실측(경향신문 기사 72시간 지연, one.yoosol 최대 2.5일 지연) 확인됨.
+ * 발행 간격은 10분으로 제한하되(사용자 확정 — 30분→10분, one.yoosol 37건
+ * 적체 확인 후 추가 단축, 크론도 */20→*/10으로 같이 줄임), 호출 한 번에
+ * 여러 소스를 순서대로 처리해서 크론 1틱당 1건만 나가던 처리량 한계를 풂
+ * — 소스가 30개 넘게 늘어난 상태라 각자 자기 차례를 원하는데 크론 1틱에
+ * 1건만 처리하면 산술적으로 못 따라가는 게 실측(경향신문 기사 72시간
+ * 지연, one.yoosol 최대 2.5일 지연) 확인됨.
  * Auth: Bearer CRON_SECRET
  */
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,7 +16,7 @@ import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 30 * 60 * 1000;
+const PUBLISH_INTERVAL_MS = 10 * 60 * 1000;
 const MAX_PUBLISHES_PER_CALL = 5;
 // 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
 // 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
