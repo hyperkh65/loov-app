@@ -16,10 +16,15 @@ import type { Schedule, BlogAutoConfig } from './index';
 // 스레드만 계정이 사이트 목적별로 나뉘어 있어(여행/쿠팡 전용 계정까지 블로그
 // 글로 도배되는 걸 막으려고) 전용 계정으로 라우팅. 인스타/트위터/페이스북은
 // 계정 수가 적거나 사이트 구분이 없어서 연결된 계정 전부에 공통으로 발행.
-// 2026-09-23: rewrite-publish.ts와 같은 이유로 역할 맞교환(사용자 요청) —
-// 아보다/미라클은 @2dayskr로, 그 외(money.2days.kr 등)는 @aboda_miracool로.
+// 2026-09-24: 아보다/미라클이 둘 다 interval_hours=1(매시간)로 도는데 같은
+// 계정(@2dayskr)에 묶여 있어서, 두 사이트가 같은 시간대 트렌드 키워드(예:
+// 추석 연휴 "대마도 배편")를 각자 고르면 한 계정에 5분 새 3개씩 몰려 스팸
+// 처럼 보이는 문제를 실사용 중 확인함(펜널티 위험). 매시간 도는 두 소스를
+// 서로 다른 계정으로 쪼개서 겹침 자체를 없앰 — @2dayskr_korea는 blog-runner
+// 에서 지금까지 전혀 안 쓰이던 계정이라 부담 없이 추가.
 function threadsAccountFor(siteUrl: string): string {
-  if (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) return '@2dayskr';
+  if (siteUrl.includes('aboda.kr')) return '@2dayskr';
+  if (siteUrl.includes('miracool.co.kr')) return '@2dayskr_korea';
   return '@aboda_miracool'; // 2days.kr 계열 + 블로거(사이트 URL 없음) 전부 이 계정으로
 }
 
