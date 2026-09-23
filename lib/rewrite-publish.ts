@@ -45,7 +45,7 @@ async function getSnsAccountRouting(sourceId: string | null | undefined): Promis
 interface WpCreds { url: string; username: string; appPassword: string }
 
 /** 인스타그램은 종횡비 0.8~1.91 범위를 벗어난 이미지를 거부함 — 1080x1080 센터크롭으로 항상 통과시킴 */
-async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null): Promise<string> {
+export async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null): Promise<string> {
   // 공개 도메인으로 자기 자신을 호출하면 hairpin NAT로 간헐적으로 실패함.
   // localhost는 컨테이너 바인딩 이슈로 연결 거부되어 도커 브리지
   // 게이트웨이+게시된 포트로 우회(app/api/rewrite/auto-run/route.ts 참고).
