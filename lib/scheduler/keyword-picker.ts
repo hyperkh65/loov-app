@@ -202,6 +202,46 @@ export async function pickFromKeywordList(
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+// 고CPC 등 특정 카테고리로 좁혀서 동적 발굴 — 대시보드/크론이 채워둔
+// bossai_keyword_opportunities에서 그 카테고리만 가져옴. 후보가 없으면 null을
+// 반환해서 호출 쪽이 정적 목록으로 폴백하게 함 — pickKeywordForUser()의 범용
+// 폴백(findBestTrendingKeyword, 결국엔 "다이어트 보조제 추천" 등)은 카테고리와
+// 무관해서 고CPC 전용 스케줄엔 안 맞음.
+export async function pickDynamicKeywordByCategory(
+  schedule: { user_id: string },
+  category: string,
+): Promise<string | null> {
+  const supabase = createAdminClient();
+  const since = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+
+  const [{ data: cached }, { data: recentLogs }] = await Promise.all([
+    supabase
+      .from('bossai_keyword_opportunities')
+      .select('keyword, score, can_rank1')
+      .eq('user_id', schedule.user_id)
+      .eq('category', category)
+      .gte('created_at', since)
+      .gt('score', 0)
+      .order('can_rank1', { ascending: false })
+      .order('score', { ascending: false })
+      .limit(20),
+    supabase
+      .from('bossai_schedule_logs')
+      .select('result')
+      .eq('user_id', schedule.user_id)
+      .gte('started_at', sevenDaysAgo)
+      .eq('status', 'success'),
+  ]);
+  if (!cached?.length) return null;
+
+  const usedKeywords = new Set(
+    (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean)
+  );
+  const fresh = cached.find(c => !usedKeywords.has(c.keyword));
+  return (fresh || cached[0]).keyword;
+}
+
 // ── 메인 함수 ──────────────────────────────────────────────────────────────
 export async function pickKeywordForUser(userId: string): Promise<string> {
   const supabase = createAdminClient();
