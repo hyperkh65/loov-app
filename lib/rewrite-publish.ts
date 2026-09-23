@@ -203,16 +203,16 @@ export async function publishRewrittenArticle(
   }
 
   // 원문이 나간 모든 사이트를 영어/일본어로 번역해서 engmag/japmag에도 크로스 발행 —
-  // 새로 만드는 사이트도 이 함수를 통해 발행하는 한 자동으로 포함됨(별도 설정 불필요)
-  const translate: Record<'en' | 'ja', string> = { en: 'skip', ja: 'skip' };
+  // 새로 만드는 사이트도 이 함수를 통해 발행하는 한 자동으로 포함됨(별도 설정 불필요).
+  // Groq 번역(ai-translate.ts)이 API 키 4개 전부 rate-limit 걸리면 60초 대기 후
+  // 재시도를 반복해 최악의 경우 수 분까지 블로킹되는 게 실사용 중 확인됨 — 이걸
+  // await로 기다리면 기사 1건 발행 전체가 그만큼 늘어져서 publish-next 호출이
+  // 통째로 타임아웃남(다른 발행 채널은 전부 fire-and-forget인데 이것만 동기 대기였음).
+  // blog-runner.ts와 동일하게 결과를 기다리지 않고 흘려보냄 — 번역은 부가 기능이라
+  // 본 발행 속도에 영향을 주면 안 됨.
+  const translate: Record<'en' | 'ja', string> = { en: 'pending', ja: 'pending' };
   if (wordpressUrl) {
-    try {
-      const result = await translateAndCrossPost({ title: article.title, content: article.content, representative_image_url: snsImageUrl });
-      translate.en = result.en;
-      translate.ja = result.ja;
-    } catch (e) {
-      translate.en = translate.ja = `error: ${(e as Error).message?.slice(0, 150)}`;
-    }
+    translateAndCrossPost({ title: article.title, content: article.content, representative_image_url: snsImageUrl }).catch(() => {});
   }
 
   // SNS/카페용 후킹 캡션은 카페 발행에도 필요해서 여기서 미리 생성해둔다 —
