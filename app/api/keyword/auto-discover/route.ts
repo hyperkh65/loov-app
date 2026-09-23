@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { fetchFeedItems } from '@/lib/rewrite-site-scraper';
+import { generateText } from '@/lib/auto-blog-ai';
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'crypto';
 
@@ -202,7 +203,7 @@ function cleanCommunityTitle(t: string): string {
     .trim();
 }
 
-async function communityTrendingSeeds(): Promise<string[]> {
+async function communityTrendingTitlesRaw(): Promise<string[]> {
   const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   const fetchTitles = async (url: string, pattern: RegExp): Promise<string[]> => {
     try {
@@ -227,6 +228,35 @@ async function communityTrendingSeeds(): Promise<string[]> {
     fetchTitles('https://pann.nate.com/talk/ranking/d', /<a href="\/talk\/\d+"\s+onclick="[^"]*"\s+title="([^"]{4,80})"/g),
   ]);
   return [...fm, ...qoo, ...pann].slice(0, 45);
+}
+
+// 커뮤니티 원문 제목은 완전한 문장·감탄사·구어체라(예: "결혼 3주 남았는데
+// 파혼해야될까") 그대로 자동완성 API에 넣으면 "안내해서"/"남자친구를" 같은
+// 문장 조각이 관련 키워드로 튀어나오는 걸 실사용 중 확인함(2026-09-23) —
+// 정규식으로는 "이게 진짜 검색될 만한 명사구인지" 판단이 안 돼서, AI에게
+// 문장에서 실제 검색 키워드만 뽑아내게 한 단계를 추가. 이 호출이 실패해도
+// 원문 제목을 그대로 폴백으로 써서(품질은 낮아도) 전체 발굴이 죽지 않게 함.
+async function communityTrendingSeeds(): Promise<string[]> {
+  const raw = await communityTrendingTitlesRaw();
+  if (!raw.length) return [];
+  try {
+    const prompt = `다음은 한국 온라인 커뮤니티 인기글 제목 목록이다. 각 제목이 다루는 화제 중
+20대가 실제로 네이버/구글 검색창에 입력할 법한 짧은 키워드(명사 또는 명사구,
+2~8글자, 완전한 문장이나 조사로 끝나는 문장 조각 절대 금지)만 최대 15개 뽑아라.
+정치·사망·사건사고·자극적 어그로성 낚시 제목은 제외.
+
+제목 목록:
+${raw.join('\n')}
+
+출력은 키워드 하나당 한 줄, 번호나 설명 없이 키워드만 출력해.`;
+    const out = await generateText(prompt, 'qwen3');
+    const extracted = out.split('\n')
+      .map(l => l.replace(/^[-*\d.\s]+/, '').trim())
+      .filter(k => k && k.length >= 2 && k.length <= 20 && !/[.,!?]$/.test(k));
+    return extracted.length ? extracted.slice(0, 15) : raw;
+  } catch {
+    return raw; // AI 추출 실패해도 원문 제목으로 폴백 — 발굴 자체는 계속 진행
+  }
 }
 
 // ── Naver 자동완성 (API 키 불필요, 실제 검색어만 반환) ───────────────────────
