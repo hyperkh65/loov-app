@@ -184,11 +184,35 @@ def make_image_component(src, alt=''):
     if info:
         uploaded_images.append(info['url'])
         img_domain = info['url'].split('/')[2] if info['url'].startswith('http') else 'postfiles.pstatic.net'
-        # represent=False가 모든 이미지에 고정돼 있으면 네이버가 대표이미지 후보를
-        # 하나도 못 찾아 목록/공유 썸네일이 비게 된다(실사용 확인) — 이 글에서 처음
-        # 업로드에 성공한 이미지 하나에만 True를 줘서 대표이미지로 지정되게 한다.
         is_represent = not represent_assigned
-        represent_assigned = True
+        # 2026-09-23: 네이버 에디터에서 실제로 이미지를 대표이미지로 지정하고 저장할
+        # 때 나가는 실제 RabbitWrite 요청을 캡처해서(사용자 제공) 확인 — 대표이미지는
+        # text 컴포넌트 안에 중첩된 imageNode가 아니라 documentModel.components[]
+        # 최상위의 @ctype:"image" 컴포넌트여야 하고, 아래 필드가 전부 있어야
+        # 정상 처리됨(예전에 이 필드들 없이 시도했다가 "parse fail"로 발행 자체가
+        # 깨진 적 있음 — 이번엔 실제 캡처값 그대로 복제해서 안전하게 반영):
+        # internalResource=true(이전엔 반대로 넣었었음), domain에 스킴(https://)
+        # 포함, path에 맨 앞 슬래시 포함, origin/format/caption 등 전체 필드.
+        if is_represent:
+            represent_assigned = True
+            domain_with_scheme = img_domain if img_domain.startswith('http') else f'https://{img_domain}'
+            path_val = info['path'] if info['path'].startswith('/') else f"/{info['path']}"
+            return {
+                'id': se_id(), 'layout': 'default', '@ctype': 'image',
+                'src': info['url'],
+                'internalResource': True,
+                'represent': True,
+                'path': path_val,
+                'domain': domain_with_scheme,
+                'fileSize': 0,
+                'width': info['width'], 'widthPercentage': 0, 'height': info['height'],
+                'originalWidth': info['width'], 'originalHeight': info['height'],
+                'fileName': info['filename'],
+                'caption': None, 'format': 'normal', 'displayFormat': 'normal',
+                'imageLoaded': True, 'contentMode': 'normal',
+                'origin': {'srcFrom': 'local', '@ctype': 'imageOrigin'},
+                'ai': False,
+            }
         return {
             'id': se_id(), 'layout': 'default', '@ctype': 'text',
             'value': [{
@@ -203,7 +227,7 @@ def make_image_component(src, alt=''):
                     'fileSize': 0,
                     'fileName': info['filename'],
                     'internalResource': False,
-                    'represent': is_represent,
+                    'represent': False,
                     'ai': False,
                 }]
             }]
