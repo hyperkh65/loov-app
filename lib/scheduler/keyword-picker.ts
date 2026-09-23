@@ -255,6 +255,11 @@ export async function pickKeywordForUser(userId: string): Promise<string> {
       .from('bossai_keyword_opportunities')
       .select('keyword, score, can_rank1')
       .eq('user_id', userId)
+      // 'twenties'는 yellow.2days.kr 전용 발굴(20대 연령 가점이 곱해져 score가
+      // calcGoldenScore의 원래 상한(9999)을 넘어설 수 있음, 실사용 중 13999점
+      // "대마도배편"이 발견됨) — 카테고리 구분 없는 이 함수가 그 점수를 그대로
+      // 가져가면 여기서 상한을 뚫은 값이 항상 1등을 차지해버림.
+      .neq('category', 'twenties')
       .gte('created_at', since)
       .gt('score', 0)
       .order('can_rank1', { ascending: false })
@@ -276,9 +281,10 @@ export async function pickKeywordForUser(userId: string): Promise<string> {
     );
     const fresh = cached.find(c => !usedKeywords.has(c.keyword));
     if (fresh) return fresh.keyword;
-    return cached[0].keyword;
+    // 상위 10개를 이미 7일 안에 다 써버렸으면 1등을 그냥 반복하지 말고(실사용 중
+    // 같은 키워드가 몇 시간째 반복 발행되는 문제 확인) 실시간 트렌딩으로 폴백.
   }
 
-  // 2. 캐시 없음 → 실시간 트렌딩 + 수익 분석
+  // 2. 캐시 없음/전부 소진 → 실시간 트렌딩 + 수익 분석
   return findBestTrendingKeyword();
 }
