@@ -168,27 +168,38 @@ async function findBestTrendingKeyword(): Promise<string> {
 }
 
 // 고정 키워드 목록에서 선택 — 특정 카테고리(고CPC 등)를 노리는 스케줄용.
-// pickKeywordForUser와 동일하게 최근 7일 내 이미 쓴 키워드는 피함.
+// 'rotate'는 인스타/숏츠/아고다 러너 등과 동일하게 schedule.keyword_index를 진짜
+// 순환 커서로 써서 매번 다음 키워드로 넘어감 — 예전엔 "최근 7일 안 쓴 것 중
+// 배열 맨 앞"이라 목록을 다 쓰고 나면 항상 keywords[0]에 고정되는 버그가
+// 있었음(실사용 확인: 고CPC 스케줄이 하루도 안 돼 계속 같은 주제만 나옴).
+// 'random'은 기존처럼 최근 7일 회피 + 무작위.
 export async function pickFromKeywordList(
-  userId: string,
+  schedule: { id: string; user_id: string; keyword_index: number },
   keywords: string[],
   mode: 'rotate' | 'random' = 'rotate',
 ): Promise<string> {
   if (!keywords.length) throw new Error('키워드 목록이 비어있음');
   const supabase = createAdminClient();
+
+  if (mode === 'rotate') {
+    const idx = schedule.keyword_index % keywords.length;
+    await supabase.from('bossai_schedules').update({ keyword_index: (idx + 1) % keywords.length }).eq('id', schedule.id);
+    return keywords[idx];
+  }
+
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: recentLogs } = await supabase
     .from('bossai_schedule_logs')
     .select('result')
-    .eq('user_id', userId)
+    .eq('user_id', schedule.user_id)
     .gte('started_at', sevenDaysAgo)
     .eq('status', 'success');
   const usedKeywords = new Set(
     (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean)
   );
   const fresh = keywords.filter(k => !usedKeywords.has(k));
-  const pool = fresh.length ? fresh : keywords; // 다 썼으면 처음부터 다시 순환
-  return mode === 'random' ? pool[Math.floor(Math.random() * pool.length)] : pool[0];
+  const pool = fresh.length ? fresh : keywords; // 다 썼으면 처음부터 다시 무작위
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // ── 메인 함수 ──────────────────────────────────────────────────────────────
