@@ -16,9 +16,11 @@ import type { Schedule, BlogAutoConfig } from './index';
 // 스레드만 계정이 사이트 목적별로 나뉘어 있어(여행/쿠팡 전용 계정까지 블로그
 // 글로 도배되는 걸 막으려고) 전용 계정으로 라우팅. 인스타/트위터/페이스북은
 // 계정 수가 적거나 사이트 구분이 없어서 연결된 계정 전부에 공통으로 발행.
+// 2026-09-23: rewrite-publish.ts와 같은 이유로 역할 맞교환(사용자 요청) —
+// 아보다/미라클은 @2dayskr로, 그 외(money.2days.kr 등)는 @aboda_miracool로.
 function threadsAccountFor(siteUrl: string): string {
-  if (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) return '@aboda_miracool';
-  return '@2dayskr'; // 2days.kr 계열 + 블로거(사이트 URL 없음) 전부 이 계정으로
+  if (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) return '@2dayskr';
+  return '@aboda_miracool'; // 2days.kr 계열 + 블로거(사이트 URL 없음) 전부 이 계정으로
 }
 
 async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string): Promise<void> {
@@ -208,7 +210,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   let keyword: string;
   try {
     keyword = config.keywords?.length
-      ? await pickFromKeywordList(schedule.user_id, config.keywords, config.keyword_mode || 'rotate')
+      ? await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate')
       : await pickKeywordForUser(schedule.user_id);
   } catch (e) {
     throw new Error(`[키워드 발굴 실패] ${(e as Error).message}`);
