@@ -4,10 +4,12 @@
  * 라운드로빈으로 골라 설정된 WordPress 사이트 + 연결된 SNS 전체에 발행
  * (2026-09-23, 사용자 확정 — 예전엔 소스별 로테이션이라 같은 계정으로 나가는
  * 소스끼리 서로 순서를 다퉈서 결국 한 계정만 자주 발행되던 문제가 있었음).
- * 그룹 하나가 한 번에 몰아서 쏟아지지 않도록 그룹별 발행 간격은 10분으로
- * 제한하되(30분에서 10분으로 단축, one.yoosol 37건 적체 확인 후 단축, 크론
- * 주기도 20분에서 10분으로 같이 줄임), 호출 한 번에 여러 건을 순서대로
- * 처리해서 크론 1틱당 1건만 나가던 처리량 한계를 풂.
+ * 그룹 하나가 한 번에 몰아서 쏟아지지 않도록 그룹별 발행 간격은 20분으로
+ * 제한(2026-09-23: one.yoosol 적체 대응으로 잠시 10분까지 줄였다가, Supabase
+ * Disk IO 예산 고갈로 사이트 전체가 느려지는 걸 겪고 다시 20분으로 되돌림 —
+ * 이 크론 주기를 너무 짧게 잡으면 DB 부하가 누적된다는 걸 실측으로 확인함).
+ * 호출 한 번에 여러 건을 순서대로 처리해서 크론 1틱당 1건만 나가던 처리량
+ * 한계는 그대로 유지.
  * Auth: Bearer CRON_SECRET
  */
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,7 +18,7 @@ import { publishRewrittenArticle, getSnsAccountRouting } from '@/lib/rewrite-pub
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 10 * 60 * 1000;
+const PUBLISH_INTERVAL_MS = 20 * 60 * 1000;
 const MAX_PUBLISHES_PER_CALL = 5;
 // 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
 // 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
