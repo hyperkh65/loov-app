@@ -3,6 +3,63 @@
  * API Route 에서만 import 해야 함 (Buffer 사용)
  */
 import type { Platform } from './platforms';
+import { createAdminClient } from '@/lib/supabase-server';
+import { getSetting } from '@/lib/get-setting';
+
+// ── 트위터 access_token 자동 갱신 ─────────────────────────
+// 트위터 OAuth2 access_token은 2시간짜리 단명 토큰이라 앱을 오래 켜두면
+// 자동 만료됨 — refresh_token으로 갱신하는 로직이 그동안 아예 없어서
+// 만료 후엔 모든 발행이 401로 죽는 걸 실사용 중 확인(8시간 넘게 방치).
+// 트위터는 갱신할 때마다 refresh_token도 같이 새로 내려줘서(로테이션)
+// 반드시 같이 저장해야 다음 갱신도 정상 동작함.
+async function refreshTwitterToken(platformUserId: string, refreshToken: string): Promise<string | null> {
+  const [dbClientId, dbClientSecret] = await Promise.all([
+    getSetting('TWITTER_CLIENT_ID'),
+    getSetting('TWITTER_CLIENT_SECRET'),
+  ]);
+  const clientId = dbClientId || process.env.TWITTER_CLIENT_ID || '';
+  const clientSecret = dbClientSecret || process.env.TWITTER_CLIENT_SECRET || '';
+  const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  const res = await fetch('https://api.twitter.com/2/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${creds}` },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.access_token) return null;
+
+  await createAdminClient()
+    .from('sns_connections')
+    .update({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token || refreshToken,
+      token_expires_at: data.expires_in ? new Date(Date.now() + data.expires_in * 1000).toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('platform', 'twitter')
+    .eq('platform_user_id', platformUserId);
+
+  return data.access_token;
+}
+
+/** 만료 임박/이미 만료면 refresh_token으로 갱신한 토큰을, 아니면 기존 토큰을 그대로 반환 */
+async function getValidTwitterToken(accessToken: string, platformUserId: string): Promise<string> {
+  const { data: conn } = await createAdminClient()
+    .from('sns_connections')
+    .select('access_token, refresh_token, token_expires_at')
+    .eq('platform', 'twitter')
+    .eq('platform_user_id', platformUserId)
+    .single();
+  if (!conn?.token_expires_at || !conn.refresh_token) return accessToken;
+
+  const expiresAt = new Date(conn.token_expires_at).getTime();
+  if (expiresAt > Date.now() + 5 * 60 * 1000) return conn.access_token;
+
+  const refreshed = await refreshTwitterToken(platformUserId, conn.refresh_token);
+  return refreshed || conn.access_token; // 갱신 실패하면 기존 토큰으로 시도(에러는 호출부에서 처리)
+}
 
 // ── 공통 유틸 ─────────────────────────────────────────
 
@@ -194,9 +251,11 @@ export async function uploadMediaToLinkedIn(
 
 export async function postToTwitterWithMedia(
   accessToken: string,
+  platformUserId: string,
   content: string,
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
+  accessToken = await getValidTwitterToken(accessToken, platformUserId);
   const body: Record<string, unknown> = { text: content.substring(0, 280) };
 
   if (mediaUrls?.length) {
@@ -605,7 +664,7 @@ export async function postToPlatformWithMedia(
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
   switch (platform) {
-    case 'twitter':   return postToTwitterWithMedia(accessToken, content, mediaUrls);
+    case 'twitter':   return postToTwitterWithMedia(accessToken, platformUserId, content, mediaUrls);
     case 'threads':   return postToThreadsWithMedia(accessToken, platformUserId, content, mediaUrls);
     case 'facebook':  return postToFacebookWithMedia(accessToken, content, mediaUrls);
     case 'instagram':
@@ -628,7 +687,7 @@ export async function postCommentOnOwnPost(
   switch (platform) {
     case 'twitter':
       // 트위터: 이전 트윗에 답글 (체인 스레드)
-      return replyToTwitterComment(accessToken, postId, content, mediaUrls);
+      return replyToTwitterComment(accessToken, platformUserId, postId, content, mediaUrls);
 
     case 'threads': {
       // 스레드: reply_to_id로 답글 (이미지 있으면 함께 첨부)
@@ -798,10 +857,12 @@ export async function fetchCommentsFromInstagram(
 
 export async function replyToTwitterComment(
   accessToken: string,
+  platformUserId: string,
   tweetId: string,
   content: string,
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
+  accessToken = await getValidTwitterToken(accessToken, platformUserId);
   const body: Record<string, unknown> = {
     text: content.substring(0, 280),
     reply: { in_reply_to_tweet_id: tweetId },

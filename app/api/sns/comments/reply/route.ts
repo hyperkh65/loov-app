@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   try {
     let result: { id: string };
     if (platform === 'twitter') {
-      result = await replyToTwitterComment(conn.access_token, post_id, content, media_urls);
+      result = await replyToTwitterComment(conn.access_token, conn.platform_user_id, post_id, content, media_urls);
     } else if (platform === 'facebook') {
       result = await replyToFacebookComment(conn.access_token, comment_id || post_id, content);
     } else if (platform === 'instagram') {
