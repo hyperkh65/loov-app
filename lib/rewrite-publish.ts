@@ -33,7 +33,7 @@ const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 const DEFAULT_SNS_ACCOUNTS = ['@2dayskr']; // 라우팅에 없는 소스(그 외 일반 리라이트글)
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
 
-async function getSnsAccountRouting(sourceId: string | null | undefined): Promise<string[]> {
+export async function getSnsAccountRouting(sourceId: string | null | undefined): Promise<string[]> {
   if (!sourceId) return DEFAULT_SNS_ACCOUNTS;
   try {
     const raw = await getSetting('SNS_ACCOUNT_ROUTING_BY_SOURCE');

@@ -1,18 +1,18 @@
 /**
  * POST /api/rewrite/publish-next
- * "ready" 상태 기사를 소스별 라운드로빈으로 골라 설정된 WordPress 사이트 +
- * 연결된 SNS 전체에 발행. 소스 하나가 한 번에 몰아서 쏟아지지 않도록 소스별
- * 발행 간격은 10분으로 제한하되(사용자 확정 — 30분→10분, one.yoosol 37건
- * 적체 확인 후 추가 단축, 크론도 */20→*/10으로 같이 줄임), 호출 한 번에
- * 여러 소스를 순서대로 처리해서 크론 1틱당 1건만 나가던 처리량 한계를 풂
- * — 소스가 30개 넘게 늘어난 상태라 각자 자기 차례를 원하는데 크론 1틱에
- * 1건만 처리하면 산술적으로 못 따라가는 게 실측(경향신문 기사 72시간
- * 지연, one.yoosol 최대 2.5일 지연) 확인됨.
+ * "ready" 상태 기사를 SNS 계정 그룹(@2dayskr/@2dayskr_korea/@aboda_miracool)
+ * 라운드로빈으로 골라 설정된 WordPress 사이트 + 연결된 SNS 전체에 발행
+ * (2026-09-23, 사용자 확정 — 예전엔 소스별 로테이션이라 같은 계정으로 나가는
+ * 소스끼리 서로 순서를 다퉈서 결국 한 계정만 자주 발행되던 문제가 있었음).
+ * 그룹 하나가 한 번에 몰아서 쏟아지지 않도록 그룹별 발행 간격은 10분으로
+ * 제한하되(30분→10분, one.yoosol 37건 적체 확인 후 단축, 크론도
+ * */20→*/10으로 같이 줄임), 호출 한 번에 여러 건을 순서대로 처리해서 크론
+ * 1틱당 1건만 나가던 처리량 한계를 풂.
  * Auth: Bearer CRON_SECRET
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
-import { publishRewrittenArticle } from '@/lib/rewrite-publish';
+import { publishRewrittenArticle, getSnsAccountRouting } from '@/lib/rewrite-publish';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
@@ -88,62 +88,80 @@ async function publishArticle(supabase: ReturnType<typeof createAdminClient>, ow
   }
 }
 
-// "가장 오래된 ready 하나"만 뽑으면 백로그 큰 소스가 계속 우선권을 가져가서
-// 다른 소스는 자기 차례가 와도(간격 통과해도) 영영 발행이 안 되는 문제가
-// 실사용 중 확인됨 — 소스별로 순서를 공평하게 배정하되, 아직 발행 간격이 안
-// 지난 소스는 건너뛰고 지금 당장 발행 가능한 소스 중 우선순위 소스 먼저,
-// 그다음 가장 오래 기다린 소스를 고름. 없으면 null.
+// 소스 단위 로테이션 대신 "계정 그룹" 단위로 로테이션(사용자 확정) — 소스별로
+// 돌리면 같은 계정으로 나가는 소스끼리 서로 순서를 다퉈서 결국 그 계정 하나만
+// 자주 발행되고 다른 계정은 밀리는 문제가 있음. @2dayskr / @2dayskr_korea /
+// @aboda_miracool 세 그룹이 매번 공평하게 한 번씩 자기 차례를 받도록 함 —
+// 그룹 안에서 여러 소스가 준비돼 있으면 우선순위 소스(one.yoosol/yoonfree)
+// 먼저, 그다음 가장 오래 기다린 소스.
+const accountGroupCache = new Map<string, string>();
+async function accountGroupForSource(sourceId: string | null): Promise<string> {
+  const key = sourceId ?? 'null';
+  const cached = accountGroupCache.get(key);
+  if (cached) return cached;
+  const accounts = await getSnsAccountRouting(sourceId);
+  const group = accounts[0] || '@2dayskr';
+  accountGroupCache.set(key, group);
+  return group;
+}
+
 async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, ownerId: string): Promise<ArticleRow | { waitMinutes: number } | null> {
-  const { data: readyBySource } = await supabase
+  const { data: readyArticles } = await supabase
     .from('bossai_rewrite_articles')
-    .select('source_id, created_at')
+    .select('id, source_id, created_at')
     .eq('user_id', ownerId)
     .eq('status', 'ready')
     .order('created_at', { ascending: true });
 
-  if (!readyBySource?.length) return null;
+  if (!readyArticles?.length) return null;
 
-  const sourceKeys = [...new Set(readyBySource.map((r) => r.source_id ?? 'null'))];
-  const candidates: Array<{ sourceKey: string; lastServedAt: string; waitMs: number }> = [];
-  for (const sourceKey of sourceKeys) {
-    let lastPublishedQuery = supabase
-      .from('bossai_rewrite_articles')
-      .select('published_at')
-      .eq('user_id', ownerId)
-      .eq('status', 'published')
-      .order('published_at', { ascending: false })
-      .limit(1);
-    lastPublishedQuery = sourceKey === 'null' ? lastPublishedQuery.is('source_id', null) : lastPublishedQuery.eq('source_id', sourceKey);
-    const { data: lastPublished } = await lastPublishedQuery.single();
-    const sinceLast = lastPublished?.published_at ? Date.now() - new Date(lastPublished.published_at).getTime() : Infinity;
-    candidates.push({
-      sourceKey,
-      lastServedAt: lastPublished?.published_at || '0000-01-01',
-      waitMs: Math.max(0, PUBLISH_INTERVAL_MS - sinceLast),
-    });
+  // 최근 발행된 글들로 그룹별 "마지막 발행 시각"을 근사 — 그룹 자체가 컬럼이
+  // 아니라 소스→그룹 매핑을 거쳐야 해서 SQL로 바로 집계가 안 됨. 그룹이 3개뿐이고
+  // 발행 빈도가 높아서 최근 60건이면 세 그룹 모두 충분히 포함됨.
+  const { data: recentPublished } = await supabase
+    .from('bossai_rewrite_articles')
+    .select('source_id, published_at')
+    .eq('user_id', ownerId)
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(60);
+
+  const readyWithGroup = await Promise.all(
+    readyArticles.map(async (a) => ({ ...a, group: await accountGroupForSource(a.source_id) }))
+  );
+  const lastPublishedAtByGroup = new Map<string, string>();
+  for (const p of recentPublished || []) {
+    const group = await accountGroupForSource(p.source_id);
+    if (!lastPublishedAtByGroup.has(group) && p.published_at) lastPublishedAtByGroup.set(group, p.published_at);
   }
 
-  const ready = candidates.filter((c) => c.waitMs === 0).sort((a, b) => {
-    const aPriority = PRIORITY_SOURCE_IDS.has(a.sourceKey);
-    const bPriority = PRIORITY_SOURCE_IDS.has(b.sourceKey);
-    if (aPriority !== bPriority) return aPriority ? -1 : 1;
-    return a.lastServedAt < b.lastServedAt ? -1 : 1;
+  const groupKeys = [...new Set(readyWithGroup.map((a) => a.group))];
+  const candidates = groupKeys.map((group) => {
+    const lastAt = lastPublishedAtByGroup.get(group);
+    const sinceLast = lastAt ? Date.now() - new Date(lastAt).getTime() : Infinity;
+    return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, PUBLISH_INTERVAL_MS - sinceLast) };
   });
+
+  const ready = candidates.filter((c) => c.waitMs === 0).sort((a, b) => (a.lastServedAt < b.lastServedAt ? -1 : 1));
   if (!ready.length) {
     const soonest = candidates.sort((a, b) => a.waitMs - b.waitMs)[0];
     return { waitMinutes: Math.ceil(soonest.waitMs / 60000) };
   }
 
-  const chosenSourceKey = ready[0].sourceKey;
-  let articleQuery = supabase
+  const chosenGroup = ready[0].group;
+  const inGroup = readyWithGroup.filter((a) => a.group === chosenGroup).sort((a, b) => {
+    const aPriority = PRIORITY_SOURCE_IDS.has(a.source_id ?? '');
+    const bPriority = PRIORITY_SOURCE_IDS.has(b.source_id ?? '');
+    if (aPriority !== bPriority) return aPriority ? -1 : 1;
+    return a.created_at < b.created_at ? -1 : 1;
+  });
+  const chosenId = inGroup[0].id;
+
+  const { data } = await supabase
     .from('bossai_rewrite_articles')
     .select('id, source_id, rewritten_title, rewritten_content, rewritten_meta, representative_image_url')
-    .eq('user_id', ownerId)
-    .eq('status', 'ready')
-    .order('created_at', { ascending: true })
-    .limit(1);
-  articleQuery = chosenSourceKey === 'null' ? articleQuery.is('source_id', null) : articleQuery.eq('source_id', chosenSourceKey);
-  const { data } = await articleQuery.single();
+    .eq('id', chosenId)
+    .single();
   return data;
 }
 
