@@ -27,7 +27,10 @@ const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 // 30개 가까이로 늘면서 매번 배포해야 하는 게 안 맞아 app_settings의
 // SNS_ACCOUNT_ROUTING_BY_SOURCE(JSON: source_id -> 계정 배열)로 옮김 —
 // 대시보드/DB에서 바로 조정 가능
-const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 라우팅에 없는 소스(그 외 일반 리라이트글)
+// 2026-09-23: @2dayskr ↔ (@aboda_miracool+@2dayskr_korea) 역할 맞교환(사용자 요청) —
+// 정부/정책+경제신문 23개 소스는 SNS_ACCOUNT_ROUTING_BY_SOURCE에서 @aboda_miracool+
+// @2dayskr_korea로 재배정했고, 그 외 나머지(라우팅에 없는 소스) 기본값은 @2dayskr로.
+const DEFAULT_SNS_ACCOUNTS = ['@2dayskr']; // 라우팅에 없는 소스(그 외 일반 리라이트글)
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
 
 async function getSnsAccountRouting(sourceId: string | null | undefined): Promise<string[]> {
