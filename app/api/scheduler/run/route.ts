@@ -19,6 +19,7 @@ import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
 import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
 import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
 import { runNaverTechAuto } from '@/lib/scheduler/naver-tech-runner';
+import { runKeywordAuto } from '@/lib/scheduler/keyword-auto-runner';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { searchAliExpressItems, getAliExpressItemDetail } from '@/lib/affiliate-engine/aliexpress-datahub';
 import { upsertCoupangMatch } from '@/lib/affiliate-engine/coupang-match';
@@ -966,6 +967,14 @@ async function executeSchedule(schedule: Schedule) {
       }
       case 'naver_tech_auto': {
         const r = await runNaverTechAuto(schedule.user_id);
+        result = r as unknown as Record<string, unknown>;
+        summary = r.summary;
+        break;
+      }
+      case 'keyword_auto': {
+        const kwConfig = (schedule.config as { source_id?: string; category?: string }) || {};
+        if (!kwConfig.source_id) { summary = 'keyword_auto 스케줄에 config.source_id 없음 — 건너뜀'; break; }
+        const r = await runKeywordAuto(schedule.user_id, kwConfig.source_id, kwConfig.category || 'twenties');
         result = r as unknown as Record<string, unknown>;
         summary = r.summary;
         break;
