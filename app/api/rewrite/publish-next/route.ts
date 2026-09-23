@@ -26,13 +26,13 @@ const MAX_PUBLISHES_PER_CALL = 5;
 // 넘게 안 끝나는 걸 실측 확인해서 보수적으로 낮춤.
 const TIME_BUDGET_MS = 100_000;
 
-// one.yoosol/yoonfree — 생성 속도가 빨라 일반 라운드로빈으로는 계속 밀리는 게
-// 실측 확인됨(사용자 확정 우선순위). 둘 다 준비돼 있으면 대기시간과 무관하게
-// 항상 먼저 처리.
-const PRIORITY_SOURCE_IDS = new Set([
-  '1c036b9d-2a2b-449d-9b97-0a12c76dab6f', // one.yoosol
-  '132c4df6-2a18-4693-8799-342893aa1469', // yoonfree
-]);
+// one.yoosol/yoonfree 우선순위는 폐지함(2026-09-23) — 소스별 30개가 경쟁하던
+// 예전 구조에서 이 둘이 밀리는 걸 막으려던 장치였는데, 이제 계정 그룹
+// 로테이션으로 같은 그룹(@2dayskr)이 어차피 전체 발행의 1/3을 확실히 받고
+// 간격도 30분→10분으로 빨라져서 새치기가 필요 없어짐. 오히려 이 둘의 생성
+// 속도가 여전히 빨라서 "그룹 안 우선순위"를 유지하면 같은 그룹의 다른 소스
+// (GeekNews·파이낸셜뉴스 등 354건)가 영원히 밀리는 새 문제가 실측 확인됨 —
+// 그룹 안에서도 공평하게 오래 기다린 순으로 처리.
 
 async function authOk(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
@@ -149,12 +149,8 @@ async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, o
   }
 
   const chosenGroup = ready[0].group;
-  const inGroup = readyWithGroup.filter((a) => a.group === chosenGroup).sort((a, b) => {
-    const aPriority = PRIORITY_SOURCE_IDS.has(a.source_id ?? '');
-    const bPriority = PRIORITY_SOURCE_IDS.has(b.source_id ?? '');
-    if (aPriority !== bPriority) return aPriority ? -1 : 1;
-    return a.created_at < b.created_at ? -1 : 1;
-  });
+  const inGroup = readyWithGroup.filter((a) => a.group === chosenGroup)
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
   const chosenId = inGroup[0].id;
 
   const { data } = await supabase
