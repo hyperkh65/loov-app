@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { refreshBloggerToken } from '@/lib/blogger-token';
-import { pickKeywordForUser, pickFromKeywordList } from './keyword-picker';
+import { pickKeywordForUser, pickFromKeywordList, pickDynamicKeywordByCategory } from './keyword-picker';
 import { generateBlogContent } from '@/lib/blog-content-generator';
 import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
@@ -205,13 +205,20 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   const config = schedule.config as BlogAutoConfig;
 
   // 키워드 자동 발굴 — config.keywords가 있으면(고CPC 카테고리 시범 등 특정
-  // 주제로 고정하고 싶은 스케줄) 그 목록에서만 순환/랜덤 선택, 없으면 기존대로
-  // 캐시/트렌드 기반 자동 발굴
+  // 주제로 고정하고 싶은 스케줄) 그 목록에서 순환/랜덤 선택하되, dynamic_category가
+  // 같이 설정돼 있으면 그 카테고리의 실시간 발굴 후보를 먼저 시도하고 없을 때만
+  // 정적 목록으로 폴백 — 정적 목록만 쓸 때보다 소재가 더 다양해짐.
+  // config.keywords가 아예 없으면 기존대로 범용 캐시/트렌드 기반 자동 발굴.
   let keyword: string;
   try {
-    keyword = config.keywords?.length
-      ? await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate')
-      : await pickKeywordForUser(schedule.user_id);
+    if (config.keywords?.length) {
+      const dynamic = config.dynamic_category
+        ? await pickDynamicKeywordByCategory(schedule, config.dynamic_category)
+        : null;
+      keyword = dynamic || await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate');
+    } else {
+      keyword = await pickKeywordForUser(schedule.user_id);
+    }
   } catch (e) {
     throw new Error(`[키워드 발굴 실패] ${(e as Error).message}`);
   }

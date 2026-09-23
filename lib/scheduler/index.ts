@@ -43,6 +43,9 @@ export interface BlogAutoConfig {
   // legacy fallback fields
   keywords?: string[];
   keyword_mode?: 'rotate' | 'random';
+  // 설정하면 매번 이 카테고리(bossai_keyword_opportunities)의 실시간 발굴 키워드를
+  // 먼저 시도하고, 후보가 없을 때만 keywords 정적 목록으로 폴백
+  dynamic_category?: string;
   wp_url?: string;
   wp_username?: string;
   wp_app_password?: string;
