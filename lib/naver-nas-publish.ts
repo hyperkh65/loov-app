@@ -188,7 +188,21 @@ def make_image_component(src, alt=''):
         # 하나도 못 찾아 목록/공유 썸네일이 비게 된다(실사용 확인) — 이 글에서 처음
         # 업로드에 성공한 이미지 하나에만 True를 줘서 대표이미지로 지정되게 한다.
         is_represent = not represent_assigned
-        represent_assigned = True
+        # represent=True를 imageNode(text 컴포넌트 안에 중첩된 형태)에 줘도 화면엔 잘
+        # 나오지만 네이버가 대표이미지로 인식을 못 했다(실사용 확인: og:image가 계속
+        # 네이버 기본 아이콘으로만 나옴) — 대표이미지로 쓸 첫 이미지만 최상위
+        # @ctype:"image" 컴포넌트로 올려야 네이버가 인식한다는 걸 확인해서 그 형태로
+        # 분기. 나머지(대표 아닌) 이미지는 기존에 검증된 중첩 구조 그대로 유지.
+        if is_represent:
+            represent_assigned = True
+            return {
+                'id': se_id(), 'layout': 'default', '@ctype': 'image',
+                'represent': True, 'contentMode': 'normal',
+                'src': info['url'], 'path': info['path'], 'domain': img_domain,
+                'width': info['width'], 'height': info['height'],
+                'fileSize': 0, 'fileName': info['filename'],
+                'internalResource': False, 'ai': False,
+            }
         return {
             'id': se_id(), 'layout': 'default', '@ctype': 'text',
             'value': [{
@@ -203,7 +217,7 @@ def make_image_component(src, alt=''):
                     'fileSize': 0,
                     'fileName': info['filename'],
                     'internalResource': False,
-                    'represent': is_represent,
+                    'represent': False,
                     'ai': False,
                 }]
             }]
