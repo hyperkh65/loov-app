@@ -92,10 +92,37 @@ const TECH_NEWS_BLOCK = /연예인|아이돌|드라마|예능|축구|야구|올�
 // 애드센스 수익 전환이 더 잘 되는 편이라 가점
 const TECH_HIGH_VALUE_PATTERNS = /리뷰|후기|비교|추천|가격|구매|할인|쿠폰|언박싱|사용기|장단점|어떤게\s*좋/;
 
-type KeywordCategory = 'lifestyle' | 'finance' | 'tech';
+// ── 20대 전용 카테고리(yellow.2days.kr) — 실시간 신호(커뮤니티/구글트렌드)가
+// 하나도 안 잡힐 때만 쓰는 최후 폴백 시드 ──
+const TWENTIES_ENTRY_SEEDS: Record<number, string[]> = {
+  1:  ['새해 목표 세우기', '자취 필수템', '다이어트 자극', '취준 자소서', '겨울 소개팅룩'],
+  2:  ['졸업 선물 추천', '새학기 준비물', '알바 추천', '봄 소개팅룩', '헬스장 등록'],
+  3:  ['새내기 대학생활', '자취 인테리어', '벚꽃놀이 코디', '면접룩 추천', '자기계발 루틴'],
+  4:  ['봄 축제 일정', '데이트 코스 추천', '자취요리 레시피', '피부관리 루틴', '중고거래 꿀팁'],
+  5:  ['페스티벌 룩', '캠퍼스 커플룩', '여행 짐싸기', '헬스 식단', '자취방 꾸미기'],
+  6:  ['여름 다이어트', '휴가 계획 세우기', '물놀이룩', '자취 에어컨', '취업 스터디'],
+  7:  ['여름 페스티벌', '워터파크 준비물', '휴가지 추천', '자취 냉방비', '방학 알바'],
+  8:  ['가을 신상 추천', '개강 준비물', '가을 소개팅룩', '자소서 첨삭', '헬스 벌크업'],
+  9:  ['추석 알바', '가을 축제', 'OOTD 유행템', '취업 공채 시즌', '자취 난방비'],
+  10: ['할로윈 코디', '연말 파티룩', '겨울 신상', '취준 면접 후기', '자취 김장'],
+  11: ['수능 끝 계획', '연말 모임룩', '크리스마스 데이트', '겨울 헬스 루틴', '연말정산 알바'],
+  12: ['크리스마스 코디', '연말 파티 준비', '새해맞이 여행', '신년 다이어트 목표', '방학 자기계발'],
+};
+
+// 정치·범죄·사건사고만 차단 — 20대 콘텐츠에서 아이돌/연예/드라마는 오히려
+// 핵심 소재라 다른 카테고리와 달리 연예 필터를 걸지 않음
+const TWENTIES_NEWS_BLOCK = /국회|검찰|경찰|재판|구속|선거|투표|탄핵|정부|여당|야당|사망|폭행|범죄|조작|의혹|비리|폭락|급등/;
+
+// 구글트렌드 KR RSS는 전연령 혼합이라 20대 관심사 패턴으로만 걸러서 씀
+const TWENTIES_MATCH = /연애|소개팅|자취|원룸|다이어트|헬스|취준|자소서|면접|알바|아이돌|콘서트|페스티벌|축제|게임|유행|밈|챌린지|OOTD|여행|굿즈|콜라보|팝업스토어|대학생|캠퍼스/i;
+
+type KeywordCategory = 'lifestyle' | 'finance' | 'tech' | 'twenties';
 
 function isBlocked(kw: string, category: KeywordCategory): boolean {
-  const block = category === 'finance' ? FINANCE_NEWS_BLOCK : category === 'tech' ? TECH_NEWS_BLOCK : NEWS_BLOCK;
+  const block = category === 'finance' ? FINANCE_NEWS_BLOCK
+    : category === 'tech' ? TECH_NEWS_BLOCK
+    : category === 'twenties' ? TWENTIES_NEWS_BLOCK
+    : NEWS_BLOCK;
   return block.test(kw) || kw.length < 4 || kw.length > 20;
 }
 
@@ -148,6 +175,41 @@ async function financeNewsHeadlineSeeds(): Promise<string[]> {
     const titles = feeds.flat().map(it => it.title.trim()).filter(Boolean);
     return titles.slice(0, 15);
   } catch { return []; }
+}
+
+// ── 시드 C(20대 전용): 20대가 실제로 모이는 공개 커뮤니티 인기글 제목 —
+// 인스타그램/틱톡 개인 피드·해시태그는 로그인 장벽과 계정 정지 리스크가 있어
+// 직접 스크래핑을 시도하지 않았고(실제로 이 세션에서 TikTok Creative
+// Center/유튜브 트렌딩도 확인해봤지만 둘 다 JS로 렌더링돼서 정적 스크래핑이
+// 안 됨을 확인함), 대신 로그인 없이 그대로 보이는 공개 인기글 목록 3곳을
+// 직접 확인해서 실제로 동작하는 선택자만 채택함(2026-09-23 확인). 원문
+// 제목을 그대로 최종 키워드로 쓰지 않고 financeNewsHeadlineSeeds()와 같은
+// 방식으로 자동완성 입력용 시드로만 사용 ──
+async function communityTrendingSeeds(): Promise<string[]> {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  const fetchTitles = async (url: string, pattern: RegExp): Promise<string[]> => {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': ua, 'Accept-Language': 'ko-KR,ko;q=0.9' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return [];
+      const html = await res.text();
+      return [...html.matchAll(pattern)]
+        .map(m => m[1].trim())
+        .filter(t => t && t.length <= 60);
+    } catch { return []; }
+  };
+
+  const [fm, qoo, pann] = await Promise.all([
+    // 에펨코리아 유머 게시판(실질적 "실시간 베스트" 역할, best/best2는 JS 렌더링이라 빈 결과)
+    fetchTitles('https://www.fmkorea.com/humor', /<a href="\/\d+" class="title">([^<]{4,80})/g),
+    // 더쿠 이슈 게시판
+    fetchTitles('https://theqoo.net/hot', /<a href="\/hot\/\d+"[^>]*>([^<]{4,80})/g),
+    // 네이트판 톡톡 랭킹
+    fetchTitles('https://pann.nate.com/talk/ranking/d', /<a href="\/talk\/\d+"\s+onclick="[^"]*"\s+title="([^"]{4,80})"/g),
+  ]);
+  return [...fm, ...qoo, ...pann].slice(0, 45);
 }
 
 // ── Naver 자동완성 (API 키 불필요, 실제 검색어만 반환) ───────────────────────
@@ -361,6 +423,57 @@ async function relatedKeywordsWithVolume(
   } catch { return []; }
 }
 
+// ── 20대 카테고리 전용: 네이버 DataLab 연령 필터로 "실제 20대가 검색하는지" 확인
+// (app/api/keyword/trend/route.ts에 이미 연결돼 있던 ages 파라미터를 여기서 처음
+// 실사용 — 지금까지 항상 빈 배열로만 호출되던 걸 채워 씀). DataLab 비율은 각
+// 그룹 자신의 최고점을 100으로 정규화한 상대값이라 "전체 대비 20대 비중"을
+// 정밀하게 계산할 순 없지만(연령 필터 유무 두 시리즈가 서로 독립적으로
+// 정규화되기 때문), 20대로 필터링한 시리즈 자체의 최근 구간 비율이 낮다는 건
+// 20대 검색이 사실상 없다는 뜻이라 "이 키워드를 20대가 실제로 찾는가"를
+// 거르는 용도로는 충분히 유효함 ──
+async function twentiesAffinityBonus(
+  keywords: string[], cid: string, secret: string
+): Promise<Map<string, number>> {
+  const bonus = new Map<string, number>();
+  if (!keywords.length) return bonus;
+
+  const now = new Date();
+  const end = now.toISOString().slice(0, 10);
+  const startDt = new Date(now);
+  startDt.setMonth(startDt.getMonth() - 3);
+  const start = startDt.toISOString().slice(0, 10);
+
+  const batches: string[][] = [];
+  for (let i = 0; i < keywords.length; i += 5) batches.push(keywords.slice(i, i + 5));
+
+  await Promise.all(batches.map(async (batch) => {
+    try {
+      const res = await fetch('https://openapi.naver.com/v1/datalab/search', {
+        method: 'POST',
+        headers: { 'X-Naver-Client-Id': cid, 'X-Naver-Client-Secret': secret, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: start, endDate: end, timeUnit: 'month',
+          keywordGroups: batch.map(k => ({ groupName: k, keywords: [k] })),
+          device: '', gender: '',
+          ages: ['3', '4'], // 네이버 공식 연령 코드: 3=19~24세, 4=25~29세
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return;
+      const data = await res.json() as { results?: Array<{ title: string; data: Array<{ period: string; ratio: number }> }> };
+      for (const r of data.results || []) {
+        const recent = r.data.slice(-2);
+        if (!recent.length) continue;
+        const avg = recent.reduce((s, d) => s + d.ratio, 0) / recent.length;
+        if (avg >= 40) bonus.set(r.title, 1.4);
+        else if (avg >= 15) bonus.set(r.title, 1.15);
+      }
+    } catch { /* DataLab 실패는 무시 — 보너스 없이 진행 */ }
+  }));
+
+  return bonus;
+}
+
 // ── 점수 계산 ─────────────────────────────────────────────────────────────────
 function calcGoldenScore(monthly: number, naverBlog: number, daumTotal: number, naverNews: number, powerRatio: number, hasSatData: boolean): number {
   if (!hasSatData && monthly === 0) return 0;
@@ -451,7 +564,10 @@ export async function POST(req: NextRequest) {
 
   const categoryParam = req.nextUrl.searchParams.get('category');
   const category: KeywordCategory =
-    categoryParam === 'finance' ? 'finance' : categoryParam === 'tech' ? 'tech' : 'lifestyle';
+    categoryParam === 'finance' ? 'finance'
+    : categoryParam === 'tech' ? 'tech'
+    : categoryParam === 'twenties' ? 'twenties'
+    : 'lifestyle';
 
   const month = new Date().getMonth() + 1;
   let entrySeeds: string[];
@@ -472,6 +588,18 @@ export async function POST(req: NextRequest) {
     const seenSeed = new Set<string>();
     entrySeeds = [...trendSeeds, ...currentYearModelSeeds(), ...(TECH_ENTRY_SEEDS[month] || TECH_ENTRY_SEEDS[9])]
       .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
+  } else if (category === 'twenties') {
+    // 20대가 실제로 모이는 공개 커뮤니티(에펨코리아/더쿠/네이트판) 인기글 +
+    // 구글트렌드 실시간을 최우선으로 쓰고, 계절 캘린더 시드는 위 신호가 하나도
+    // 안 잡혔을 때만 보조로 채움
+    const [communitySeeds, trendSeeds] = await Promise.all([
+      communityTrendingSeeds(),
+      googleTrendsSeeds(TWENTIES_MATCH),
+    ]);
+    const seenSeed = new Set<string>();
+    entrySeeds = [...communitySeeds, ...trendSeeds, ...(TWENTIES_ENTRY_SEEDS[month] || TWENTIES_ENTRY_SEEDS[9])]
+      .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; })
+      .slice(0, 40); // 커뮤니티 원문 제목이 많을 수 있어 상한
   } else {
     entrySeeds = ENTRY_SEEDS[month] || ENTRY_SEEDS[4];
   }
@@ -517,6 +645,11 @@ export async function POST(req: NextRequest) {
     ...hop1.filter(c => c.source !== 'ad_related'),
   ].slice(0, 20);
 
+  // 20대 카테고리는 DataLab 연령필터로 "실제 20대가 검색하는지" 미리 한 번에 조회
+  const twentiesBonusMap = category === 'twenties' && hasNaver
+    ? await twentiesAffinityBonus(toAnalyze.map(c => c.keyword), naverCid!, naverSec!)
+    : new Map<string, number>();
+
   const results = await Promise.all(
     toAnalyze.map(async ({ keyword, source }) => {
       const [ns, ds, gc, vol] = await Promise.all([
@@ -542,6 +675,11 @@ export async function POST(req: NextRequest) {
         (category === 'tech' && TECH_HIGH_VALUE_PATTERNS.test(keyword))
       ) {
         goldenScore = Math.round(goldenScore * 1.5);
+      }
+      // 20대가 실제로 검색하는 키워드일수록(DataLab 연령필터) 가점
+      if (category === 'twenties') {
+        const bonus = twentiesBonusMap.get(keyword);
+        if (bonus) goldenScore = Math.round(goldenScore * bonus);
       }
       const difficulty = calcDifficulty(ns.blog, daumTotal, gc, ns.news);
       const grade = calcGrade(goldenScore, monthly);
