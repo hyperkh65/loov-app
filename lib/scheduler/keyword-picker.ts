@@ -33,10 +33,15 @@ async function fetchGoogleTrendsRSS(): Promise<string[]> {
     if (!res.ok) return [];
     const xml = await res.text();
     const titles: string[] = [];
-    const re = /<title><!\[CDATA\[([^\]]+)\]\]><\/title>|<ht:approx_traffic>([^<]+)<\/ht:approx_traffic>/g;
+    // 구글이 <title>을 CDATA로 감싸지 않고 그냥 텍스트로 내려주는 경우(특수문자
+    // 없는 제목, 예: "전현무")가 실사용 중 대부분이었음 — CDATA만 매칭하던 예전
+    // 정규식은 이런 케이스를 전부 놓쳐서 사실상 항상 빈 배열을 반환하고 있었음
+    // (구글트렌드 자체는 200 정상 응답인데도). 채널 제목("Daily Search Trends")은
+    // 한글이 없어 isUsable()에서 자동으로 걸러짐.
+    const re = /<title>(?:<!\[CDATA\[([^\]]+)\]\]>|([^<]+))<\/title>|<ht:approx_traffic>([^<]+)<\/ht:approx_traffic>/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(xml)) !== null) {
-      const t = (m[1] || '').trim();
+      const t = (m[1] || m[2] || '').trim();
       if (t && !t.includes('Google') && isUsable(t)) titles.push(t);
     }
     return [...new Set(titles)].slice(0, 20);
