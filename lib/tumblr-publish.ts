@@ -109,8 +109,10 @@ export async function publishToTumblr(params: TumblrPublishParams): Promise<{ ur
     try {
       const errJson = JSON.parse(responseText);
       const code = errJson?.errors?.[0]?.code;
-      const detail = errJson?.errors?.[0]?.detail || errJson?.meta?.msg;
-      if (code === 1008 || detail?.includes('authorize') || detail?.includes('Unauthorized')) {
+      const detail = errJson?.errors?.[0]?.detail || errJson?.errors?.[0]?.message || errJson?.meta?.msg;
+      if (code === 8023) {
+        friendlyError = `Tumblr 일일 게시 한도 초과 — 내일(UTC 기준) 자동 재개됨`;
+      } else if (code === 1008 || detail?.includes('authorize') || detail?.includes('Unauthorized')) {
         friendlyError = `Tumblr OAuth 인증 실패 (code:${code}) — 설정 페이지에서 4개 키 다시 저장해주세요`;
       } else if (detail) {
         friendlyError = `Tumblr 오류 (${res.status}): ${detail}`;
