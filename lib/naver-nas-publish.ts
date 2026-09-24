@@ -213,6 +213,15 @@ def make_image_component(src, alt=''):
                 'origin': {'srcFrom': 'local', '@ctype': 'imageOrigin'},
                 'ai': False,
             }
+        # 2026-09-24: 본문 중간 이미지("존재하지 않는 이미지입니다")가 발행 직후부터
+        # 깨져 보이는 문제 실사용 중 확인 — 대표이미지와 같은 업로드 API로 실제
+        # 네이버 서버에 올라간 파일인데도 domain에 스킴이 없고 path 맨 앞 슬래시가
+        # 빠져 있어서 위 대표이미지(9/23 수정) 포맷과 달랐음. internalResource도
+        # false로 돼 있어 "우리 서버 파일 아님"으로 잘못 표시됨 — 실제로는 우리가
+        # 업로드한 내부 파일이므로 대표이미지와 동일한 포맷(스킴 포함 domain,
+        # 슬래시 포함 path, internalResource=true)으로 통일.
+        domain_with_scheme = img_domain if img_domain.startswith('http') else f'https://{img_domain}'
+        path_val = info['path'] if info['path'].startswith('/') else f"/{info['path']}"
         return {
             'id': se_id(), 'layout': 'default', '@ctype': 'text',
             'value': [{
@@ -220,13 +229,13 @@ def make_image_component(src, alt=''):
                 'nodes': [{
                     'id': se_id(), '@ctype': 'imageNode',
                     'src': info['url'],
-                    'path': info['path'],
-                    'domain': img_domain,
+                    'path': path_val,
+                    'domain': domain_with_scheme,
                     'width': info['width'],
                     'height': info['height'],
                     'fileSize': 0,
                     'fileName': info['filename'],
-                    'internalResource': False,
+                    'internalResource': True,
                     'represent': False,
                     'ai': False,
                 }]
