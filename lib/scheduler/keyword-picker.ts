@@ -140,8 +140,15 @@ async function findBestTrendingKeyword(): Promise<string> {
   const allTrending = [...new Set([...rss, ...daily])].filter(isUsable);
 
   if (allTrending.length === 0) {
-    // 폴백: 상업성 높은 상시 키워드
-    return '다이어트 보조제 추천';
+    // 폴백: 상업성 높은 상시 키워드 — 예전엔 고정 문자열 하나였는데, 구글트렌드가
+    // (레이트리밋 등으로) 연속 실패하면 이 폴백만 계속 반복돼서 같은 주제가
+    // 몇 시간째 반복 발행되는 걸 실사용 중 확인함(예: "다이어트 보조제 추천" 4연속) —
+    // 여러 개 중 무작위로 골라서 최소한 매번 같은 걸 반복하진 않게 함.
+    const FALLBACK_POOL = [
+      '다이어트 보조제 추천', '탈모 샴푸 추천', '홍삼 추천', '유산균 추천',
+      '눈영양제 추천', '단백질 보충제 추천', '콜라겐 추천', '오메가3 추천',
+    ];
+    return FALLBACK_POOL[Math.floor(Math.random() * FALLBACK_POOL.length)];
   }
 
   // 2. 상위 10개 Naver Ad API로 검색량 + 경쟁도 분석
