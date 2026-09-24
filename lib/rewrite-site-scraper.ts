@@ -65,7 +65,15 @@ export async function fetchFeedItems(feedUrl: string, limit = 10): Promise<FeedI
   const items: FeedItem[] = [];
   for (const raw of rawItems) {
     const it = raw as Record<string, unknown>;
-    const title = String(it.title ?? '').trim() || '(제목 없음)';
+    // Atom 피드(예: The Verge)의 <title type="html">...</title>처럼 속성이 붙은
+    // 태그는 파서가 문자열이 아니라 {'@_type':..., '#text':'실제 제목'} 객체로
+    // 만들어서, 무조건 String()으로 바꾸면 "[object Object]"가 나오는 문제를
+    // 실사용 중 확인함 — 객체면 '#text'를 먼저 꺼내고 없으면 빈 문자열로 폴백.
+    const rawTitle = it.title;
+    const titleText = typeof rawTitle === 'string' ? rawTitle
+      : (rawTitle && typeof rawTitle === 'object') ? String((rawTitle as Record<string, unknown>)['#text'] ?? '')
+      : String(rawTitle ?? '');
+    const title = titleText.trim() || '(제목 없음)';
     let link = '';
     if (typeof it.link === 'string') link = it.link;
     else if (Array.isArray(it.link)) {
