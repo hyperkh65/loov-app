@@ -13,6 +13,7 @@ import { publishToTumblr } from '@/lib/tumblr-publish';
 import { publishToLinkedIn } from '@/lib/linkedin-publish';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
+import { publishToPinterest } from '@/lib/pinterest-publish';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { translateAndCrossPost } from '@/lib/ai-translate';
 
@@ -143,6 +144,7 @@ export interface PublishResult {
   sns: Record<string, string>;
   naverCafe: string; // 'ok' | 'skip: ...' | 'error: ...'
   tumblr: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
+  pinterest: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
   linkedin: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
   wordpressCom: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
   githubPages: string; // 'ok: ...' | 'skip: ...' | 'error: ...'
@@ -265,6 +267,27 @@ export async function publishRewrittenArticle(
     }
   }
 
+  // 핀터레스트도 텀블러/링크드인과 같은 백링크 목적 — 대표 이미지가 필수라
+  // (핀 자체가 이미지 카드 형식) 이미지 없으면 시도 자체가 무의미해 스킵
+  let pinterest = 'skip: 워드프레스 발행 URL 없음';
+  if (!wordpressUrl) {
+    pinterest = 'skip: 워드프레스 발행 URL 없음';
+  } else if (!article.representative_image_url) {
+    pinterest = 'skip: 대표 이미지 없음';
+  } else {
+    try {
+      const { url } = await publishToPinterest({
+        title: article.title,
+        meta_description: article.meta || undefined,
+        canonical_url: wordpressUrl,
+        representative_image_url: article.representative_image_url,
+      });
+      pinterest = url ? `ok: ${url}` : 'ok';
+    } catch (e) {
+      pinterest = `error: ${(e as Error).message?.slice(0, 150)}`;
+    }
+  }
+
   // 링크드인은 LINKEDIN_ACCESS_TOKEN이 이미 설정돼 있었는데 자동화 어디서도
   // 호출하지 않아 그동안 완전히 놀고 있었음 — 백링크/추가 유입 경로 확보를
   // 위해 텀블러처럼 워드프레스 발행 URL이 있으면 소스 설정과 무관하게 시도
@@ -315,7 +338,7 @@ export async function publishRewrittenArticle(
   }
 
   const sns: Record<string, string> = {};
-  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages, translate };
+  if (!publishSns) return { wordpressUrl, sns, naverCafe, tumblr, pinterest, linkedin, wordpressCom, githubPages, translate };
 
   const { data: conns } = await admin
     .from('sns_connections')
@@ -330,7 +353,7 @@ export async function publishRewrittenArticle(
     if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
     return allowedAccounts.includes(c.platform_username || '');
   });
-  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages, translate };
+  if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, pinterest, linkedin, wordpressCom, githubPages, translate };
 
   const images = snsImageUrl ? [snsImageUrl] : [];
   // 캡션에 링크를 텍스트로 넣으면 하이퍼링크가 안 걸려서 클릭이 안 되는 문제가
@@ -369,5 +392,5 @@ export async function publishRewrittenArticle(
     }
   }
 
-  return { wordpressUrl, sns, naverCafe, tumblr, linkedin, wordpressCom, githubPages, translate };
+  return { wordpressUrl, sns, naverCafe, tumblr, pinterest, linkedin, wordpressCom, githubPages, translate };
 }
