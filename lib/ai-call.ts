@@ -242,11 +242,13 @@ async function callOllamaCloud(
 
   let lastErr: Error = new Error('Ollama Cloud: 사용 가능한 API 키가 없습니다.');
 
-  // 키(최대 8개) x 모델 중첩 루프에 전체 시간 예산이 없으면, 모델들이 계속 일반
+  // 키(12개+) x 모델(17개) 중첩 루프에 전체 시간 예산이 없으면, 모델들이 계속 일반
   // 에러(429 아님)로 실패할 때 다음 fallback provider(openrouter/gemini/claude)로
   // 못 넘어가고 몇십 분씩 갇힘 — lib/auto-blog-ai.ts의 tryOllama에서 이미 한 번
-  // 고친 것과 동일한 패턴. 여기도 동일하게 100초 예산으로 제한.
-  const deadline = Date.now() + 100_000;
+  // 고친 것과 동일한 패턴. 호출부(process/route.ts) maxDuration이 300초라
+  // 200초까지 예산을 늘려도 여유 있음 — 키가 늘어날수록 뒤쪽 키가 스킵될
+  // 확률을 낮추기 위함.
+  const deadline = Date.now() + 200_000;
 
   for (const apiKey of keys) {
     if (Date.now() > deadline) break;
