@@ -193,7 +193,7 @@ HTML 본문 전체`;
   // 실측(coupang-runner에서 이미 확인됨): qwen3 기본값이 Ollama 무료 모델로 라우팅되면서
   // 마커 형식을 아예 무시하고 엉뚱한 텍스트를 내놓는 경우가 있어 빈 본문으로 전체 실행이
   // 실패하는 사고가 났다 — claude로 기본값을 올려 같은 문제를 방지.
-  const aiText = await generateText(prompt, config.ai_model || 'claude');
+  const aiText = await generateText(prompt, 'groq');
   const BLOG_TAGS = ['TITLE', 'META', 'LABELS', 'CONTENT'];
 
   let title = stripMarkerArtifacts(getSection(aiText, 'TITLE', BLOG_TAGS) || '');
@@ -285,7 +285,7 @@ HTML 본문 전체`;
 인스타그램용 텍스트`;
 
     try {
-      const aiText = await generateText(snsPrompt, 'qwen3');
+      const aiText = await generateText(snsPrompt, 'groq');
       const textMap: Record<string, string> = {
         threads: getSection(aiText, 'THREADS', TAGS),
         twitter: getSection(aiText, 'TWITTER', TAGS),

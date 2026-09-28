@@ -56,7 +56,7 @@ async function cleanForeignWords(html: string, aiModel: string): Promise<string>
 원문:
 ${html}`;
   try {
-    const result = await generateText(prompt, aiModel, undefined, undefined, undefined, undefined, { multilingual: true });
+    const result = await generateText(prompt, 'groq', undefined, undefined, undefined, undefined, { multilingual: true });
     return result.trim() || html;
   } catch {
     return html;
@@ -211,7 +211,7 @@ ${bannedPhrases.map(p => `"${p}"`).join(', ')}]
 [[[CONTENT]]]
 본문 HTML`;
 
-  const aiText = await generateText(prompt, aiModel);
+  const aiText = await generateText(prompt, 'groq');
   let title = stripMarkerArtifacts(getSection(aiText, 'TITLE', ['TITLE', 'CONTENT']) || '');
   let rawContent = getSection(aiText, 'CONTENT', ['TITLE', 'CONTENT']);
 
@@ -346,7 +346,7 @@ export async function runCoupangAuto(
 [[[INSTAGRAM]]]
 인스타그램용 텍스트`;
 
-  const aiText = await generateText(prompt, 'qwen3');
+  const aiText = await generateText(prompt, 'groq');
 
   const textMap: Record<string, string> = {
     threads:   getSection(aiText, 'THREADS', TAGS),
