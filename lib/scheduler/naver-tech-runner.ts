@@ -130,11 +130,11 @@ function insertImages(html: string, images: string[]): string {
   });
 }
 
-/** 글 끝에 출처를 "텍스트로만" 남긴다 — 링크로 걸면 독자가 원문으로 빠져나감 */
-function sourcesFooter(sourceUrl: string, refs: { title: string; link: string }[], images: string[]): string {
+/** 글 끝에 출처를 "텍스트로만" 남긴다 — 링크로 걸면 독자가 원문으로 빠져나감.
+ * 사진 출처 줄은 안 남기고(요청), 원문/참고 사이트 링크만 남긴다. */
+function sourcesFooter(sourceUrl: string, refs: { title: string; link: string }[]): string {
   const lines = [`원문: ${sourceUrl}`];
   for (const r of refs) if (r.link) lines.push(`참고: ${r.title} - ${r.link}`);
-  if (images.length) lines.push(`사진 출처: ${images.join(', ')}`);
   return `\n<h2>출처</h2>\n<p>${lines.join('<br/>')}</p>`;
 }
 
@@ -197,7 +197,7 @@ ${refBlock}
   if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
 
   content = insertImages(content, scraped.images);
-  content += sourcesFooter(topic.link, refs, scraped.images);
+  content += sourcesFooter(topic.link, refs);
 
   // 네이버 연결 정보 (쿠키) — Playwright 워커가 naver_connections에서 다시
   // 조회하지만, 여기서도 미리 확인해서 연결 자체가 없는 경우 빨리 실패시킨다.
