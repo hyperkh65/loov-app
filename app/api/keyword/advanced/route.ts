@@ -213,12 +213,17 @@ function cleanTitle(t: string) {
 // GET handler
 // ════════════════════════════════════════════════════════════════════════════
 export async function GET(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
-
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
+
+  // trending은 사용자별 개인화 없이 외부 트렌드 소스를 집계만 하는 공개 정보라
+  // 로그인 없이도 허용 — auto-run 같은 서버 간(크론) 호출이 세션 쿠키 없이
+  // 이 엔드포인트를 쓸 수 있어야 함.
+  if (action !== 'trending') {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+  }
 
   // ── 실시간 트렌딩 ─────────────────────────────────────────────────────────
   if (action === 'trending') {
