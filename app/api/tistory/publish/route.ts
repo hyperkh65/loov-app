@@ -6,9 +6,12 @@ export const maxDuration = 60;
 
 const NAS_SCRIPT_PATH = '/volume1/homes/urjent/tistory_publish/post.py';
 
+// 실제 브라우저(miracool65.tistory.com/manage/newpost/)에서 "공개 발행"/"비공개 저장"을
+// 직접 눌러 Network 탭으로 캡처해 확인한 실제 요청 포맷을 그대로 재현한다.
+// 예전 버전은 /manage/drafts(임시저장)만 호출해 실제로는 한 번도 정식 글을 발행한 적이 없었음.
 const TISTORY_POST_SCRIPT = `#!/usr/bin/env python3
-import sys, json, http.cookiejar
-import urllib.request, urllib.error
+import sys, json, http.cookiejar, secrets, re
+import urllib.request, urllib.error, urllib.parse
 
 data = json.loads(sys.stdin.read())
 blog_name = data['blogName']
@@ -18,6 +21,7 @@ tssession = data['tssession']
 tags = data.get('tags', [])
 category_id = int(data.get('category', 0) or 0)
 blog_url = data.get('blogUrl', 'https://' + blog_name + '.tistory.com').rstrip('/')
+is_publish = data.get('isPublish', True)
 
 ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
 
@@ -46,7 +50,7 @@ def http_get(url, referer=None):
     except Exception as e:
         return str(e), url, 0
 
-def http_post_json(url, payload, referer=None):
+def http_json(url, payload, referer, method='POST'):
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     h = {
         'User-Agent': ua,
@@ -55,12 +59,12 @@ def http_post_json(url, payload, referer=None):
         'Content-Type': 'application/json; charset=utf-8',
         'X-Requested-With': 'XMLHttpRequest',
         'Origin': blog_url,
-        'Referer': referer or blog_url + '/manage/newpost/',
+        'Referer': referer,
         'Sec-Fetch-Site': 'same-origin',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Dest': 'empty',
     }
-    req = urllib.request.Request(url, data=body, headers=h, method='POST')
+    req = urllib.request.Request(url, data=body, headers=h, method=method)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.read().decode('utf-8', errors='replace'), r.status
@@ -74,30 +78,58 @@ _, manage_url, manage_status = http_get(blog_url + '/manage/')
 if 'accounts.kakao.com' in manage_url or 'tistory.com/auth' in manage_url or manage_status in (401, 403):
     out({'error': 'TSSESSION 만료 — 티스토리 재로그인 후 쿠키를 다시 발급하세요', 'errorCode': 'AUTH'})
 
-# 2. 에디터 초기화 (드래프트 저장에 필요)
-http_get(blog_url + '/manage/newpost/', referer=blog_url + '/manage/')
+# 2. 에디터 초기화 (세션/CSRF 컨텍스트 확보)
+new_post_url = blog_url + '/manage/newpost/'
+http_get(new_post_url, referer=blog_url + '/manage/')
 
-# 3. 임시저장
+strip_chars = ['[', ']', '"', chr(39), '?', '!', '.', ',']
+slug = title
+for ch in strip_chars:
+    slug = slug.replace(ch, '')
+slug = re.sub(r'\\s+', '-', slug.strip())[:80] or 'post'
+
+# 실제 캡처된 페이로드 그대로: visibility 0=비공개, 1=공개(보호), 3=공개(발행)
 payload = {
     'title': title,
     'content': content,
-    'tags': ','.join(tags[:10]),
-    'categoryId': category_id,
+    'slogan': slug,
+    'visibility': 3 if is_publish else 0,
+    'category': category_id,
+    'tag': ','.join(tags[:10]),
+    'acceptComment': 1,
+    'published': 0,
+    'password': secrets.token_urlsafe(6),
+    'uselessMarginForEntry': 0,
+    'daumLike': None,
+    'cclCommercial': 2,
+    'cclDerive': 2,
     'thumbnail': None,
-    'totalWritingTimeMs': 5000,
+    'type': 'post',
+    'attachments': [],
+    'recaptchaValue': '',
+    'draftSequence': None,
+    'totalWritingTimeMs': 3000,
 }
-body, status = http_post_json(blog_url + '/manage/drafts', payload)
+body, status = http_json(blog_url + '/manage/post.json', payload, new_post_url)
 
-if status == 200:
-    try:
-        resp = json.loads(body)
-        if resp.get('success'):
-            seq = resp['draft']['sequence']
-            out({'draftSequence': seq, 'draftUrl': blog_url + '/manage/newpost/'})
-    except Exception:
-        pass
+if status != 200:
+    out({'error': f'발행 실패 (status={status}): {body[:300]}', 'errorCode': 'PUBLISH_FAIL'})
 
-out({'error': f'임시저장 실패 (status={status}): {body[:200]}', 'errorCode': 'DRAFT_FAIL'})
+# 생성 응답 포맷이 불안정할 수 있어, 글 목록 조회로 실제 생성된 글의 permalink를 확정한다
+list_url = (blog_url + '/manage/posts.json?category=-3&page=1&searchType=title&visibility=all'
+            + '&searchKeyword=' + urllib.parse.quote(title))
+list_body, list_status = http_get(list_url, blog_url + '/manage/posts/')
+match = None
+try:
+    items = json.loads(list_body).get('data', {}).get('items', [])
+    match = next((it for it in items if it.get('title') == title), items[0] if items else None)
+except Exception:
+    pass
+
+if not match:
+    out({'error': '발행 요청은 200으로 응답했으나 글 목록에서 확인 실패', 'errorCode': 'VERIFY_FAIL'})
+
+out({'postId': match.get('id'), 'postUrl': match.get('permalink'), 'visibility': match.get('visibility')})
 `;
 
 async function ensureScript(): Promise<void> {
@@ -124,10 +156,11 @@ export async function POST(req: NextRequest) {
       title: string;
       content: string;
       tags?: string[];
+      is_publish?: boolean;
     };
     if (!body.user_id) return NextResponse.json({ error: 'user_id 필요 (내부 호출)' }, { status: 400 });
     userId = body.user_id;
-    return handlePublish(userId, body.blog_id, body.title, body.content, body.tags ?? [], true);
+    return handlePublish(userId, body.blog_id, body.title, body.content, body.tags ?? [], body.is_publish ?? true);
   }
 
   const supabase = await createClient();
@@ -139,8 +172,9 @@ export async function POST(req: NextRequest) {
     title: string;
     content: string;
     tags?: string[];
+    is_publish?: boolean;
   };
-  return handlePublish(user.id, body.blog_id, body.title, body.content, body.tags ?? [], false);
+  return handlePublish(user.id, body.blog_id, body.title, body.content, body.tags ?? [], body.is_publish ?? true);
 }
 
 async function handlePublish(
@@ -149,7 +183,7 @@ async function handlePublish(
   title: string,
   content: string,
   tags: string[],
-  isInternal: boolean,
+  isPublish: boolean,
 ) {
   if (!blogId || !title || !content) {
     return NextResponse.json({ error: 'blog_id, title, content 필요' }, { status: 400 });
@@ -176,9 +210,10 @@ async function handlePublish(
     tssession: conn.tssession,
     tags,
     category: '0',
+    isPublish,
   });
 
-  let result: { draftSequence?: number; draftUrl?: string; error?: string; errorCode?: string };
+  let result: { postId?: string | number; postUrl?: string; visibility?: string; error?: string; errorCode?: string };
   try {
     const { stdout, stderr, code } = await nasExecWithStdin(`python3 ${NAS_SCRIPT_PATH}`, input);
     const lastLine = stdout.trim().split('\n').pop() || '';
@@ -195,8 +230,8 @@ async function handlePublish(
     return NextResponse.json({ error: `NAS 실행 오류: ${String(e)}` }, { status: 500 });
   }
 
-  if (result.error || !result.draftUrl) {
-    return NextResponse.json({ error: result.error || `임시저장 실패 (errorCode: ${result.errorCode || 'none'})`, errorCode: result.errorCode }, { status: 400 });
+  if (result.error || !result.postUrl) {
+    return NextResponse.json({ error: result.error || `발행 실패 (errorCode: ${result.errorCode || 'none'})`, errorCode: result.errorCode }, { status: 400 });
   }
 
   try {
@@ -204,8 +239,8 @@ async function handlePublish(
       user_id: userId,
       blog_id: conn.id,
       blog_name: conn.blog_name,
-      post_id: String(result.draftSequence || ''),
-      post_url: result.draftUrl,
+      post_id: String(result.postId || ''),
+      post_url: result.postUrl,
       title,
     });
   } catch { /* ignore */ }
@@ -214,5 +249,5 @@ async function handlePublish(
     .update({ last_tested_at: new Date().toISOString() })
     .eq('id', blogId);
 
-  return NextResponse.json({ ok: true, url: result.draftUrl, draft_sequence: result.draftSequence, isDraft: true });
+  return NextResponse.json({ ok: true, url: result.postUrl, post_id: result.postId, isDraft: !isPublish });
 }

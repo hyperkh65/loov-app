@@ -588,7 +588,7 @@ export async function GET(req: NextRequest) {
           try {
             const { data: article } = await supabase
               .from('bossai_auto_articles')
-              .select('title, content, focus_keyword')
+              .select('title, content, focus_keyword, published_urls')
               .eq('id', result.articleId)
               .single();
             if (article) {
@@ -609,6 +609,7 @@ export async function GET(req: NextRequest) {
                     title: article.title,
                     content: article.content,
                     tags: article.focus_keyword ? [article.focus_keyword] : [],
+                    is_publish: true,
                   }),
                 });
                 if (pubRes.ok) {
@@ -616,14 +617,21 @@ export async function GET(req: NextRequest) {
                   await supabase.from('bossai_auto_articles').update({
                     status: 'published',
                     blog_platforms: ['tistory'],
-                    published_urls: { tistory: pubData.url || '' },
+                    published_urls: { ...(article.published_urls || {}), tistory: pubData.url || '' },
                     published_at: new Date().toISOString(),
                   }).eq('id', result.articleId);
+                } else {
+                  const errData = await pubRes.json().catch(() => ({}));
+                  const msg = `티스토리 발행 실패: ${errData.error || pubRes.status}`;
+                  console.error(`[auto-run] ${msg} (${keyword})`);
+                  await supabase.from('bossai_auto_articles').update({ error_message: msg }).eq('id', result.articleId);
                 }
               }
             }
           } catch (pubErr) {
-            console.error(`[auto-run] 티스토리 발행 실패 (${keyword}):`, pubErr instanceof Error ? pubErr.message : pubErr);
+            const msg = `티스토리 발행 예외: ${pubErr instanceof Error ? pubErr.message : String(pubErr)}`;
+            console.error(`[auto-run] ${msg} (${keyword})`);
+            await supabase.from('bossai_auto_articles').update({ error_message: msg }).eq('id', result.articleId);
           }
         }
       }
