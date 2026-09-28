@@ -32,6 +32,7 @@ interface FallbackEntry {
 }
 
 const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
+  { provider: 'groq',       model: 'qwen/qwen3.8-27b' },
   { provider: 'openrouter', model: 'qwen/qwen3-235b-a22b:free' },
   { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
   { provider: 'gemini',     model: 'gemini-2.0-flash' },
@@ -50,6 +51,10 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
       return getSetting('GEMINI_API_KEY');
     case 'openrouter':
       return getSetting('OPENROUTER_API_KEY');
+    case 'groq': {
+      const keys = await getGroqKeys();
+      return keys[0] || '';
+    }
     case 'ollama': {
       const keys = await getOllamaCloudKeys();
       return keys[0] || 'ollama'; // first cloud key or local dummy
@@ -61,6 +66,18 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
     default:
       return 'ollama';
   }
+}
+
+// Returns all Groq API keys (multi-key pool, JSON array in settings)
+async function getGroqKeys(): Promise<string[]> {
+  try {
+    const raw = await getSetting('GROQ_API_KEYS');
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) return arr.filter(Boolean);
+    }
+  } catch { /* ignore */ }
+  return [];
 }
 
 // Returns all Ollama Cloud API keys (multi-key pool + legacy single key)
@@ -120,6 +137,7 @@ function defaultModel(provider: string): string {
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
     case 'openrouter':  return 'qwen/qwen3-235b-a22b:free';
+    case 'groq':        return 'qwen/qwen3.8-27b';
     case 'ollama':      return 'qwen3.5';
     default:            return 'qwen3.5';
   }
@@ -298,6 +316,61 @@ async function callOllamaCloud(
   throw lastErr;
 }
 
+// Groq 네이티브 API(OpenAI 호환) — 멀티키 풀 순회, 에러 시 다음 키로 자동 순환
+async function callGroq(
+  messages: AIMessage[],
+  model: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string> {
+  const keys = await getGroqKeys();
+  if (!keys.length) throw new Error('Groq: GROQ_API_KEYS 설정 없음');
+
+  let lastErr: Error = new Error('Groq: 사용 가능한 API 키가 없습니다.');
+  // Groq는 응답이 빠른 편이라(수 초 내) 60초 예산이면 24개 키를 다 순회하고도 여유 있음.
+  const deadline = Date.now() + 60_000;
+
+  for (const apiKey of keys) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const perRequestTimeout = Math.max(3_000, Math.min(15_000, remaining));
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          max_tokens: maxTokens,
+          temperature,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(perRequestTimeout),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        lastErr = new Error(`Groq ${res.status}: ${err}`);
+        continue; // 이 키로는 안 됨 → 다음 키로
+      }
+
+      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string } };
+      if (data.error) { lastErr = new Error(data.error.message || 'Groq 오류'); continue; }
+      const text = data.choices?.[0]?.message?.content?.trim() || '';
+      if (!text) { lastErr = new Error('Groq 빈 응답'); continue; }
+      return text;
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      continue;
+    }
+  }
+
+  throw lastErr;
+}
+
 async function callOpenAICompatible(
   messages: AIMessage[],
   model: string,
@@ -365,6 +438,8 @@ async function callSingleProvider(
     return callClaude(messages, model, apiKey, maxTokens, temperature);
   } else if (provider === 'gemini') {
     return callGemini(messages, model, apiKey);
+  } else if (provider === 'groq') {
+    return callGroq(messages, model, maxTokens, temperature);
   } else if (provider === 'ollama') {
     // 1. Ollama Cloud 키 우선 시도
     const cloudKeys = await getOllamaCloudKeys();
