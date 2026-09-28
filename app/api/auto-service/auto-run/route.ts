@@ -508,10 +508,14 @@ export async function GET(req: NextRequest) {
   // 자동실행 활성화된 모든 사용자 조회
   const { data: settings, error: settingsErr } = await supabase
     .from('bossai_auto_settings')
-    .select('user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish, tistory_auto_publish, prompt_template')
+    .select('user_id, ai_model, max_per_run, custom_keywords, naver_auto_publish, tistory_auto_publish, prompt_template')
     .eq('enabled', true);
 
-  if (settingsErr || !settings?.length) {
+  if (settingsErr) {
+    console.error('[auto-run] bossai_auto_settings 조회 실패:', settingsErr.message);
+    return NextResponse.json({ message: '설정 조회 실패', error: settingsErr.message, count: 0 }, { status: 500 });
+  }
+  if (!settings?.length) {
     return NextResponse.json({ message: '자동실행 활성화된 사용자 없음', count: 0 });
   }
 
@@ -523,7 +527,7 @@ export async function GET(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr';
 
   for (const setting of settings) {
-    const { user_id, ai_model, max_per_run, custom_keywords, use_gpt, use_openrouter, naver_auto_publish, tistory_auto_publish, prompt_template } = setting;
+    const { user_id, ai_model, max_per_run, custom_keywords, naver_auto_publish, tistory_auto_publish, prompt_template } = setting;
 
     // 사용자 커스텀 키워드 우선, 없으면 트렌딩 키워드 사용
     const keywordsToUse = (custom_keywords?.length > 0 ? custom_keywords : trendKeywords).slice(0, max_per_run * 2);
@@ -533,7 +537,7 @@ export async function GET(req: NextRequest) {
 
     for (const keyword of keywordsToUse) {
       if (generated >= max_per_run) break;
-      const effectiveModel = use_gpt ? 'openai' : use_openrouter ? 'openrouter' : (ai_model || 'qwen3');
+      const effectiveModel = ai_model || 'qwen3';
       const result = await generateArticleForUser(supabase, user_id, keyword, effectiveModel, undefined, undefined, undefined, undefined, prompt_template);
       if (result.ok) {
         generated++;
