@@ -78,7 +78,7 @@ async function getTrendingKeywords(): Promise<string[]> {
     const res = await fetch(`${baseUrl}/api/keyword/advanced?action=trending`, { cache: 'no-store' });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.keywords || []).slice(0, 20).map((k: string | { keyword?: string; text?: string }) =>
+    return (data.results || data.keywords || []).slice(0, 20).map((k: string | { keyword?: string; text?: string }) =>
       typeof k === 'string' ? k : (k.keyword || k.text || '')
     ).filter(Boolean);
   } catch { return []; }
