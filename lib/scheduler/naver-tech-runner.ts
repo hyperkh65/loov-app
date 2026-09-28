@@ -196,6 +196,16 @@ ${refBlock}
     naverUserId: conn.naver_user_id || '',
   });
 
+  // 이미지 업로드는 개별로 실패해도 발행 자체는 성공 처리되는데, 그 실패 사유가
+  // 어디에도 안 남고 버려지고 있었음 — "존재하지 않는 이미지입니다" 재현 시도 중
+  // 발견. bossai_naver_tech_posts에 저장 컬럼이 없어 최소한 서버 로그에는 남긴다.
+  if (result.imgErrors?.length) {
+    console.error(`[naver-tech-runner] 이미지 업로드 오류 (${topic.title}):`, result.imgErrors);
+  }
+  if (result._debug) {
+    console.error(`[naver-tech-runner] post.py stderr (${topic.title}):`, result._debug);
+  }
+
   if (!result.postUrl && !result.postId) {
     throw new Error(`발행 실패: ${result.error || '알 수 없음'}`);
   }
