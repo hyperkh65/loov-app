@@ -20,7 +20,7 @@ import { publishRewrittenArticle, getSnsAccountRouting } from '@/lib/rewrite-pub
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 20 * 60 * 1000;
+const PUBLISH_INTERVAL_MS = 30 * 60 * 1000;
 const MAX_PUBLISHES_PER_CALL = 8;
 // 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
 // 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
