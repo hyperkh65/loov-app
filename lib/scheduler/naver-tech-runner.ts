@@ -5,16 +5,43 @@
  * 최근 올라온 기사를 하나 골라 → 스크랩 → Groq로 "한국인이 직접 쓴 것처럼" 한국어
  * 재작성(4000~5000자) → 원문 사진을 소제목마다 배치 → 네이버 블로그 발행.
  *
- * 발행은 NAS(가정용 IP) 경유 파이썬 스크립트(lib/naver-nas-publish.ts)로 한다 —
- * 네이버가 클라우드 IP를 차단하기 때문이며, 브라우저 자동화가 아니라 API 직접
- * 호출이라 서버에서 몇 초 만에 끝난다.
+ * 2026-09-28: 발행 방식을 NAS 경유 raw-API(post.py) → Playwright 실브라우저
+ * 큐 방식(naver_publish_jobs + repository_dispatch → naver-publish.yml)으로
+ * 전환. raw-API 방식은 documentModel JSON 필드를 실캡처값과 완전히 똑같이
+ * 맞춰도 이미지가 "존재하지 않는 이미지입니다"로 뜨는 문제가 지속됐는데(실사용
+ * 중 여러 차례 재현), 원인은 실제 SmartEditor가 문서를 그대로 서버로 보내는 게
+ * 아니라 브라우저에서 setDocumentData→getDocumentData 정규화 과정을 거친 뒤
+ * 보내기 때문으로 추정(공개된 네이버 블로그 자동화 분석 자료에서 확인) — 이
+ * 클라이언트 측 정규화/후처리를 raw-API 호출은 원천적으로 건너뛸 수밖에 없다.
+ * 반면 naver_publish_jobs 기반 Playwright 큐는 실제로 2026-09-16에 이 정확히
+ * 같은 기사 자동화 용도로 성공 이력이 있다(status: completed, 실제 post_url
+ * 확인됨) — 검증된 경로로 되돌리는 것.
  */
 import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
 import { searchNaver } from '@/lib/blog-content-generator';
-import { postViaNas } from '@/lib/naver-nas-publish';
 import { sanitizeForNaver } from '@/lib/naver-blog';
+
+async function dispatchNaverPublishJob(jobId: string): Promise<void> {
+  const pat = process.env.GITHUB_PAT;
+  const repo = process.env.GITHUB_REPO || 'hyperkh65/loov-app';
+  if (!pat) throw new Error('GITHUB_PAT 미설정 — Playwright 발행 큐 트리거 불가');
+
+  const res = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${pat}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ event_type: 'naver-publish', client_payload: { job_id: jobId } }),
+  });
+  if (res.status !== 204) {
+    throw new Error(`repository_dispatch 실패: ${res.status} ${await res.text()}`);
+  }
+}
 
 // 해외 전자제품 뉴스 소스 — 각 피드는 최신순이라 상위 몇 개만 봐도 "최근 트렌드"가 된다
 const TECH_FEEDS = [
@@ -172,67 +199,53 @@ ${refBlock}
   content = insertImages(content, scraped.images);
   content += sourcesFooter(topic.link, refs, scraped.images);
 
-  // 네이버 연결 정보 (쿠키)
+  // 네이버 연결 정보 (쿠키) — Playwright 워커가 naver_connections에서 다시
+  // 조회하지만, 여기서도 미리 확인해서 연결 자체가 없는 경우 빨리 실패시킨다.
   const admin = createAdminClient();
   const { data: conn } = await admin
     .from('naver_connections')
-    .select('blog_id, nid_aut, nid_ses, upload_session_key, naver_user_id')
+    .select('blog_id, nid_aut, nid_ses')
     .eq('user_id', userId)
     .single();
   if (!conn?.blog_id || !conn.nid_aut || !conn.nid_ses) {
     throw new Error('네이버 연결 정보(blog_id/NID_AUT/NID_SES) 없음 — 설정 탭에서 먼저 연결 필요');
   }
 
-  const result = await postViaNas({
-    blogId: conn.blog_id,
-    nidAut: conn.nid_aut,
-    nidSes: conn.nid_ses,
-    title,
-    content: sanitizeForNaver(content),
-    tags: [],
-    categoryNo: 18, // 전자제품
-    isPublish: true,
-    uploadSessionKey: conn.upload_session_key || '',
-    naverUserId: conn.naver_user_id || '',
-  });
+  const { data: job, error: jobErr } = await admin
+    .from('naver_publish_jobs')
+    .insert({
+      user_id: userId,
+      title,
+      content: sanitizeForNaver(content),
+      tags: [],
+      category_no: 18, // 전자제품
+      is_publish: true,
+      job_type: 'scrape',
+      source_url: topic.link,
+      notion_page_id: '__auto_tech__',
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+  if (jobErr || !job) throw new Error(`naver_publish_jobs 등록 실패: ${jobErr?.message}`);
 
-  // 이미지 업로드는 개별로 실패해도 발행 자체는 성공 처리되는데, 그 실패 사유가
-  // 어디에도 안 남고 버려지고 있었음 — "존재하지 않는 이미지입니다" 재현 시도 중
-  // 발견. bossai_naver_tech_posts에 저장 컬럼이 없어 최소한 서버 로그에는 남긴다.
-  if (result.imgErrors?.length) {
-    console.error(`[naver-tech-runner] 이미지 업로드 오류 (${topic.title}):`, result.imgErrors);
-  }
-  if (result._debug) {
-    console.error(`[naver-tech-runner] post.py stderr (${topic.title}):`, result._debug);
-  }
+  await dispatchNaverPublishJob(job.id);
 
-  if (!result.postUrl && !result.postId) {
-    throw new Error(`발행 실패: ${result.error || '알 수 없음'}`);
-  }
-
-  // 같은 원문을 두 번 쓰지 않도록 기록
+  // 같은 원문을 두 번 쓰지 않도록 즉시 기록 — 실제 발행은 Playwright 워커가
+  // 비동기로 처리하므로 post_url은 아직 비어있다(작업 완료 후 naver_publish_jobs/
+  // naver_publish_history에서 확인 가능).
   await admin.from('bossai_naver_tech_posts').insert({
     user_id: userId,
     source_url: topic.link,
     source_name: topic.source,
     source_title: topic.title,
     title,
-    post_url: result.postUrl || '',
-  });
-
-  await admin.from('naver_publish_history').insert({
-    user_id: userId,
-    blog_id: conn.blog_id,
-    post_id: result.postId || '',
-    post_url: result.postUrl || '',
-    title,
-    notion_page_id: '',
-    status: 'publish',
+    post_url: '',
   });
 
   return {
-    summary: `[${topic.source}] ${title} → ${result.postUrl}`,
-    postUrl: result.postUrl,
+    summary: `[${topic.source}] ${title} → Playwright 발행 큐 등록됨 (job: ${job.id})`,
+    postUrl: undefined,
     sourceUrl: topic.link,
     title,
   };
