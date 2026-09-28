@@ -544,7 +544,7 @@ export async function GET(req: NextRequest) {
           try {
             const { data: article } = await supabase
               .from('bossai_auto_articles')
-              .select('title, content, focus_keyword')
+              .select('title, content, focus_keyword, published_urls')
               .eq('id', result.articleId)
               .single();
             if (article) {
@@ -563,13 +563,23 @@ export async function GET(req: NextRequest) {
                 await supabase.from('bossai_auto_articles').update({
                   status: 'published',
                   blog_platforms: ['naver'],
-                  published_urls: { naver: pubData.url || '' },
+                  published_urls: { ...(article.published_urls || {}), naver: pubData.url || '' },
                   published_at: new Date().toISOString(),
                 }).eq('id', result.articleId);
+              } else {
+                // 실패가 콘솔 로그로만 남고 어디서도 조회가 안 되던 문제 — 매 실행마다
+                // 조용히 실패하는데 아무도 모르고 있었음(naver_connections 쿠키 만료가
+                // 가장 유력한 원인). article에 사유를 남겨서 최소한 조회는 가능하게 함.
+                const errData = await pubRes.json().catch(() => ({}));
+                const msg = `네이버 발행 실패: ${errData.error || pubRes.status}`;
+                console.error(`[auto-run] ${msg} (${keyword})`);
+                await supabase.from('bossai_auto_articles').update({ error_message: msg }).eq('id', result.articleId);
               }
             }
           } catch (pubErr) {
-            console.error(`[auto-run] 네이버 발행 실패 (${keyword}):`, pubErr instanceof Error ? pubErr.message : pubErr);
+            const msg = `네이버 발행 예외: ${pubErr instanceof Error ? pubErr.message : String(pubErr)}`;
+            console.error(`[auto-run] ${msg} (${keyword})`);
+            await supabase.from('bossai_auto_articles').update({ error_message: msg }).eq('id', result.articleId);
           }
         }
 
