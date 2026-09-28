@@ -250,16 +250,22 @@ async function callOllamaCloud(
   // 확률을 낮추기 위함.
   const deadline = Date.now() + 200_000;
 
-  for (const apiKey of keys) {
+  // 모델을 바깥, 키를 안쪽으로 순회 — 키를 바깥에 두면 "모든 키가 공통으로
+  // 먼저 시도하는 첫 모델"이 그 순간 유독 느릴 때 모든 키가 그 모델 하나에서만
+  // 타임아웃을 반복하며 예산을 다 쓰고, 실제로는 멀쩡한 다른 모델까지 못
+  // 가보는 문제가 실사용 중 확인됨 (12개 키 전부 nemotron-3-super에서만
+  // TimeoutError). 모델을 바깥으로 돌리면 한 모델이 막혀있어도 몇 번
+  // 타임아웃 후 바로 다음 모델로 넘어감.
+  for (const tryModel of modelsToTry) {
     if (Date.now() > deadline) break;
-    for (const tryModel of modelsToTry) {
+    for (const apiKey of keys) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
-      // 개별 요청에 60초 고정 타임아웃을 주면, 키가 많을 때(예: 12개) 응답이
-      // 느리거나 무응답인 키 하나가 100초 예산을 거의 다 먹어버려서 뒤쪽 키들은
-      // 아예 시도조차 못 해보고 스킵됨 — 남은 예산 안에서 최대한 많은 키/모델을
+      // 개별 요청에 60초 고정 타임아웃을 주면, 조합이 많을 때(12키 x 17모델)
+      // 응답이 느리거나 무응답인 조합 하나가 예산을 거의 다 먹어버려서 나머지는
+      // 아예 시도조차 못 해보고 스킵됨 — 남은 예산 안에서 최대한 많은 조합을
       // 실제로 시도할 수 있도록 요청별 타임아웃을 남은 예산 기준으로 짧게 제한.
-      const perRequestTimeout = Math.max(3_000, Math.min(15_000, remaining));
+      const perRequestTimeout = Math.max(3_000, Math.min(10_000, remaining));
       try {
         const res = await fetch('https://ollama.com/api/chat', {
           method: 'POST',
@@ -274,8 +280,7 @@ async function callOllamaCloud(
         if (!res.ok) {
           const err = await res.text();
           lastErr = new Error(`Ollama Cloud ${res.status}: ${err}`);
-          if (res.status === 429) break; // rate-limited on this key → try next key
-          continue; // other error → try next model
+          continue; // 이 키로는 이 모델 안 됨 → 같은 모델을 다음 키로 시도
         }
 
         const data = await res.json() as { message?: { content?: string }; error?: string };
