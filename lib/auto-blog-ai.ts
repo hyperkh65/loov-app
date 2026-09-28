@@ -281,6 +281,35 @@ async function callOpenAI(apiKey: string, prompt: string, model = 'gpt-4o-mini')
   throw new Error('OpenAI 429: 재시도 횟수 초과');
 }
 
+// Groq(OpenAI 호환 API) — 멀티키 풀 순회, 에러 시 다음 키로 자동 순환
+async function callGroq(apiKeys: string[], prompt: string, model = 'qwen/qwen3.8-27b'): Promise<string> {
+  if (!apiKeys.length) throw new Error('Groq: API 키 미설정');
+  let lastErr: Error = new Error('Groq: 사용 가능한 API 키가 없습니다.');
+  for (const apiKey of apiKeys) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 8192,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) { lastErr = new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`); continue; }
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content || '';
+      if (!text) { lastErr = new Error('Groq 빈 응답'); continue; }
+      return text;
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      continue;
+    }
+  }
+  throw lastErr;
+}
+
 // Ollama 가용 모델 캐시 (키별, 1시간)
 const _ollamaModelCache = new Map<string, { models: string[]; ts: number }>();
 
@@ -375,7 +404,7 @@ export async function generateText(
   const errors: string[] = [];
 
   // preferModel이 Ollama 모델인지 판단
-  const NON_OLLAMA = ['gemini', 'claude', 'openai', 'gpt', 'openrouter'];
+  const NON_OLLAMA = ['gemini', 'claude', 'openai', 'gpt', 'openrouter', 'groq'];
   const isOllamaPreferred = !NON_OLLAMA.some(p => preferModel.toLowerCase().startsWith(p));
 
   // Ollama 키 수집
@@ -517,6 +546,19 @@ export async function generateText(
     try { return await callClaude(key, prompt, model); }
     catch (e) { errors.push(`Claude: ${e}`); return false; }
   };
+  const tryGroq = async () => {
+    const groqKeys: string[] = [];
+    try {
+      const raw = await getSetting('GROQ_API_KEYS');
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        if (Array.isArray(arr)) groqKeys.push(...arr.filter(Boolean));
+      }
+    } catch { /* ignore */ }
+    if (groqKeys.length === 0) { errors.push('Groq: API 키 미설정'); return false; }
+    try { return await callGroq(groqKeys, prompt); }
+    catch (e) { errors.push(`Groq: ${e}`); return false; }
+  };
 
   // ── 결과 정제: think 블록 → 이스케이프 복원 → 외국어 제거 → 유럽어 제거 → 영어 치환 ──
   // 다국어 모드는 외국어 문자 제거 생략 (영어/일본어/스페인어 캡션 보존)
@@ -525,6 +567,15 @@ export async function generateText(
       ? unescapeQuotes(stripThinkBlocks(r))
       : replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))))
     ) : false;
+
+  // Groq 전용 모드 — 쿠팡/아고다처럼 매시간 도는 제휴 러너들이 이미 고갈된
+  // Ollama/Gemini/OpenAI/Claude를 순서대로 다 두드리며 시간·API 호출만 낭비하는 걸
+  // 막기 위해, Groq만 쓰고 실패하면 바로 에러(다른 provider로 안 넘어감).
+  if (preferModel === 'groq') {
+    const r = clean(await tryGroq());
+    if (r) return r;
+    throw new Error(`사용 가능한 AI 없음(Groq 전용 모드)\n${errors.length ? `오류: ${errors.join(' | ')}` : ''}`);
+  }
 
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
   let result: string | false = false;
