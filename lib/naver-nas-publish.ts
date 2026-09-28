@@ -185,61 +185,50 @@ def make_image_component(src, alt=''):
         uploaded_images.append(info['url'])
         img_domain = info['url'].split('/')[2] if info['url'].startswith('http') else 'postfiles.pstatic.net'
         is_represent = not represent_assigned
-        # 2026-09-23: 네이버 에디터에서 실제로 이미지를 대표이미지로 지정하고 저장할
-        # 때 나가는 실제 RabbitWrite 요청을 캡처해서(사용자 제공) 확인 — 대표이미지는
-        # text 컴포넌트 안에 중첩된 imageNode가 아니라 documentModel.components[]
-        # 최상위의 @ctype:"image" 컴포넌트여야 하고, 아래 필드가 전부 있어야
-        # 정상 처리됨(예전에 이 필드들 없이 시도했다가 "parse fail"로 발행 자체가
-        # 깨진 적 있음 — 이번엔 실제 캡처값 그대로 복제해서 안전하게 반영):
-        # internalResource=true(이전엔 반대로 넣었었음), domain에 스킴(https://)
-        # 포함, path에 맨 앞 슬래시 포함, origin/format/caption 등 전체 필드.
         if is_represent:
             represent_assigned = True
-            domain_with_scheme = img_domain if img_domain.startswith('http') else f'https://{img_domain}'
-            path_val = info['path'] if info['path'].startswith('/') else f"/{info['path']}"
-            return {
-                'id': se_id(), 'layout': 'default', '@ctype': 'image',
-                'src': info['url'],
-                'internalResource': True,
-                'represent': True,
-                'path': path_val,
-                'domain': domain_with_scheme,
-                'fileSize': 0,
-                'width': info['width'], 'widthPercentage': 0, 'height': info['height'],
-                'originalWidth': info['width'], 'originalHeight': info['height'],
-                'fileName': info['filename'],
-                'caption': None, 'format': 'normal', 'displayFormat': 'normal',
-                'imageLoaded': True, 'contentMode': 'normal',
-                'origin': {'srcFrom': 'local', '@ctype': 'imageOrigin'},
-                'ai': False,
-            }
-        # 2026-09-24: 본문 중간 이미지("존재하지 않는 이미지입니다")가 발행 직후부터
-        # 깨져 보이는 문제 실사용 중 확인 — 대표이미지와 같은 업로드 API로 실제
-        # 네이버 서버에 올라간 파일인데도 domain에 스킴이 없고 path 맨 앞 슬래시가
-        # 빠져 있어서 위 대표이미지(9/23 수정) 포맷과 달랐음. internalResource도
-        # false로 돼 있어 "우리 서버 파일 아님"으로 잘못 표시됨 — 실제로는 우리가
-        # 업로드한 내부 파일이므로 대표이미지와 동일한 포맷(스킴 포함 domain,
-        # 슬래시 포함 path, internalResource=true)으로 통일.
         domain_with_scheme = img_domain if img_domain.startswith('http') else f'https://{img_domain}'
         path_val = info['path'] if info['path'].startswith('/') else f"/{info['path']}"
+
+        # 2026-09-28: "존재하지 않는 이미지입니다"(특히 type=s2 등 실제 화면에 쓰이는
+        # 파생 사이즈만 404) 원인을 사용자가 직접 캡처해준 실제 에디터 요청과
+        # field-by-field 대조해서 확정 — 사람이 올린 정상 글의 documentModel과
+        # 우리가 보내던 값이 세 군데 달랐음(재현 테스트로 세 가지 다 고치니 실제로
+        # type=s2가 404→200으로 바뀌는 것까지 확인됨):
+        # 1) src에 원본 CDN 경로만 넣고 있었는데, 실제 에디터는 항상 "?type=w1"을
+        #    붙여서 보낸다(대표/본문 이미지 둘 다 동일).
+        # 2) width/height에 업로드 API가 돌려준 원본 픽셀 크기를 그대로 넣고
+        #    originalWidth/originalHeight에도 같은 값을 복제하고 있었는데, 실제
+        #    에디터는 width/height를 본문 컬럼폭(886px)에 맞게 줄인 "표시 크기"로
+        #    보내고, originalWidth/originalHeight에만 진짜 원본 크기를 넣는다.
+        #    (실캡처 예: 원본 1781×938 → 표시 886×466). 네이버의 파생 썸네일
+        #    생성 파이프라인이 이 표시크기 기준으로 도는 것으로 추정 — 원본과
+        #    표시크기가 항상 같은 값이면(우리가 하던 방식) 특정 파생 사이즈를
+        #    건너뛰는 것으로 보임.
+        # 3) 본문 중간 이미지를 대표이미지와 다른 구조(text로 감싼 imageNode)로
+        #    보내고 있었는데, 실캡처를 보면 대표든 본문이든 구분 없이 전부
+        #    documentModel.components[] 최상위의 동일한 @ctype:"image" 컴포넌트를
+        #    쓰고 represent 불리언 값만 다르다 — 별도 구조 자체가 불필요했음.
+        MAX_DISPLAY_WIDTH = 886
+        orig_w, orig_h = info['width'], info['height']
+        disp_w = min(orig_w, MAX_DISPLAY_WIDTH) if orig_w else MAX_DISPLAY_WIDTH
+        disp_h = round(disp_w * orig_h / orig_w) if orig_w else orig_h
+
         return {
-            'id': se_id(), 'layout': 'default', '@ctype': 'text',
-            'value': [{
-                'id': se_id(), '@ctype': 'paragraph',
-                'nodes': [{
-                    'id': se_id(), '@ctype': 'imageNode',
-                    'src': info['url'],
-                    'path': path_val,
-                    'domain': domain_with_scheme,
-                    'width': info['width'],
-                    'height': info['height'],
-                    'fileSize': 0,
-                    'fileName': info['filename'],
-                    'internalResource': True,
-                    'represent': False,
-                    'ai': False,
-                }]
-            }]
+            'id': se_id(), 'layout': 'default', '@ctype': 'image',
+            'src': info['url'] + '?type=w1',
+            'internalResource': True,
+            'represent': is_represent,
+            'path': path_val,
+            'domain': domain_with_scheme,
+            'fileSize': 0,
+            'width': disp_w, 'widthPercentage': 0, 'height': disp_h,
+            'originalWidth': orig_w, 'originalHeight': orig_h,
+            'fileName': info['filename'],
+            'caption': None, 'format': 'normal', 'displayFormat': 'normal',
+            'imageLoaded': True, 'contentMode': 'fit',
+            'origin': {'srcFrom': 'local', '@ctype': 'imageOrigin'},
+            'ai': False,
         }
     return None
 
