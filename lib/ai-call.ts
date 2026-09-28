@@ -251,7 +251,13 @@ async function callOllamaCloud(
   for (const apiKey of keys) {
     if (Date.now() > deadline) break;
     for (const tryModel of modelsToTry) {
-      if (Date.now() > deadline) break;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      // 개별 요청에 60초 고정 타임아웃을 주면, 키가 많을 때(예: 12개) 응답이
+      // 느리거나 무응답인 키 하나가 100초 예산을 거의 다 먹어버려서 뒤쪽 키들은
+      // 아예 시도조차 못 해보고 스킵됨 — 남은 예산 안에서 최대한 많은 키/모델을
+      // 실제로 시도할 수 있도록 요청별 타임아웃을 남은 예산 기준으로 짧게 제한.
+      const perRequestTimeout = Math.max(3_000, Math.min(15_000, remaining));
       try {
         const res = await fetch('https://ollama.com/api/chat', {
           method: 'POST',
@@ -260,7 +266,7 @@ async function callOllamaCloud(
             'Authorization': `Bearer ${apiKey}`,
           },
           body: JSON.stringify({ model: tryModel, messages: ollamaMessages, stream: false }),
-          signal: AbortSignal.timeout(60_000),
+          signal: AbortSignal.timeout(perRequestTimeout),
         });
 
         if (!res.ok) {
