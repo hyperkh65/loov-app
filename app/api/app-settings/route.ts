@@ -42,6 +42,10 @@ const ALLOWED_KEYS = [
   'OLLAMA_BASE_URL',
   // OpenRouter multi-key
   'OPENROUTER_API_KEYS',
+  // Groq multi-key
+  'GROQ_API_KEYS',
+  // Gemini multi-key
+  'GEMINI_API_KEYS',
   // AI 폴백 체인 (JSON string)
   'AI_FALLBACK_CHAIN',
   // 글로벌 AI 설정
@@ -94,7 +98,7 @@ export async function GET() {
   const settings = (data?.settings as Record<string, string>) || {};
 
   // 마스킹: 키 앞 4자리만 노출 (비민감 키는 전체 값 반환)
-  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID', 'EDGE_TTS_SERVER_URL', 'NAS_WEB_BASE_URL', 'NOTION_CAMERA_DB_ID', 'OLLAMA_API_KEYS', 'OPENROUTER_API_KEYS']);
+  const NON_SECRET_KEYS = new Set(['OLLAMA_BASE_URL', 'AI_FALLBACK_CHAIN', 'AI_GLOBAL_PROVIDER', 'AI_GLOBAL_MODEL', 'R2_BUCKET', 'R2_PUBLIC_URL', 'R2_ACCOUNT_ID', 'EDGE_TTS_SERVER_URL', 'NAS_WEB_BASE_URL', 'NOTION_CAMERA_DB_ID', 'OLLAMA_API_KEYS', 'OPENROUTER_API_KEYS', 'GROQ_API_KEYS', 'GEMINI_API_KEYS']);
   const masked: Record<string, string> = {};
   for (const key of ALLOWED_KEYS) {
     const val = settings[key] || '';
@@ -129,11 +133,37 @@ export async function GET() {
     }
   } catch { /* ignore */ }
 
+  // Multi-key Groq: return masked array
+  let groqKeysMasked: string[] = [];
+  try {
+    const raw = settings['GROQ_API_KEYS'];
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) {
+        groqKeysMasked = arr.map((k) => k ? k.slice(0, 8) + '••••••••' : '');
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Multi-key Gemini: return masked array
+  let geminiKeysMasked: string[] = [];
+  try {
+    const raw = settings['GEMINI_API_KEYS'];
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) {
+        geminiKeysMasked = arr.map((k) => k ? k.slice(0, 8) + '••••••••' : '');
+      }
+    }
+  } catch { /* ignore */ }
+
   return NextResponse.json({
     settings: masked,
     hasKey: Object.fromEntries(ALLOWED_KEYS.map(k => [k, !!(settings[k] || process.env[k])])),
     ollamaKeysMasked,
     openrouterKeysMasked,
+    groqKeysMasked,
+    geminiKeysMasked,
     updatedAt: data?.updated_at || null,
   });
 }
@@ -206,6 +236,62 @@ export async function POST(req: NextRequest) {
     try { arr = JSON.parse(current['OLLAMA_API_KEYS'] || '[]') as string[]; } catch { /* ignore */ }
     if (!isNaN(idx) && idx >= 0 && idx < arr.length) arr.splice(idx, 1);
     updated['OLLAMA_API_KEYS'] = JSON.stringify(arr);
+    const { error } = await admin.from('app_settings').update({ settings: updated, updated_at: new Date().toISOString() }).eq('id', 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateSettingsCache();
+    return NextResponse.json({ ok: true });
+  }
+
+  // Special: append a new Groq key to the array
+  if ('GROQ_API_KEYS_ADD' in body) {
+    const newKey = body['GROQ_API_KEYS_ADD']?.trim();
+    if (newKey) {
+      let arr: string[] = [];
+      try { arr = JSON.parse(current['GROQ_API_KEYS'] || '[]') as string[]; } catch { /* ignore */ }
+      if (!arr.includes(newKey)) arr.push(newKey);
+      updated['GROQ_API_KEYS'] = JSON.stringify(arr);
+    }
+    const { error } = await admin.from('app_settings').update({ settings: updated, updated_at: new Date().toISOString() }).eq('id', 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateSettingsCache();
+    return NextResponse.json({ ok: true });
+  }
+
+  // Special: delete a Groq key by index
+  if ('GROQ_API_KEYS_DELETE_INDEX' in body) {
+    const idx = Number(body['GROQ_API_KEYS_DELETE_INDEX']);
+    let arr: string[] = [];
+    try { arr = JSON.parse(current['GROQ_API_KEYS'] || '[]') as string[]; } catch { /* ignore */ }
+    if (!isNaN(idx) && idx >= 0 && idx < arr.length) arr.splice(idx, 1);
+    updated['GROQ_API_KEYS'] = JSON.stringify(arr);
+    const { error } = await admin.from('app_settings').update({ settings: updated, updated_at: new Date().toISOString() }).eq('id', 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateSettingsCache();
+    return NextResponse.json({ ok: true });
+  }
+
+  // Special: append a new Gemini key to the array
+  if ('GEMINI_API_KEYS_ADD' in body) {
+    const newKey = body['GEMINI_API_KEYS_ADD']?.trim();
+    if (newKey) {
+      let arr: string[] = [];
+      try { arr = JSON.parse(current['GEMINI_API_KEYS'] || '[]') as string[]; } catch { /* ignore */ }
+      if (!arr.includes(newKey)) arr.push(newKey);
+      updated['GEMINI_API_KEYS'] = JSON.stringify(arr);
+    }
+    const { error } = await admin.from('app_settings').update({ settings: updated, updated_at: new Date().toISOString() }).eq('id', 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateSettingsCache();
+    return NextResponse.json({ ok: true });
+  }
+
+  // Special: delete a Gemini key by index
+  if ('GEMINI_API_KEYS_DELETE_INDEX' in body) {
+    const idx = Number(body['GEMINI_API_KEYS_DELETE_INDEX']);
+    let arr: string[] = [];
+    try { arr = JSON.parse(current['GEMINI_API_KEYS'] || '[]') as string[]; } catch { /* ignore */ }
+    if (!isNaN(idx) && idx >= 0 && idx < arr.length) arr.splice(idx, 1);
+    updated['GEMINI_API_KEYS'] = JSON.stringify(arr);
     const { error } = await admin.from('app_settings').update({ settings: updated, updated_at: new Date().toISOString() }).eq('id', 1);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     invalidateSettingsCache();

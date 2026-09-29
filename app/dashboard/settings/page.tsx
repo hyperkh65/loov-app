@@ -390,6 +390,16 @@ export default function SettingsPage() {
   const [newOpenrouterKey, setNewOpenrouterKey] = useState('');
   const [openrouterKeyAdding, setOpenrouterKeyAdding] = useState(false);
 
+  // Groq state
+  const [groqCloudKeysMasked, setGroqCloudKeysMasked] = useState<string[]>([]);
+  const [newGroqKey, setNewGroqKey] = useState('');
+  const [groqKeyAdding, setGroqKeyAdding] = useState(false);
+
+  // Gemini state
+  const [geminiCloudKeysMasked, setGeminiCloudKeysMasked] = useState<string[]>([]);
+  const [newGeminiKey, setNewGeminiKey] = useState('');
+  const [geminiKeyAdding, setGeminiKeyAdding] = useState(false);
+
   // 서버 글로벌 AI 설정 (DB에서 읽기/저장)
   const [serverGlobalProvider, setServerGlobalProvider] = useState('gemini');
   const [serverGlobalModel, setServerGlobalModel] = useState('gemini-2.0-flash');
@@ -525,9 +535,11 @@ export default function SettingsPage() {
     if (activeTab === 'ai') {
       fetch('/api/app-settings')
         .then((r) => r.ok ? r.json() : {})
-        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string>; ollamaKeysMasked?: string[]; openrouterKeysMasked?: string[] }) => {
+        .then((d: { hasKey?: Record<string, boolean>; settings?: Record<string, string>; ollamaKeysMasked?: string[]; openrouterKeysMasked?: string[]; groqKeysMasked?: string[]; geminiKeysMasked?: string[] }) => {
           setOllamaCloudKeysMasked(d.ollamaKeysMasked || []);
           setOpenrouterCloudKeysMasked(d.openrouterKeysMasked || []);
+          setGroqCloudKeysMasked(d.groqKeysMasked || []);
+          setGeminiCloudKeysMasked(d.geminiKeysMasked || []);
           setOllamaUrlSaved(!!d.hasKey?.['OLLAMA_BASE_URL']);
           setOpenrouterKeySaved(!!(d.hasKey?.['OPENROUTER_API_KEY'] || (d.openrouterKeysMasked?.length ?? 0) > 0));
           // Load server global AI setting
@@ -1475,6 +1487,128 @@ export default function SettingsPage() {
                     disabled={!newOpenrouterKey.trim() || openrouterKeyAdding}
                     className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
                   >{openrouterKeyAdding ? '...' : '추가'}</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Groq 설정 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-bold text-gray-900">Groq</h3>
+                <a href="https://console.groq.com/keys" target="_blank" rel="noopener" className="text-xs text-blue-500 hover:underline">API 키 발급 →</a>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">무료 티어 응답 빠름. 여러 계정 키 등록 시 한도 초과 때 자동 순환.</p>
+
+              <div className="mb-3">
+                <label className="text-xs font-semibold text-gray-700 mb-1 block">
+                  Groq API Keys
+                  <span className="ml-2 text-gray-400 font-normal">({groqCloudKeysMasked.length}개 저장 — 한도 초과 시 자동 순환)</span>
+                </label>
+                {groqCloudKeysMasked.length > 0 && (
+                  <ul className="mb-2 space-y-1">
+                    {groqCloudKeysMasked.map((masked, i) => (
+                      <li key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5">
+                        <span className="flex-1 text-xs font-mono text-gray-600">{i + 1}. {masked}</span>
+                        <button
+                          onClick={async () => {
+                            await fetch('/api/app-settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ GROQ_API_KEYS_DELETE_INDEX: String(i) }),
+                            });
+                            setGroqCloudKeysMasked((prev) => prev.filter((_, idx) => idx !== i));
+                          }}
+                          className="text-xs text-red-400 hover:text-red-600 px-1"
+                        >삭제</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={newGroqKey}
+                    onChange={(e) => setNewGroqKey(e.target.value)}
+                    placeholder="gsk_... (새 키 추가)"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!newGroqKey.trim()) return;
+                      setGroqKeyAdding(true);
+                      await fetch('/api/app-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ GROQ_API_KEYS_ADD: newGroqKey.trim() }),
+                      });
+                      setGroqCloudKeysMasked((prev) => [...prev, newGroqKey.trim().slice(0, 8) + '••••••••']);
+                      setNewGroqKey('');
+                      setGroqKeyAdding(false);
+                    }}
+                    disabled={!newGroqKey.trim() || groqKeyAdding}
+                    className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
+                  >{groqKeyAdding ? '...' : '추가'}</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Gemini 설정 */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-bold text-gray-900">Gemini</h3>
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" className="text-xs text-blue-500 hover:underline">API 키 발급 →</a>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">여러 계정 키 등록 시 한도 초과 때 자동 순환. AIzaSy로 시작하는 구형 키, AQ.로 시작하는 신형 키 모두 지원.</p>
+
+              <div className="mb-3">
+                <label className="text-xs font-semibold text-gray-700 mb-1 block">
+                  Gemini API Keys
+                  <span className="ml-2 text-gray-400 font-normal">({geminiCloudKeysMasked.length}개 저장 — 한도 초과 시 자동 순환)</span>
+                </label>
+                {geminiCloudKeysMasked.length > 0 && (
+                  <ul className="mb-2 space-y-1">
+                    {geminiCloudKeysMasked.map((masked, i) => (
+                      <li key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5">
+                        <span className="flex-1 text-xs font-mono text-gray-600">{i + 1}. {masked}</span>
+                        <button
+                          onClick={async () => {
+                            await fetch('/api/app-settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ GEMINI_API_KEYS_DELETE_INDEX: String(i) }),
+                            });
+                            setGeminiCloudKeysMasked((prev) => prev.filter((_, idx) => idx !== i));
+                          }}
+                          className="text-xs text-red-400 hover:text-red-600 px-1"
+                        >삭제</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={newGeminiKey}
+                    onChange={(e) => setNewGeminiKey(e.target.value)}
+                    placeholder="AIzaSy... 또는 AQ.... (새 키 추가)"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!newGeminiKey.trim()) return;
+                      setGeminiKeyAdding(true);
+                      await fetch('/api/app-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ GEMINI_API_KEYS_ADD: newGeminiKey.trim() }),
+                      });
+                      setGeminiCloudKeysMasked((prev) => [...prev, newGeminiKey.trim().slice(0, 8) + '••••••••']);
+                      setNewGeminiKey('');
+                      setGeminiKeyAdding(false);
+                    }}
+                    disabled={!newGeminiKey.trim() || geminiKeyAdding}
+                    className="px-3 py-2 text-sm bg-gray-900 hover:bg-gray-700 text-white rounded-xl disabled:opacity-40"
+                  >{geminiKeyAdding ? '...' : '추가'}</button>
                 </div>
               </div>
             </div>
