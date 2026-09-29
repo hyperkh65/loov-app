@@ -381,6 +381,10 @@ function parseAiOutput(raw: string) {
   let meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+  // AI 할루시네이션 링크 제거: <a> 태그는 텍스트만 남기고, 순수 텍스트 URL도 제거
+  // (네이버 블로그는 본문에 URL이 있으면 자동으로 원문 사이트 링크카드를 만듦)
+  content = content.replace(/<a\s[^>]*>/gi, '').replace(/<\/a>/gi, '');
+  content = content.replace(/(?<!["'])https?:\/\/[^\s<>"')]+/g, '');
   // AI가 지시문 자리표시자를 그대로 뱉어낸 경우 본문에서 재추출
   if (!meta_description || /^[([].*[)\]]$/.test(meta_description) || /meta description|characters korean|글자 이내|자 이내로 써/i.test(meta_description)) {
     meta_description = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);

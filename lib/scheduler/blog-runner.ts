@@ -43,8 +43,18 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
   await Promise.all(targets.map(async (conn) => {
     try {
       const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, title);
-      try { await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, articleUrl); }
-      catch { /* 댓글 실패는 무시 — 본문 발행은 이미 성공 */ }
+      // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
+      // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
+      // (rewrite-publish.ts와 동일하게 짧은 대기 + 1회 재시도로 보강)
+      try {
+        await new Promise(r => setTimeout(r, 4000));
+        await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, articleUrl);
+      } catch {
+        try {
+          await new Promise(r => setTimeout(r, 5000));
+          await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, articleUrl);
+        } catch { /* 재시도까지 실패 — 본문 발행은 이미 성공이라 전체는 실패 처리 안 함 */ }
+      }
     } catch { /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
   }));
 

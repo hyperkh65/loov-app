@@ -374,8 +374,19 @@ export async function publishRewrittenArticle(
     try {
       const posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, caption, platformImages);
       if (comment) {
-        try { await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, comment); }
-        catch { /* 댓글 실패는 무시 — 본문 발행은 이미 성공 */ }
+        // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
+        // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
+        // (app/api/auto-service/publish/route.ts의 수동 발행 경로엔 이미 폴링+재시도가
+        // 있었는데 이 자동 경로엔 빠져 있었음) — 짧은 대기 + 1회 재시도로 보강.
+        try {
+          await new Promise(r => setTimeout(r, 4000));
+          await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, comment);
+        } catch {
+          try {
+            await new Promise(r => setTimeout(r, 5000));
+            await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, comment);
+          } catch { /* 재시도까지 실패 — 본문 발행은 이미 성공이라 전체는 실패 처리 안 함 */ }
+        }
       }
       sns[label] = 'ok';
     } catch (e) {

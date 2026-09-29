@@ -425,6 +425,10 @@ function parseAiOutput(raw: string) {
   // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+  // AI 할루시네이션 링크 제거: <a> 태그는 텍스트만 남기고, 순수 텍스트 URL도 제거
+  // (네이버 블로그는 본문에 URL이 있으면 자동으로 원문 사이트 링크카드를 만듦)
+  content = content.replace(/<a\s[^>]*>/gi, '').replace(/<\/a>/gi, '');
+  content = content.replace(/(?<!["'])https?:\/\/[^\s<>"')]+/g, '');
 
   if (isMetaPlaceholderLeak) {
     meta_description = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
