@@ -229,18 +229,23 @@ async function callGemini(apiKeys: string[], prompt: string): Promise<string> {
   // gemini-2.5-flash-lite는 구글 쪽에서 404(폐기)로 확인됨. gemini-2.5-flash는
   // "신규 계정에는 더 이상 제공 안 함"(구글 응답: new users는 gemini-3.8-flash 쓰라고
   // 안내) — 계속 새 계정을 등록해서 키를 늘릴 계획이라 신규 계정에서도 되는
-  // gemini-3.8-flash를 맨 앞에 두고, 기존 계정에서만 되는 2.5-flash를 다음 시도로 유지.
-  const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash'];
+  // gemini-3.8-flash/gemini-3.5-flash를 앞에 두고, 기존 계정에서만 되는 2.5-flash를
+  // 다음 시도로 유지. 3.x 모델은 실사용 중 503(혼잡)이 자주 나서 키 하나에 여러
+  // 모델을 두는 게 곧 재시도 효과도 겸함.
+  const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash'];
   const allErrors: string[] = [];
   // 키를 계속 늘려갈 예정이라(등록 계정 다수) 키 바깥/모델 안쪽으로 순회 —
   // 한 키가 쿼터 소진이면 그 키만 건너뛰고 바로 다음 키로 넘어간다.
   for (const apiKey of apiKeys) {
     for (const model of GEMINI_MODELS) {
+      // 새로 발급되는 구글 API 키 포맷("AQ."로 시작)은 URL 쿼리파라미터(?key=)로
+      // 인증이 안 되고 x-goog-api-key 헤더로만 동작하는 게 실제 응답으로 확인됨
+      // (기존 "AIzaSy" 포맷은 헤더 방식으로도 그대로 동작하므로 헤더 방식 하나로 통일).
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { maxOutputTokens: 8192 },
