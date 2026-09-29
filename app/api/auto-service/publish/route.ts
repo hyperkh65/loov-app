@@ -3,7 +3,15 @@ import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { submitToIndexNow } from '@/lib/indexnow';
+import { translateArticle } from '@/lib/ai-translate';
 import iconv from 'iconv-lite';
+
+// engmag.2days.kr / japmag.2days.kr은 자동 크로스발행 대상에서 빠졌음(토큰 소모 절감,
+// 2026-09-29) — 대신 사용자가 여기서 이 사이트를 직접 선택해 발행할 때만 번역해서 올린다.
+const TRANSLATE_TARGETS: Record<string, 'en' | 'ja'> = {
+  'https://engmag.2days.kr': 'en',
+  'https://japmag.2days.kr': 'ja',
+};
 
 export const maxDuration = 600;
 
@@ -399,7 +407,17 @@ export async function POST(req: NextRequest) {
           const siteKey = `wordpress_${site.site_name}`;
 
           try {
-            const titleSlug = toImageSlug(article.focus_keyword || article.title || '');
+            // engmag/japmag을 직접 선택한 경우: 한국어 원문을 해당 언어로 번역해서 발행
+            let pubTitle = article.title;
+            let pubContent = article.content;
+            const lang = TRANSLATE_TARGETS[site.site_url];
+            if (lang) {
+              const translated = await translateArticle(article.title, article.content, lang);
+              pubTitle = translated.title;
+              pubContent = translated.content;
+            }
+
+            const titleSlug = toImageSlug(article.focus_keyword || pubTitle || '');
 
             // 1. 대표이미지(SVG 썸네일)를 WP 미디어로 먼저 업로드
             let featuredMediaId: number | undefined;
@@ -409,28 +427,28 @@ export async function POST(req: NextRequest) {
             }
 
             // 2. 본문 내 이미지를 WP 미디어로 업로드 + URL 교체
-            const wpContent = await uploadContentImages(article.content, site.site_url, auth, titleSlug);
+            const wpContent = await uploadContentImages(pubContent, site.site_url, auth, titleSlug);
 
             // 3. 카테고리 "Aboda" 조회 또는 생성
             const catId = await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
 
             // 4. 포스트 발행
             // slug: focus_keyword 기반으로 생성 (WordPress 자동 slug 잘림 방지)
-            const rawSlug = (article.focus_keyword || article.keyword || article.title)
+            const rawSlug = (article.focus_keyword || article.keyword || pubTitle)
               .replace(/[,!?\.]/g, '')
               .replace(/\s+/g, '-')
               .toLowerCase()
               .slice(0, 60);
             const focusKeyword = (article.focus_keyword || article.keyword || '').trim();
             const postBody: Record<string, unknown> = {
-              title: article.title,
+              title: pubTitle,
               content: wpContent,
               status: 'publish',
               slug: rawSlug,
               meta: {
                 rank_math_focus_keyword: focusKeyword,
-                rank_math_title: article.title || '',
-                rank_math_description: article.meta_description || '',
+                rank_math_title: pubTitle || '',
+                rank_math_description: lang ? '' : (article.meta_description || ''),
               },
             };
             if (featuredMediaId) postBody.featured_media = featuredMediaId;
