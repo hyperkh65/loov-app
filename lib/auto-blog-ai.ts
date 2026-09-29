@@ -222,39 +222,45 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
   return text;
 }
 
-async function callGemini(apiKey: string, prompt: string): Promise<string> {
+async function callGemini(apiKeys: string[], prompt: string): Promise<string> {
   // 기존 gemini-2.0-flash-lite/gemini-2.0-flash/gemini-1.5-flash가 전부 구글 쪽에서
   // 폐기(404)된 걸 실제 API 응답으로 확인 — "-latest" 별칭은 구글이 알아서 최신
   // 모델로 갱신해주므로 이런 폐기 이슈가 재발하지 않음
-  // gemini-2.5-flash-lite는 구글 쪽에서 404(폐기)로 확인돼 목록에서 제외하고
-  // gemini-2.5-flash로 교체 — 실사용량이 거의 없어(AI Studio 대시보드 기준) 여유 많음
-  const GEMINI_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash'];
-  const modelErrors: string[] = [];
-  for (const model of GEMINI_MODELS) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 8192 },
-        }),
-        signal: AbortSignal.timeout(120_000),
+  // gemini-2.5-flash-lite는 구글 쪽에서 404(폐기)로 확인됨. gemini-2.5-flash는
+  // "신규 계정에는 더 이상 제공 안 함"(구글 응답: new users는 gemini-3.8-flash 쓰라고
+  // 안내) — 계속 새 계정을 등록해서 키를 늘릴 계획이라 신규 계정에서도 되는
+  // gemini-3.8-flash를 맨 앞에 두고, 기존 계정에서만 되는 2.5-flash를 다음 시도로 유지.
+  const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash'];
+  const allErrors: string[] = [];
+  // 키를 계속 늘려갈 예정이라(등록 계정 다수) 키 바깥/모델 안쪽으로 순회 —
+  // 한 키가 쿼터 소진이면 그 키만 건너뛰고 바로 다음 키로 넘어간다.
+  for (const apiKey of apiKeys) {
+    for (const model of GEMINI_MODELS) {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 8192 },
+          }),
+          signal: AbortSignal.timeout(120_000),
+        }
+      );
+      if (!res.ok) {
+        // 원인 추적 불가 문제(모델별 상세 에러가 안 남아 디버깅 불가)였던 것을 수정 —
+        // 상태코드/본문 일부를 모아서 최종 실패 메시지에 포함
+        allErrors.push(`${model}:${res.status} ${(await res.text()).slice(0, 100)}`);
+        continue;
       }
-    );
-    if (!res.ok) {
-      // 원인 추적 불가 문제(모델별 상세 에러가 안 남아 디버깅 불가)였던 것을 수정 —
-      // 상태코드/본문 일부를 모아서 최종 실패 메시지에 포함
-      modelErrors.push(`${model}:${res.status} ${(await res.text()).slice(0, 100)}`);
-      continue;
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (text) return text;
+      allErrors.push(`${model}:빈 응답`);
     }
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (text) return text;
-    modelErrors.push(`${model}:빈 응답`);
   }
-  throw new Error(`Gemini 모든 모델 실패 (${modelErrors.join(' | ')})`);
+  throw new Error(`Gemini 모든 키/모델 실패 (${allErrors.join(' | ')})`);
 }
 
 async function callOpenAI(apiKey: string, prompt: string, model = 'gpt-4o-mini'): Promise<string> {
@@ -492,9 +498,21 @@ export async function generateText(
 
   // ── 나머지 provider 헬퍼 ────────────────────────────────
   const tryGemini = async () => {
-    const key = await getSetting('GEMINI_API_KEY');
-    if (!key) { errors.push('Gemini: API 키 미설정'); return false; }
-    try { return await callGemini(key, prompt); }
+    // 다중 키 수집 (GEMINI_API_KEYS 배열 + 레거시 단일 키) — 계정을 계속 늘릴 예정이라
+    // Groq/OpenRouter와 동일하게 여러 키를 등록해두고 순환.
+    const geminiKeys: string[] = [];
+    try {
+      const raw = await getSetting('GEMINI_API_KEYS');
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        if (Array.isArray(arr)) geminiKeys.push(...arr.filter(Boolean));
+      }
+    } catch { /* ignore */ }
+    const legacyGeminiKey = await getSetting('GEMINI_API_KEY');
+    if (legacyGeminiKey && !geminiKeys.includes(legacyGeminiKey)) geminiKeys.push(legacyGeminiKey);
+
+    if (geminiKeys.length === 0) { errors.push('Gemini: API 키 미설정'); return false; }
+    try { return await callGemini(geminiKeys, prompt); }
     catch (e) { errors.push(`Gemini: ${e}`); return false; }
   };
   const tryOpenRouter = async () => {

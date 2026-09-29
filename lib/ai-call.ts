@@ -47,8 +47,10 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
   switch (provider) {
     case 'claude':
       return getSetting('CLAUDE_API_KEY');
-    case 'gemini':
-      return getSetting('GEMINI_API_KEY');
+    case 'gemini': {
+      const keys = await getGeminiKeys();
+      return keys[0] || '';
+    }
     case 'openrouter':
       return getSetting('OPENROUTER_API_KEY');
     case 'groq': {
@@ -78,6 +80,23 @@ async function getGroqKeys(): Promise<string[]> {
     }
   } catch { /* ignore */ }
   return [];
+}
+
+// Gemini 멀티키 풀(GEMINI_API_KEYS, JSON 배열) — 계정을 계속 늘릴 예정이라 Groq처럼
+// 여러 키를 등록해두고 순환. 배열 설정이 없으면 기존 단일 GEMINI_API_KEY로 폴백
+// (다른 17곳의 호출부는 그대로 단일 키를 쓰므로 영향 없음).
+async function getGeminiKeys(): Promise<string[]> {
+  const keys: string[] = [];
+  try {
+    const raw = await getSetting('GEMINI_API_KEYS');
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) keys.push(...arr.filter(Boolean));
+    }
+  } catch { /* ignore */ }
+  const legacy = await getSetting('GEMINI_API_KEY');
+  if (legacy && !keys.includes(legacy)) keys.push(legacy);
+  return keys;
 }
 
 // Returns all Ollama Cloud API keys (multi-key pool + legacy single key)
@@ -183,36 +202,42 @@ async function callClaude(
 async function callGemini(
   messages: AIMessage[],
   model: string,
-  apiKey: string,
 ): Promise<string> {
-  const { GoogleGenerativeAI } = await import('@google/generative-ai');
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const keys = await getGeminiKeys();
+  if (!keys.length) throw new Error('Gemini: API 키 미설정');
 
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const systemMsg = messages.find((m) => m.role === 'system')?.content || '';
   const chatMsgs = messages.filter((m) => m.role !== 'system');
-
-  const geminiModel = genAI.getGenerativeModel({
-    model,
-    ...(systemMsg ? { systemInstruction: systemMsg } : {}),
-  });
-
-  // Build history (all but the last user message)
   const history = chatMsgs.slice(0, -1).map((m) => ({
     role: m.role === 'user' ? 'user' as const : 'model' as const,
     parts: [{ text: m.content }],
   }));
-
   const lastMsg = chatMsgs[chatMsgs.length - 1];
   if (!lastMsg) throw new Error('No user message provided');
 
-  const chat = geminiModel.startChat({ history });
-  // SDK 자체에 타임아웃이 없어 네트워크 이슈 시 무한 대기할 수 있음 — fallback 체인
-  // 전체가 막히는 걸 막기 위해 여기서 강제로 끊음(다른 provider 호출들과 동일하게 60초).
-  const result = await Promise.race([
-    chat.sendMessage(lastMsg.content),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini 타임아웃(60초)')), 60_000)),
-  ]);
-  return result.response.text().trim();
+  let lastErr: Error = new Error('Gemini: 사용 가능한 API 키가 없습니다.');
+  for (const apiKey of keys) {
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const geminiModel = genAI.getGenerativeModel({
+        model,
+        ...(systemMsg ? { systemInstruction: systemMsg } : {}),
+      });
+      const chat = geminiModel.startChat({ history });
+      // SDK 자체에 타임아웃이 없어 네트워크 이슈 시 무한 대기할 수 있음 — fallback 체인
+      // 전체가 막히는 걸 막기 위해 여기서 강제로 끊음(다른 provider 호출들과 동일하게 60초).
+      const result = await Promise.race([
+        chat.sendMessage(lastMsg.content),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini 타임아웃(60초)')), 60_000)),
+      ]);
+      return result.response.text().trim();
+    } catch (e) {
+      lastErr = e as Error;
+      continue; // 이 키가 쿼터 소진/무효면 다음 키로 순환
+    }
+  }
+  throw lastErr;
 }
 
 // Ollama Cloud에서 실제 사용 가능한 모델 목록 조회 (키별 캐시 1시간)
@@ -437,7 +462,7 @@ async function callSingleProvider(
   if (provider === 'claude') {
     return callClaude(messages, model, apiKey, maxTokens, temperature);
   } else if (provider === 'gemini') {
-    return callGemini(messages, model, apiKey);
+    return callGemini(messages, model);
   } else if (provider === 'groq') {
     return callGroq(messages, model, maxTokens, temperature);
   } else if (provider === 'ollama') {
