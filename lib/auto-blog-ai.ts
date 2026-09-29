@@ -598,6 +598,9 @@ export async function generateText(
   // ── 나머지 provider 순서대로 fallback ─────────────────────
   const fallbacks: Array<() => Promise<string | false>> = [];
 
+  // Groq을 다른 fallback들보다 먼저: 나머지 provider(Ollama/Gemini/Claude/OpenRouter/OpenAI)가
+  // 전부 동시에 죽었을 때(쿼터 소진 등, 실제로 발생했던 상황) 유일하게 살아있는 경로였다.
+  fallbacks.push(tryGroq);
   if (!isOllamaPreferred) fallbacks.push(() => tryOllama('qwen3.5'));
   if (!preferModel.startsWith('gemini') && preferModel !== 'gemini') fallbacks.push(tryGemini);
   if (!preferModel.startsWith('claude')) fallbacks.push(() => tryClaude());
