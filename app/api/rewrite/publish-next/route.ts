@@ -73,7 +73,11 @@ async function publishArticle(supabase: ReturnType<typeof createAdminClient>, ow
       article.source_id,
     );
 
-    const status = result.wordpressUrl ? 'published' : 'ready';
+    // 워드프레스 발행이 (예외 없이) 조용히 빈 링크로 끝나면 예전엔 'ready'로 되돌려서
+    // 다음 크론 때 또 뽑혀 SNS에 또 발행되는(그때도 워드프레스는 또 실패) 무한
+    // 반복이 실사용 중 확인됨 — SNS는 이미 이번 시도에서 나갔으니 'failed'로
+    // 끝내서 더 이상 재시도되지 않게 함.
+    const status = result.wordpressUrl ? 'published' : 'failed';
     await supabase
       .from('bossai_rewrite_articles')
       .update({
@@ -86,9 +90,11 @@ async function publishArticle(supabase: ReturnType<typeof createAdminClient>, ow
 
     return { ok: true, published: !!result.wordpressUrl, data: { id: article.id, title: article.rewritten_title, ...result } };
   } catch (e) {
+    // 예외가 나도 status를 안 건드리면 'ready'인 채로 남아 위와 똑같은 무한
+    // 재시도 루프에 빠짐 — 여기도 'failed'로 종결.
     await supabase
       .from('bossai_rewrite_articles')
-      .update({ published_urls: { publish_error: String(e).slice(0, 300) }, updated_at: new Date().toISOString() })
+      .update({ status: 'failed', published_urls: { publish_error: String(e).slice(0, 300) }, updated_at: new Date().toISOString() })
       .eq('id', article.id);
     return { ok: false, error: String(e), data: { id: article.id, title: article.rewritten_title } };
   }

@@ -370,6 +370,9 @@ function parseAiOutput(raw: string) {
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
   // AI 할루시네이션 링크 제거: <a href="...">텍스트</a> → 텍스트만 남김
   content = content.replace(/<a\s[^>]*>/gi, '').replace(/<\/a>/gi, '');
+  // <a> 태그로 안 감싸고 그냥 텍스트로 URL만 남기는 경우도 있어서(네이버 블로그가
+  // 본문 URL을 자동으로 링크카드화함) 순수 텍스트 URL도 제거 — img/속성값은 보존
+  content = content.replace(/(?<!["'])https?:\/\/[^\s<>"')]+/g, '');
   // 중복 단락 제거: 동일한 내용의 <p> 태그가 반복되면 첫 번째만 유지
   content = removeDuplicateParagraphs(content);
 
