@@ -287,10 +287,15 @@ async function searchInlineImages(query: string, count = 3): Promise<{ displayUr
       if (res.ok) {
         const data = await res.json();
         const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
-        if (items.length > 0) {
+        // item.thumbnail은 항상 네이버 자체 CDN(search.pstatic.net)을 거치는데, 이
+        // 프록시가 "전기통신사업법에 따라 불법촬영물등 여부를 검토중입니다" 플레이스홀더로
+        // 이미지를 대체하는 경우가 실사용 중 확인됨(특히 인물/연예 관련 검색) — 네이버
+        // 자체 호스팅이 아닌 원본 link를 배경용으로 사용해 이 문제를 피함.
+        const safeItems = items.filter((item: { link: string }) => !/(^|\.)(pstatic\.net|naver\.net|naver\.com)$/i.test(new URL(item.link).hostname));
+        if (safeItems.length > 0) {
           return {
-            displayUrls: items.slice(0, count).map((item: { link: string }) => item.link),
-            thumbUrl: items[0].thumbnail as string | undefined,
+            displayUrls: safeItems.slice(0, count).map((item: { link: string }) => item.link),
+            thumbUrl: safeItems[0].link,
           };
         }
       }

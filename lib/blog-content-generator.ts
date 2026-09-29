@@ -64,11 +64,16 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
       if (res.ok) {
         const data = await res.json();
         const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
-        if (items.length > 0) {
+        // 네이버 자체 호스팅 이미지(blogfiles/postfiles/imgnews.pstatic.net,
+        // *.naver.net 등)는 "전기통신사업법에 따라 불법촬영물등 여부를 검토중입니다"
+        // 플레이스홀더로 대체되는 경우가 실사용 중 확인됨(특히 인물/연예 관련 검색) —
+        // 배경 이미지 후보에서 네이버 자체 호스팅 결과는 제외.
+        const safeItems = items.filter((item: { link: string }) => !/(^|\.)(pstatic\.net|naver\.net|naver\.com)$/i.test(new URL(item.link).hostname));
+        if (safeItems.length > 0) {
           // 배경 이미지는 저해상도 thumbnail 대신 원본 link를 써야 화질이 안 뭉개짐
           return {
-            displayUrls: items.slice(0, count).map((item: { link: string }) => item.link),
-            thumbUrl: items[0].link,
+            displayUrls: safeItems.slice(0, count).map((item: { link: string }) => item.link),
+            thumbUrl: safeItems[0].link,
           };
         }
       }
