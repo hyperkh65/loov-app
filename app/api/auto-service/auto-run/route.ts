@@ -378,9 +378,13 @@ function parseAiOutput(raw: string) {
   };
   const rawTitle = extract('TITLE');
   const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle).trim().slice(0, 60);
-  const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
+  let meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+  // AI가 지시문 자리표시자를 그대로 뱉어낸 경우 본문에서 재추출
+  if (!meta_description || /^[([].*[)\]]$/.test(meta_description) || /meta description|characters korean|글자 이내|자 이내로 써/i.test(meta_description)) {
+    meta_description = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
   return { title, meta_description, content };
 }
 

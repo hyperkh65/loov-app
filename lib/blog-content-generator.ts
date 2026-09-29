@@ -263,7 +263,7 @@ export function parseAiOutput(raw: string) {
   const rawTitle = extract('TITLE');
   const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle)
     .replace(/\*+/g, '').replace(/^#+\s*/, '').trim().slice(0, 60);
-  const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
+  let meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
 
@@ -283,6 +283,14 @@ export function parseAiOutput(raw: string) {
       // 순수 마크다운 — 전체 변환
       content = markdownToHtml(rawC);
     }
+  }
+
+  // AI가 지시문 자리표시자를 그대로 뱉어낸 경우(예: "(meta description 130-160 characters Korean)")
+  // 그대로 발행되지 않도록, 괄호로 통째로 감싸져 있거나 지시문 단어가 섞여 있으면 본문에서 재추출.
+  const isPlaceholderLeak = (s: string) =>
+    !s || /^[([].*[)\]]$/.test(s) || /meta description|characters korean|글자 이내|자 이내로 써/i.test(s);
+  if (isPlaceholderLeak(meta_description)) {
+    meta_description = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
   }
 
   return { title, meta_description, content, keywords };

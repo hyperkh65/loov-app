@@ -410,8 +410,11 @@ function parseAiOutput(raw: string) {
   const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle).trim().slice(0, 60);
 
   // 메타설명: 첫 줄만, 문장 경계에서 자름
-  const rawMeta = (extract('META').split('\n').find(l => l.trim()) || '').trim();
-  const meta_description = rawMeta.length <= 160 ? rawMeta : (() => {
+  const rawMetaExtracted = (extract('META').split('\n').find(l => l.trim()) || '').trim();
+  // AI가 지시문 자리표시자를 그대로 뱉어낸 경우 본문에서 재추출
+  const isMetaPlaceholderLeak = !rawMetaExtracted || /^[([].*[)\]]$/.test(rawMetaExtracted) || /meta description|characters korean|글자 이내|자 이내로 써/i.test(rawMetaExtracted);
+  const rawMeta = rawMetaExtracted;
+  let meta_description = rawMeta.length <= 160 ? rawMeta : (() => {
     const cut = rawMeta.slice(0, 160);
     const lastEnd = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!'), cut.lastIndexOf('?'), cut.lastIndexOf('。'));
     if (lastEnd > 80) return cut.slice(0, lastEnd + 1);
@@ -422,6 +425,10 @@ function parseAiOutput(raw: string) {
   // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
   let content = extract('CONTENT');
   content = content.replace(/===KEYWORDS===[\s\S]*/i, '').trim();
+
+  if (isMetaPlaceholderLeak) {
+    meta_description = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
 
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);

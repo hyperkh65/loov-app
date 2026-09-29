@@ -363,7 +363,7 @@ function parseAiOutput(raw: string) {
   const title = (rawTitle.split('\n').find(l => l.trim()) || rawTitle).trim().slice(0, 60);
 
   // 메타설명: 첫 줄만
-  const meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
+  let meta_description = (extract('META').split('\n').find(l => l.trim()) || '').trim().slice(0, 160);
 
   // 콘텐츠: ===KEYWORDS=== 이후 잔류 텍스트 제거
   let content = extract('CONTENT');
@@ -372,6 +372,11 @@ function parseAiOutput(raw: string) {
   content = content.replace(/<a\s[^>]*>/gi, '').replace(/<\/a>/gi, '');
   // 중복 단락 제거: 동일한 내용의 <p> 태그가 반복되면 첫 번째만 유지
   content = removeDuplicateParagraphs(content);
+
+  // AI가 지시문 자리표시자를 그대로 뱉어낸 경우 본문에서 재추출
+  if (!meta_description || /^[([].*[)\]]$/.test(meta_description) || /meta description|characters korean|글자 이내|자 이내로 써/i.test(meta_description)) {
+    meta_description = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
 
   const keywordsRaw = extract('KEYWORDS');
   const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
