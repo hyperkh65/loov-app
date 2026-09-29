@@ -226,7 +226,9 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
   // 기존 gemini-2.0-flash-lite/gemini-2.0-flash/gemini-1.5-flash가 전부 구글 쪽에서
   // 폐기(404)된 걸 실제 API 응답으로 확인 — "-latest" 별칭은 구글이 알아서 최신
   // 모델로 갱신해주므로 이런 폐기 이슈가 재발하지 않음
-  const GEMINI_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+  // gemini-2.5-flash-lite는 구글 쪽에서 404(폐기)로 확인돼 목록에서 제외하고
+  // gemini-2.5-flash로 교체 — 실사용량이 거의 없어(AI Studio 대시보드 기준) 여유 많음
+  const GEMINI_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash'];
   const modelErrors: string[] = [];
   for (const model of GEMINI_MODELS) {
     const res = await fetch(
