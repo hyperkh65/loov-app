@@ -84,8 +84,12 @@ export async function GET(req: NextRequest) {
   // ── 풀블리드 매거진 디자인 (배경 이미지 있을 때) ────────────────────────
   if (bgUrl) {
     if (isBlog) {
-      // 1200×628 — 글자 크게, 전문 뉴스 스타일
-      const fs = len <= 12 ? 84 : len <= 20 ? 72 : len <= 28 ? 62 : len <= 36 ? 54 : 48;
+      // 1200×628 — 뉴스 쇼츠 썸네일 스타일: 작은 도입줄 + 훨씬 큰 임팩트줄(둘 다 흰색)
+      const subLen = sub.length;
+      const fs = sub
+        ? (len <= 14 ? 50 : len <= 22 ? 44 : len <= 30 ? 40 : 36)
+        : (len <= 12 ? 84 : len <= 20 ? 72 : len <= 28 ? 62 : len <= 36 ? 54 : 48);
+      const subFs = subLen <= 8 ? 108 : subLen <= 12 ? 92 : subLen <= 16 ? 78 : subLen <= 22 ? 66 : 56;
 
       return new ImageResponse(
         (
@@ -167,15 +171,20 @@ export async function GET(req: NextRequest) {
                 {title}
               </div>
 
-              {/* 서브 제목 — 더 크고 선명하게 */}
+              {/* 임팩트 줄 — 도입줄보다 훨씬 크게, 흰색, 끝에 강조 점 */}
               {sub && (
                 <div style={{
-                  fontSize: 34, fontWeight: 700,
-                  color: t.accent2, letterSpacing: '-0.01em',
-                  display: 'flex', flexWrap: 'wrap', wordBreak: 'keep-all',
-                  textShadow: '0 2px 12px rgba(0,0,0,1)',
+                  fontSize: subFs, fontWeight: 900,
+                  color: 'white', lineHeight: 1.15, letterSpacing: '-0.03em',
+                  display: 'flex', flexWrap: 'wrap', alignItems: 'center', wordBreak: 'keep-all',
+                  textShadow: '0 2px 10px rgba(0,0,0,1), 0 6px 34px rgba(0,0,0,0.98), 3px 3px 0 rgba(0,0,0,0.9)',
                 }}>
                   {sub}
+                  <div style={{
+                    width: Math.round(subFs * 0.16), height: Math.round(subFs * 0.16),
+                    borderRadius: '50%', background: t.accent, display: 'flex',
+                    marginLeft: 14, boxShadow: `0 0 16px ${t.accent}, 0 0 32px ${t.accent}90`,
+                  }} />
                 </div>
               )}
 
