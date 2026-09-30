@@ -5,8 +5,21 @@ import { fetchFeedItems } from '@/lib/rewrite-site-scraper';
 import { generateText } from '@/lib/auto-blog-ai';
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'crypto';
+import { KEYWORD_SEED_BANK } from '@/lib/keyword-seed-bank';
 
 export const maxDuration = 60;
+
+// 카테고리×월별로 AI가 미리 생성해둔 대량 시드뱅크(수백~수천개)에서 매 사이클마다
+// 일부만 무작위로 뽑아 쓴다 — 예전엔 카테고리당 월 5~7개 고정 시드만 있어서
+// 매번 같은 걸 자동완성/광고API에 넣다 보니 발굴 결과도 계속 비슷한 주제로
+// 수렴하는 문제가 있었음(실사용 중 finance 카테고리가 연금 계열로 쏠린 사례
+// 확인). 전체를 한 번에 다 쓰면 API 호출량이 60s maxDuration을 넘기니 일부만 샘플.
+function sampleSeedBank(category: string, month: number, n: number): string[] {
+  const pool = KEYWORD_SEED_BANK[category]?.[month] || [];
+  if (!pool.length) return [];
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
 
 // ── 월별 진입 시드 (최종 키워드 아님 — 자동완성 입력용 출발점) ─────────────
 // 카테고리를 다양하게 섞어 편향 없이 발굴
@@ -631,16 +644,18 @@ export async function POST(req: NextRequest) {
       googleTrendsSeeds(TREND_FINANCE_MATCH),
       financeNewsHeadlineSeeds(),
     ]);
+    const bankSeeds = sampleSeedBank('finance', month, 12);
     const seenSeed = new Set<string>();
-    entrySeeds = [...trendSeeds, ...newsSeeds, ...(FINANCE_ENTRY_SEEDS[month] || FINANCE_ENTRY_SEEDS[4])]
+    entrySeeds = [...trendSeeds, ...newsSeeds, ...bankSeeds, ...(FINANCE_ENTRY_SEEDS[month] || FINANCE_ENTRY_SEEDS[4])]
       .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
   } else if (category === 'tech') {
     // 아직 전자제품/AI 전용 뉴스 소스가 없어서(B 시드 미지원) 구글트렌드 실시간 +
     // 캘린더 시드 + 현재 연도 기준 정확한 최신 모델명(아이폰18 등) 결합.
     // 나중에 전용 리라이팅 소스 생기면 finance처럼 B도 추가 가능.
     const trendSeeds = await googleTrendsSeeds(TREND_TECH_MATCH);
+    const bankSeeds = sampleSeedBank('tech', month, 12);
     const seenSeed = new Set<string>();
-    entrySeeds = [...trendSeeds, ...currentYearModelSeeds(), ...(TECH_ENTRY_SEEDS[month] || TECH_ENTRY_SEEDS[9])]
+    entrySeeds = [...trendSeeds, ...currentYearModelSeeds(), ...bankSeeds, ...(TECH_ENTRY_SEEDS[month] || TECH_ENTRY_SEEDS[9])]
       .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; });
   } else if (category === 'twenties') {
     // 20대가 실제로 모이는 공개 커뮤니티(에펨코리아/더쿠/네이트판) 인기글 +
@@ -650,12 +665,14 @@ export async function POST(req: NextRequest) {
       communityTrendingSeeds(),
       googleTrendsSeeds(TWENTIES_MATCH),
     ]);
+    const bankSeeds = sampleSeedBank('twenties', month, 15);
     const seenSeed = new Set<string>();
-    entrySeeds = [...communitySeeds, ...trendSeeds, ...(TWENTIES_ENTRY_SEEDS[month] || TWENTIES_ENTRY_SEEDS[9])]
+    entrySeeds = [...communitySeeds, ...trendSeeds, ...bankSeeds, ...(TWENTIES_ENTRY_SEEDS[month] || TWENTIES_ENTRY_SEEDS[9])]
       .filter(s => { const k = s.trim(); if (!k || seenSeed.has(k)) return false; seenSeed.add(k); return true; })
       .slice(0, 40); // 커뮤니티 원문 제목이 많을 수 있어 상한
   } else {
-    entrySeeds = ENTRY_SEEDS[month] || ENTRY_SEEDS[4];
+    const bankSeeds = sampleSeedBank('lifestyle', month, 15);
+    entrySeeds = bankSeeds.length ? bankSeeds : (ENTRY_SEEDS[month] || ENTRY_SEEDS[4]);
   }
 
   const seen = new Set<string>();
