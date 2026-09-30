@@ -233,7 +233,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
       const dynamic = config.dynamic_category
         ? await pickDynamicKeywordByCategory(schedule, config.dynamic_category)
         : null;
-      keyword = dynamic || await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate');
+      keyword = dynamic || await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate') || await pickKeywordForUser(schedule.user_id);
     } else {
       keyword = await pickKeywordForUser(schedule.user_id);
     }
