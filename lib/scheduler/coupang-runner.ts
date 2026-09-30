@@ -4,6 +4,9 @@ import { getGoldboxProducts, searchProducts, createAffiliateLinks, scrapeProduct
 import { getSetting } from '@/lib/get-setting';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToWordPress, getWpCredentials } from './blog-runner';
+import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
+import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
+import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, CoupangAutoConfig } from './index';
 
@@ -154,6 +157,7 @@ export async function buildProductBlogPost(
   aiModel: string,
   scraped: { reviews: { content: string }[] } | null,
   comparisonProducts: ComparisonProduct[],
+  priceDropNote?: string | null,
 ): Promise<{ title: string; content: string }> {
   const realReviews = (scraped?.reviews || []).map(r => r.content).filter(Boolean).slice(0, 5);
 
@@ -178,7 +182,7 @@ export async function buildProductBlogPost(
 상품명: ${product.productName}
 가격: ${product.productPrice.toLocaleString()}원${product.discountRate ? ` (정가 대비 ${product.discountRate}% 할인 중 — 실데이터, 강조할 것)` : ''}
 카테고리: ${product.categoryName || '미상'}
-
+${priceDropNote ? `${priceDropNote}\n` : ''}
 ${comparisonBlock}
 
 ${reviewBlock}
@@ -190,6 +194,11 @@ ${bannedPhrases.map(p => `"${p}"`).join(', ')}]
 2. 가격/할인/비교 근거 섹션: 위에 준 실제 가격·할인율·비교 상품 데이터를 근거로 왜 지금이 살 타이밍인지 짧게(2~3문장). 이 h2 바로 뒤에 비교 이미지 그리드가 자동 삽입되니, 그리드를 직접 언급하기보다 뒤에 이어질 내용을 자연스럽게 열어주는 정도로 짧게 써라. 주어지지 않은 숫자는 절대 지어내지 마라.
 3. 장점 섹션: 장점부터 늘어놓지 말고, 먼저 이 제품군을 써본 사람들이 가장 많이 공감할 만한 불만/불편 포인트 하나를 짚어 공감대를 형성한 뒤, 그걸 이 제품이 어떻게 해소하는지로 자연스럽게 연결. 이후 장점 3~4가지는 용량·두께·mm 같은 스펙 나열이 아니라 "그래서 뭐가 좋아졌는지" 결과 중심으로, 가능하면 "전에는 이랬는데 지금은 이래요" 식 이전/이후 비교 문장으로. 위 리뷰 데이터가 있으면 우선 반영.
 4. 추천 대상 섹션: 구체적인 대상 3~4개 bullet.
+4-1. 정직한 단점 섹션(짧게, 2~3문장): 장점만 나열하면 오히려 신뢰가 떨어진다.
+   "이런 분들껜 안 맞을 수도 있어요" 같은 소제목으로, 이 제품군 특성상 합리적으로
+   추론 가능한 단점/안 맞는 상황 하나를 정직하게 짚어라. 없는 단점을 지어내지 말고,
+   너무 사소해서 신뢰도 안 떨어지는 가짜 단점("색상이 마음에 안 들 수도")도 금지 —
+   실제로 살까 말까 고민하게 만들 만한 수준으로.
 5. {{CTA_BUTTON}} ← 이 토큰을 정확히 이 자리에 한 줄로 넣어라 (구매 버튼이 자동 삽입됨).
 6. 결론 문단(길게, 새로운 관점 추가): "링크는 아래에 있습니다" 같은 뻔한 결제 유도 대신, 지금 안 사면 계속 손해를 보게 된다는 걸 읽는 사람이 스스로 판단하게 만드는 문장으로 마무리 + 마지막에 {{CTA_BUTTON}} 토큰 한 번 더.
 
@@ -286,7 +295,11 @@ export async function runCoupangAuto(
     ? products.filter(p => (p.discountRate || 0) >= config.min_discount!)
     : products
   ).filter(p => p.productImage);
-  const ranked = [...(pool.length ? pool : products)].sort((a, b) => (b.discountRate || 0) - (a.discountRate || 0));
+  // "할인율"은 공급 쪽 신호일 뿐 실제 구매 의도와 무관 — 이미 있는 키워드 발굴
+  // 캐시(구매의도 매칭 포함)와 겹치는 상품에 가점을 줘서 수요 신호를 섞는다.
+  const demandKeywords = await fetchDemandKeywords();
+  const rankScore = (p: CoupangProduct) => (p.discountRate || 1) * (matchesDemand(p.productName, demandKeywords) ? 1.5 : 1);
+  const ranked = [...(pool.length ? pool : products)].sort((a, b) => rankScore(b) - rankScore(a));
   let candidates = ranked.filter(p => !recentProductIds.includes(String(p.productId)));
 
   // 골드박스는 하루 몇 번 안 바뀌는 소규모 목록이라, 발행 주기를 짧게(매시간
@@ -300,7 +313,7 @@ export async function runCoupangAuto(
     const extra = await searchProducts(kw, accessKey, secretKey).catch(() => []);
     candidates = extra
       .filter(p => p.productImage && !recentProductIds.includes(String(p.productId)))
-      .sort((a, b) => (b.discountRate || 0) - (a.discountRate || 0));
+      .sort((a, b) => rankScore(b) - rankScore(a));
   }
   if (!candidates.length) {
     throw new Error('오늘 발행 가능한 새 상품이 없어 이번 회차는 건너뜀(중복 방지)');
@@ -322,13 +335,37 @@ export async function runCoupangAuto(
     if (links[0]) affiliateUrl = links[0];
   } catch { /* 폴백: 원본 URL */ }
 
-  // SNS 텍스트 생성
+  // 실데이터 긴급성 — 어제 스냅샷과 비교해서 진짜 가격 하락이면 문구에 반영,
+  // 아니면 언급 안 함(가짜 긴급성 금지). 오늘 스냅샷은 다음 회차 비교용으로 저장.
+  const priceDropNote = await getPriceDropNote('coupang', String(product.productId), product.productPrice);
+  recordPriceSnapshot('coupang', String(product.productId), product.productPrice).catch(() => {});
+
+  // SNS 텍스트 생성 — 앵글을 매번 하나 골라서(할인/비교/후기/상황) 프롬프트에 반영하고
+  // 아래 클릭추적 go-link에 태깅해둔다 — 나중에 클릭 데이터로 어떤 앵글이 실제로
+  // 잘 먹히는지 비교하기 위함(추측이 아니라 A/B 관점).
+  const contentAngle = pickContentAngle();
+  const ANGLE_GUIDE: Record<string, string> = {
+    discount: '이 가격이 왜 의외인지(평소·비슷한 상품 대비)를 중심으로.',
+    compare: '다른 선택지와 뭐가 다른지 비교하는 관점으로(구체적 스펙 지어내지 말 것).',
+    review: '"이 제품군을 써본 사람들 사이에서 자주 나오는 얘기는" 식으로 일반화된 여론 톤으로(특정 개인의 후기를 지어내지 말 것).',
+    use_case: '이 상품이 필요해지는 구체적 상황(언제·어떤 불편) 묘사에 집중.',
+  };
   const TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
   const prompt = `너는 SNS 마케팅 전문가야. 쿠팡 파트너스 상품을 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
 반드시 한국어로만 작성하고, 중국어·일본어 등 외국 문자 절대 사용 금지.
 
 상품명: ${product.productName}
 가격: ${product.productPrice.toLocaleString()}원${(product as typeof product & { discountRate?: number }).discountRate ? ` (-${(product as typeof product & { discountRate: number }).discountRate}%)` : ''}
+${priceDropNote ? `${priceDropNote}\n` : ''}
+[클릭을 유도하는 훅 규칙 — 반드시 지킬 것]
+1. 첫 1~2줄엔 상품명·브랜드명을 절대 넣지 마라. 상황이나 변화만 먼저 던지고
+   "이게 뭔지"는 뒤에서 밝혀라. 상품명을 먼저 말하는 순간 광고로 읽혀서
+   궁금증이 사라진다.
+2. 막연한 칭찬("진짜 좋아요", "추천합니다") 대신 구체적이고 의외인 디테일을
+   최소 하나 넣어라(전후 비교, 의외의 결과, 구체적 상황 묘사 등).
+3. 이번 글의 앵글: ${contentAngle}. ${ANGLE_GUIDE[contentAngle]}
+4. 가격/할인 정보 등 "정확히 얼마인지"는 있어도 되지만, 다 풀어서 결론까지
+   내려주지 말고 "댓글에 링크 있어요" 쪽으로 궁금증을 넘겨라.
 
 [플랫폼별 작성 규칙]
 - THREADS: 줄바꿈으로 리듬감. 2~4줄 짧은 문장. 이모지 1~2개. URL 없이 (댓글로 추가)
@@ -355,7 +392,16 @@ export async function runCoupangAuto(
     instagram: getSection(aiText, 'INSTAGRAM', TAGS),
   };
 
-  const comment = `🔗 상품 링크: ${affiliateUrl}\n\n${DISCLOSURE}`;
+  const commentGoLink = await createGoLink({
+    platform: 'coupang',
+    networkProductId: String(product.productId),
+    productName: product.productName,
+    destinationUrl: affiliateUrl,
+    scheduleId: schedule.id,
+    contentChannel: 'sns_comment',
+    contentAngle,
+  });
+  const comment = `🔗 상품 링크: ${commentGoLink}\n\n${DISCLOSURE}`;
 
   // 발행 대상 — 미지정 시 기존 동작(SNS만)과 동일하게 하위호환
   const targets = config.publish_targets?.length ? config.publish_targets : ['sns'];
@@ -427,7 +473,16 @@ export async function runCoupangAuto(
       // 실측: qwen3 기본값이 Ollama 무료 모델로 라우팅되면서 "partout", "questi점" 같은
       // 외국어 단어 혼입이 반복 확인됨. Claude 키가 설정돼 있어 기본값을 claude로 올림
       // (config.ai_model로 언제든 재정의 가능 — 기존 SNS 텍스트 생성은 qwen3 그대로 유지).
-      const { title, content } = await buildProductBlogPost(product, affiliateUrl, config.ai_model || 'claude', scraped, comparisonProducts);
+      const ctaGoLink = await createGoLink({
+        platform: 'coupang',
+        networkProductId: String(product.productId),
+        productName: product.productName,
+        destinationUrl: affiliateUrl,
+        scheduleId: schedule.id,
+        contentChannel: 'wordpress_cta',
+        contentAngle,
+      });
+      const { title, content } = await buildProductBlogPost(product, ctaGoLink, config.ai_model || 'claude', scraped, comparisonProducts, priceDropNote);
       const { url, username, appPassword } = await getWpCredentials(config.wp_site_id);
       wordpressUrl = (await publishToWordPress(url, username, appPassword, title, content, product.productImage || null)).link;
       results.push(`wordpress: 발행 완료 (${wordpressUrl})`);
