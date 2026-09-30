@@ -7,16 +7,15 @@ import { publishToWordPress, getWpCredentials } from './blog-runner';
 import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
+import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, CoupangAutoConfig } from './index';
 
 const DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
-// 스레드/인스타는 계정이 여러 개 연결돼 있어 전부에 발행하면 여행/정보성 계정까지
-// 쿠팡 상품 광고로 도배돼 계정 전체 도달률이 깎임 — 쿠팡 전용 계정으로 고정.
+// 스레드/인스타는 토스/블로그 크로스포스팅과 같은 "2dayskr 계열" 로테이션 풀을
+// 공유한다(lib/sns/account-rotation.ts) — 계정 하나에 몰리지 않게 서로 조율됨.
 // 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
-const ACCOUNT_ROUTED_PLATFORMS = ['threads', 'instagram'];
-const COUPANG_SNS_ACCOUNTS = ['@2days.kr'];
 
 async function getSnsConnections(userId: string): Promise<Array<{ platform: string; platform_user_id: string; platform_username: string; access_token: string; is_active: boolean }>> {
   const supabase = createAdminClient();
@@ -412,12 +411,16 @@ ${priceDropNote ? `${priceDropNote}\n` : ''}
 
   if (platforms.length) {
     const connections = await getSnsConnections(schedule.user_id);
+    const admin = createAdminClient();
     for (const platform of platforms) {
-      const conns = connections.filter(c => {
-        if (c.platform !== platform) return false;
-        if (!ACCOUNT_ROUTED_PLATFORMS.includes(platform)) return true;
-        return COUPANG_SNS_ACCOUNTS.includes(c.platform_username || '');
-      });
+      let conns: typeof connections;
+      if (platform === 'threads' || platform === 'instagram') {
+        const picked = await pickRotatedAccount(admin, 'default', platform, connections);
+        conns = picked ? connections.filter(c => c.platform === platform && c.platform_user_id === picked.platform_user_id) : [];
+        if (!conns.length) { results.push(`${platform}: 계정 전부 최근에 발행됨 — 이번 회차 스킵`); continue; }
+      } else {
+        conns = connections.filter(c => c.platform === platform);
+      }
       if (!conns.length) { results.push(`${platform}: 계정 미연결`); continue; }
 
       const text = textMap[platform];
@@ -433,6 +436,9 @@ ${priceDropNote ? `${priceDropNote}\n` : ''}
             text,
             product.productImage ? [product.productImage] : undefined,
           );
+          if (platform === 'threads' || platform === 'instagram') {
+            logSnsPost(admin, platform, conn.platform_user_id).catch(() => {});
+          }
           // 제휴링크를 댓글로
           try {
             await postCommentOnOwnPost(platform as Platform, conn.access_token, conn.platform_user_id, postResult.id, comment);
