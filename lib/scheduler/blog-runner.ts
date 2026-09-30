@@ -115,16 +115,15 @@ export interface WordPressPublishResult {
   featuredImageUrl: string | null;
 }
 
-// 2days.kr(투데이즈 메인 사이트)는 테마가 헤더/사이드바에만 광고를 넣고 글 본문
-// 안에는 광고가 없어서, 발행하는 본문에 직접 광고 코드를 삽입한다(9/26~27 수익이
-// 좋았던 기준 상태로 복원 + 본문 광고 3곳으로 확대). 다른 사이트는 wp-auto가 설치한
-// mu-plugin(aboda-adsense.php)이 이미 광고를 넣으므로 여기서 건드리지 않는다.
+// 2days.kr 계열(메인+서브도메인)은 테마/플러그인이 헤더/사이드바에만 광고를 넣고 글 본문
+// 안에는 광고가 없거나 적어서, 발행하는 본문에 직접 광고 코드를 삽입한다(9/26~27 수익이
+// 좋았던 기준 상태로 복원 + 본문 광고 3곳으로 확대). aboda.kr/miracool.co.kr은 이미 본문 광고가 충분해 건드리지 않는다.
 // 슬롯은 같은 계정(ca-pub-8940400388075870)에서 이미 검증된 기존 슬롯만 재사용.
 const TWODAYS_BODY_AD_SLOTS = ['4238744126', '1739739148', '4238744126'];
 function injectAdSenseForSite(wpUrl: string, content: string): string {
   let host: string;
   try { host = new URL(wpUrl).host; } catch { return content; }
-  if (host !== '2days.kr') return content;
+  if (host !== '2days.kr' && !host.endsWith('.2days.kr')) return content;
   const ad = (slot: string, first: boolean) => `<div class="loov-ad" style="margin:20px auto;text-align:center;clear:both;">
 ${first ? '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8940400388075870" crossorigin="anonymous"></script>\n' : ''}<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-8940400388075870" data-ad-slot="${slot}" data-ad-format="auto" data-full-width-responsive="true"></ins>
 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
