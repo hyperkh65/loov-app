@@ -6,6 +6,7 @@ import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
+import { translateAndCrossPost } from '@/lib/ai-translate';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
@@ -114,24 +115,29 @@ export interface WordPressPublishResult {
   featuredImageUrl: string | null;
 }
 
-// 2days.kr(투데이즈 메인 사이트)는 홈페이지엔 애드센스가 있는데 실제 글
-// 페이지에는 광고 삽입 메커니즘이 전혀 없어서(테마/플러그인 확인 불가 —
-// 관리자 로그인 정보 없음) 방문자가 실제로 읽는 글에 광고가 안 나가고
-// 있었음(실사용 중 확인) — 기존 계정으로 워드프레스 관리자 설정은 못
-// 건드리니, 발행하는 본문 자체에 광고 코드를 직접 삽입. 같은 애드센스
-// 계정(ca-pub-8940400388075870)을 이미 다른 사이트에서 쓰고 있어 그대로
-// 재사용, 슬롯 ID도 기존에 검증된 것 재사용.
-// 2026-09-30: 2days.kr 하나에만 하드코딩돼 있던 걸 자동발행되는 나머지
-// 2026-09-30 전체 원복: 이 함수를 추가할 때 "이 사이트들에 광고가 아예 안
-// 붙고 있다"고 판단했는데 잘못된 전제였음 — app/api/wp-auto/setup/route.ts가
-// wp-auto로 만든 사이트 전부에 mu-plugins/aboda-adsense.php(슬롯 4~5개,
-// data-ad-slot="4238744126" 포함)를 이미 자동 설치해두고 있어서, 이 함수가
-// 사실상 "이미 있던 광고 위에 같은 슬롯을 또 하나 중복 삽입"하는 역할만
-// 했음(실사용 확인: 2days.kr/finance/aboda/miracool 전부 4238744126이 한
-// 페이지에 2번씩 렌더링됨, 총 슬롯 8개). 광고 밀도 과다로 구글이 미충전
-// 처리하는 게 "매출이 거의 안 느는" 증상의 유력한 원인이라 판단해 전체 원복.
-function injectAdSenseForSite(_wpUrl: string, content: string): string {
-  return content;
+// 2days.kr(투데이즈 메인 사이트)는 테마가 헤더/사이드바에만 광고를 넣고 글 본문
+// 안에는 광고가 없어서, 발행하는 본문에 직접 광고 코드를 삽입한다(9/26~27 수익이
+// 좋았던 기준 상태로 복원 + 본문 광고 3곳으로 확대). 다른 사이트는 wp-auto가 설치한
+// mu-plugin(aboda-adsense.php)이 이미 광고를 넣으므로 여기서 건드리지 않는다.
+// 슬롯은 같은 계정(ca-pub-8940400388075870)에서 이미 검증된 기존 슬롯만 재사용.
+const TWODAYS_BODY_AD_SLOTS = ['4238744126', '1739739148', '4238744126'];
+function injectAdSenseForSite(wpUrl: string, content: string): string {
+  let host: string;
+  try { host = new URL(wpUrl).host; } catch { return content; }
+  if (host !== '2days.kr') return content;
+  const ad = (slot: string, first: boolean) => `<div class="loov-ad" style="margin:20px auto;text-align:center;clear:both;">
+${first ? '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8940400388075870" crossorigin="anonymous"></script>\n' : ''}<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-8940400388075870" data-ad-slot="${slot}" data-ad-format="auto" data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>`;
+  const parts = content.split('</p>');
+  const n = parts.length - 1; // 문단 수
+  if (n < 1) return ad(TWODAYS_BODY_AD_SLOTS[0], true) + content;
+  // 1번째 문단 뒤 / 중간 / 마지막 직전 — 짧은 글은 앞쪽 광고만
+  const at = new Map<number, string>();
+  at.set(1, ad(TWODAYS_BODY_AD_SLOTS[0], true));
+  if (n >= 5) at.set(Math.floor(n / 2), ad(TWODAYS_BODY_AD_SLOTS[1], false));
+  if (n >= 9) at.set(n - 1, ad(TWODAYS_BODY_AD_SLOTS[2], false));
+  return parts.map((part, i) => (i < n ? part + '</p>' + (at.get(i + 1) || '') : part)).join('');
 }
 
 // 2days.kr는 카테고리를 안 정해주면 기본값인 "미분류"(id 1)로 들어가는데,
@@ -284,8 +290,8 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   if (publishedUrl) {
     publishToWordpressCom({ title, content, articleUrl: publishedUrl }).catch(() => {});
     publishToGithubPages({ title, content, articleUrl: publishedUrl }).catch(() => {});
-    // engmag/japmag 자동 번역 크로스발행은 토큰 소모가 커서 중단(2026-09-29) —
-    // 블로그자동화(수동)에서 engmag.2days.kr/japmag.2days.kr을 직접 선택했을 때만 발행됨.
+    // 영어/일본어로 번역해서 engmag.2days.kr / japmag.2days.kr에도 크로스 발행
+    translateAndCrossPost({ title, content, representative_image_url: imageUrl }).catch(() => {});
     // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
     // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
     // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
