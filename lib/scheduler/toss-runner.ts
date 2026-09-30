@@ -12,9 +12,8 @@ import { fetchTodayDeals, fetchBestSelling, createShareLink, type TossProduct } 
 import { callAISimple } from '@/lib/ai-call';
 import { createGoLink, pickContentAngle, type ContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
+import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
 
-const AFFILIATE_IG_PLATFORM_USER_ID = '34489947500650071'; // @2dayskr
-const AFFILIATE_THREADS_PLATFORM_USER_ID = '25873039292318366'; // @2days.kr (표시명 "투데이s")
 const TOSS_DISCLOSURE = '이 포스팅은 토스쇼핑 제휴 마케팅 파트너 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
 // 하루특가는 실제 종료 시각(endAt)이 있어서 진짜 긴급성을 문구에 쓸 수 있음
@@ -125,15 +124,15 @@ export async function runTossAuto(userId: string, scheduleId?: string): Promise<
   });
   const linkComment = buildLinkComment(goLink);
 
+  // 쿠팡/블로그 크로스포스팅과 같은 "2dayskr 계열" 로테이션 풀 공유 —
+  // 계정 하나에 몰리지 않게 서로 조율됨(lib/sns/account-rotation.ts).
+  const { data: connections } = await admin.from('sns_connections')
+    .select('platform, platform_user_id, access_token')
+    .eq('user_id', userId).eq('is_active', true)
+    .in('platform', ['instagram', 'threads']);
   const [igConn, threadsConn] = await Promise.all([
-    admin.from('sns_connections').select('access_token, platform_user_id')
-      .eq('user_id', userId).eq('platform', 'instagram')
-      .eq('platform_user_id', AFFILIATE_IG_PLATFORM_USER_ID).eq('is_active', true).single()
-      .then(r => r.data),
-    admin.from('sns_connections').select('access_token, platform_user_id')
-      .eq('user_id', userId).eq('platform', 'threads')
-      .eq('platform_user_id', AFFILIATE_THREADS_PLATFORM_USER_ID).eq('is_active', true).single()
-      .then(r => r.data),
+    pickRotatedAccount(admin, 'default', 'instagram', connections || []),
+    pickRotatedAccount(admin, 'default', 'threads', connections || []),
   ]);
 
   const results: string[] = [];
@@ -142,6 +141,7 @@ export async function runTossAuto(userId: string, scheduleId?: string): Promise<
     try {
       const igImage = await toInstagramSafeImage(picked.thumbnailUrl).catch(() => picked.thumbnailUrl);
       const pub = await postToPlatformWithMedia('instagram', igConn.access_token, igConn.platform_user_id, caption, [igImage]);
+      logSnsPost(admin, 'instagram', igConn.platform_user_id).catch(() => {});
       let note = '';
       try { await postCommentOnOwnPost('instagram', igConn.access_token, igConn.platform_user_id, pub.id, linkComment); }
       catch (e) { note = ` / 링크 댓글 실패 — ${(e as Error).message?.slice(0, 80)}`; }
@@ -150,12 +150,13 @@ export async function runTossAuto(userId: string, scheduleId?: string): Promise<
       results.push(`인스타 실패 — ${(e as Error).message?.slice(0, 150)}`);
     }
   } else {
-    results.push('인스타 연결 없음, 스킵');
+    results.push('인스타 계정 전부 최근에 발행됨 — 스킵');
   }
 
   if (threadsConn) {
     try {
       const pub = await postToPlatformWithMedia('threads', threadsConn.access_token, threadsConn.platform_user_id, caption, [picked.thumbnailUrl]);
+      logSnsPost(admin, 'threads', threadsConn.platform_user_id).catch(() => {});
       let note = '';
       try { await postCommentOnOwnPost('threads', threadsConn.access_token, threadsConn.platform_user_id, pub.id, linkComment); }
       catch (e) { note = ` / 링크 댓글 실패 — ${(e as Error).message?.slice(0, 80)}`; }
@@ -164,7 +165,7 @@ export async function runTossAuto(userId: string, scheduleId?: string): Promise<
       results.push(`스레드 실패 — ${(e as Error).message?.slice(0, 150)}`);
     }
   } else {
-    results.push('스레드 연결 없음, 스킵');
+    results.push('스레드 계정 전부 최근에 발행됨 — 스킵');
   }
 
   await admin.from('bossai_toss_posts').insert({

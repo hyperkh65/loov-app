@@ -9,19 +9,9 @@ import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
+import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
-
-// 스레드만 계정이 사이트 목적별로 나뉘어 있어(여행/쿠팡 전용 계정까지 블로그
-// 글로 도배되는 걸 막으려고) 전용 계정으로 라우팅. 인스타/트위터/페이스북은
-// 계정 수가 적거나 사이트 구분이 없어서 연결된 계정 전부에 공통으로 발행.
-// 2026-09-24: 계정 스왑 + 아보다/미라클 분리 시도를 원래대로(스왑 이전) 되돌림
-// (사용자 요청) — 계정 배정을 이리저리 바꾸는 게 서버 부하 문제 해결엔 도움이
-// 안 되고 혼란만 늘어서, 원래 배정으로 복귀.
-function threadsAccountFor(siteUrl: string): string {
-  if (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) return '@aboda_miracool';
-  return '@2dayskr'; // 2days.kr 계열 + 블로거(사이트 URL 없음) 전부 이 계정으로
-}
 
 async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string): Promise<void> {
   const supabase = createAdminClient();
@@ -32,17 +22,31 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
     .eq('is_active', true);
   const connections = data || [];
 
-  const threadsAccount = threadsAccountFor(siteUrl);
+  // 예전엔 Threads만 사이트별 전용 계정으로 라우팅하고 Instagram/Facebook/
+  // Twitter는 필터 없이 연결된 계정 전부에 뿌렸음 — 그 결과 미라클/아보다처럼
+  // 무관한 사이트 글이 쿠팡/무신사 전용 인스타그램 계정에도 섞여 올라가고
+  // 있었음(사용자 확인, 실사용 중 확인). Instagram도 Threads와 동일하게
+  // 사이트별 계정 로테이션 적용 — 같은 "2dayskr 계열" 안에서도 여러 자매
+  // 계정에 분산시켜 계정당 최소 간격을 확보(lib/sns/account-rotation.ts).
+  const group = snsGroupFor(siteUrl);
+  const [threadsTarget, instagramTarget] = await Promise.all([
+    pickRotatedAccount(supabase, group, 'threads', connections),
+    pickRotatedAccount(supabase, group, 'instagram', connections),
+  ]);
   // 본문에 링크를 넣으면 SNS 알고리즘이 외부링크 게시물로 판단해 노출을 줄이는
   // 페널티가 있음(사용자 확정) — rewrite-publish.ts와 동일하게 링크는 댓글로 분리.
-  const targets = connections.filter((c) => {
-    if (c.platform === 'threads') return c.platform_username === threadsAccount;
-    return ['instagram', 'twitter', 'facebook'].includes(c.platform); // 공통 — 필터 없이 전부
-  });
+  const rotatedTargets = [threadsTarget, instagramTarget]
+    .filter((c): c is NonNullable<typeof c> => !!c)
+    .map(c => ({ ...c, platform: c.platform as 'threads' | 'instagram' }));
+  const otherTargets = connections.filter(c => ['twitter', 'facebook'].includes(c.platform)); // 현행 유지 — 전부 발행
+  const targets = [...rotatedTargets, ...otherTargets];
 
   await Promise.all(targets.map(async (conn) => {
     try {
       const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, title);
+      if (conn.platform === 'threads' || conn.platform === 'instagram') {
+        logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
+      }
       // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
       // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
       // (rewrite-publish.ts와 동일하게 짧은 대기 + 1회 재시도로 보강)
