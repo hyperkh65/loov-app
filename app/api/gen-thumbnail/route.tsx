@@ -2,6 +2,7 @@ import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import sharp from 'sharp';
 
 export const maxDuration = 30;
 
@@ -65,13 +66,22 @@ export async function GET(req: NextRequest) {
   // 새까맣게 나오는 문제가 실사용 중 확인됨(2026-10-01, 2days.kr "심형래 프로필"
   // 등 — bgUrl이 죽은/느린/차단된 이미지일 때). 렌더 전에 실제로 받아지는
   // 이미지인지 먼저 확인하고, 아니면 배경 없는 그라디언트 디자인으로 폴백.
+  // webp는 Satori가 못 그려서(에러도 없이) 함수가 그대로 죽어 502가 나는 게
+  // 실사용 중 확인됨(2026-10-01, 블로거 CDN 원본 사진이 기본으로 webp라 흔히 걸림)
+  // — jpeg/png/gif는 그대로 쓰고, webp 등은 sharp로 jpeg 변환해서 data URI로 전달.
   let validBgUrl = '';
   if (bgUrl) {
     try {
-      const checkRes = await fetch(bgUrl, { signal: AbortSignal.timeout(5000) });
+      const checkRes = await fetch(bgUrl, { signal: AbortSignal.timeout(6000) });
       const ct = checkRes.headers.get('content-type') || '';
-      if (checkRes.ok && ct.startsWith('image/')) validBgUrl = bgUrl;
-    } catch { /* 배경 이미지 검증 실패 — 그라디언트 디자인으로 폴백 */ }
+      if (checkRes.ok && /^image\/(jpeg|jpg|png|gif)$/.test(ct)) {
+        validBgUrl = bgUrl;
+      } else if (checkRes.ok && ct.startsWith('image/')) {
+        const buf = Buffer.from(await checkRes.arrayBuffer());
+        const jpegBuf = await sharp(buf).jpeg({ quality: 85 }).toBuffer();
+        validBgUrl = `data:image/jpeg;base64,${jpegBuf.toString('base64')}`;
+      }
+    } catch { /* 배경 이미지 검증/변환 실패 — 그라디언트 디자인으로 폴백 */ }
   }
 
   let fontData: ArrayBuffer | undefined;
