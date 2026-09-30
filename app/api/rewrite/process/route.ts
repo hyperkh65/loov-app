@@ -210,8 +210,15 @@ export async function POST(req: NextRequest) {
     } else {
       try {
         representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', bgImageUrl);
-        if (representativeImageUrl) content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
-      } catch { /* 썸네일은 선택사항 */ }
+      } catch {
+        // bgImageUrl(스크랩된 배경 이미지)이 죽은 링크라 썸네일 생성 자체가
+        // 실패하는 경우가 실사용 중 확인됨(2026-10-01) — 대표이미지가 아예
+        // null로 남으면 FIFU 플러그인이 본문 첫 이미지를 대신 대표이미지로
+        // 쓰는데, 그 이미지도 검증 안 된 스크랩 이미지라 깨진 채로 노출됨
+        // (2days.kr 실사용 확인) — bgImageUrl 없이 한 번 더 시도.
+        try { representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue'); } catch { /* 썸네일은 선택사항 */ }
+      }
+      if (representativeImageUrl) content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
     }
 
     const wordCount = content.replace(/<[^>]+>/g, '').length;
