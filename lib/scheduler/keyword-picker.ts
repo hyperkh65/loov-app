@@ -114,6 +114,17 @@ async function fetchNaverAdData(keywords: string[]): Promise<Array<{
   } catch { return []; }
 }
 
+// 고CPC 금융 키워드(연금/대출/보험 등)는 auto-discover에서 1.5x 가점을 받아
+// 상위권을 독점하는데, "연금저축펀드", "IRP 세액공제", "퇴직연금 수령방법"처럼
+// 리터럴 문자열은 매번 달라서 기존 exact-match 7일 회피로는 못 걸러지고, 실제로는
+// 같은 주제(연금)가 계속 발행되는 스팸처럼 보이는 문제가 실사용 중 확인됨
+// (2days.kr/aboda.kr에 "연금저축펀드 vs IRP" 류가 반복). 같은 주제 뿌리를 공유하면
+// 리터럴이 달라도 최근 사용으로 취급해서 다른 주제로 강제 분산시킴.
+const TOPIC_ROOTS = ['연금', '세액공제', 'IRP', '대출', '보험', '카드', '신용점수', '리볼빙', '저축은행', '환전', '절세', '금리', '증권', '펀드', '주식'];
+function sharesTopicRoot(a: string, b: string): boolean {
+  return TOPIC_ROOTS.some(root => a.includes(root) && b.includes(root));
+}
+
 // ── Money Score 계산 (advanced API와 동일) ─────────────────────────────────
 function calcMoneyScore(kw: string, monthlyTotal: number, competition: string): number {
   const volScore = monthlyTotal < 100 ? monthlyTotal / 100 * 30
@@ -247,10 +258,9 @@ export async function pickDynamicKeywordByCategory(
   ]);
   if (!cached?.length) return null;
 
-  const usedKeywords = new Set(
-    (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean)
-  );
-  const fresh = cached.find(c => !usedKeywords.has(c.keyword));
+  const usedKeywords = (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean) as string[];
+  const usedSet = new Set(usedKeywords);
+  const fresh = cached.find(c => !usedSet.has(c.keyword) && !usedKeywords.some(u => sharesTopicRoot(u, c.keyword)));
   return (fresh || cached[0]).keyword;
 }
 
@@ -286,12 +296,11 @@ export async function pickKeywordForUser(userId: string): Promise<string> {
   ]);
 
   if (cached && cached.length > 0) {
-    const usedKeywords = new Set(
-      (recentLogs || [])
-        .map(l => (l.result as { keyword?: string })?.keyword)
-        .filter(Boolean)
-    );
-    const fresh = cached.find(c => !usedKeywords.has(c.keyword));
+    const usedKeywords = (recentLogs || [])
+      .map(l => (l.result as { keyword?: string })?.keyword)
+      .filter(Boolean) as string[];
+    const usedSet = new Set(usedKeywords);
+    const fresh = cached.find(c => !usedSet.has(c.keyword) && !usedKeywords.some(u => sharesTopicRoot(u, c.keyword)));
     if (fresh) return fresh.keyword;
     // 상위 10개를 이미 7일 안에 다 써버렸으면 1등을 그냥 반복하지 말고(실사용 중
     // 같은 키워드가 몇 시간째 반복 발행되는 문제 확인) 실시간 트렌딩으로 폴백.
