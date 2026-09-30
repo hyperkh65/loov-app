@@ -136,18 +136,21 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           DIST_DIR: /volume1/web/loov-dist
+          NAS_SSH_PASSWORD: ${{ secrets.NAS_SSH_PASSWORD }}
         with:
           host: hy64.synology.me
           username: urjent
           key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
           port: 79
-          envs: DIST_DIR
+          envs: DIST_DIR,NAS_SSH_PASSWORD
           script: |
             # 컨테이너가 root로 돌면서 볼륨마운트된 .next 안에 root 소유 파일을
             # 남기면, 비root 사용자(urjent)로 붙는 다음 배포의 tar 추출이 그
             # 파일들을 덮어쓰지 못해 통째로 실패(rollback)하는 문제가 실사용 중
             # 확인됨 — 업로드 직전에 소유권을 강제로 되돌려서 항상 덮어쓸 수 있게 함.
-            sudo chown -R urjent:users "${DIST_DIR}" 2>/dev/null || true
+            # 이전 시도에서 sudo가 비밀번호를 요구해서 조용히 실패했던 것으로 보여
+            # -S로 비밀번호를 표준입력으로 넘김.
+            echo "$NAS_SSH_PASSWORD" | sudo -S chown -R urjent:users "${DIST_DIR}" 2>&1 || true
 
       - name: Upload to NAS
         uses: appleboy/scp-action@v0.1.7
