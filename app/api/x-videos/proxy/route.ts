@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
 // NAS 영상 URL을 브라우저에 프록시 — CORS 우회
