@@ -103,11 +103,15 @@ export async function scrapeArticleFull(url: string): Promise<ScrapedArticle> {
     html.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
   if (ogMatch?.[1]?.startsWith('http')) images.push(ogMatch[1]);
 
-  const imgMatches = [...html.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+\.(?:jpg|jpeg|png|webp)(?:\?[^"']*)?)["']/gi)];
+  // 확장자 필수였던 예전 정규식은 블로거(blogger.googleusercontent.com) 사진 URL이
+  // 파일 확장자 없이 "=w640-h571-rw" 같은 크기 접미사로 끝나는 걸 전부 놓쳐서, 본문에
+  // 실제 관련 사진이 있어도 image_urls가 비거나 무관한 배너만 남는 문제가 실사용 중
+  // 확인됨(2026-10-01, one.yoosol/yoonfree) — 확장자 요구 제거, 아래 키워드 필터로만 거름.
+  const imgMatches = [...html.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+)["']/gi)];
   for (const m of imgMatches) {
     const u = m[1];
     if (images.includes(u)) continue;
-    if (/(icon|logo|button|banner|sprite|pixel|blank|tracking|avatar)/i.test(u)) continue;
+    if (/(icon|logo|button|banner|sprite|pixel|blank|tracking|avatar|cropped-)/i.test(u)) continue;
     images.push(u);
     if (images.length >= 6) break;
   }
