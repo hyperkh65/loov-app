@@ -13,8 +13,10 @@ import type { Schedule, CoupangAutoConfig } from './index';
 
 const DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
-// 스레드/인스타는 토스/블로그 크로스포스팅과 같은 "2dayskr 계열" 로테이션 풀을
-// 공유한다(lib/sns/account-rotation.ts) — 계정 하나에 몰리지 않게 서로 조율됨.
+// 스레드/인스타는 토스와 같은 "ads_default"(광고 전용, @2days.kr 하나) 풀을
+// 공유한다(lib/sns/account-rotation.ts) — @2dayskr_korea/@aboda_miracool처럼
+// 상품광고를 안 섞기로 한 일반 콘텐츠 계정으로는 절대 안 넘어가고, 간격이
+// 안 되면 로테이션 대신 그냥 스킵됨.
 // 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
 
 async function getSnsConnections(userId: string): Promise<Array<{ platform: string; platform_user_id: string; platform_username: string; access_token: string; is_active: boolean }>> {
@@ -415,7 +417,7 @@ ${priceDropNote ? `${priceDropNote}\n` : ''}
     for (const platform of platforms) {
       let conns: typeof connections;
       if (platform === 'threads' || platform === 'instagram') {
-        const picked = await pickRotatedAccount(admin, 'default', platform, connections);
+        const picked = await pickRotatedAccount(admin, 'ads_default', platform, connections);
         conns = picked ? connections.filter(c => c.platform === platform && c.platform_user_id === picked.platform_user_id) : [];
         if (!conns.length) { results.push(`${platform}: 계정 전부 최근에 발행됨 — 이번 회차 스킵`); continue; }
       } else {
