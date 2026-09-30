@@ -269,11 +269,10 @@ async function searchInlineImages(query: string, count = 3): Promise<{ displayUr
         if (items.length > 0) {
           const rawUrls = items.slice(0, count).map((item: { link: string }) => item.link);
           const displayUrls = await downloadAndUploadToR2(rawUrls);
-          // item.thumbnail은 항상 네이버 자체 CDN(search.pstatic.net)을 거치는데, 이
-          // 프록시가 "전기통신사업법에 따라 불법촬영물등 여부를 검토중입니다" 플레이스홀더로
-          // 이미지를 대체하는 경우가 실사용 중 확인됨(특히 인물/연예 관련 검색) — 네이버
-          // 자체 호스팅이 아닌 원본 link 중에서 배경용을 고름.
-          const safeItems = items.filter((item: { link: string }) => !/(^|\.)(pstatic\.net|naver\.net|naver\.com)$/i.test(new URL(item.link).hostname));
+          // blogfiles/postfiles(사용자 업로드 이미지)만 "불법촬영물등 검토중" 플레이스홀더
+          // 위험이 있어 제외 — imgnews.naver.net(언론사 사진)까지 막으면 인물/연예 검색의
+          // 관련성 높은 배경 후보 대부분이 사라지는 문제가 실사용 중 확인됨(2026-10-01).
+          const safeItems = items.filter((item: { link: string }) => !/^(blogfiles|postfiles)\.(pstatic\.net|naver\.net)$/i.test(new URL(item.link).hostname));
           return { displayUrls, thumbUrl: safeItems[0]?.link };
         }
       }
