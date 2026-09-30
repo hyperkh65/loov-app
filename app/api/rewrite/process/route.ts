@@ -208,8 +208,15 @@ export async function POST(req: NextRequest) {
     if (representativeImageUrl) {
       content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
     } else {
+      // use_generated_thumbnail 소스는 매번 브랜딩 카드(제목 오버레이)를 새로
+      // 만들지만, 원문에 실제 스크랩된 사진이 있으면(article.representative_image_url)
+      // 제목 기반 검색 이미지보다 그걸 배경으로 우선 사용 — one.yoosol처럼 실제
+      // 인물 사진이 있는 소스인데 무관한 검색 이미지가 배경으로 깔리는 문제가
+      // 실사용 중 확인됨(2026-10-01, 사용자 확정: "이 사진을 배경으로 대표이미지
+      // 만들기를 해야지").
+      const preferredBg = article.representative_image_url || bgImageUrl;
       try {
-        representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', bgImageUrl);
+        representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', preferredBg);
       } catch {
         // bgImageUrl(스크랩된 배경 이미지)이 죽은 링크라 썸네일 생성 자체가
         // 실패하는 경우가 실사용 중 확인됨(2026-10-01) — 대표이미지가 아예
