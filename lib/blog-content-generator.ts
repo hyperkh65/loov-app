@@ -64,11 +64,19 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
       if (res.ok) {
         const data = await res.json();
         const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
-        // 네이버 자체 호스팅 이미지(blogfiles/postfiles/imgnews.pstatic.net,
-        // *.naver.net 등)는 "전기통신사업법에 따라 불법촬영물등 여부를 검토중입니다"
-        // 플레이스홀더로 대체되는 경우가 실사용 중 확인됨(특히 인물/연예 관련 검색) —
-        // 배경 이미지 후보에서 네이버 자체 호스팅 결과는 제외.
-        const safeItems = items.filter((item: { link: string }) => !/(^|\.)(pstatic\.net|naver\.net|naver\.com)$/i.test(new URL(item.link).hostname));
+        // blogfiles/postfiles(네이버 블로그·카페 사용자 업로드 이미지)는 "전기통신사업법에
+        // 따라 불법촬영물등 여부를 검토중입니다" 플레이스홀더로 대체되는 경우가 실사용 중
+        // 확인됨 — 그 둘만 제외. imgnews.naver.net(뉴스 기사용 언론사 사진, 사람/연예
+        // 검색에서 검색결과 대부분을 차지함)은 라이브로 재확인 결과 문제없이 로드되는데도
+        // 과거엔 *.naver.net 전체를 막아서 대부분의 관련성 높은 사진이 걸러지고 Pixabay
+        // 같은 무관한 대체 이미지만 쓰이던 문제가 실사용 중 확인됨(2026-10-01).
+        // sizewidth 낮은(작게 나오는 원인) 결과도 같이 제외.
+        const safeItems = items.filter((item: { link: string; sizewidth?: string }) => {
+          const host = new URL(item.link).hostname;
+          if (/^(blogfiles|postfiles)\.(pstatic\.net|naver\.net)$/i.test(host)) return false;
+          const w = Number(item.sizewidth) || 0;
+          return w === 0 || w >= 500;
+        });
         if (safeItems.length > 0) {
           // 배경 이미지는 저해상도 thumbnail 대신 원본 link를 써야 화질이 안 뭉개짐
           return {
@@ -228,7 +236,7 @@ export function insertRepresentativeImageIntoContent(content: string, imageUrl: 
   const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const repImg = `<figure style="text-align:center;margin:0 auto 28px;">`
     + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
-    + `style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
+    + `style="width:100%;max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
     + `</figure>\n`;
   // 맨 앞에 삽입 (첫 번째 H2 이전)
   const firstH2 = content.search(/<h2/i);
@@ -242,7 +250,7 @@ export function insertImagesIntoContent(content: string, imageUrls: string[], ke
     const alt = sectionTitle || keyword;
     return `\n<figure style="text-align:center;margin:25px 0;">`
       + `<img src="${url}" alt="${alt}" title="${alt}" `
-      + `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/>`
+      + `style="width:100%;max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/>`
       + `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption>`
       + `</figure>\n`;
   };
