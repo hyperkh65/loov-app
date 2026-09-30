@@ -16,6 +16,7 @@ import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { publishToPinterest } from '@/lib/pinterest-publish';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
+import { translateAndCrossPost } from '@/lib/ai-translate';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
@@ -206,10 +207,18 @@ export async function publishRewrittenArticle(
     }
   }
 
-  // engmag/japmag 자동 번역 크로스발행은 토큰 소모가 커서 중단(2026-09-29) —
-  // 이제는 사용자가 블로그자동화(수동)에서 engmag.2days.kr/japmag.2days.kr을
-  // 직접 선택했을 때만 그 사이트용으로 번역해서 발행한다(app/api/auto-service/publish/route.ts).
-  const translate: Record<'en' | 'ja', string> = { en: 'skip: 자동발행 중단', ja: 'skip: 자동발행 중단' };
+  // 원문이 나간 모든 사이트를 영어/일본어로 번역해서 engmag/japmag에도 크로스 발행 —
+  // 새로 만드는 사이트도 이 함수를 통해 발행하는 한 자동으로 포함됨(별도 설정 불필요).
+  // Groq 번역(ai-translate.ts)이 API 키 4개 전부 rate-limit 걸리면 60초 대기 후
+  // 재시도를 반복해 최악의 경우 수 분까지 블로킹되는 게 실사용 중 확인됨 — 이걸
+  // await로 기다리면 기사 1건 발행 전체가 그만큼 늘어져서 publish-next 호출이
+  // 통째로 타임아웃남(다른 발행 채널은 전부 fire-and-forget인데 이것만 동기 대기였음).
+  // blog-runner.ts와 동일하게 결과를 기다리지 않고 흘려보냄 — 번역은 부가 기능이라
+  // 본 발행 속도에 영향을 주면 안 됨.
+  const translate: Record<'en' | 'ja', string> = { en: 'pending', ja: 'pending' };
+  if (wordpressUrl) {
+    translateAndCrossPost({ title: article.title, content: article.content, representative_image_url: snsImageUrl }).catch(() => {});
+  }
 
   // SNS/카페용 후킹 캡션은 카페 발행에도 필요해서 여기서 미리 생성해둔다 —
   // 예전엔 카페가 이 캡션 없이 article.meta(딱딱한 SEO 요약문)를 그대로 써서
