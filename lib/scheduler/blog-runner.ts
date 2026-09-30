@@ -13,7 +13,7 @@ import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-r
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
 
-async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string): Promise<void> {
+async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null): Promise<void> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from('sns_connections')
@@ -43,7 +43,7 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
 
   await Promise.all(targets.map(async (conn) => {
     try {
-      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, title);
+      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, title, imageUrl ? [imageUrl] : undefined);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
         logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
       }
@@ -289,7 +289,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
     // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
     // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
     // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
-    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl).catch(() => {});
+    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
