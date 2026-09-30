@@ -466,8 +466,12 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): P
   let imageUrl: string | null = null;
   try {
     imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
-    if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
-  } catch { /* thumbnail optional */ }
+  } catch {
+    // bgImageUrl(스크랩된 배경 이미지)이 죽은 링크라 썸네일 생성 자체가 실패하는
+    // 경우가 실사용 중 확인됨(2026-10-01) — bgImageUrl 없이 한 번 더 시도.
+    try { imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue'); } catch { /* thumbnail optional */ }
+  }
+  if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
 
   return { title, content, meta_description, keywords, imageUrl };
 }
