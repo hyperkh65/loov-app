@@ -115,7 +115,7 @@ const TWENTIES_ENTRY_SEEDS: Record<number, string[]> = {
 const TWENTIES_NEWS_BLOCK = /국회|검찰|경찰|재판|구속|선거|투표|탄핵|정부|여당|야당|사망|부고|숨져|숨진|별세|타계|폭행|범죄|조작|의혹|비리|폭락|급등|참사|화재|자살/;
 
 // 구글트렌드 KR RSS는 전연령 혼합이라 20대 관심사 패턴으로만 걸러서 씀
-const TWENTIES_MATCH = /연애|소개팅|자취|원룸|다이어트|헬스|취준|자소서|면접|알바|아이돌|콘서트|페스티벌|축제|게임|유행|밈|챌린지|OOTD|여행|굿즈|콜라보|팝업스토어|대학생|캠퍼스/i;
+const TWENTIES_MATCH = /연애|소개팅|자취|원룸|다이어트|헬스|취준|자소서|면접|알바|아이돌|콘서트|페스티벌|축제|게임|유행|밈|챌린지|OOTD|여행|굿즈|콜라보|팝업스토어|대학생|캠퍼스|뷰티|화장품|스킨케어|패션|맛집|카페|다이소|무신사|올리브영|편의점|자취요리|룩\b/i;
 
 // 커뮤니티 원문 제목이 자동완성/광고API를 거치며 HTML 엔티티가 안 풀리거나
 // (&quot; 등) 특수문자가 섞인 채로 나오는 걸 실사용 중 확인(2026-09-23,
@@ -130,7 +130,14 @@ function isBlocked(kw: string, category: KeywordCategory): boolean {
     : category === 'tech' ? TECH_NEWS_BLOCK
     : category === 'twenties' ? TWENTIES_NEWS_BLOCK
     : NEWS_BLOCK;
-  return block.test(kw) || kw.length < 4 || kw.length > 20 || GARBAGE_CHARS.test(kw);
+  if (block.test(kw) || kw.length < 4 || kw.length > 20 || GARBAGE_CHARS.test(kw)) return true;
+  // 네이버 광고 API의 ad_related 확장은 "광고주 타겟팅 유사도" 기준이라 시드와
+  // 의미상 무관한 키워드(임산부튼살크림, AI데이터센터, 라벨스티커 등)까지 섞여
+  // 나오는 걸 실사용 중 확인함(2026-09-30) — twenties는 특정 연령대 타겟팅이
+  // 목적이라 다른 카테고리와 달리 주제 자체가 20대 관심사 어휘에 걸리는지도
+  // 같이 확인해서 걸러냄
+  if (category === 'twenties' && !TWENTIES_MATCH.test(kw)) return true;
+  return false;
 }
 
 // 시드를 "이번 달엔 이런 걸 검색하지 않을까" 하는 추측(FINANCE_ENTRY_SEEDS)에만
