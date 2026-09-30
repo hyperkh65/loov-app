@@ -60,6 +60,20 @@ export async function GET(req: NextRequest) {
 
   const t = THEMES[color] || THEMES.blue;
 
+  // next/og의 ImageResponse(Satori)는 배경 이미지가 실제로 못 불러와져도 에러를
+  // 안 내고 그냥 안 그려서, 그 뒤 진한 그라디언트 오버레이만 남아 결과물이
+  // 새까맣게 나오는 문제가 실사용 중 확인됨(2026-10-01, 2days.kr "심형래 프로필"
+  // 등 — bgUrl이 죽은/느린/차단된 이미지일 때). 렌더 전에 실제로 받아지는
+  // 이미지인지 먼저 확인하고, 아니면 배경 없는 그라디언트 디자인으로 폴백.
+  let validBgUrl = '';
+  if (bgUrl) {
+    try {
+      const checkRes = await fetch(bgUrl, { signal: AbortSignal.timeout(5000) });
+      const ct = checkRes.headers.get('content-type') || '';
+      if (checkRes.ok && ct.startsWith('image/')) validBgUrl = bgUrl;
+    } catch { /* 배경 이미지 검증 실패 — 그라디언트 디자인으로 폴백 */ }
+  }
+
   let fontData: ArrayBuffer | undefined;
   try {
     const fontPath = join(process.cwd(), 'public', 'fonts', 'NotoSansKR-Bold.otf');
@@ -82,7 +96,7 @@ export async function GET(req: NextRequest) {
   };
 
   // ── 풀블리드 매거진 디자인 (배경 이미지 있을 때) ────────────────────────
-  if (bgUrl) {
+  if (validBgUrl) {
     if (isBlog) {
       // 1200×628 — 뉴스 쇼츠 썸네일 스타일: 작은 도입줄 + 훨씬 큰 임팩트줄(둘 다 흰색)
       const subLen = sub.length;
@@ -101,7 +115,7 @@ export async function GET(req: NextRequest) {
           }}>
             {/* 풀블리드 배경 이미지 */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={bgUrl} alt="" style={{
+            <img src={validBgUrl} alt="" style={{
               position: 'absolute', inset: 0,
               width: 1200, height: 628,
               objectFit: 'cover', objectPosition: 'center 30%',
@@ -233,7 +247,7 @@ export async function GET(req: NextRequest) {
           fontFamily: fontData ? 'NotoSansKR' : 'sans-serif',
         }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={bgUrl} alt="" style={{
+          <img src={validBgUrl} alt="" style={{
             position: 'absolute', inset: 0,
             width: 1200, height: 1200,
             objectFit: 'cover', objectPosition: 'center 25%',
