@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { publishRewrittenArticle, getSnsAccountRouting } from '@/lib/rewrite-publish';
+import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
@@ -35,10 +36,7 @@ const TIME_BUDGET_MS = 150_000;
 // 이유는 그룹 안 다른 소스(GeekNews·파이낸셜뉴스 등) 354건이 영원히 밀리는
 // 문제 때문이었는데, 그 원인이던 오래된 백로그를 정리했으니 다시 켬. 그룹
 // 안에서 이 두 소스가 준비돼 있으면 항상 먼저, 그다음 오래 기다린 순.
-const PRIORITY_SOURCE_IDS = new Set([
-  '1c036b9d-2a2b-449d-9b97-0a12c76dab6f', // one.yoosol
-  '132c4df6-2a18-4693-8799-342893aa1469', // yoonfree
-]);
+// (lib/rewrite-priority-sources.ts로 이동, process/route.ts와 공유)
 
 async function authOk(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
