@@ -303,7 +303,7 @@ function insertRepresentativeImageIntoContent(content: string, imageUrl: string,
   const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const repImg = `\n<figure style="text-align:center;margin:20px auto;">`
     + `<img src="${imageUrl}" alt="${esc(title)}" title="${esc(title)}" `
-    + `style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
+    + `style="width:100%;max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" loading="lazy"/>`
     + `</figure>\n`;
   return content.replace(/(<\/h3>)/, `$1${repImg}`);
 }
@@ -314,7 +314,7 @@ function insertImagesIntoContent(content: string, imageUrls: string[], keyword: 
     const alt = sectionTitle || keyword;
     return `\n<figure style="text-align:center;margin:25px 0;">` +
       `<img src="${url}" alt="${alt}" title="${alt}" ` +
-      `style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
+      `style="width:100%;max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" ` +
       `loading="lazy"/>` +
       `<figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption>` +
       `</figure>\n`;
