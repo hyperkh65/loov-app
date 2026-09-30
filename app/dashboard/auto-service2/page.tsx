@@ -683,7 +683,7 @@ export default function AutoService2Page() {
   // 이미지를 본문 H2 소제목 다음 위치에 삽입 (이미지 없는 첫 번째 H2 뒤)
   const insertImageToContent = (imageUrl: string, altText: string) => {
     const alt = altText.replace(/"/g, '');
-    const imgHtml = `\n<figure style="text-align:center;margin:25px 0;"><img src="${imageUrl}" alt="${alt}" title="${alt}" style="max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/><figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption></figure>\n`;
+    const imgHtml = `\n<figure style="text-align:center;margin:25px 0;"><img src="${imageUrl}" alt="${alt}" title="${alt}" style="width:100%;max-width:100%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.15);" loading="lazy"/><figcaption style="font-size:12px;color:#888;margin-top:6px;">${alt}</figcaption></figure>\n`;
 
     setEditContent(prev => {
       // H2 태그 목록과 위치 파악

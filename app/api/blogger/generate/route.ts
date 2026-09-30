@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
 
   // 대표 이미지 HTML
   const imageHtml = featuredImage
-    ? `<div style="text-align:center;margin:0 0 2em"><img src="${featuredImage}" alt="${keyword}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.15)"></div>\n`
+    ? `<div style="text-align:center;margin:0 0 2em"><img src="${featuredImage}" alt="${keyword}" style="width:100%;max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.15)"></div>\n`
     : '';
 
   // 쿠팡 상품 컨텍스트

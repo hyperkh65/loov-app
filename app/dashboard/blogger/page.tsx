@@ -583,7 +583,7 @@ export default function BloggerPage() {
   }
 
   function insertImageAtCursor(url: string, alt = '') {
-    const imgHtml = `<img src="${url}" alt="${alt}" style="max-width:100%;border-radius:6px;display:block;margin:1em auto">`;
+    const imgHtml = `<img src="${url}" alt="${alt}" style="width:100%;max-width:100%;border-radius:6px;display:block;margin:1em auto">`;
     const ta = editorRef.current;
     if (ta) {
       const start = ta.selectionStart ?? editContent.length;
@@ -1280,7 +1280,7 @@ export default function BloggerPage() {
               defaultTitle={editTitle || keyword}
               defaultKeyword={keyword}
               onInsert={(imageUrl) => {
-                const imgHtml = `<div style="text-align:center;margin:0 0 1.5em"><img src="${imageUrl}" alt="${editTitle}" style="max-width:100%;border-radius:8px;display:block;margin:0 auto"></div>\n`;
+                const imgHtml = `<div style="text-align:center;margin:0 0 1.5em"><img src="${imageUrl}" alt="${editTitle}" style="width:100%;max-width:100%;border-radius:8px;display:block;margin:0 auto"></div>\n`;
                 setEditContent(prev => imgHtml + prev);
               }}
             />
