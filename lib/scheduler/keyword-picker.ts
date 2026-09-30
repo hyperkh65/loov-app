@@ -8,6 +8,38 @@
 import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
+import { KEYWORD_SEED_BANK } from '@/lib/keyword-seed-bank';
+
+// 키워드 중복 절대 금지 — 전 스케줄/전 사이트 공용, 공백 제거·소문자 기준, 180일.
+const norm = (k: string) => k.replace(/\s+/g, '').toLowerCase();
+// ponytail: 동시 실행 경합은 프로세스 내 Set으로만 막음(단일 서버). 다중 인스턴스면 DB claim 테이블 필요.
+const claimed = new Set<string>();
+
+async function loadUsed(): Promise<Set<string>> {
+  const supabase = createAdminClient();
+  const since = new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString();
+  const used = new Set(claimed);
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase
+      .from('bossai_schedule_logs')
+      .select('result')
+      .gte('started_at', since)
+      .in('status', ['success', 'running'])
+      .not('result->>keyword', 'is', null)
+      .range(from, from + 999);
+    for (const l of data || []) {
+      const k = (l.result as { keyword?: string })?.keyword;
+      if (k) used.add(norm(k));
+    }
+    if (!data || data.length < 1000) break;
+  }
+  return used;
+}
+
+function claim(kw: string): string {
+  claimed.add(norm(kw));
+  return kw;
+}
 
 // ── 필터 ───────────────────────────────────────────────────────────────────
 const NEWS_BLOCK = /대통령|국회|검찰|경찰|재판|구속|선거|투표|사건|사고|사망|범죄|의혹|비리|갈등|폭락|탄핵|정부|여당|야당|주가|환율|전쟁|지진|태풍|홍수/;
@@ -146,25 +178,22 @@ function calcMoneyScore(kw: string, monthlyTotal: number, competition: string): 
 }
 
 // ── 실시간 트렌딩 기반 최고 수익 키워드 발굴 ──────────────────────────────
-async function findBestTrendingKeyword(): Promise<string> {
+async function findBestTrendingKeyword(used: Set<string>): Promise<string> {
   // 1. Google Trends에서 실시간 트렌딩 수집
   const [rss, daily] = await Promise.all([
     fetchGoogleTrendsRSS(),
     fetchGoogleDailyTrends(),
   ]);
 
-  const allTrending = [...new Set([...rss, ...daily])].filter(isUsable);
+  const allTrending = [...new Set([...rss, ...daily])].filter(k => isUsable(k) && !used.has(norm(k)));
 
   if (allTrending.length === 0) {
-    // 폴백: 상업성 높은 상시 키워드 — 예전엔 고정 문자열 하나였는데, 구글트렌드가
-    // (레이트리밋 등으로) 연속 실패하면 이 폴백만 계속 반복돼서 같은 주제가
-    // 몇 시간째 반복 발행되는 걸 실사용 중 확인함(예: "다이어트 보조제 추천" 4연속) —
-    // 여러 개 중 무작위로 골라서 최소한 매번 같은 걸 반복하진 않게 함.
-    const FALLBACK_POOL = [
-      '다이어트 보조제 추천', '탈모 샴푸 추천', '홍삼 추천', '유산균 추천',
-      '눈영양제 추천', '단백질 보충제 추천', '콜라겐 추천', '오메가3 추천',
-    ];
-    return FALLBACK_POOL[Math.floor(Math.random() * FALLBACK_POOL.length)];
+    // 트렌딩이 비었거나 전부 사용됨 → 시드뱅크에서 안 쓴 것만 무작위 (중복 절대 금지)
+    const seeds = Object.values(KEYWORD_SEED_BANK)
+      .flatMap(byMonth => Object.values(byMonth).flat())
+      .filter(k => isUsable(k) && !used.has(norm(k)));
+    if (!seeds.length) throw new Error('사용 가능한 미사용 키워드가 없음');
+    return seeds[Math.floor(Math.random() * seeds.length)];
   }
 
   // 2. 상위 10개 Naver Ad API로 검색량 + 경쟁도 분석
@@ -176,7 +205,7 @@ async function findBestTrendingKeyword(): Promise<string> {
 
   // 3. Money Score 계산 후 최고 점수 선택
   const scored = adData
-    .filter(d => d.monthlyTotal >= 100) // 최소 월 100회 검색
+    .filter(d => d.monthlyTotal >= 100 && isUsable(d.keyword) && !used.has(norm(d.keyword))) // 최소 월 100회 검색
     .map(d => ({
       keyword: d.keyword,
       monthlyTotal: d.monthlyTotal,
@@ -200,29 +229,24 @@ export async function pickFromKeywordList(
   schedule: { id: string; user_id: string; keyword_index: number },
   keywords: string[],
   mode: 'rotate' | 'random' = 'rotate',
-): Promise<string> {
+): Promise<string | null> {
   if (!keywords.length) throw new Error('키워드 목록이 비어있음');
   const supabase = createAdminClient();
+  const used = await loadUsed();
+  const start = schedule.keyword_index % keywords.length;
 
   if (mode === 'rotate') {
-    const idx = schedule.keyword_index % keywords.length;
-    await supabase.from('bossai_schedules').update({ keyword_index: (idx + 1) % keywords.length }).eq('id', schedule.id);
-    return keywords[idx];
+    for (let i = 0; i < keywords.length; i++) {
+      const idx = (start + i) % keywords.length;
+      if (used.has(norm(keywords[idx]))) continue;
+      await supabase.from('bossai_schedules').update({ keyword_index: (idx + 1) % keywords.length }).eq('id', schedule.id);
+      return claim(keywords[idx]);
+    }
+    return null; // 목록 소진 → 호출 쪽이 동적/트렌딩 발굴로 넘어감
   }
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-  const { data: recentLogs } = await supabase
-    .from('bossai_schedule_logs')
-    .select('result')
-    .eq('user_id', schedule.user_id)
-    .gte('started_at', sevenDaysAgo)
-    .eq('status', 'success');
-  const usedKeywords = new Set(
-    (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean)
-  );
-  const fresh = keywords.filter(k => !usedKeywords.has(k));
-  const pool = fresh.length ? fresh : keywords; // 다 썼으면 처음부터 다시 무작위
-  return pool[Math.floor(Math.random() * pool.length)];
+  const fresh = keywords.filter(k => !used.has(norm(k)));
+  return fresh.length ? claim(fresh[Math.floor(Math.random() * fresh.length)]) : null;
 }
 
 // 고CPC 등 특정 카테고리로 좁혀서 동적 발굴 — 대시보드/크론이 채워둔
@@ -238,7 +262,7 @@ export async function pickDynamicKeywordByCategory(
   const since = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
 
-  const [{ data: cached }, { data: recentLogs }] = await Promise.all([
+  const [{ data: cached }, { data: recentLogs }, used] = await Promise.all([
     supabase
       .from('bossai_keyword_opportunities')
       .select('keyword, score, can_rank1')
@@ -255,13 +279,14 @@ export async function pickDynamicKeywordByCategory(
       .eq('user_id', schedule.user_id)
       .gte('started_at', sevenDaysAgo)
       .eq('status', 'success'),
+    loadUsed(),
   ]);
-  if (!cached?.length) return null;
+  const unused = (cached || []).filter(c => !used.has(norm(c.keyword)));
+  if (!unused.length) return null;
 
-  const usedKeywords = (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean) as string[];
-  const usedSet = new Set(usedKeywords);
-  const fresh = cached.find(c => !usedSet.has(c.keyword) && !usedKeywords.some(u => sharesTopicRoot(u, c.keyword)));
-  return (fresh || cached[0]).keyword;
+  const recent = (recentLogs || []).map(l => (l.result as { keyword?: string })?.keyword).filter(Boolean) as string[];
+  const pick = unused.find(c => !recent.some(u => sharesTopicRoot(u, c.keyword))) || unused[0];
+  return claim(pick.keyword);
 }
 
 // ── 메인 함수 ──────────────────────────────────────────────────────────────
@@ -272,7 +297,7 @@ export async function pickKeywordForUser(userId: string): Promise<string> {
   const since = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
 
-  const [{ data: cached }, { data: recentLogs }] = await Promise.all([
+  const [{ data: cached }, { data: recentLogs }, used] = await Promise.all([
     supabase
       .from('bossai_keyword_opportunities')
       .select('keyword, score, can_rank1')
@@ -293,19 +318,18 @@ export async function pickKeywordForUser(userId: string): Promise<string> {
       .eq('user_id', userId)
       .gte('started_at', sevenDaysAgo)
       .eq('status', 'success'),
+    loadUsed(),
   ]);
 
   if (cached && cached.length > 0) {
-    const usedKeywords = (recentLogs || [])
+    const recent = (recentLogs || [])
       .map(l => (l.result as { keyword?: string })?.keyword)
       .filter(Boolean) as string[];
-    const usedSet = new Set(usedKeywords);
-    const fresh = cached.find(c => !usedSet.has(c.keyword) && !usedKeywords.some(u => sharesTopicRoot(u, c.keyword)));
-    if (fresh) return fresh.keyword;
-    // 상위 10개를 이미 7일 안에 다 써버렸으면 1등을 그냥 반복하지 말고(실사용 중
-    // 같은 키워드가 몇 시간째 반복 발행되는 문제 확인) 실시간 트렌딩으로 폴백.
+    const unused = cached.filter(c => !used.has(norm(c.keyword)));
+    const fresh = unused.find(c => !recent.some(u => sharesTopicRoot(u, c.keyword))) || unused[0];
+    if (fresh) return claim(fresh.keyword);
   }
 
   // 2. 캐시 없음/전부 소진 → 실시간 트렌딩 + 수익 분석
-  return findBestTrendingKeyword();
+  return claim(await findBestTrendingKeyword(used));
 }
