@@ -132,6 +132,23 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"secret\":\"${{ secrets.DEPLOY_SECRET }}\",\"status\":\"deploying\",\"step\":\"NAS로 파일 전송 중\",\"sha\":\"${{ github.sha }}\"}" || true
 
+      - name: Fix NAS directory ownership before upload
+        uses: appleboy/ssh-action@v1
+        env:
+          DIST_DIR: /volume1/web/loov-dist
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 79
+          envs: DIST_DIR
+          script: |
+            # 컨테이너가 root로 돌면서 볼륨마운트된 .next 안에 root 소유 파일을
+            # 남기면, 비root 사용자(urjent)로 붙는 다음 배포의 tar 추출이 그
+            # 파일들을 덮어쓰지 못해 통째로 실패(rollback)하는 문제가 실사용 중
+            # 확인됨 — 업로드 직전에 소유권을 강제로 되돌려서 항상 덮어쓸 수 있게 함.
+            sudo chown -R urjent:users "${DIST_DIR}" 2>/dev/null || true
+
       - name: Upload to NAS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -161,6 +178,9 @@ jobs:
             WEBHOOK_URL=https://loov.co.kr/api/deploy/webhook
 
             # 컨테이너 존재하면 restart(파일은 볼륨으로 이미 최신), 없으면 새로 생성
+            # -u로 컨테이너를 urjent(1026:100)로 실행해서, 컨테이너가 런타임에
+            # .next에 뭔가 쓰더라도 root 소유가 되어 다음 배포를 막는 문제가
+            # 재발하지 않게 함.
             if docker ps -a --format '{{.Names}}' | grep -q '^loov-app$'; then
               docker restart loov-app
             else
@@ -169,6 +189,7 @@ jobs:
                 --restart unless-stopped \
                 -p 3100:3000 \
                 --add-host=host.docker.internal:host-gateway \
+                -u 1026:100 \
                 -v "${DIST_DIR}:/app" \
                 -w /app \
                 -e DEPLOY_SECRET="$DEPLOY_SECRET" \
