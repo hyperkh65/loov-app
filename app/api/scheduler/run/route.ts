@@ -21,6 +21,9 @@ import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
 import { runNaverTechAuto } from '@/lib/scheduler/naver-tech-runner';
 import { runKeywordAuto } from '@/lib/scheduler/keyword-auto-runner';
 import { runTossAuto } from '@/lib/scheduler/toss-runner';
+import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
+import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
+import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { searchAliExpressItems, getAliExpressItemDetail } from '@/lib/affiliate-engine/aliexpress-datahub';
 import { upsertCoupangMatch } from '@/lib/affiliate-engine/coupang-match';
@@ -844,9 +847,11 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
     return { posted: 0, results: [`"${keyword}" 검색 실패 — ${(e as Error).message}`] };
   }
 
+  const demandKeywords = await fetchDemandKeywords();
+  const musinsaRankScore = (p: MusinsaProduct) => p.expectedEarnings * (matchesDemand(p.goodsName, demandKeywords) ? 1.5 : 1);
   const picked = list
     .filter(p => !p.isSoldOut && !recentGoodsNo.has(p.goodsNo))
-    .sort((a, b) => b.expectedEarnings - a.expectedEarnings)[0];
+    .sort((a, b) => musinsaRankScore(b) - musinsaRankScore(a))[0];
 
   if (!picked) return { posted: 0, results: [`"${keyword}" 후보 없음(품절 제외/이미 게시된 상품만 있음)`] };
 
@@ -858,27 +863,57 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
     return { posted: 0, goodsNo: picked.goodsNo, results: [`"${picked.goodsName}" 링크 생성 실패 — ${(e as Error).message}`] };
   }
 
+  // 실데이터 긴급성 — 어제 스냅샷과 비교해서 진짜 가격 하락이면 프롬프트에 반영.
+  const priceDropNote = await getPriceDropNote('musinsa', String(picked.goodsNo), picked.finalPrice);
+  recordPriceSnapshot('musinsa', String(picked.goodsNo), picked.finalPrice).catch(() => {});
+
+  // 앵글을 매번 하나 골라서(할인/비교/후기/상황) 프롬프트에 반영하고 go-link에 태깅 —
+  // 나중에 클릭 데이터로 뭐가 실제로 잘 먹히는지 비교하기 위함.
+  const contentAngle = pickContentAngle();
+  const MUSINSA_ANGLE_GUIDE: Record<string, string> = {
+    discount: '이 가격이 왜 의외인지(평소·비슷한 상품 대비)를 중심으로.',
+    compare: '다른 선택지와 뭐가 다른지 비교하는 관점으로(구체적 스펙 지어내지 말 것).',
+    review: '"이 브랜드/카테고리 써본 사람들 사이에서 자주 나오는 얘기는" 식으로 일반화된 여론 톤으로(특정 개인의 후기를 지어내지 말 것).',
+    use_case: '이 옷/아이템이 필요해지는 구체적 상황(어떤 자리, 어떤 코디 고민) 묘사에 집중.',
+  };
+
   let caption = '';
   try {
     caption = (await callAISimple(
       `너는 패션 계정을 운영하는 20대 인플루언서다. 아래 무신사 상품을 소개하는 스레드(Threads) 게시물 문구를 써라.\n` +
-      `광고 티 나는 딱딱한 카피 금지, 진짜 갖고 싶어서 자랑하듯 반말/구어체로 3~5줄. 이모지는 1~2개만.\n` +
-      `가격/할인율 정보를 자연스럽게 녹여서 "이 가격에 안 사면 손해"라는 느낌을 줘. 브랜드명도 자연스럽게 언급.\n` +
+      `광고 티 나는 딱딱한 카피 금지, 진짜 갖고 싶어서 자랑하듯 반말/구어체로 3~5줄. 이모지는 1~2개만.\n\n` +
+      `[클릭을 유도하는 훅 규칙 — 반드시 지킬 것]\n` +
+      `1. 첫 1~2줄엔 상품명·브랜드명을 절대 넣지 마라. 상황이나 변화만 먼저 던지고 "이게 뭔지"는 뒤에서 밝혀라.\n` +
+      `2. 막연한 칭찬 대신 구체적이고 의외인 디테일을 최소 하나 넣어라(전후 비교, 의외의 반응 등).\n` +
+      `3. 이번 글의 앵글: ${contentAngle}. ${MUSINSA_ANGLE_GUIDE[contentAngle]}\n` +
+      `4. 가격/할인율 정보를 자연스럽게 녹여서 "이 가격에 안 사면 손해"라는 느낌은 주되, 다 풀어서\n` +
+      `   결론까지 내려주지 말고 궁금증은 남겨라.\n\n` +
       `상품명: ${picked.goodsName}\n브랜드: ${picked.brandName || '무신사'}\n정가: ${picked.originalPrice.toLocaleString()}원\n` +
-      `할인가: ${picked.finalPrice.toLocaleString()}원 (${picked.finalDiscount}% 할인)\n\n` +
+      `할인가: ${picked.finalPrice.toLocaleString()}원 (${picked.finalDiscount}% 할인)\n` +
+      `${priceDropNote ? `${priceDropNote}\n` : ''}\n` +
       `마지막에 링크나 해시태그는 넣지 마(내가 따로 붙일 거임). 본문만 출력해.`,
     )).trim();
   } catch (e) {
     console.error('[musinsa_curator_auto] 캡션 생성 실패, 기본 문구로 폴백:', e);
-    caption = `${picked.brandName ? `[${picked.brandName}] ` : ''}${picked.goodsName}\n${picked.finalDiscount}% 할인 중 — ${picked.finalPrice.toLocaleString()}원`;
+    caption = `써보니 생각보다 계속 손이 가는 아이템이 있어서 공유해요.\n${picked.finalDiscount}% 할인 중이에요.`;
   }
+
+  const goLink = await createGoLink({
+    platform: 'musinsa',
+    networkProductId: String(picked.goodsNo),
+    productName: picked.goodsName,
+    destinationUrl: link,
+    scheduleId: schedule.id,
+    contentChannel: 'sns_comment',
+    contentAngle,
+  });
 
   // 링크/고지문은 본문이 아니라 댓글로 — 본문은 순수 후기 톤만 남겨서 광고 티를 줄임(사용자 확정).
   // "행동유도 문구(CTA)"가 없으면 클릭률이 눈에 띄게 낮아진다는 게 SNS 커머스 전환
   // 관련 리서치의 공통 결론이라 명시적으로 추가 — 링크 위치(댓글)를 캡션에서 알려줘야
   // 실제로 눌러볼 확률이 올라감(사용자 확정, 리서치 반영).
   const mainCaption = [caption, '', '🛍️ 이 조합 저장하고 싶으면 댓글 링크 확인하세요!', '', '#무신사 #무신사큐레이터 #패션추천 #오오티디'].join('\n');
-  const linkComment = [link, '', MUSINSA_DISCLOSURE].join('\n');
+  const linkComment = [goLink, '', MUSINSA_DISCLOSURE].join('\n');
   const images = await getMusinsaProductImages(picked.goodsNo, picked.imageUrl);
 
   const results: string[] = [];
@@ -944,6 +979,28 @@ async function executeSchedule(schedule: Schedule) {
       recentProductIds = (recentLogs || [])
         .map(l => (l.result as { productId?: string })?.productId)
         .filter(Boolean) as string[];
+
+      // 클릭이 실제로 나온 상품은 "영구 제외" 대상에서 빼서 다른 앵글로 재사용
+      // 가능하게 한다 — 지금까지는 뭐가 잘 됐는지와 무관하게 한 번 쓴 상품은
+      // 무조건 새 상품으로 넘어가고 있었음.
+      try {
+        const { data: goLinks } = await supabase
+          .from('bossai_affiliate_go_links')
+          .select('id, network_product_id')
+          .eq('platform', 'coupang')
+          .gte('created_at', new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString())
+          .limit(5000);
+        const idToProduct = new Map((goLinks || []).map(g => [g.id, g.network_product_id as string]));
+        if (idToProduct.size) {
+          const { data: clicks } = await supabase
+            .from('bossai_affiliate_click_events')
+            .select('go_link_id')
+            .in('go_link_id', [...idToProduct.keys()])
+            .limit(5000);
+          const winningProductIds = new Set((clicks || []).map(c => idToProduct.get(c.go_link_id)).filter(Boolean));
+          recentProductIds = recentProductIds.filter(id => !winningProductIds.has(id));
+        }
+      } catch { /* 클릭 데이터 조회 실패는 무시 — 기존 dedup 동작으로 폴백 */ }
     }
 
     let result: Record<string, unknown> = {};
@@ -995,7 +1052,7 @@ async function executeSchedule(schedule: Schedule) {
         break;
       }
       case 'toss_auto': {
-        const r = await runTossAuto(schedule.user_id);
+        const r = await runTossAuto(schedule.user_id, schedule.id);
         result = r as unknown as Record<string, unknown>;
         summary = r.summary;
         break;
