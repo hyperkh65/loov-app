@@ -69,13 +69,16 @@ add_action('loop_end', function($wp_query) {
 </div>';
 });
 
-// 2026-09-30: 사이드바 위젯에 "아보다_5"(4238744126)를 본문 중간 광고와
-// 똑같이 또 썼던 버그 — 같은 광고 유닛이 한 페이지에 두 번 렌더링되면
-// 구글이 둘째 자리를 채워주지 않아(정책상 동일 유닛 중복 비권장) 그냥
-// 빈 자리로 낭비되고 있었음(실사용 확인: 사이드바 있는 단일 글 페이지에서
-// 4238744126이 2번). 새 슬롯 없이는 안전하게 채울 수 없어 사이드바 위젯
-// 광고는 제거 — 본문 3곳(9071434254/4238744126/7354479161) + 목록페이지
-// 루프(1739739148)만 유지.
+// ── GeneratePress 사이드바 위젯 광고 (아보다_사이드바위젯 1272788795)
+// 2026-09-30: 원래 여기 본문 중간 광고(4238744126)를 그대로 또 썼던 버그가
+// 있었음(같은 유닛이 한 페이지에 두 번 렌더링되면 구글이 둘째 자리를 안
+// 채워줌) — 애드센스에서 새로 만든 전용 슬롯으로 교체.
+add_action('generate_before_right_sidebar_content', function() {
+    echo '<div class="loov-ad widget" style="margin-bottom:20px;text-align:center;">
+<ins class="adsbygoogle" style="display:block" data-ad-client="${PUB_ID}" data-ad-slot="1272788795" data-ad-format="auto" data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>';
+});
 
 // ── 광고 CSS
 add_action('wp_head', function() {
