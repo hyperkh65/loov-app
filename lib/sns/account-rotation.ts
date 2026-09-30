@@ -46,7 +46,13 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
   },
 };
 
-const MIN_GAP_MS = 35 * 60 * 1000; // 30~40분 중간값
+// 전부 20분으로 단축(2026-10-01 사용자 확정) — 기존 30~40분 중간값(35분)에서
+// 앞당김. 그룹별로 다르게 둘 수 있게 Record로 유지.
+const MIN_GAP_MS: Record<SnsGroup, number> = {
+  default: 20 * 60 * 1000,
+  ads_default: 20 * 60 * 1000,
+  aboda_miracool: 20 * 60 * 1000,
+};
 
 export function snsGroupFor(siteUrl: string): SnsGroup {
   return (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) ? 'aboda_miracool' : 'default';
@@ -89,13 +95,15 @@ export async function pickRotatedAccount(
   const now = Date.now();
   const gapOf = (id: string) => now - (lastPostedAt.get(id) || 0);
 
+  const minGap = MIN_GAP_MS[group];
+
   // 주 타겟(pool[0])이 간격 조건을 만족하면 최우선
   const primary = available.find(c => c.platform_user_id === pool[0]);
-  if (primary && gapOf(pool[0]) >= MIN_GAP_MS) return primary;
+  if (primary && gapOf(pool[0]) >= minGap) return primary;
 
   // 나머지는 "가장 오래 전에 올린" 순으로 최초 조건 만족하는 것
   const sorted = [...available].sort((a, b) => gapOf(b.platform_user_id) - gapOf(a.platform_user_id));
-  return sorted.find(c => gapOf(c.platform_user_id) >= MIN_GAP_MS) || null;
+  return sorted.find(c => gapOf(c.platform_user_id) >= minGap) || null;
 }
 
 export async function logSnsPost(admin: AdminClient, platform: string, platformUserId: string): Promise<void> {
