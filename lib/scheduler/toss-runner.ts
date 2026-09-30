@@ -124,15 +124,16 @@ export async function runTossAuto(userId: string, scheduleId?: string): Promise<
   });
   const linkComment = buildLinkComment(goLink);
 
-  // 쿠팡/블로그 크로스포스팅과 같은 "2dayskr 계열" 로테이션 풀 공유 —
-  // 계정 하나에 몰리지 않게 서로 조율됨(lib/sns/account-rotation.ts).
+  // 쿠팡과 같은 "ads_default"(광고 전용, @2days.kr 하나) 풀 공유 —
+  // 일반 콘텐츠 계정(@2dayskr_korea 등)에는 광고가 안 넘어가고, 간격이
+  // 안 되면 스킵됨(lib/sns/account-rotation.ts).
   const { data: connections } = await admin.from('sns_connections')
     .select('platform, platform_user_id, access_token')
     .eq('user_id', userId).eq('is_active', true)
     .in('platform', ['instagram', 'threads']);
   const [igConn, threadsConn] = await Promise.all([
-    pickRotatedAccount(admin, 'default', 'instagram', connections || []),
-    pickRotatedAccount(admin, 'default', 'threads', connections || []),
+    pickRotatedAccount(admin, 'ads_default', 'instagram', connections || []),
+    pickRotatedAccount(admin, 'ads_default', 'threads', connections || []),
   ]);
 
   const results: string[] = [];

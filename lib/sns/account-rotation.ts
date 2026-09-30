@@ -5,11 +5,24 @@
  * 골라주고, 전부 최근에 썼으면(최소 간격 미달) 이번 회차는 건너뛰게 한다.
  * (사용자 확정: @2days.kr이 주 타겟, 계정당 최소 30~40분 간격, 무신사/아고다
  * 전용 광고 계정은 이 로테이션과 무관.)
+ *
+ * 2026-09-30 수정: 처음엔 쿠팡/토스 광고도 @2dayskr/@2dayskr_korea로
+ * 로테이션시켰는데, lib/rewrite-publish.ts에 이미 더 예전부터 있던 규칙
+ * (SNS_ACCOUNT_ROUTING_BY_SOURCE 주석, 2026-09-23/24)과 충돌함 — 그 규칙은
+ * "@2dayskr_korea/@aboda_miracool은 니치 안 맞는 상품광고를 절대 안 섞는
+ * 일반 콘텐츠 전용 계정"으로 명시적으로 분리해둔 것이었는데, 내 로테이션이
+ * 그걸 모르고 쿠팡 상품광고를 @2dayskr_korea에 실제로 발행해버림(실사용 확인:
+ * "냉장고 문 여는 순간..." 쿠팡 광고가 @2dayskr_korea에 게시됨). 그래서
+ * "광고성 콘텐츠(쿠팡/토스)"와 "블로그 콘텐츠(blog_auto 크로스포스팅)"를
+ * 분리 — 광고는 주 타겟 계정 하나만 쓰고(간격 안 되면 그냥 스킵, 다른 계정으로
+ * 안 넘어감), 블로그 크로스포스팅만 기존 자매 계정 로테이션을 그대로 씀
+ * (rewrite-publish.ts가 이미 그 계정들에 일반 블로그 콘텐츠를 문제없이
+ * 섞어왔던 전례와 동일한 성격이라 안전).
  */
 import { createAdminClient } from '@/lib/supabase-server';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
-export type SnsGroup = 'default' | 'aboda_miracool';
+export type SnsGroup = 'default' | 'aboda_miracool' | 'ads_default';
 type RotatedPlatform = 'threads' | 'instagram';
 
 // platform_user_id로 매칭한다 — platform_username은 "@2days.kr" vs "@2dayskr"처럼
@@ -18,8 +31,14 @@ type RotatedPlatform = 'threads' | 'instagram';
 // 표기가 다른 별개 계정 @2dayskr를 가리키고 있었던 걸 확인).
 const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>> = {
   default: {
-    threads: ['25873039292318366', '25203934249239577', '27198401606479414'], // @2days.kr(주 타겟) → @2dayskr → @2dayskr_korea
-    instagram: ['34489947500650071', '27094702240139938'], // @2dayskr(주 타겟) → @2dayskr_korea
+    threads: ['25873039292318366', '25203934249239577', '27198401606479414'], // @2days.kr(주 타겟) → @2dayskr → @2dayskr_korea — 블로그 콘텐츠 전용
+    instagram: ['34489947500650071', '27094702240139938'], // @2dayskr(주 타겟) → @2dayskr_korea — 블로그 콘텐츠 전용
+  },
+  // 쿠팡/토스 상품광고 전용 — @2days.kr 하나만, 로테이션 없이 간격만 체크
+  // (@2dayskr_korea/@aboda_miracool에 광고 섞임 방지, 위 코멘트 참고)
+  ads_default: {
+    threads: ['25873039292318366'], // @2days.kr
+    instagram: ['34489947500650071'], // @2dayskr
   },
   aboda_miracool: {
     threads: ['27529465156685675'], // @aboda_miracool — 전용 계정 1개뿐, 사실상 로테이션 없이 이거 하나만
