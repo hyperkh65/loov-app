@@ -11,7 +11,7 @@ const INDEXNOW_KEY = 'f0625bf1c8c42e7f374ecd6f10b0125a';
 export async function submitToIndexNow(postUrl: string): Promise<void> {
   try {
     const host = new URL(postUrl).host;
-    await fetch('https://api.indexnow.org/indexnow', {
+    const res = await fetch('https://api.indexnow.org/indexnow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({
@@ -22,5 +22,10 @@ export async function submitToIndexNow(postUrl: string): Promise<void> {
       }),
       signal: AbortSignal.timeout(10_000),
     });
-  } catch { /* 색인 알림은 부가 기능 — 실패해도 발행 자체는 이미 성공했으니 무시 */ }
+    // 응답 상태를 한 번도 확인 안 해서, 사이트에 키 검증 파일이 없어 빙이
+    // 거부해도(404 등) 아무 로그 없이 조용히 실패하고 있었음(수익화 감사에서
+    // finance.2days.kr/yellow.2days.kr 등 여러 사이트가 키 파일 자체가
+    // 없는 채로 몇 달째 이 상태였던 게 확인됨) — 최소 로그는 남김.
+    if (!res.ok) console.error(`[indexnow] ${host} 제출 실패 (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  } catch (e) { console.error('[indexnow] 요청 자체 실패:', e); }
 }
