@@ -20,6 +20,13 @@ const TARGETS: Record<'en' | 'ja', string> = {
 let keyIdx = 0;
 async function groqKeys(): Promise<string[]> {
   const raw = await getSetting('GROQ_API_KEYS');
+  // GROQ_API_KEYS는 JSON 배열 문자열로 저장됨 — split(',')만 하면 키마다
+  // `["`/`"]` 같은 JSON 구조 문자가 그대로 붙어 전부 무효한 키가 됨(실사용 중
+  // Groq 401로 확인, engmag/japmag 자동번역이 이 버그로 계속 실패 중이었음).
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter(Boolean);
+  } catch { /* 레거시 콤마구분 형식 폴백 */ }
   return raw.split(',').map(k => k.trim()).filter(Boolean);
 }
 

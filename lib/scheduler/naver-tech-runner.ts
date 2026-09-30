@@ -62,7 +62,17 @@ let groqKeyIdx = 0;
 /** Groq 4키 라운드로빈 (lib/ai-translate.ts와 동일 패턴 — 키 하나론 분당 토큰 한도에 걸림) */
 async function callGroq(prompt: string): Promise<string> {
   const raw = await getSetting('GROQ_API_KEYS');
-  const keys = raw.split(',').map((k) => k.trim()).filter(Boolean);
+  // GROQ_API_KEYS는 JSON 배열 문자열로 저장됨(app-settings 다중 키 관리 UI 기준) —
+  // 예전엔 단순 콤마구분 문자열이라 가정하고 split(',')만 했는데, 그 결과 각 키
+  // 앞뒤에 `["`/`"]` 같은 JSON 구조 문자가 그대로 붙어서 전부 무효한 키가 되고
+  // 있었음(실사용 중 Groq 401 Invalid API Key로 확인, naver_tech_auto가 이 버그
+  // 때문에 매 실행 실패해서 네이버 블로그에 글이 전혀 안 올라가고 있었음).
+  let keys: string[] = [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) keys = parsed.filter(Boolean);
+  } catch { /* 레거시 콤마구분 형식일 수 있음 — 아래 폴백 */ }
+  if (!keys.length) keys = raw.split(',').map((k) => k.trim()).filter(Boolean);
   if (!keys.length) throw new Error('GROQ_API_KEYS 설정 없음');
 
   let lastErr = '';
