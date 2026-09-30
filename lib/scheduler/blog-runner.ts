@@ -117,10 +117,18 @@ export interface WordPressPublishResult {
 // 건드리니, 발행하는 본문 자체에 광고 코드를 직접 삽입. 같은 애드센스
 // 계정(ca-pub-8940400388075870)을 이미 다른 사이트에서 쓰고 있어 그대로
 // 재사용, 슬롯 ID도 기존에 검증된 것 재사용.
+// 2026-09-30: 2days.kr 하나에만 하드코딩돼 있던 걸 자동발행되는 나머지
+// 사이트(전부 같은 애드센스 계정 소속) 전체로 확장 — 수익화 감사에서
+// 이 사이트들 글에 광고가 아예 안 붙고 있던 게 확인됨.
+const ADSENSE_HOSTS = new Set([
+  '2days.kr', 'blog.2days.kr', 'finance.2days.kr', 'money.2days.kr',
+  'engmag.2days.kr', 'japmag.2days.kr', 'yellow.2days.kr',
+  'aboda.kr', 'miracool.co.kr',
+]);
 function injectAdSenseForSite(wpUrl: string, content: string): string {
   let host: string;
   try { host = new URL(wpUrl).host; } catch { return content; }
-  if (host !== '2days.kr') return content;
+  if (!ADSENSE_HOSTS.has(host)) return content;
   const ad = `<div class="loov-ad" style="margin:20px auto;text-align:center;clear:both;">
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8940400388075870" crossorigin="anonymous"></script>
 <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-8940400388075870" data-ad-slot="4238744126" data-ad-format="auto" data-full-width-responsive="true"></ins>
