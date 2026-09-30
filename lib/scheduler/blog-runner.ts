@@ -122,26 +122,16 @@ export interface WordPressPublishResult {
 // 계정(ca-pub-8940400388075870)을 이미 다른 사이트에서 쓰고 있어 그대로
 // 재사용, 슬롯 ID도 기존에 검증된 것 재사용.
 // 2026-09-30: 2days.kr 하나에만 하드코딩돼 있던 걸 자동발행되는 나머지
-// 사이트(전부 같은 애드센스 계정 소속) 전체로 확장 — 수익화 감사에서
-// 이 사이트들 글에 광고가 아예 안 붙고 있던 게 확인됨.
-const ADSENSE_HOSTS = new Set([
-  '2days.kr', 'blog.2days.kr', 'finance.2days.kr', 'money.2days.kr',
-  'engmag.2days.kr', 'japmag.2days.kr', 'yellow.2days.kr',
-  'aboda.kr', 'miracool.co.kr',
-]);
-function injectAdSenseForSite(wpUrl: string, content: string): string {
-  let host: string;
-  try { host = new URL(wpUrl).host; } catch { return content; }
-  if (!ADSENSE_HOSTS.has(host)) return content;
-  const ad = `<div class="loov-ad" style="margin:20px auto;text-align:center;clear:both;">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8940400388075870" crossorigin="anonymous"></script>
-<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-8940400388075870" data-ad-slot="4238744126" data-ad-format="auto" data-full-width-responsive="true"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-</div>`;
-  const firstParaEnd = content.indexOf('</p>');
-  if (firstParaEnd === -1) return ad + content;
-  const idx = firstParaEnd + 4;
-  return content.slice(0, idx) + ad + content.slice(idx);
+// 2026-09-30 전체 원복: 이 함수를 추가할 때 "이 사이트들에 광고가 아예 안
+// 붙고 있다"고 판단했는데 잘못된 전제였음 — app/api/wp-auto/setup/route.ts가
+// wp-auto로 만든 사이트 전부에 mu-plugins/aboda-adsense.php(슬롯 4~5개,
+// data-ad-slot="4238744126" 포함)를 이미 자동 설치해두고 있어서, 이 함수가
+// 사실상 "이미 있던 광고 위에 같은 슬롯을 또 하나 중복 삽입"하는 역할만
+// 했음(실사용 확인: 2days.kr/finance/aboda/miracool 전부 4238744126이 한
+// 페이지에 2번씩 렌더링됨, 총 슬롯 8개). 광고 밀도 과다로 구글이 미충전
+// 처리하는 게 "매출이 거의 안 느는" 증상의 유력한 원인이라 판단해 전체 원복.
+function injectAdSenseForSite(_wpUrl: string, content: string): string {
+  return content;
 }
 
 // 2days.kr는 카테고리를 안 정해주면 기본값인 "미분류"(id 1)로 들어가는데,
