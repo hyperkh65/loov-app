@@ -704,15 +704,27 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
 
       const description = [koDesc, '', `원본: ${video.tweet_url}`, VIRAL_VIDEO_DISCLOSURE].filter(Boolean).join('\n');
 
-      const yt = await uploadToYoutube({
-        userId: schedule.user_id,
-        videoUrl: editedVideoUrl,
-        title: koTitle,
-        description,
-        channelId: VIRAL_YOUTUBE_CHANNEL_ID,
-      });
+      // 유튜브 업로드가 실패(토큰 만료 등)해도 스레드 발행은 구글이랑 무관한
+      // 별개 작업이라 영향받으면 안 되는데, 예전엔 유튜브를 먼저 await하고
+      // 실패하면 통째로 catch로 빠져서 스레드 코드까지 아예 실행이 안 됐음
+      // (실사용 중 확인 — 유튜브 토큰 만료 기간 동안 스레드까지 같이 멈춰 있었음)
+      // — 서로 독립적으로 시도하도록 분리.
+      const postedPlatforms: string[] = [];
+      let ytNote = '';
+      try {
+        const yt = await uploadToYoutube({
+          userId: schedule.user_id,
+          videoUrl: editedVideoUrl,
+          title: koTitle,
+          description,
+          channelId: VIRAL_YOUTUBE_CHANNEL_ID,
+        });
+        postedPlatforms.push('youtube_2days_movie');
+        ytNote = `유튜브 업로드 완료 (${yt.url})`;
+      } catch (e) {
+        ytNote = `유튜브 실패 — ${(e as Error).message?.slice(0, 100)}`;
+      }
 
-      const postedPlatforms = ['youtube_2days_movie'];
       let threadsNote = '';
       if (threadsConn) {
         try {
@@ -725,13 +737,15 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
         }
       }
 
-      await supabase.from('bossai_x_videos').update({
-        posted_at: new Date().toISOString(),
-        posted_platforms: postedPlatforms,
-      }).eq('id', video.id);
+      if (postedPlatforms.length > 0) {
+        await supabase.from('bossai_x_videos').update({
+          posted_at: new Date().toISOString(),
+          posted_platforms: postedPlatforms,
+        }).eq('id', video.id);
+        uploaded++;
+      }
 
-      uploaded++;
-      results.push(`@${video.username} ${video.tweet_id}: 업로드 완료 (${yt.url})${threadsNote}`);
+      results.push(`@${video.username} ${video.tweet_id}: ${ytNote}${threadsNote}`);
     } catch (e) {
       results.push(`@${video.username} ${video.tweet_id}: 실패 — ${(e as Error).message?.slice(0, 150)}`);
     }
