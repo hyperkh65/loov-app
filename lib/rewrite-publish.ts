@@ -15,6 +15,7 @@ import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { publishToPinterest } from '@/lib/pinterest-publish';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
+import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
@@ -338,12 +339,29 @@ export async function publishRewrittenArticle(
     .eq('is_active', true);
 
   const allowedAccounts = await getSnsAccountRouting(sourceId);
+  // @2dayskr 그룹(현재 28개 소스)이 전부 같은 계정 하나로만 나가면 그 계정만
+  // 계속 도배되는 문제가 있어서(사용자 확인, 2026-10-01) — 블로그 크로스포스팅
+  // (lib/sns/account-rotation.ts)과 동일하게 "주 타겟 우선 + 자매계정 로테이션"으로
+  // 대체. 여러 계정을 명시적으로 화이트리스트한 다른 그룹(@aboda_miracool 등)은
+  // 기존처럼 전부 발행 유지.
+  const useRotation = allowedAccounts.length === 1 && allowedAccounts[0] === '@2dayskr';
   const relevantConns = (conns || []).filter(c => {
     if (excludedPlatforms.includes(c.platform)) return false;
     if (!SNS_PLATFORMS.includes(c.platform as Platform)) return false;
     if (!ACCOUNT_ROUTED_PLATFORMS.includes(c.platform as Platform)) return true;
+    if (useRotation) return false; // threads/instagram은 아래서 로테이션으로 골라 넣음
     return allowedAccounts.includes(c.platform_username || '');
   });
+  if (useRotation) {
+    const [threadsPick, instagramPick] = await Promise.all([
+      pickRotatedAccount(admin, 'default', 'threads', conns || []),
+      pickRotatedAccount(admin, 'default', 'instagram', conns || []),
+    ]);
+    for (const pick of [threadsPick, instagramPick]) {
+      const full = pick && (conns || []).find(c => c.platform_user_id === pick.platform_user_id);
+      if (full) relevantConns.push(full);
+    }
+  }
   if (!relevantConns.length) return { wordpressUrl, sns, naverCafe, tumblr, pinterest, linkedin, wordpressCom, githubPages, translate };
 
   const images = snsImageUrl ? [snsImageUrl] : [];
@@ -389,6 +407,9 @@ export async function publishRewrittenArticle(
         }
       }
       sns[label] = 'ok';
+      if (useRotation && (platform === 'threads' || platform === 'instagram')) {
+        logSnsPost(admin, platform, conn.platform_user_id).catch(() => {});
+      }
     } catch (e) {
       sns[label] = `error: ${String(e).slice(0, 150)}`;
     }
