@@ -16,6 +16,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
 import { searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
 
 export const maxDuration = 300;
 
@@ -102,9 +103,16 @@ export async function POST(req: NextRequest) {
         if (!oldestPendingBySource.has(key)) oldestPendingBySource.set(key, row.created_at);
       }
 
+      // one.yoosol/yoonfree(PRIORITY_SOURCE_IDS)는 다른 소스와 공정 라운드로빈을
+      // 돌리면 소스 수(19개+)에 밀려 적체가 수백 건까지 쌓이는 게 실사용 중
+      // 확인됨(2026-10-01, 사용자 확정) — 대기 글이 있으면 항상 이 소스부터.
+      const pendingKeys = [...oldestPendingBySource.keys()];
+      const priorityPendingKeys = pendingKeys.filter((k) => PRIORITY_SOURCE_IDS.has(k));
+      const candidateKeys = priorityPendingKeys.length ? priorityPendingKeys : pendingKeys;
+
       let bestSourceKey = 'null';
       let bestLastServedAt = '9999-12-31'; // 이 소스가 최근에 처리된 적이 있는지 — 없으면 최우선(가장 옛날 취급)
-      for (const sourceKey of oldestPendingBySource.keys()) {
+      for (const sourceKey of candidateKeys) {
         let lastServedAt = '0000-01-01';
         if (sourceKey !== 'null') {
           const { data: lastServed } = await supabase
