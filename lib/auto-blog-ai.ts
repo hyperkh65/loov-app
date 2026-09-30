@@ -593,13 +593,14 @@ export async function generateText(
       : replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))))
     ) : false;
 
-  // Groq 전용 모드 — 쿠팡/아고다처럼 매시간 도는 제휴 러너들이 이미 고갈된
-  // Ollama/Gemini/OpenAI/Claude를 순서대로 다 두드리며 시간·API 호출만 낭비하는 걸
-  // 막기 위해, Groq만 쓰고 실패하면 바로 에러(다른 provider로 안 넘어감).
+  // Groq 우선 모드 — 쿠팡/아고다처럼 매시간 도는 제휴 러너는 고갈된 Ollama/Gemini 등을
+  // 먼저 두드리며 시간을 낭비하지 않도록 Groq부터 시도한다. 단 Groq가 실패(429/키 문제)하면
+  // 예전처럼 나머지 provider로 이어서 폴백(전용 모드일 땐 그대로 발행 실패로 끝나 성공률이 떨어졌음).
+  let groqTried = false;
   if (preferModel === 'groq') {
+    groqTried = true;
     const r = clean(await tryGroq());
     if (r) return r;
-    throw new Error(`사용 가능한 AI 없음(Groq 전용 모드)\n${errors.length ? `오류: ${errors.join(' | ')}` : ''}`);
   }
 
   // ── preferModel에 따라 해당 provider를 먼저 시도 ──────────
@@ -625,7 +626,7 @@ export async function generateText(
 
   // Groq을 다른 fallback들보다 먼저: 나머지 provider(Ollama/Gemini/Claude/OpenRouter/OpenAI)가
   // 전부 동시에 죽었을 때(쿼터 소진 등, 실제로 발생했던 상황) 유일하게 살아있는 경로였다.
-  fallbacks.push(tryGroq);
+  if (!groqTried) fallbacks.push(tryGroq);
   if (!isOllamaPreferred) fallbacks.push(() => tryOllama('qwen3.5'));
   if (!preferModel.startsWith('gemini') && preferModel !== 'gemini') fallbacks.push(tryGemini);
   if (!preferModel.startsWith('claude')) fallbacks.push(() => tryClaude());
