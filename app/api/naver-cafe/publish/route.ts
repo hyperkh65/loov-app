@@ -21,10 +21,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const admin = createAdminClient();
-    const { articleUrl } = await publishToNaverCafe(admin, {
+    const { articleUrl, extra } = await publishToNaverCafe(admin, {
       userId: user.id, title, content, menuId: menu_id, openYn: open_yn, blogUrl: blog_url,
     });
-    return NextResponse.json({ ok: true, url: articleUrl });
+    return NextResponse.json({ ok: true, url: articleUrl, extra });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

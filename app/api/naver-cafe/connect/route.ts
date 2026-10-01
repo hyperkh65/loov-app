@@ -8,7 +8,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const { data } = await supabase.from('naver_cafe_connections')
-    .select('club_id, cafe_name, cafe_url, member_id, menu_list, token_expires_at, is_active, updated_at')
+    .select('club_id, cafe_name, cafe_url, member_id, menu_list, extra_cafes, token_expires_at, is_active, updated_at')
     .eq('user_id', user.id)
     .single();
 
@@ -36,6 +36,28 @@ export async function POST(req: NextRequest) {
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
 
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
+// PUT: 추가 카페 목록 저장 (같은 네이버 계정, 기본 카페와 함께 발행)
+export async function PUT(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+
+  const { extra_cafes } = await req.json();
+  if (!Array.isArray(extra_cafes)) return NextResponse.json({ error: 'extra_cafes 배열 필요' }, { status: 400 });
+  const clean = extra_cafes
+    .filter((c: { club_id?: string; menu_id?: string | number }) => c?.club_id && c?.menu_id)
+    .map((c: { club_id: string; cafe_name?: string; cafe_url?: string; menu_id: string | number; menu_name?: string }) => ({
+      club_id: String(c.club_id), cafe_name: c.cafe_name || '', cafe_url: c.cafe_url || '',
+      menu_id: String(c.menu_id), menu_name: c.menu_name || '',
+    }));
+
+  const { error } = await supabase.from('naver_cafe_connections')
+    .update({ extra_cafes: clean, updated_at: new Date().toISOString() })
+    .eq('user_id', user.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

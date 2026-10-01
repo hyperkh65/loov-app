@@ -10,6 +10,14 @@ interface MenuItem {
   menuType: string;
 }
 
+interface ExtraCafe {
+  club_id: string;
+  cafe_name: string;
+  cafe_url: string;
+  menu_id: string;
+  menu_name: string;
+}
+
 interface CafeConnection {
   connected: boolean;
   oauth_connected: boolean;
@@ -18,6 +26,7 @@ interface CafeConnection {
   cafe_url?: string;
   member_id?: string;
   menu_list?: MenuItem[];
+  extra_cafes?: ExtraCafe[];
   updated_at?: string;
 }
 
@@ -95,7 +104,7 @@ export default function NaverCafePage() {
   const [attachFiles, setAttachFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
   const [coverImageUrl, setCoverImageUrl] = useState('');
   const [publishing, setPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState<{ ok?: boolean; url?: string; error?: string } | null>(null);
+  const [publishResult, setPublishResult] = useState<{ ok?: boolean; url?: string; error?: string; extra?: { cafe: string; articleUrl?: string; error?: string }[] } | null>(null);
 
   // history
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -286,6 +295,39 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
     setSettingsMsg(data.ok ? '✅ 모든 설정 저장됨' : `❌ ${data.error}`);
     if (data.ok) loadConn();
     setSavingConn(false);
+  };
+
+  const [exSlug, setExSlug] = useState('');
+  const [exMenuId, setExMenuId] = useState('');
+  const [exMenuName, setExMenuName] = useState('');
+  const [exBusy, setExBusy] = useState(false);
+
+  const saveExtras = async (list: ExtraCafe[]) => {
+    const res = await fetch('/api/naver-cafe/connect', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ extra_cafes: list }),
+    });
+    return res.json();
+  };
+
+  const addExtraCafe = async () => {
+    const slug = exSlug.trim().replace(/^https?:\/\/cafe\.naver\.com\//, '').replace(/\/$/, '');
+    if (!slug || !exMenuId.trim()) { setSettingsMsg('추가 카페 URL과 게시판 ID를 입력하세요'); return; }
+    setExBusy(true);
+    const r = await (await fetch(`/api/naver-cafe/resolve?slug=${encodeURIComponent(slug)}`)).json();
+    if (!r.club_id) { setSettingsMsg(`❌ ${r.error}`); setExBusy(false); return; }
+    const list = [...(conn.extra_cafes || []).filter(c => c.club_id !== String(r.club_id)),
+      { club_id: String(r.club_id), cafe_name: r.cafe_name || slug, cafe_url: slug, menu_id: exMenuId.trim(), menu_name: exMenuName.trim() }];
+    const d = await saveExtras(list);
+    setSettingsMsg(d.ok ? `✅ 추가 카페 등록: ${r.cafe_name || slug}` : `❌ ${d.error}`);
+    if (d.ok) { setExSlug(''); setExMenuId(''); setExMenuName(''); loadConn(); }
+    setExBusy(false);
+  };
+
+  const removeExtraCafe = async (clubId: string) => {
+    await saveExtras((conn.extra_cafes || []).filter(c => c.club_id !== clubId));
+    loadConn();
   };
 
   const addMenu = async () => {
@@ -524,6 +566,38 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
                       <span className="text-gray-400">ID: {m.menuId}</span>
                       <button onClick={() => removeMenu(m.menuId)} className="text-red-400 hover:text-red-600">✕</button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 추가 카페 (같은 네이버 계정) */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">추가 카페 (함께 발행)</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                같은 네이버 계정의 다른 카페. 발행하면 위 기본 카페와 여기 등록된 카페 모두에 올라갑니다.
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <input value={exSlug} onChange={e => setExSlug(e.target.value)} placeholder="카페 URL (예: mycafe)"
+                className="flex-1 min-w-32 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500" />
+              <input value={exMenuId} onChange={e => setExMenuId(e.target.value)} placeholder="게시판 ID"
+                className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500" />
+              <input value={exMenuName} onChange={e => setExMenuName(e.target.value)} placeholder="게시판 이름(선택)"
+                className="w-32 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500" />
+              <button onClick={addExtraCafe} disabled={exBusy}
+                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                추가
+              </button>
+            </div>
+            {(conn.extra_cafes || []).length > 0 && (
+              <div className="space-y-1">
+                {(conn.extra_cafes || []).map(c => (
+                  <div key={c.club_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-xs">
+                    <span className="font-medium text-gray-700">{c.cafe_name} <span className="text-gray-400">/ {c.menu_name || `게시판 ${c.menu_id}`}</span></span>
+                    <button onClick={() => removeExtraCafe(c.club_id)} className="text-red-400 hover:text-red-600">✕</button>
                   </div>
                 ))}
               </div>
@@ -795,6 +869,11 @@ plain text 본문만 출력하세요. HTML 태그 없이.`;
                       {publishResult.url}
                     </a>
                   )}
+                  {publishResult.extra?.map((x, i) => (
+                    <p key={i} className="text-xs mt-1">
+                      {x.error ? `❌ ${x.cafe}: ${x.error}` : <>✅ {x.cafe}: <a href={x.articleUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{x.articleUrl}</a></>}
+                    </p>
+                  ))}
                 </>
               ) : (
                 <p>❌ {publishResult.error}</p>
