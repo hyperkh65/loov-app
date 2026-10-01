@@ -118,7 +118,7 @@ if status != 200:
 # 생성 응답 포맷이 불안정할 수 있어, 글 목록 조회로 실제 생성된 글의 permalink를 확정한다
 list_url = (blog_url + '/manage/posts.json?category=-3&page=1&searchType=title&visibility=all'
             + '&searchKeyword=' + urllib.parse.quote(title))
-list_body, list_status = http_get(list_url, blog_url + '/manage/posts/')
+list_body, _, list_status = http_get(list_url, blog_url + '/manage/posts/')
 match = None
 try:
     items = json.loads(list_body).get('data', {}).get('items', [])
