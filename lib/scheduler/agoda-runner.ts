@@ -1,3 +1,4 @@
+import { getSection } from '@/lib/sns/sections';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
@@ -15,20 +16,6 @@ const DISCLOSURE = '이 포스팅은 아고다 제휴 활동의 일환으로, �
 // 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
 const ACCOUNT_ROUTED_PLATFORMS = ['threads', 'instagram'];
 const AGODA_SNS_ACCOUNTS = ['@armchair_travel_today'];
-
-function getSection(text: string, tag: string, allTags: string[]): string {
-  const marker = `[[[${tag}]]]`;
-  const start = text.indexOf(marker);
-  if (start < 0) return '';
-  const from = start + marker.length;
-  let end = text.length;
-  for (const t of allTags) {
-    if (t === tag) continue;
-    const pos = text.indexOf(`[[[${t}]]]`, from);
-    if (pos >= 0 && pos < end) end = pos;
-  }
-  return text.slice(from, end).trim();
-}
 
 function stripMarkerArtifacts(s: string): string {
   return s.replace(/\[\[\[[^\]]{0,40}\]\]\]/g, '').trim();

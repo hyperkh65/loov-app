@@ -1,3 +1,4 @@
+import { getSection as getSectionShared } from '@/lib/sns/sections';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
@@ -53,20 +54,8 @@ ${urlNote}
   try {
     const text = await generateText(prompt, 'gemini');
 
-    const getSection = (tag: string) => {
-      const marker = `[[[${tag}]]]`;
-      const ALL = ['INSTAGRAM', 'TWITTER', 'FACEBOOK', 'THREADS'];
-      const start = text.indexOf(marker);
-      if (start < 0) return '';
-      const from = start + marker.length;
-      let end = text.length;
-      for (const t of ALL) {
-        if (t === tag) continue;
-        const pos = text.indexOf(`[[[${t}]]]`, from);
-        if (pos >= 0 && pos < end) end = pos;
-      }
-      return text.slice(from, end).trim();
-    };
+    const ALL = ['INSTAGRAM', 'TWITTER', 'FACEBOOK', 'THREADS'];
+    const getSection = (tag: string) => getSectionShared(text, tag, ALL);
 
     const instagram = getSection('INSTAGRAM');
     const twitter = getSection('TWITTER');
