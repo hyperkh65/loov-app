@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { nasExecWithStdin } from '@/lib/nas-ssh';
+import { sanitizeInvisible, findHtmlProblem } from '@/lib/html-gate';
 
 export const maxDuration = 60;
 
@@ -157,10 +158,11 @@ export async function POST(req: NextRequest) {
       content: string;
       tags?: string[];
       is_publish?: boolean;
+      category_id?: number | string;
     };
     if (!body.user_id) return NextResponse.json({ error: 'user_id 필요 (내부 호출)' }, { status: 400 });
     userId = body.user_id;
-    return handlePublish(userId, body.blog_id, body.title, body.content, body.tags ?? [], body.is_publish ?? true);
+    return handlePublish(userId, body.blog_id, body.title, body.content, body.tags ?? [], body.is_publish ?? true, body.category_id);
   }
 
   const supabase = await createClient();
@@ -173,8 +175,9 @@ export async function POST(req: NextRequest) {
     content: string;
     tags?: string[];
     is_publish?: boolean;
+    category_id?: number | string;
   };
-  return handlePublish(user.id, body.blog_id, body.title, body.content, body.tags ?? [], body.is_publish ?? true);
+  return handlePublish(user.id, body.blog_id, body.title, body.content, body.tags ?? [], body.is_publish ?? true, body.category_id);
 }
 
 async function handlePublish(
@@ -184,10 +187,16 @@ async function handlePublish(
   content: string,
   tags: string[],
   isPublish: boolean,
+  categoryId?: number | string,
 ) {
   if (!blogId || !title || !content) {
     return NextResponse.json({ error: 'blog_id, title, content 필요' }, { status: 400 });
   }
+
+  title = sanitizeInvisible(title);
+  content = sanitizeInvisible(content);
+  const problem = findHtmlProblem(title, content);
+  if (problem) return NextResponse.json({ error: `발행 차단(불완전 HTML): ${problem}` }, { status: 422 });
 
   const supabase = createAdminClient();
 
@@ -209,7 +218,7 @@ async function handlePublish(
     content,
     tssession: conn.tssession,
     tags,
-    category: '0',
+    category: String(categoryId || 0),
     isPublish,
   });
 

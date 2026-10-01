@@ -8,7 +8,8 @@ const INVISIBLE_RE = /[​-‏‪-‮⁠-⁤⁦-⁩­͏᠎﻿ᅟᅠㅤﾠ-
 const ODD_SPACE_RE = /[  -   　]/g;
 
 export function sanitizeInvisible(s: string): string {
-  return s.replace(INVISIBLE_RE, '').replace(ODD_SPACE_RE, ' ');
+  // 섹션 구분자(===FAQ=== 등) 파싱 잔여물로 '=' 한 글자만 든 문단이 생기던 버그 방어
+  return s.replace(INVISIBLE_RE, '').replace(ODD_SPACE_RE, ' ').replace(/<p[^>]*>\s*=+\s*<\/p>\n?/g, '');
 }
 
 const PAIRED_TAGS = ['p', 'h2', 'h3', 'h4', 'div', 'ul', 'ol', 'li', 'figure', 'figcaption', 'b', 'i', 'strong', 'em', 'span', 'a', 'table', 'tr', 'td', 'th'];
@@ -41,6 +42,11 @@ export function findHtmlProblem(title: string, html: string): string | null {
 
   // 프롬프트 자리표시자·마커 누출
   if (/===[A-Z0-9]+===|\(단락\d|\(키워드 포함|\(메타 설명|\[뉴스\d\]|\[블로그\d\]/.test(text)) return '프롬프트 지시문/마커가 본문에 남음';
+
+  // 모델 반복 루프: 같은 단어/구절이 연달아 반복되거나 줄 끝에 구분자 '='만 남은 경우
+  const loop = text.match(/([가-힣A-Za-z0-9]\S+)(?:\s+\1){4,}/) || text.match(/((?:\S+\s+){1,5}\S+)(?:\s+\1){3,}/) || text.match(/([가-힣A-Za-z0-9]{2,10}?)\1{5,}/);
+  if (loop) return `같은 표현이 반복됨: ${loop[0].slice(0, 30)}`;
+  if (/(^|>)\s*=+\s*(<|$)/.test(html)) return '본문에 구분자(=)가 남음';
 
   // 문장 중간(쉼표·콜론·여는 괄호)에서 끝남
   if (/[,:;(]$/.test(text)) return `본문이 문장 중간에서 끊김: ${text.slice(-30)}`;
