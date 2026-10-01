@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
 
     const buffer = await res.arrayBuffer();
     const contentType = res.headers.get('content-type') || '';
-    const isEucKr = /euc-?kr/i.test(contentType);
-    const html = new TextDecoder(isEucKr ? 'euc-kr' : 'utf-8').decode(buffer);
+    let html = new TextDecoder(/euc-?kr/i.test(contentType) ? 'euc-kr' : 'utf-8').decode(buffer);
+    if (html.includes('\uFFFD')) html = new TextDecoder('euc-kr').decode(buffer);
 
     // 여러 패턴으로 clubId 추출 시도
     const patterns = [
