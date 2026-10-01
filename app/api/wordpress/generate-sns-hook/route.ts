@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 후킹 멘트만 출력 (설명, 제목 없이 본문만):`;
 
   try {
-    const hook = await generateText(prompt, 'qwen3');
+    const hook = await generateText(prompt, 'gemini');
     if (hook?.trim()) return NextResponse.json({ hook: hook.trim() });
     return NextResponse.json({ error: '빈 응답' }, { status: 500 });
   } catch (e) {

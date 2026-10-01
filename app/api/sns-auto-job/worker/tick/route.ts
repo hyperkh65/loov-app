@@ -235,7 +235,7 @@ async function processJob(
   let message = [post.title, post.excerpt].filter(Boolean).join('\n\n');
   if (use_ai) {
     try {
-      const hook = await generateText(buildHookPrompt(post.title, post.excerpt), 'qwen3');
+      const hook = await generateText(buildHookPrompt(post.title, post.excerpt), 'gemini');
       if (hook?.trim()) message = hook.trim();
     } catch { /* 기본 메시지 유지 */ }
   }

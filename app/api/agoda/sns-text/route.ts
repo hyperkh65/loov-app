@@ -51,7 +51,7 @@ ${urlNote}
 스레드용 텍스트`;
 
   try {
-    const text = await generateText(prompt, 'qwen3');
+    const text = await generateText(prompt, 'gemini');
 
     const getSection = (tag: string) => {
       const marker = `[[[${tag}]]]`;

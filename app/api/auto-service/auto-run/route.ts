@@ -457,7 +457,7 @@ async function generateArticleForUser(
     let scrapedImages: { url: string; title: string }[] = [];
     [rawOutput, scrapedImages] = await Promise.all([
       Promise.race([
-        generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel),
+        generateText(prompt, aiModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, { ollamaOnly: true }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('AI 생성 시간 초과 (180초) — 다시 시도해주세요')), 180_000)),
       ]),
       scrapeArticleImages(allSourceItems),

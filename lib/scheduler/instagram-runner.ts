@@ -44,7 +44,7 @@ export async function runInstagramAuto(schedule: Schedule): Promise<{ topic: str
 - 한국어로만 작성, 중국어·일본어 절대 금지
 - 설명 없이 캡션만 출력`;
 
-  const aiText = await generateText(prompt, 'qwen3');
+  const aiText = await generateText(prompt, 'gemini');
 
   // 주제 인덱스 업데이트
   if (config.topic_mode === 'rotate') {

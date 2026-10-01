@@ -497,7 +497,7 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): P
   // 모델이 같은 단어를 무한 반복하거나 잘린 출력을 내는 경우가 있어 1회 재시도
   let parsed!: ReturnType<typeof parseAiOutput>;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const raw = sanitizeInvisible(cleanWatermarks(await generateText(prompt, aiModel)));
+    const raw = sanitizeInvisible(cleanWatermarks(await generateText(prompt, aiModel, undefined, undefined, undefined, undefined, { ollamaOnly: true })));
     parsed = parseAiOutput(raw);
     if (parsed.title && parsed.content && !findHtmlProblem(parsed.title, parsed.content)) break;
   }

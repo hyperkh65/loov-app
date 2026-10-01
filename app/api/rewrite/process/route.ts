@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
       title: article.title,
       content: article.original_content,
     });
-    const raw = await generateText(prompt, ai_model);
+    const raw = await generateText(prompt, ai_model, undefined, undefined, undefined, undefined, { ollamaOnly: true });
     const cleaned = sanitizeInvisible(cleanWatermarks(raw));
     const { title, meta_description: meta, content: rawContent } = parseAiOutput(cleaned);
 
