@@ -289,6 +289,20 @@ export async function pickDynamicKeywordByCategory(
   return claim(pick.keyword);
 }
 
+// 고CPC 스케줄이 목록/발굴 후보를 다 쓰면 무관한 범용 키워드(플리츠원피스 등)로 새는 걸
+// 막기 위해, 같은 카테고리의 시드뱅크(3000+개 목록)에서 안 쓴 것을 이번 달 우선으로 순환.
+export async function pickSeedByCategory(category: string): Promise<string | null> {
+  const bank = KEYWORD_SEED_BANK[category];
+  if (!bank) return null;
+  const used = await loadUsed();
+  const month = new Date().getMonth() + 1;
+  const ordered = [...(bank[month] || []), ...Object.entries(bank).filter(([m]) => Number(m) !== month).flatMap(([, v]) => v)];
+  const fresh = ordered.filter(k => isUsable(k) && !used.has(norm(k)));
+  if (!fresh.length) return null;
+  const top = fresh.slice(0, Math.max(1, Math.min(fresh.length, bank[month]?.filter(k => !used.has(norm(k))).length || fresh.length)));
+  return claim(top[Math.floor(Math.random() * top.length)]);
+}
+
 // ── 메인 함수 ──────────────────────────────────────────────────────────────
 export async function pickKeywordForUser(userId: string): Promise<string> {
   const supabase = createAdminClient();

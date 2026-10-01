@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { fetchFeedItems, discoverFeedUrl, scrapeArticleFull } from '@/lib/rewrite-site-scraper';
 import { wasRecentlySeen, markSeen } from '@/lib/rewrite-local-cache';
+import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
 
 export const maxDuration = 120;
 
@@ -55,8 +56,12 @@ export async function POST(req: NextRequest) {
       // 대상이 아니라서 계속 쌓여서 최대 688개(5일치)까지 밀린 적이 있었음.
       // latest_only 소스는 애초에 "최신성"이 핵심이라 오래된 ready도 발행 의미가
       // 없으므로 3일 넘은 건 발행 전에 정리
+      // 우선 소스(yoosol/yoonfree)는 "발행 직전 최신글 1~2개만 대기" — 12시간 넘은 건 폐기, 최신 2개 유지
+      const isPriority = PRIORITY_SOURCE_IDS.has(site.id);
+      const keepN = isPriority ? 2 : 1;
       if (site.latest_only) {
-        const threeDaysAgoReady = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
+        const staleMs = (isPriority ? 12 : 72) * 3600 * 1000;
+        const threeDaysAgoReady = new Date(Date.now() - staleMs).toISOString();
         await supabase
           .from('bossai_rewrite_articles')
           .delete()
@@ -68,7 +73,7 @@ export async function POST(req: NextRequest) {
       // latest_only 소스는 오래된 글부터 밀린 순서로 처리하다 최신 이슈를 놓치는 걸
       // 방지하기 위해 피드의 최신 글 1개만 확인 — 처리 안 된 pending 백로그가
       // 있으면 이 최신 글로 교체(오래된 건 버림)
-      const items = await fetchFeedItems(feedUrl, site.latest_only ? 1 : 10);
+      const items = await fetchFeedItems(feedUrl, site.latest_only ? keepN : 10);
       let siteNew = 0;
 
       for (const item of items) {
@@ -100,14 +105,6 @@ export async function POST(req: NextRequest) {
           .limit(1);
         if (titleDup && titleDup.length > 0) { markSeen(site.id, item.title, item.link); continue; }
 
-        if (site.latest_only) {
-          await supabase
-            .from('bossai_rewrite_articles')
-            .delete()
-            .eq('source_id', site.id)
-            .eq('status', 'pending');
-        }
-
         const scraped = await scrapeArticleFull(item.link);
 
         await supabase.from('bossai_rewrite_articles').insert({
@@ -123,6 +120,17 @@ export async function POST(req: NextRequest) {
         });
         markSeen(site.id, item.title, item.link);
         siteNew++;
+      }
+
+      if (site.latest_only && siteNew > 0) {
+        const { data: pend } = await supabase
+          .from('bossai_rewrite_articles')
+          .select('id')
+          .eq('source_id', site.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+        const stale = (pend || []).slice(keepN).map(r => r.id);
+        if (stale.length) await supabase.from('bossai_rewrite_articles').delete().in('id', stale);
       }
 
       await supabase.from('bossai_rewrite_sources').update({ last_checked_at: new Date().toISOString() }).eq('id', site.id);
