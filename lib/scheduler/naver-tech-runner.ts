@@ -18,7 +18,7 @@
  * 확인됨) — 검증된 경로로 되돌리는 것.
  */
 import { createAdminClient } from '@/lib/supabase-server';
-import { getSetting } from '@/lib/get-setting';
+import { generateText } from '@/lib/auto-blog-ai';
 import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
 import { searchNaver } from '@/lib/blog-content-generator';
 import { sanitizeForNaver } from '@/lib/naver-blog';
@@ -55,56 +55,6 @@ const TECH_FEEDS = [
   { name: 'Android Authority', url: 'https://www.androidauthority.com/feed/' },
   { name: 'GSMArena', url: 'https://www.gsmarena.com/rss-news-reviews.php3' },
 ];
-
-const GROQ_MODEL = 'qwen/qwen3.8-27b';
-
-let groqKeyIdx = 0;
-/** Groq 4키 라운드로빈 (lib/ai-translate.ts와 동일 패턴 — 키 하나론 분당 토큰 한도에 걸림) */
-async function callGroq(prompt: string): Promise<string> {
-  const raw = await getSetting('GROQ_API_KEYS');
-  // GROQ_API_KEYS는 JSON 배열 문자열로 저장됨(app-settings 다중 키 관리 UI 기준) —
-  // 예전엔 단순 콤마구분 문자열이라 가정하고 split(',')만 했는데, 그 결과 각 키
-  // 앞뒤에 `["`/`"]` 같은 JSON 구조 문자가 그대로 붙어서 전부 무효한 키가 되고
-  // 있었음(실사용 중 Groq 401 Invalid API Key로 확인, naver_tech_auto가 이 버그
-  // 때문에 매 실행 실패해서 네이버 블로그에 글이 전혀 안 올라가고 있었음).
-  let keys: string[] = [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) keys = parsed.filter(Boolean);
-  } catch { /* 레거시 콤마구분 형식일 수 있음 — 아래 폴백 */ }
-  if (!keys.length) keys = raw.split(',').map((k) => k.trim()).filter(Boolean);
-  if (!keys.length) throw new Error('GROQ_API_KEYS 설정 없음');
-
-  let lastErr = '';
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[groqKeyIdx % keys.length];
-      groqKeyIdx++;
-      try {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: GROQ_MODEL,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.7,
-            max_tokens: 8000,
-          }),
-          signal: AbortSignal.timeout(120_000),
-        });
-        if (res.status === 429) { lastErr = `429 rate limit (key ${i})`; continue; }
-        if (!res.ok) throw new Error(`Groq API ${res.status}: ${(await res.text()).slice(0, 200)}`);
-        const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-        return data.choices?.[0]?.message?.content || '';
-      } catch (e) {
-        if ((e as Error).message?.startsWith('Groq API')) throw e;
-        lastErr = (e as Error).message;
-      }
-    }
-    if (pass === 0) await new Promise((r) => setTimeout(r, 60_000)); // TPM 한도 리셋 대기
-  }
-  throw new Error(`Groq 호출 실패 — 키 ${keys.length}개 모두 rate limit: ${lastErr}`);
-}
 
 /** 이미 발행한 원문(source url)은 빼고, 최근 올라온 기사 하나를 고른다 */
 async function pickTopic(): Promise<{ title: string; link: string; source: string } | null> {
@@ -199,7 +149,7 @@ ${refBlock}
 <h2>자주 묻는 질문</h2>
 <p><strong>Q. (질문1)</strong><br/>(답변)</p>`;
 
-  const rawOut = await callGroq(prompt);
+  const rawOut = await generateText(prompt, 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true });
   const cleaned = rawOut.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
   const titleMatch = cleaned.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i);
   const title = (titleMatch?.[1] || topic.title).trim();

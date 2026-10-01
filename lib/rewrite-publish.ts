@@ -131,7 +131,7 @@ async function buildHookCaptions(title: string, summary: string): Promise<Record
 [[[CAFE]]]
 카페용 텍스트`;
 
-  const raw = await generateText(prompt, 'qwen3');
+  const raw = await generateText(prompt, 'gemini');
   return {
     threads: getSection(raw, 'THREADS', CAPTION_TAGS_WITH_CAFE),
     twitter: getSection(raw, 'TWITTER', CAPTION_TAGS_WITH_CAFE),

@@ -449,7 +449,7 @@ export async function POST(req: NextRequest) {
   let scrapedImages: { url: string; title: string }[] = [];
   try {
     [rawOutput, scrapedImages] = await Promise.all([
-      generateText(prompt, ai_model, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel),
+      generateText(prompt, ai_model, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, { ollamaOnly: true }),
       scrapeArticleImages(allSourceItems),
     ]);
   } catch (err) {
@@ -465,7 +465,7 @@ export async function POST(req: NextRequest) {
     const retryModel = ai_model === 'mistral-large-3' ? 'nemotron-3-super' : 'mistral-large-3';
     try {
       const retried = cleanWatermarks(await generateText(
-        prompt, retryModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel,
+        prompt, retryModel, clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, { ollamaOnly: true },
       ));
       if (retried.includes('===TITLE===') && retried.includes('===CONTENT===')) {
         rawOutput = retried;

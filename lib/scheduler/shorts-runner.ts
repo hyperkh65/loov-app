@@ -59,7 +59,7 @@ export async function runShortsAuto(schedule: Schedule): Promise<{ topic: string
   ]
 }`;
 
-  const aiText = await generateText(prompt, 'qwen3');
+  const aiText = await generateText(prompt, 'gemini');
 
   // JSON 파싱
   let parsed: { title?: string; description?: string; hook?: string; scenes?: unknown[] } = {};

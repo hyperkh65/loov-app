@@ -35,7 +35,7 @@ const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
   { provider: 'groq',       model: 'qwen/qwen3.8-27b' },
   { provider: 'openrouter', model: 'qwen/qwen3-235b-a22b:free' },
   { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
-  { provider: 'gemini',     model: 'gemini-2.0-flash' },
+  { provider: 'gemini',     model: 'gemini-flash-latest' },
   { provider: 'claude',     model: 'claude-haiku-4-5-20251001' },
   { provider: 'gpt4o',      model: 'gpt-4o-mini' },
 ];
@@ -151,7 +151,7 @@ async function getLatestClaudeModel(tier: 'sonnet' | 'haiku' | 'opus', apiKey: s
 function defaultModel(provider: string): string {
   switch (provider) {
     case 'claude':      return 'claude-sonnet-4-6';  // 런타임에 getLatestClaudeModel()로 덮어씀
-    case 'gemini':      return 'gemini-2.0-flash';
+    case 'gemini':      return 'gemini-flash-latest';
     case 'gpt4o':       return 'gpt-4o';
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
@@ -607,6 +607,7 @@ export async function callAISimple(
   }
   messages.push({ role: 'user', content: prompt });
 
-  const result = await callAI({ messages, provider, useFallback: true });
+  // 짧은 홍보/보조 텍스트용 — 블로그 본문(Ollama 전용)과 분리해 Ollama 토큰 절약
+  const result = await callAI({ messages, provider: provider || 'gemini', useFallback: true });
   return result.text;
 }

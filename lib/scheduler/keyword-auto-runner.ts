@@ -134,7 +134,7 @@ export async function runKeywordAuto(
   ];
   if (!sources.length) return { summary: `"${keyword}" 참고자료 없음(네이버/카카오 API 키 확인 필요) — 건너뜀`, keyword };
 
-  const rawText = cleanWatermarks(await generateText(buildTwentiesPrompt(keyword, sources), 'qwen3'));
+  const rawText = cleanWatermarks(await generateText(buildTwentiesPrompt(keyword, sources), 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true }));
   const titleMatch = rawText.match(/###\s*제목\s*\n([^\n]+)/);
   const metaMatch = rawText.match(/###\s*메타설명\s*\n([^\n]+)/);
   const contentMatch = rawText.match(/###\s*본문\s*\n([\s\S]+?)(?=###|$)/);

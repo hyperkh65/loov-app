@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 캡션만 출력하세요 (설명 없이):`;
 
   try {
-    const caption = await generateText(prompt, 'qwen3');
+    const caption = await generateText(prompt, 'gemini');
     const hashtagMatch = caption.match(/#[\w가-힣]+/g) || [];
     return NextResponse.json({ caption, hashtags: hashtagMatch });
   } catch (err) {

@@ -183,6 +183,8 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
       options: {
         num_predict: 8192,  // 출력 토큰 최대 8K (Cloud API는 -1 미지원)
         num_ctx: 8192,      // 컨텍스트 윈도우 8K
+        repeat_penalty: 1.15, // 같은 단어 반복 루프 억제
+        temperature: 0.7,
       },
     }),
     // 80s였던 걸 30s로 축소 — 키가 9개까지 등록돼있는데 응답 없이 멈추는 키/모델
@@ -407,7 +409,7 @@ export async function generateText(
   clientOpenrouterKey?: string,
   clientGlobalAIKey?: string,
   clientGlobalAIModel?: string,
-  options?: { multilingual?: boolean }, // 다국어 모드: 한국어 강제 규칙·문자 정제 생략
+  options?: { multilingual?: boolean; ollamaOnly?: boolean }, // multilingual: 한국어 강제 규칙·문자 정제 생략 / ollamaOnly: 블로그 본문용 — 실패 시 다른 provider로 폴백하지 않음
 ): Promise<string> {
   // 한국어 강제 지시문 추가 (중복 방지, 다국어 모드 제외)
   if (!options?.multilingual && !prompt.includes('[언어 규칙 - 절대 준수]')) {
@@ -418,7 +420,7 @@ export async function generateText(
 
   // preferModel이 Ollama 모델인지 판단
   const NON_OLLAMA = ['gemini', 'claude', 'openai', 'gpt', 'openrouter', 'groq'];
-  const isOllamaPreferred = !NON_OLLAMA.some(p => preferModel.toLowerCase().startsWith(p));
+  const isOllamaPreferred = options?.ollamaOnly || !NON_OLLAMA.some(p => preferModel.toLowerCase().startsWith(p));
 
   // Ollama 키 수집
   const ollamaKeys: string[] = [];
@@ -597,7 +599,7 @@ export async function generateText(
   // 먼저 두드리며 시간을 낭비하지 않도록 Groq부터 시도한다. 단 Groq가 실패(429/키 문제)하면
   // 예전처럼 나머지 provider로 이어서 폴백(전용 모드일 땐 그대로 발행 실패로 끝나 성공률이 떨어졌음).
   let groqTried = false;
-  if (preferModel === 'groq') {
+  if (preferModel === 'groq' && !options?.ollamaOnly) {
     groqTried = true;
     const r = clean(await tryGroq());
     if (r) return r;
@@ -620,6 +622,10 @@ export async function generateText(
     result = clean(await tryOllama(preferModel));
   }
   if (result) return result;
+
+  if (options?.ollamaOnly) {
+    throw new Error(`Ollama Cloud 전용 생성 실패 (다른 AI로 폴백 안 함)\n${errors.join(' | ')}`);
+  }
 
   // ── 나머지 provider 순서대로 fallback ─────────────────────
   const fallbacks: Array<() => Promise<string | false>> = [];
