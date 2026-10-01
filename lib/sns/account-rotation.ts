@@ -22,7 +22,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
-export type SnsGroup = 'default' | 'aboda_miracool' | 'ads_default' | 'twodays';
+export type SnsGroup = 'default' | 'aboda_miracool' | 'ads_default' | 'twodays' | 'aboda';
 type RotatedPlatform = 'threads' | 'instagram';
 
 // platform_user_id로 매칭한다 — platform_username은 "@2days.kr" vs "@2dayskr"처럼
@@ -31,8 +31,8 @@ type RotatedPlatform = 'threads' | 'instagram';
 // 표기가 다른 별개 계정 @2dayskr를 가리키고 있었던 걸 확인).
 const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>> = {
   default: {
-    threads: ['25873039292318366', '25203934249239577', '27198401606479414'], // @2days.kr(주 타겟) → @2dayskr → @2dayskr_korea — 블로그 콘텐츠 전용
-    instagram: ['34489947500650071', '27094702240139938'], // @2dayskr(주 타겟) → @2dayskr_korea — 블로그 콘텐츠 전용
+    threads: ['25873039292318366', '25203934249239577'], // @2days.kr(주 타겟) → @2dayskr (@2dayskr_korea는 aboda 전용으로 분리, 2026-10-01)
+    instagram: ['34489947500650071'], // @2dayskr
   },
   // 쿠팡/토스 상품광고 전용 — @2days.kr 하나만, 로테이션 없이 간격만 체크
   // (@2dayskr_korea/@aboda_miracool에 광고 섞임 방지, 위 코멘트 참고)
@@ -46,6 +46,11 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
     threads: ['25203934249239577'], // @2dayskr
     instagram: ['34489947500650071'], // @2dayskr
   },
+  // aboda.kr 전용 — @2dayskr_korea 고정 (사용자 확정 2026-10-01)
+  aboda: {
+    threads: ['27198401606479414'], // @2dayskr_korea
+    instagram: ['27094702240139938'], // @2dayskr_korea
+  },
   aboda_miracool: {
     threads: ['27529465156685675'], // @aboda_miracool — 전용 계정 1개뿐, 사실상 로테이션 없이 이거 하나만
     instagram: ['27282443521390270'], // @aboda_miracool
@@ -57,13 +62,15 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
 const MIN_GAP_MS: Record<SnsGroup, number> = {
   default: 20 * 60 * 1000,
   ads_default: 20 * 60 * 1000,
-  aboda_miracool: 20 * 60 * 1000,
+  aboda_miracool: 0, // 고정 단일 계정 — 간격으로 스킵하지 않음
+  aboda: 0,
   twodays: 0,
 };
 
 export function snsGroupFor(siteUrl: string): SnsGroup {
   if (/\/\/(www\.)?2days\.kr(\/|$)/.test(siteUrl)) return 'twodays';
-  return (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) ? 'aboda_miracool' : 'default';
+  if (siteUrl.includes('aboda.kr')) return 'aboda';
+  return siteUrl.includes('miracool.co.kr') ? 'aboda_miracool' : 'default';
 }
 
 interface SnsConn { platform: string; platform_user_id: string; access_token: string }
