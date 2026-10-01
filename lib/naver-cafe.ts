@@ -115,7 +115,7 @@ export async function publishToNaverCafe(
         userId, accessToken, clubId: c.club_id, cafeSlug: c.cafe_url || c.club_id,
         menuId: c.menu_id, menuName: c.menu_name, title, textContent, openYn,
       });
-      extraResults.push({ cafe: c.cafe_name || c.club_id, articleUrl: r });
+      extraResults.push({ cafe: c.cafe_name || c.club_id, articleUrl: r ?? undefined });
     } catch (e) {
       extraResults.push({ cafe: c.cafe_name || c.club_id, error: e instanceof Error ? e.message : String(e) });
     }
