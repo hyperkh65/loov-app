@@ -22,7 +22,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
-export type SnsGroup = 'default' | 'aboda_miracool' | 'ads_default';
+export type SnsGroup = 'default' | 'aboda_miracool' | 'ads_default' | 'twodays';
 type RotatedPlatform = 'threads' | 'instagram';
 
 // platform_user_id로 매칭한다 — platform_username은 "@2days.kr" vs "@2dayskr"처럼
@@ -40,6 +40,12 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
     threads: ['25873039292318366'], // @2days.kr
     instagram: ['34489947500650071'], // @2dayskr
   },
+  // 2days.kr 사이트 전용(사용자 확정 2026-10-01) — @2dayskr 스레드/인스타 고정, 로테이션 없음.
+  // 이 계정이 메인이라 간격 체크도 면제(MIN_GAP 0) — 같은 계정을 쓰는 다른 그룹이 로그를 보고 양보함.
+  twodays: {
+    threads: ['25203934249239577'], // @2dayskr
+    instagram: ['34489947500650071'], // @2dayskr
+  },
   aboda_miracool: {
     threads: ['27529465156685675'], // @aboda_miracool — 전용 계정 1개뿐, 사실상 로테이션 없이 이거 하나만
     instagram: ['27282443521390270'], // @aboda_miracool
@@ -52,9 +58,11 @@ const MIN_GAP_MS: Record<SnsGroup, number> = {
   default: 20 * 60 * 1000,
   ads_default: 20 * 60 * 1000,
   aboda_miracool: 20 * 60 * 1000,
+  twodays: 0,
 };
 
 export function snsGroupFor(siteUrl: string): SnsGroup {
+  if (/\/\/(www\.)?2days\.kr(\/|$)/.test(siteUrl)) return 'twodays';
   return (siteUrl.includes('aboda.kr') || siteUrl.includes('miracool.co.kr')) ? 'aboda_miracool' : 'default';
 }
 

@@ -71,15 +71,21 @@ export async function GET(req: NextRequest) {
   // — jpeg/png/gif는 그대로 쓰고, webp 등은 sharp로 jpeg 변환해서 data URI로 전달.
   let validBgUrl = '';
   if (bgUrl) {
+    // 핫링크 차단 사이트 대응: 브라우저 UA로 먼저, 안 되면 Referer 붙여 재시도. 항상 sharp로
+    // 1200px jpeg data URI로 바꿔서 Satori가 원격 이미지를 직접 불러오다 조용히 실패하지 않게 함.
     try {
-      const checkRes = await fetch(bgUrl, { signal: AbortSignal.timeout(6000) });
-      const ct = checkRes.headers.get('content-type') || '';
-      if (checkRes.ok && /^image\/(jpeg|jpg|png|gif)$/.test(ct)) {
-        validBgUrl = bgUrl;
-      } else if (checkRes.ok && ct.startsWith('image/')) {
+      const attempts: Record<string, string>[] = [
+        { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' },
+        { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Referer: new URL(bgUrl).origin + '/' },
+      ];
+      for (const headers of attempts) {
+        const checkRes = await fetch(bgUrl, { headers, signal: AbortSignal.timeout(8000) });
+        const ct = checkRes.headers.get('content-type') || '';
+        if (!checkRes.ok || !ct.startsWith('image/')) continue;
         const buf = Buffer.from(await checkRes.arrayBuffer());
-        const jpegBuf = await sharp(buf).jpeg({ quality: 85 }).toBuffer();
+        const jpegBuf = await sharp(buf).resize(W, H, { fit: "cover", position: "attention" }).jpeg({ quality: 85 }).toBuffer();
         validBgUrl = `data:image/jpeg;base64,${jpegBuf.toString('base64')}`;
+        break;
       }
     } catch { /* 배경 이미지 검증/변환 실패 — 그라디언트 디자인으로 폴백 */ }
   }

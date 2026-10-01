@@ -363,8 +363,8 @@ export async function publishRewrittenArticle(
   });
   if (useRotation) {
     const [threadsPick, instagramPick] = await Promise.all([
-      pickRotatedAccount(admin, 'default', 'threads', conns || []),
-      pickRotatedAccount(admin, 'default', 'instagram', conns || []),
+      pickRotatedAccount(admin, 'twodays', 'threads', conns || []),
+      pickRotatedAccount(admin, 'twodays', 'instagram', conns || []),
     ]);
     for (const pick of [threadsPick, instagramPick]) {
       const full = pick && (conns || []).find(c => c.platform_user_id === pick.platform_user_id);

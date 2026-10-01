@@ -16,6 +16,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
 import { searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
 import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
 
 export const maxDuration = 300;
@@ -71,9 +72,9 @@ export async function POST(req: NextRequest) {
   // 처리할 기사 선택
   type ArticleRow = {
     id: string; title: string; original_content: string;
-    source_id: string | null; representative_image_url: string | null; image_urls: string[] | null;
+    source_id: string | null; source_url: string | null; representative_image_url: string | null; image_urls: string[] | null;
   };
-  const SELECT_COLS = 'id, title, original_content, source_id, representative_image_url, image_urls';
+  const SELECT_COLS = 'id, title, original_content, source_id, source_url, representative_image_url, image_urls';
   let article: ArticleRow | null = null;
 
   if (article_id) {
@@ -204,7 +205,13 @@ export async function POST(req: NextRequest) {
 
     // 대표이미지: 원문에서 스크랩된 게 있으면 그걸 쓰고, 없거나(또는 소스 설정상
     // 항상 자체 생성해야 하면) 새로 생성
-    let representativeImageUrl = useOwnThumbnail ? null : article.representative_image_url;
+    // 수집 당시(옛 스크래퍼) 이미지가 비어 저장된 글은 지금 원문에서 다시 긁어서 보충 —
+    // 안 그러면 원문 사진이 있어도 무관한 검색 이미지/그라디언트 배경이 됨
+    let sourceImage = article.representative_image_url;
+    if (!sourceImage && article.source_url) {
+      sourceImage = (await scrapeArticleFull(article.source_url).catch(() => null))?.images[0] || null;
+    }
+    let representativeImageUrl = useOwnThumbnail ? null : sourceImage;
     if (representativeImageUrl) {
       content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
     } else {
@@ -214,7 +221,7 @@ export async function POST(req: NextRequest) {
       // 인물 사진이 있는 소스인데 무관한 검색 이미지가 배경으로 깔리는 문제가
       // 실사용 중 확인됨(2026-10-01, 사용자 확정: "이 사진을 배경으로 대표이미지
       // 만들기를 해야지").
-      const preferredBg = article.representative_image_url || bgImageUrl;
+      const preferredBg = sourceImage || bgImageUrl;
       try {
         representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', preferredBg);
       } catch {

@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { refreshBloggerToken } from '@/lib/blogger-token';
-import { pickKeywordForUser, pickFromKeywordList, pickDynamicKeywordByCategory } from './keyword-picker';
+import { pickKeywordForUser, pickFromKeywordList, pickDynamicKeywordByCategory, pickSeedByCategory } from './keyword-picker';
 import { generateBlogContent } from '@/lib/blog-content-generator';
 import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
@@ -232,7 +232,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
       const dynamic = config.dynamic_category
         ? await pickDynamicKeywordByCategory(schedule, config.dynamic_category)
         : null;
-      keyword = dynamic || await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate') || await pickKeywordForUser(schedule.user_id);
+      keyword = dynamic || await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate') || (config.dynamic_category ? await pickSeedByCategory(config.dynamic_category) : null) || await pickKeywordForUser(schedule.user_id);
     } else {
       keyword = await pickKeywordForUser(schedule.user_id);
     }
