@@ -34,7 +34,7 @@ const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 // 도움이 안 돼서 2026-09-24 원래대로(스왑 이전) 되돌림 — 정부/정책+경제신문
 // 23개 소스는 SNS_ACCOUNT_ROUTING_BY_SOURCE에서 다시 @2dayskr로, 그 외 나머지
 // (라우팅에 없는 소스) 기본값은 @aboda_miracool+@2dayskr_korea로.
-const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool', '@2dayskr_korea']; // 라우팅에 없는 소스(그 외 일반 리라이트글)
+const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool']; // 라우팅에 없는 소스(그 외 일반 리라이트글)
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
 
 export async function getSnsAccountRouting(sourceId: string | null | undefined): Promise<string[]> {
