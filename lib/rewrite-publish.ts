@@ -17,6 +17,7 @@ import { publishToPinterest } from '@/lib/pinterest-publish';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
 import { translateAndCrossPost } from '@/lib/ai-translate';
+import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
 const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
@@ -157,6 +158,10 @@ export async function publishRewrittenArticle(
   userId: string,
   sourceId?: string | null,
 ): Promise<PublishResult> {
+  // 깨지거나 잘린 HTML은 절대 발행하지 않는다 (호출 측이 예외를 받아 failed 처리)
+  article = { ...article, title: sanitizeInvisible(article.title), content: sanitizeInvisible(article.content) };
+  assertPublishableHtml(article.title, article.content);
+
   const admin = createAdminClient();
 
   // 소스 사이트별 발행 설정 (없으면 전역 기본값 사용 — 기존 동작 그대로 유지)
