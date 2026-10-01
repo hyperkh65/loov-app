@@ -1044,9 +1044,10 @@ async function executeSchedule(schedule: Schedule) {
         break;
       }
       case 'keyword_auto': {
-        const kwConfig = (schedule.config as { source_id?: string; category?: string }) || {};
+        const kwConfig = (schedule.config as { source_id?: string; category?: string; tistory_blog_name?: string; tistory_category_id?: string | number }) || {};
         if (!kwConfig.source_id) { summary = 'keyword_auto 스케줄에 config.source_id 없음 — 건너뜀'; break; }
-        const r = await runKeywordAuto(schedule.user_id, kwConfig.source_id, kwConfig.category || 'twenties');
+        const r = await runKeywordAuto(schedule.user_id, kwConfig.source_id, kwConfig.category || 'twenties',
+          kwConfig.tistory_blog_name ? { blog_name: kwConfig.tistory_blog_name, category_id: kwConfig.tistory_category_id } : undefined);
         result = r as unknown as Record<string, unknown>;
         summary = r.summary;
         break;

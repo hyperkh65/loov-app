@@ -9,6 +9,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 import { publishRewrittenArticle } from '@/lib/rewrite-publish';
+import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
 
 const THEME_COLORS = ['blue', 'dark', 'green', 'red', 'orange', 'violet', 'teal', 'golden'] as const;
 
@@ -83,7 +84,10 @@ export interface KeywordAutoResult {
   postUrl?: string | null;
 }
 
-export async function runKeywordAuto(userId: string, sourceId: string, category = 'twenties'): Promise<KeywordAutoResult> {
+export async function runKeywordAuto(
+  userId: string, sourceId: string, category = 'twenties',
+  tistory?: { blog_name?: string; category_id?: string | number },
+): Promise<KeywordAutoResult> {
   const admin = createAdminClient();
 
   // 안 쓴 키워드 중 점수 높은 순으로 후보 조회
@@ -144,7 +148,29 @@ export async function runKeywordAuto(userId: string, sourceId: string, category 
   const colorScheme = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)];
   const representativeImageUrl = await generateAndUploadThumbnail(title, keyword, colorScheme, undefined, 'YELLOW', undefined, 'blog').catch(() => null);
 
-  const article = { title, content, representative_image_url: representativeImageUrl, meta };
+  const article = { title: sanitizeInvisible(title), content: sanitizeInvisible(content), representative_image_url: representativeImageUrl, meta };
+  assertPublishableHtml(article.title, article.content);
+
+  // 티스토리 전용 모드: 워드프레스 대신 티스토리 블로그로만 발행 (사이트 점검 중일 때 등)
+  if (tistory?.blog_name) {
+    const { data: conn } = await admin.from('tistory_connections').select('id').eq('user_id', userId).eq('blog_name', tistory.blog_name).limit(1).single();
+    let tUrl = '';
+    let err = conn ? '' : `티스토리 연결 없음(${tistory.blog_name})`;
+    if (conn) {
+      const body = (representativeImageUrl ? `<p><img src="${representativeImageUrl}" alt="${article.title.replace(/"/g, '')}"></p>\n` : '') + article.content;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr'}/api/tistory/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        body: JSON.stringify({ user_id: userId, blog_id: conn.id, title: article.title, content: body, tags: [keyword], is_publish: true, category_id: tistory.category_id }),
+        signal: AbortSignal.timeout(90_000),
+      }).catch(e => ({ ok: false, json: async () => ({ error: String(e) }) }) as unknown as Response);
+      const d = await res.json().catch(() => ({})) as { url?: string; error?: string };
+      if (res.ok && d.url) tUrl = d.url; else err = d.error || `HTTP ${res.status}`;
+    }
+    await admin.from('bossai_keyword_auto_posts').insert({ user_id: userId, source_id: sourceId, category, keyword, title: article.title, post_url: tUrl });
+    return { summary: `[${category}] "${keyword}" → 티스토리 ${tUrl || `실패: ${err}`}`, keyword, postUrl: tUrl || undefined };
+  }
+
   const result = await publishRewrittenArticle(article, userId, sourceId);
 
   // 발행 성공 여부와 무관하게 같은 키워드 재사용은 막는다(다음 실행에서 계속 실패만
