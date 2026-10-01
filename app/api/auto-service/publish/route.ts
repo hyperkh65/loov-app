@@ -307,9 +307,9 @@ export async function POST(req: NextRequest) {
   }
   // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
-  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string };
+  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string; tistory_category_id?: number | string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y' } = body;
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y', tistory_category_id } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -362,6 +362,7 @@ export async function POST(req: NextRequest) {
               title: article.title,
               content: article.content,
               tags: article.focus_keyword ? [article.focus_keyword] : [],
+              category_id: tistory_category_id,
             }),
           });
           const data = await res.json();
@@ -495,6 +496,7 @@ export async function POST(req: NextRequest) {
           title: article.title,
           content: article.content,
           tags: article.focus_keyword ? [article.focus_keyword] : [],
+          category_id: tistory_category_id,
         }),
       });
       const data = await res.json();
@@ -856,73 +858,86 @@ export async function POST(req: NextRequest) {
           || Object.entries(results).find(([k, r]) => isBlogKey(k) && r.success && r.url)?.[1]?.url
           || Object.entries(article.published_urls || {}).find(([k, v]) => isBlogKey(k) && v)?.[1] as string | undefined;
 
-        const cafeImageUrl = article.representative_image_url
-          ? await uploadImageToNaverCafe(String(article.representative_image_url), String(conn.club_id), accessToken)
-          : null;
+        const postCafe = async (clubId: string, cafeSlug: string, menuId: string, menuName: string | null): Promise<{ success: boolean; url?: string; error?: string }> => {
+          const cafeImageUrl = article.representative_image_url
+            ? await uploadImageToNaverCafe(String(article.representative_image_url), clubId, accessToken)
+            : null;
+          const cafeLink = blogUrl ? `\n\n[원문 보기] ${blogUrl}` : '';
+          const keyword = article.focus_keyword ? `\n\n#${(article.focus_keyword as string).replace(/\s+/g, '')}` : '';
+          let cafeContent = excerpt + cafeLink + keyword;
+          if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
 
-        const cafeLink = blogUrl ? `\n\n[원문 보기] ${blogUrl}` : '';
-        const keyword = article.focus_keyword ? `\n\n#${(article.focus_keyword as string).replace(/\s+/g, '')}` : '';
-        let cafeContent = excerpt + cafeLink + keyword;
-        if (cafeImageUrl) cafeContent = `<img src="${cafeImageUrl}"><br><br>${cafeContent}`;
+          // subject: EUC-KR 바이트 직접 전송 (& 없어 WAF 통과) → 목록에 한글 표시
+          // content: HTML 엔티티 (Naver HTML 렌더링으로 한글 정상 표시)
+          const boundary = `----NaverCafeBoundary${Date.now()}`;
+          const titleBytes = iconv.encode(cleanTitle, 'euc-kr');
+          const contentBytes = Buffer.from(toHtmlEntities(cafeContent), 'utf-8');
+          const openYnBytes = Buffer.from(naver_cafe_open_yn, 'utf-8');
+          const nl = Buffer.from('\r\n', 'utf-8');
+          const cafeBody = Buffer.concat([
+            Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="subject"\r\nContent-Type: text/plain; charset=euc-kr\r\n\r\n`),
+            titleBytes, nl,
+            Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n`),
+            contentBytes, nl,
+            Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="openYn"\r\n\r\n`),
+            openYnBytes, nl,
+            Buffer.from(`--${boundary}--\r\n`),
+          ]);
 
-        // subject: EUC-KR 바이트 직접 전송 (& 없어 WAF 통과) → 목록에 한글 표시
-        // content: HTML 엔티티 (Naver HTML 렌더링으로 한글 정상 표시)
-        const boundary = `----NaverCafeBoundary${Date.now()}`;
-        const titleBytes = iconv.encode(cleanTitle, 'euc-kr');
-        const contentBytes = Buffer.from(toHtmlEntities(cafeContent), 'utf-8');
-        const openYnBytes = Buffer.from(naver_cafe_open_yn, 'utf-8');
-        const nl = Buffer.from('\r\n', 'utf-8');
-        const cafeBody = Buffer.concat([
-          Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="subject"\r\nContent-Type: text/plain; charset=euc-kr\r\n\r\n`),
-          titleBytes, nl,
-          Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n`),
-          contentBytes, nl,
-          Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="openYn"\r\n\r\n`),
-          openYnBytes, nl,
-          Buffer.from(`--${boundary}--\r\n`),
-        ]);
+          const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${clubId}/menu/${menuId}/articles`;
+          const cafeRes = await fetch(cafeApiUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            },
+            body: cafeBody,
+            signal: AbortSignal.timeout(30_000),
+          });
 
-        const cafeApiUrl = `https://openapi.naver.com/v1/cafe/${conn.club_id}/menu/${naver_cafe_menu_id}/articles`;
-        const cafeRes = await fetch(cafeApiUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': `multipart/form-data; boundary=${boundary}`,
-          },
-          body: cafeBody,
-          signal: AbortSignal.timeout(30_000),
-        });
+          const cafeRawText = await cafeRes.text();
+          let cafeData: { message?: { '@service'?: string; result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
+          try { cafeData = JSON.parse(cafeRawText); } catch {}
 
-        const cafeRawText = await cafeRes.text();
-        let cafeData: { message?: { '@service'?: string; result?: { articleId?: number; code?: string; message?: string } }; errorCode?: string; errorMessage?: string } = {};
-        try { cafeData = JSON.parse(cafeRawText); } catch {}
+          const naverErrCode = cafeData.message?.result?.code || cafeData.errorCode;
+          const naverErrMsg = cafeData.message?.result?.message || cafeData.errorMessage;
+          // Naver 403: result 없이 message만 오는 경우 (앱 권한 미등록)
+          const naverService = cafeData.message?.['@service'];
+          const hasNaverError = !cafeRes.ok || (naverErrCode && naverErrCode !== '0');
 
-        const naverErrCode = cafeData.message?.result?.code || cafeData.errorCode;
-        const naverErrMsg = cafeData.message?.result?.message || cafeData.errorMessage;
-        // Naver 403: result 없이 message만 오는 경우 (앱 권한 미등록)
-        const naverService = cafeData.message?.['@service'];
-        const hasNaverError = !cafeRes.ok || (naverErrCode && naverErrCode !== '0');
+          if (cafeRes.ok && !hasNaverError) {
+            const cafeArticleId = cafeData.message?.result?.articleId;
+            const cafeUrl = cafeArticleId ? `https://cafe.naver.com/${cafeSlug}/articles/${cafeArticleId}` : undefined;
+            try {
+              await adminSupa.from('naver_cafe_history').insert({
+                user_id: userId,
+                club_id: clubId,
+                article_id: cafeArticleId ? String(cafeArticleId) : null,
+                article_url: cafeUrl || null,
+                title: article.title,
+                menu_id: menuId,
+                menu_name: menuName,
+                open_yn: naver_cafe_open_yn,
+              });
+            } catch {}
+            return { success: true, url: cafeUrl };
+          } else {
+            const errDetail = naverErrMsg || (naverService ? `서비스(${naverService}) 접근 거부 — developers.naver.com 앱에서 카페 API 권한 확인 필요` : cafeRawText.slice(0, 200));
+            return { success: false, error: `카페 발행 실패(${cafeSlug}) (HTTP ${cafeRes.status}) [${naverErrCode || '권한없음'}] ${errDetail}`.trim() };
+          }
+        };
 
-        if (cafeRes.ok && !hasNaverError) {
-          const cafeArticleId = cafeData.message?.result?.articleId;
-          const cafeSlug = (conn.cafe_url as string | null) || (conn.club_id as string);
-          const cafeUrl = cafeArticleId ? `https://cafe.naver.com/${cafeSlug}/articles/${cafeArticleId}` : undefined;
+        const primaryMenuName = (conn.menu_list as { menuId: number; menuName: string }[] | null)?.find(m => String(m.menuId) === String(naver_cafe_menu_id))?.menuName || null;
+        results.naver_cafe = await postCafe(String(conn.club_id), (conn.cafe_url as string | null) || String(conn.club_id), String(naver_cafe_menu_id), primaryMenuName);
+
+        // 같은 네이버 계정의 추가 카페 — 같은 토큰으로 순서대로, 개별 실패는 격리
+        for (const c of (conn.extra_cafes as { club_id: string; cafe_name?: string; cafe_url?: string; menu_id: string; menu_name?: string }[] | null) || []) {
+          if (!c.club_id || !c.menu_id) continue;
           try {
-            await adminSupa.from('naver_cafe_history').insert({
-              user_id: userId,
-              club_id: conn.club_id,
-              article_id: cafeArticleId ? String(cafeArticleId) : null,
-              article_url: cafeUrl || null,
-              title: article.title,
-              menu_id: String(naver_cafe_menu_id),
-              menu_name: (conn.menu_list as { menuId: number; menuName: string }[] | null)?.find(m => String(m.menuId) === String(naver_cafe_menu_id))?.menuName || null,
-              open_yn: naver_cafe_open_yn,
-            });
-          } catch {}
-          results.naver_cafe = { success: true, url: cafeUrl };
-        } else {
-          const errDetail = naverErrMsg || (naverService ? `서비스(${naverService}) 접근 거부 — developers.naver.com 앱에서 카페 API 권한 확인 필요` : cafeRawText.slice(0, 200));
-          results.naver_cafe = { success: false, error: `카페 발행 실패 (HTTP ${cafeRes.status}) [${naverErrCode || '권한없음'}] ${errDetail}`.trim() };
+            results[`naver_cafe_${c.cafe_url || c.club_id}`] = await postCafe(String(c.club_id), c.cafe_url || String(c.club_id), String(c.menu_id), c.menu_name || null);
+          } catch (e) {
+            results[`naver_cafe_${c.cafe_url || c.club_id}`] = { success: false, error: e instanceof Error ? e.message : String(e) };
+          }
         }
       } else {
         results.naver_cafe = { success: false, error: '카페 연결 없음 또는 club_id 미설정' };
