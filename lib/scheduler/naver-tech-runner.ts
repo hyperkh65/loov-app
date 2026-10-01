@@ -166,11 +166,9 @@ export async function runNaverTechAuto(userId: string): Promise<NaverTechResult>
 
   // 원문 하나만 리라이팅하면 그대로 따라 쓴 것처럼 보이므로, 같은 주제의 국내
   // 기사·블로그도 참고자료로 같이 넣어 여러 소스를 종합한 글이 되게 한다
-  const [news, blogs] = await Promise.all([
-    searchNaver('news', topic.title).catch(() => []),
-    searchNaver('blog', topic.title).catch(() => []),
-  ]);
-  const refs = [...news.slice(0, 5), ...blogs.slice(0, 5)] as { title: string; description: string; link: string }[];
+  // 언론사 기사 검색결과는 저작권 이슈로 제외(2026-10-01) — 블로그만 참고
+  const blogs = await searchNaver('blog', topic.title).catch(() => []);
+  const refs = [...blogs.slice(0, 5)] as { title: string; description: string; link: string }[];
   const refBlock = refs.length
     ? `\n참고자료(같은 주제의 다른 기사·블로그 — 사실관계만 참고, 베끼지 말 것):\n${refs.map((r, i) => `[참고${i + 1}] ${r.title} — ${r.description}`).join('\n')}\n`
     : '';

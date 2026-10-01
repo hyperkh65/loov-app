@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
+import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
 import { searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
@@ -164,17 +165,16 @@ export async function POST(req: NextRequest) {
 
   try {
     // 다른 뉴스/블로그도 곁들여 맥락 보강 (블로그 자동화와 동일)
-    const [news, blogs] = await Promise.all([
-      searchNaver('news', article.title),
-      searchNaver('blog', article.title),
-    ]);
+    // 언론사 기사 검색결과는 저작권 이슈로 참고자료에서 제외(2026-10-01)
+    const news: { title: string; description: string }[] = [];
+    const blogs = await searchNaver('blog', article.title);
 
     const prompt = buildBlogPrompt(article.title, news, blogs, {
       title: article.title,
       content: article.original_content,
     });
     const raw = await generateText(prompt, ai_model);
-    const cleaned = cleanWatermarks(raw);
+    const cleaned = sanitizeInvisible(cleanWatermarks(raw));
     const { title, meta_description: meta, content: rawContent } = parseAiOutput(cleaned);
 
     if (!title || !rawContent) {
@@ -234,6 +234,9 @@ export async function POST(req: NextRequest) {
       }
       if (representativeImageUrl) content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
     }
+
+    content = sanitizeInvisible(content);
+    assertPublishableHtml(title, content);
 
     const wordCount = content.replace(/<[^>]+>/g, '').length;
 

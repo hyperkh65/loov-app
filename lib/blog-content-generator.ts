@@ -6,6 +6,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
+import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
 
 // ── 이미지 스크래핑 ────────────────────────────────────────────────────────
 export async function scrapeArticleImages(
@@ -74,6 +75,8 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
         const safeItems = items.filter((item: { link: string; sizewidth?: string }) => {
           const host = new URL(item.link).hostname;
           if (/^(blogfiles|postfiles)\.(pstatic\.net|naver\.net)$/i.test(host)) return false;
+          // 언론사 기사 사진(imgnews)은 저작권 문제로 사용하지 않음(2026-10-01 사용자 결정)
+          if (/^imgnews\./i.test(host)) return false;
           const w = Number(item.sizewidth) || 0;
           return w === 0 || w >= 500;
         });
@@ -156,10 +159,43 @@ ${sources || '(없음 — 전문 지식으로 작성)'}
 [규칙]
 1. 한국어만 사용. 한국어 동의어가 있는 영어 단어 절대 금지 (content→콘텐츠, marketing→마케팅, system→시스템, design→디자인, update→업데이트, feedback→피드백, platform→플랫폼, service→서비스, brand→브랜드, data→데이터, trend→트렌드, user→사용자, review→리뷰, digital→디지털, global→글로벌 등). 고유 브랜드명(iPhone, Google 등)만 예외.
 2. 존재하지 않는 회사·보고서·연구 절대 지어내지 말 것
-3. 각 본문 단락은 반드시 6문장 이상 (짧은 단락 금지)
+3. 각 본문 단락은 담을 내용이 있는 만큼만 쓴다 (보통 3~6문장). 분량을 채우려고 같은 말을 되풀이하거나 문장을 늘여 쓰지 말 것 — 할 말이 끝났으면 거기서 단락을 끝낸다
 4. 첫 문장에 핵심 결론부터 (서론식 "~에 대해 알아봅니다" 금지)
 5. 친근한 구어체, 독자가 무릎 칠 구체적 사례 포함
 6. 원문 기사의 URL·링크·"출처: ..." 표기를 절대 포함하지 말 것 — 원문 내용을 참고만 하고 링크는 한 글자도 옮기지 말 것 (네이버 블로그는 본문에 URL이 있으면 자동으로 원문 사이트 링크카드가 생성됨)
+
+[추가 지침 — 위 규칙에 더해 반드시 지킬 것]
+A. 주제·사실성
+- 복지·정부 정책·지원금·지자체(시·군·구) 제도·세금·연금·보험처럼 독자의 돈과 생활에 직접 닿는 정보를 중심으로 쓴다.
+- 언론사 기사의 문장·표현·사진을 옮기거나 재서술하지 않는다. 사실(제도 내용·기준·일정)은 주관 부처·지자체의 공식 발표와 법령·공고 기준으로 쓰고, 참고자료의 [뉴스]는 사실 확인용으로만 본다.
+- 금액·날짜·자격 조건·신청 기한은 원문/참고자료에 있는 것만 쓴다. 확실하지 않으면 지어내지 말고 "정확한 금액·기한은 담당 기관 공고에서 확인" 식으로 안내한다. 시행 여부가 불확실하면 단정하지 않는다.
+- 해당되는 항목은 빠뜨리지 않는다: 대상(누가) · 혜택/금액(얼마) · 기간/마감(언제) · 신청 방법·장소·서류(어떻게) · 문의처(어디에). 주관 기관명과 기준 시점(오늘 날짜 기준)을 본문에 밝힌다.
+- 독자가 놓치기 쉬운 함정(신청해야만 받음, 중복 수급 불가, 소득·재산 기준 초과, 마감 임박)을 짚어준다.
+
+B. 두괄식·읽는 재미
+- INTRO 첫 문장은 독자가 가장 알고 싶은 답(대상·금액·마감 중 핵심)으로 시작하고, 그 뒤에 근거를 붙인다. 각 섹션 첫 문장도 결론부터 쓴다.
+- 사실을 바꾸지 않는 범위에서 생활 속 비유와 짧은 계산 예시를 곁들여 술술 읽히게 쓴다. 예시는 제도 기준 안에서만 만들고 가상의 상황임이 드러나게 쓴다.
+- 분량보다 밀도. 같은 내용을 표현만 바꿔 반복하지 말고, 한 문장에 정보 하나를 담는다.
+
+C. 구조 — 글마다 같은 틀로 보이지 않게
+- 소제목 수는 내용에 맞게 3~6개로 정하고, 소제목 형태(질문형·숫자형·상황형)를 섞는다. "~의 중요성", "~에 대한 이해", "마무리", "결론" 같은 범용 소제목은 금지.
+- FAQ는 독자가 실제 검색창에 칠 만한 질문 2~4개만 쓴다. 억지로 4개를 채우지 않는다.
+
+D. 구글·네이버 검색 최적화
+- TITLE: 핵심 키워드를 앞 15자 안에 넣고, 대상·혜택·연도 중 클릭할 이유가 되는 정보를 함께 쓴다. 과장·낚시 금지.
+- META: 키워드 + 핵심 답 + 읽을 이유를 담는다.
+- 키워드는 INTRO 첫 100자 안에 넣고, 소제목 2~3곳과 본문에 자연스럽게 녹인다. 같은 키워드를 도배하지 않는다.
+- 소제목은 독자가 궁금해할 문장("신청은 어디서 하나요")으로 쓴다. KEYWORDS는 실제 검색어 형태(롱테일 포함)로 쓴다.
+
+E. 출력 무결성
+- 출력은 반드시 ===KEYWORDS=== 까지 완결해서 끝낸다. 중간에 끊기거나 마커 이름·소제목이 비어 있으면 안 된다.
+- 괄호로 된 작성 지시문("(단락1…)" 등)을 그대로 출력하지 말 것.
+
+F. AI 티 나는 문체 금지
+- "또한", "더불어", "아울러", "뿐만 아니라"는 글 전체에서 각각 1회 이하.
+- "알아보겠습니다", "살펴보겠습니다", "결론적으로", "정리하자면", "종합하면", "이처럼" 사용 금지. "~는 중요합니다/필요합니다"를 남발하지 말 것.
+- 같은 어미("~습니다.")가 3문장 연속되지 않게, 짧은 문장(10~20자)과 긴 문장(40~60자)을 섞는다.
+- 숨은 유니코드 문자·HTML 엔티티(&amp; 등)를 넣지 않는다.
 
 [출력 형식 — 이 마커 그대로 사용, HTML 태그 없이 순수 텍스트]
 
@@ -170,37 +206,37 @@ ${sources || '(없음 — 전문 지식으로 작성)'}
 (메타 설명 130-160자)
 
 ===INTRO===
-(도입부. 핵심 결론 먼저 → 배경 → 이 글에서 다룰 내용. 6문장 이상)
+(도입부. 핵심 결론 먼저 → 그 근거·배경. 3~5문장. "이 글에서는 ~를 다룹니다" 같은 예고 문장 금지)
 
 ===S1===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
-핵심: (이 섹션 핵심 1-2문장)
+(단락1: 3~6문장)
+(단락2: 필요할 때만, 3~6문장)
+핵심: (이 섹션 핵심 1-2문장 — 꼭 기억할 내용이 있는 섹션에만, 없으면 이 줄 생략)
 
 ===S2===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
-핵심: (이 섹션 핵심 1-2문장)
+(단락1: 3~6문장)
+(단락2: 필요할 때만, 3~6문장)
+핵심: (이 섹션 핵심 1-2문장 — 꼭 기억할 내용이 있는 섹션에만, 없으면 이 줄 생략)
 
 ===S3===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
-핵심: (이 섹션 핵심 1-2문장)
+(단락1: 3~6문장)
+(단락2: 필요할 때만, 3~6문장)
+핵심: (이 섹션 핵심 1-2문장 — 꼭 기억할 내용이 있는 섹션에만, 없으면 이 줄 생략)
 
 ===S4===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
-핵심: (이 섹션 핵심 1-2문장)
+(단락1: 3~6문장)
+(단락2: 필요할 때만, 3~6문장)
+핵심: (이 섹션 핵심 1-2문장 — 꼭 기억할 내용이 있는 섹션에만, 없으면 이 줄 생략)
 
 ===S5===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
-핵심: (이 섹션 핵심 1-2문장)
+(단락1: 3~6문장)
+(단락2: 필요할 때만, 3~6문장)
+핵심: (이 섹션 핵심 1-2문장 — 꼭 기억할 내용이 있는 섹션에만, 없으면 이 줄 생략)
 
 ===S6===소제목
-(단락1: 6문장 이상)
-(단락2: 전망과 독자 행동 6문장 이상)
-핵심: (이 섹션 핵심 1-2문장)
+(단락1: 3~6문장)
+(단락2: 독자가 지금 할 행동, 필요할 때만)
+핵심: (이 섹션 핵심 1-2문장 — 꼭 기억할 내용이 있는 섹션에만, 없으면 이 줄 생략)
 
 ===FAQ===
 Q: (질문1)
@@ -446,10 +482,9 @@ export interface GeneratedBlogContent {
 }
 
 export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): Promise<GeneratedBlogContent> {
-  const [newsItems, blogItems] = await Promise.all([
-    searchNaver('news', keyword),
-    searchNaver('blog', keyword),
-  ]);
+  // 언론사 기사는 저작권 이슈로 참고자료에서 제외(2026-10-01) — 블로그 검색 결과만 맥락 보강에 사용
+  const newsItems: { title: string; description: string; link: string }[] = [];
+  const blogItems = await searchNaver('blog', keyword);
 
   const prompt = buildBlogPrompt(keyword, newsItems, blogItems);
   const allSourceItems = [...newsItems, ...blogItems];
@@ -461,7 +496,7 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): P
     scrapeArticleImages(allSourceItems),
   ]);
 
-  rawOutput = cleanWatermarks(rawOutput);
+  rawOutput = sanitizeInvisible(cleanWatermarks(rawOutput));
   void scrapedImages; // used for source tracking externally if needed
 
   const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
@@ -481,5 +516,8 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): P
   }
   if (imageUrl) content = insertRepresentativeImageIntoContent(content, imageUrl, title);
 
-  return { title, content, meta_description, keywords, imageUrl };
+  content = sanitizeInvisible(content);
+  assertPublishableHtml(title, content);
+
+  return { title: sanitizeInvisible(title), content, meta_description: sanitizeInvisible(meta_description), keywords, imageUrl };
 }
