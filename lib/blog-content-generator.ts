@@ -426,7 +426,7 @@ function buildHtmlFromSections(raw: string, title: string): string {
     return m ? m[1].trim() : '';
   })();
   if (introRaw) {
-    const introParagraphs = introRaw.split(/\n{2,}/).map(p => p.replace(/\n/g, ' ').trim()).filter(Boolean);
+    const introParagraphs = introRaw.replace(/(^|\n)\s*[*_]*핵심[*_]*\s*[:：]\s*/g, '$1').split(/\n{2,}/).map(p => p.replace(/\n/g, ' ').trim()).filter(Boolean);
     for (const p of introParagraphs) parts.push(wrap(p));
     parts.push(`<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">${esc(title)}</span></b></h3>`);
   }
@@ -441,9 +441,10 @@ function buildHtmlFromSections(raw: string, title: string): string {
     parts.push(h2(i, heading));
 
     // 핵심: 줄 분리
-    const coreMatch = body.match(/핵심:\s*(.+)/i);
-    const coreText = coreMatch ? coreMatch[1].trim() : '';
-    const bodyWithoutCore = body.replace(/핵심:\s*.+/i, '').trim();
+    // 모델이 '핵심:' 줄을 여러 번/문장 중간에 써도 본문에 '핵심:' 접두사가 남지 않게 전부 걷어냄(첫 번째만 박스로 사용)
+    const CORE_LINE = /^[ \t]*[*_]*핵심[*_]*\s*[:：][*_]*\s*(.+)$/gm;
+    const coreText = [...body.matchAll(CORE_LINE)][0]?.[1]?.trim() || '';
+    const bodyWithoutCore = body.replace(CORE_LINE, '').replace(/(^|\n)\s*[*_]*핵심[*_]*\s*[:：]\s*/g, '$1').trim();
 
     // 빈 줄 기준으로 단락 분리
     const paragraphs = bodyWithoutCore.split(/\n{2,}/).map(p => p.replace(/\n/g, ' ').trim()).filter(Boolean);
