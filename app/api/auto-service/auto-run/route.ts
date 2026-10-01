@@ -626,6 +626,7 @@ export async function GET(req: NextRequest) {
                     content: article.content,
                     tags: article.focus_keyword ? [article.focus_keyword] : [],
                     is_publish: true,
+                    category_id: await getSetting('TISTORY_AUTO_CATEGORY_ID') || undefined,
                   }),
                 });
                 if (pubRes.ok) {
@@ -799,6 +800,7 @@ export async function POST(req: NextRequest) {
                         title: article.title,
                         content: article.content,
                         tags: article.focus_keyword ? [article.focus_keyword] : [],
+                        category_id: await getSetting('TISTORY_AUTO_CATEGORY_ID') || undefined,
                       }),
                     });
                     if (pubRes.ok) {

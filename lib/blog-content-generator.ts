@@ -6,7 +6,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
-import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
+import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem } from '@/lib/html-gate';
 
 // ── 이미지 스크래핑 ────────────────────────────────────────────────────────
 export async function scrapeArticleImages(
@@ -72,7 +72,11 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
         // 과거엔 *.naver.net 전체를 막아서 대부분의 관련성 높은 사진이 걸러지고 Pixabay
         // 같은 무관한 대체 이미지만 쓰이던 문제가 실사용 중 확인됨(2026-10-01).
         // sizewidth 낮은(작게 나오는 원인) 결과도 같이 제외.
-        const safeItems = items.filter((item: { link: string; sizewidth?: string }) => {
+        // 이미지 제목에 키워드 단어가 하나도 없으면 무관한 이미지(예: 보험 글에 게임 캐릭터)라 제외
+        const kwTokens = query.split(/\s+/).filter(t => t.length >= 2);
+        const safeItems = items.filter((item: { link: string; sizewidth?: string; title?: string }) => {
+          const imgTitle = (item.title || '').replace(/<[^>]+>/g, '');
+          if (kwTokens.length && !kwTokens.some(t => imgTitle.includes(t.slice(0, Math.max(2, Math.min(t.length, 4)))))) return false;
           const host = new URL(item.link).hostname;
           if (/^(blogfiles|postfiles)\.(pstatic\.net|naver\.net)$/i.test(host)) return false;
           // 언론사 기사 사진(imgnews)은 저작권 문제로 사용하지 않음(2026-10-01 사용자 결정)
@@ -305,7 +309,7 @@ export function parseAiOutput(raw: string) {
   const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
 
   const extract = (tag: string) => {
-    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?===[A-Za-z0-9]|$)`, 'i');
+    const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?====[A-Za-z0-9]|$)`, 'i');
     const m = cleaned.match(re);
     return m ? m[1].trim() : '';
   };
@@ -418,7 +422,7 @@ function buildHtmlFromSections(raw: string, title: string): string {
 
   // 도입부
   const introRaw = (() => {
-    const m = raw.match(/===INTRO===\s*([\s\S]*?)(?===[A-Z])/i);
+    const m = raw.match(/===INTRO===\s*([\s\S]*?)(?====[A-Z])/i);
     return m ? m[1].trim() : '';
   })();
   if (introRaw) {
@@ -452,7 +456,7 @@ function buildHtmlFromSections(raw: string, title: string): string {
 
   // FAQ
   const faqRaw = (() => {
-    const m = raw.match(/===FAQ===\s*([\s\S]*?)(?===[A-Z]|$)/i);
+    const m = raw.match(/===FAQ===\s*([\s\S]*?)(?====[A-Z]|$)/i);
     return m ? m[1].trim() : '';
   })();
   if (faqRaw) {
@@ -490,17 +494,14 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3'): P
   const prompt = buildBlogPrompt(keyword, newsItems, blogItems);
   const allSourceItems = [...newsItems, ...blogItems];
 
-  let rawOutput: string;
-  let scrapedImages: { url: string; title: string }[] = [];
-  [rawOutput, scrapedImages] = await Promise.all([
-    generateText(prompt, aiModel),
-    scrapeArticleImages(allSourceItems),
-  ]);
-
-  rawOutput = sanitizeInvisible(cleanWatermarks(rawOutput));
-  void scrapedImages; // used for source tracking externally if needed
-
-  const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
+  // 모델이 같은 단어를 무한 반복하거나 잘린 출력을 내는 경우가 있어 1회 재시도
+  let parsed!: ReturnType<typeof parseAiOutput>;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const raw = sanitizeInvisible(cleanWatermarks(await generateText(prompt, aiModel)));
+    parsed = parseAiOutput(raw);
+    if (parsed.title && parsed.content && !findHtmlProblem(parsed.title, parsed.content)) break;
+  }
+  const { title, meta_description, content: rawContent, keywords } = parsed;
   if (!title || !rawContent) throw new Error('AI 출력 파싱 실패');
 
   const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
