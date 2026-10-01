@@ -1,6 +1,7 @@
 /**
  * 리라이팅 완료된 기사를 설정된 WordPress 사이트 + 연결된 모든 SNS 계정에 발행
  */
+import { getSection } from '@/lib/sns/sections';
 import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { generateText } from '@/lib/auto-blog-ai';
@@ -85,20 +86,6 @@ export async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null
     } catch { /* WP 업로드 실패하면 R2로 폴백 */ }
   }
   return uploadToR2(`rewrite-ig/${filename}.png`, buffer, 'image/png');
-}
-
-function getSection(text: string, tag: string, allTags: string[]): string {
-  const marker = `[[[${tag}]]]`;
-  const start = text.indexOf(marker);
-  if (start < 0) return '';
-  const from = start + marker.length;
-  let end = text.length;
-  for (const t of allTags) {
-    if (t === tag) continue;
-    const pos = text.indexOf(`[[[${t}]]]`, from);
-    if (pos >= 0 && pos < end) end = pos;
-  }
-  return text.slice(from, end).trim();
 }
 
 const CAFE_TAG = 'CAFE';
