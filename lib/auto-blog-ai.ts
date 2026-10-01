@@ -172,6 +172,8 @@ const OPENROUTER_MODELS = [
   'openai/gpt-oss-20b:free',               // OpenAI OSS 20B (빠름)
 ];
 
+const exhaustedOllamaKeys = new Map<string, number>();
+
 async function callOllama(apiKey: string, model: string, prompt: string): Promise<string> {
   const res = await fetch('https://ollama.com/api/chat', {
     method: 'POST',
@@ -456,6 +458,8 @@ export async function generateText(
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
       if (Date.now() > deadline) break;
+      // 월 한도 소진(429) 키는 1시간 동안 건너뜀 — 소진된 키가 예산(100s)을 다 먹어 살아있는 키까지 못 가던 문제
+      if ((exhaustedOllamaKeys.get(key) || 0) > Date.now()) continue;
       const available = await getAvailableOllamaModels(key);
       let toTry: string[];
       if (available.length > 0) {
@@ -495,6 +499,7 @@ export async function generateText(
           // 키는 다른 모델로 재시도해봤자 또 타임아웃 날 뿐이니 그 키는 바로 포기하고
           // 다음 키로 넘어가서 9개 키를 예산 안에서 최대한 많이 시도
           if ((e as Error).name === 'TimeoutError') break;
+          if (/Ollama 429.*usage limit/s.test(String(e))) { exhaustedOllamaKeys.set(key, Date.now() + 3600_000); break; }
           continue;
         }
       }
