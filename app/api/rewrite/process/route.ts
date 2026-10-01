@@ -165,9 +165,10 @@ export async function POST(req: NextRequest) {
 
   try {
     // 다른 뉴스/블로그도 곁들여 맥락 보강 (블로그 자동화와 동일)
-    // 언론사 기사 검색결과는 저작권 이슈로 참고자료에서 제외(2026-10-01)
-    const news: { title: string; description: string }[] = [];
-    const blogs = await searchNaver('blog', article.title);
+    const [news, blogs] = await Promise.all([
+      searchNaver('news', article.title),
+      searchNaver('blog', article.title),
+    ]);
 
     const prompt = buildBlogPrompt(article.title, news, blogs, {
       title: article.title,

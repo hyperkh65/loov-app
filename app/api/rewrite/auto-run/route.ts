@@ -183,16 +183,18 @@ export async function POST(req: NextRequest) {
   // 7. money.2days.kr — 뉴스 리라이팅과 별개로, 진짜 돈 되는(diamond/gold)
   // 키워드를 정면으로 노리는 오리지널 글 전용 사이클. 라우트 내부에서 4시간
   // 최소 간격을 자체 체크하니 매 크론 불러도 됨.
-  let moneyCycleResult: unknown = null;
-  try {
-    const res = await fetch(`${BASE}/api/rewrite/money-keyword-cycle`, {
-      method: 'POST', headers,
-      body: JSON.stringify({ ai_model }),
-      signal: AbortSignal.timeout(280_000),
-    });
-    moneyCycleResult = await res.json();
-  } catch (e) {
-    moneyCycleResult = { ok: false, error: String(e) };
+  const moneyCycleResult: Record<string, unknown> = {};
+  for (const site_url of ['https://money.2days.kr', 'https://miracool.co.kr', 'https://finance.2days.kr']) {
+    try {
+      const res = await fetch(`${BASE}/api/rewrite/money-keyword-cycle`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ ai_model, site_url }),
+        signal: AbortSignal.timeout(280_000),
+      });
+      moneyCycleResult[site_url] = await res.json();
+    } catch (e) {
+      moneyCycleResult[site_url] = { ok: false, error: String(e) };
+    }
   }
 
   return NextResponse.json({
