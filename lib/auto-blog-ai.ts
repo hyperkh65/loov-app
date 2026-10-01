@@ -248,7 +248,7 @@ async function callGemini(apiKeys: string[], prompt: string): Promise<string> {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 8192 },
+            generationConfig: { maxOutputTokens: 16384, temperature: 0.7 },
           }),
           signal: AbortSignal.timeout(120_000),
         }
@@ -415,6 +415,10 @@ export async function generateText(
   }
 
   const errors: string[] = [];
+
+  // 기본값 'qwen3'(Ollama Cloud 무료 모델)는 같은 단어 무한반복·영어/외국어 혼입·어색한 문장이
+  // 잦아(2026-10-02 실사용 확인) 본문 생성 기본 모델을 Gemini로 전환. 실패 시 아래 폴백 체인이 이어받음.
+  if (preferModel === 'qwen3') preferModel = 'gemini';
 
   // preferModel이 Ollama 모델인지 판단
   const NON_OLLAMA = ['gemini', 'claude', 'openai', 'gpt', 'openrouter', 'groq'];
