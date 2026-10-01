@@ -38,7 +38,7 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
   // (@2dayskr_korea/@aboda_miracool에 광고 섞임 방지, 위 코멘트 참고)
   ads_default: {
     threads: ['25873039292318366'], // @2days.kr
-    instagram: [], // @2days.kr(Threads)에 짝인 인스타 계정이 연결돼 있지 않음 — @2dayskr 인스타는 2days.kr 글 전용(사용자 확정 2026-10-01)이라 광고 인스타는 건너뜀
+    instagram: ['27475655598789002'], // @2days.kr 인스타(2026-10-01 연결) — 스레드 @2days.kr과 짝
   },
   // 2days.kr 사이트 전용(사용자 확정 2026-10-01) — @2dayskr 스레드/인스타 고정, 로테이션 없음.
   // 이 계정이 메인이라 간격 체크도 면제(MIN_GAP 0) — 같은 계정을 쓰는 다른 그룹이 로그를 보고 양보함.
