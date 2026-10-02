@@ -11,7 +11,9 @@ export function sanitizeInvisible(s: string): string {
   // 섹션 구분자(===FAQ=== 등) 파싱 잔여물로 '=' 한 글자만 든 문단이 생기던 버그 방어
   return s.replace(INVISIBLE_RE, '').replace(ODD_SPACE_RE, ' ').replace(/<p[^>]*>\s*=+\s*<\/p>\n?/g, '')
     // 프롬프트의 '핵심:' 라벨이 문단 머리에 그대로 노출되는 것 방지
-    .replace(/(<p[^>]*>)\s*(?:<(?:b|strong)>)?\s*핵심\s*[:：]\s*(?:<\/(?:b|strong)>)?\s*/g, '$1');
+    .replace(/(<p[^>]*>)\s*(?:<(?:b|strong)>)?\s*핵심\s*[:：]\s*(?:<\/(?:b|strong)>)?\s*/g, '$1')
+    // 문장 중간(같은 줄)에 붙은 '핵심:' 라벨 제거 — 줄 머리는 위 규칙/박스 파서가 처리
+    .replace(/([.!?]["')\]]?[ \t]+)(?:<(?:b|strong)>)?핵심\s*[:：]\s*(?:<\/(?:b|strong)>)?[ \t]*/g, '$1');
 }
 
 const PAIRED_TAGS = ['p', 'h2', 'h3', 'h4', 'div', 'ul', 'ol', 'li', 'figure', 'figcaption', 'b', 'i', 'strong', 'em', 'span', 'a', 'table', 'tr', 'td', 'th'];
