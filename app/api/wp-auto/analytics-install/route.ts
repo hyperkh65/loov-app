@@ -19,7 +19,8 @@ export async function POST() {
     const wpDir = dir.startsWith('/') ? dir : `${WEB_ROOT}/${dir}`;
     try {
       await target.exec(`mkdir -p ${wpDir}/wp-content/mu-plugins`);
-      await target.execWithStdin(`cat > ${wpDir}/wp-content/mu-plugins/loov-analytics.php`, code);
+      const w = await target.execWithStdin(`cat > ${wpDir}/wp-content/mu-plugins/loov-analytics.php`, code);
+      if (w.code) throw new Error(w.stderr || `exit ${w.code}`);
       results.push({ site: s.site_url, ok: true });
     } catch (e) { results.push({ site: s.site_url, ok: false, error: String(e).slice(0, 120) }); }
   }
