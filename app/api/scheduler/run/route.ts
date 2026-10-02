@@ -13,6 +13,12 @@ import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { isInternalRequest } from '@/lib/internal-auth';
 import { computeNextRunAt } from '@/lib/scheduler';
+
+// interval_hours는 정수 컬럼이라 40분 같은 주기는 config.interval_minutes로 지정
+function intervalHoursOf(s: { interval_hours: number; config?: unknown }): number {
+  const m = Number((s.config as { interval_minutes?: number } | null)?.interval_minutes);
+  return m > 0 ? m / 60 : s.interval_hours;
+}
 import { runBlogAuto } from '@/lib/scheduler/blog-runner';
 import { runCoupangAuto } from '@/lib/scheduler/coupang-runner';
 import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
@@ -1084,7 +1090,7 @@ async function executeSchedule(schedule: Schedule) {
       }
     }
 
-    const nextRunAt = computeNextRunAt(schedule.interval_hours, schedule.run_at_hour, now);
+    const nextRunAt = computeNextRunAt(intervalHoursOf(schedule), schedule.run_at_hour, now);
 
     await supabase.from('bossai_schedules').update({
       last_run_at: now,
@@ -1105,7 +1111,7 @@ async function executeSchedule(schedule: Schedule) {
   } catch (err: unknown) {
     const errorMsg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
 
-    const nextRunAt = computeNextRunAt(schedule.interval_hours, schedule.run_at_hour, now);
+    const nextRunAt = computeNextRunAt(intervalHoursOf(schedule), schedule.run_at_hour, now);
     await supabase.from('bossai_schedules').update({
       last_run_at: now,
       next_run_at: nextRunAt.toISOString(),
