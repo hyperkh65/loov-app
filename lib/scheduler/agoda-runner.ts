@@ -1,4 +1,5 @@
 import { getSection } from '@/lib/sns/sections';
+import { THREADS_HOOK_GUIDE, scrubThreads } from '@/lib/sns/hook-style';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
@@ -256,10 +257,12 @@ HTML 본문 전체`;
 여행 스타일: ${travelStyle}
 
 [플랫폼별 작성 규칙]
-- THREADS: 줄바꿈으로 리듬감. 2~4줄 짧은 문장. 이모지 1~2개. URL 없이 (댓글로 추가)
+- THREADS: 아래 [스레드 훅 작성법]을 따른다. URL 없이 (댓글로 추가)
 - TWITTER: 한 방에 꽂히는 문장 + 해시태그 2~3개. 240자 이내. URL 없이 (댓글로 추가)
 - FACEBOOK: 친근하게 250자 내외. 이모지 적당히. URL 없이
 - INSTAGRAM: 감성적, 이모지 풍부, 해시태그 10개. URL 없이
+
+${THREADS_HOOK_GUIDE}
 
 반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):
 [[[THREADS]]]
@@ -274,7 +277,7 @@ HTML 본문 전체`;
     try {
       const aiText = await generateText(snsPrompt, 'groq');
       const textMap: Record<string, string> = {
-        threads: getSection(aiText, 'THREADS', TAGS),
+        threads: scrubThreads(getSection(aiText, 'THREADS', TAGS)),
         twitter: getSection(aiText, 'TWITTER', TAGS),
         facebook: getSection(aiText, 'FACEBOOK', TAGS),
         instagram: getSection(aiText, 'INSTAGRAM', TAGS),
