@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { alertOwner } from '@/lib/owner-alert';
 import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
@@ -766,10 +767,12 @@ export async function POST(req: NextRequest) {
                   } else {
                     const errData = await pubRes.json().catch(() => ({}));
                     send({ type: 'naver_error', keyword, reason: errData.error || '발행 실패' });
+                    alertOwner('naver_blog', `⚠️ 네이버 블로그 발행 실패\n${errData.error || pubRes.status}\n→ 쿠키(NID_AUT/NID_SES) 만료일 수 있음. LOOV 설정에서 갱신해주세요`);
                   }
                 }
               } catch (pubErr) {
                 send({ type: 'naver_error', keyword, reason: pubErr instanceof Error ? pubErr.message : String(pubErr) });
+                alertOwner('naver_blog', `⚠️ 네이버 블로그 발행 오류\n${String(pubErr).slice(0, 300)}`);
               }
             }
 
@@ -815,11 +818,13 @@ export async function POST(req: NextRequest) {
                     } else {
                       const errData = await pubRes.json().catch(() => ({}));
                       send({ type: 'tistory_error', keyword, reason: errData.error || '발행 실패' });
+                      alertOwner('tistory', `⚠️ 티스토리 발행 실패\n${errData.error || pubRes.status}\n→ 로그인 쿠키 만료일 수 있음. LOOV 설정에서 갱신해주세요`);
                     }
                   }
                 }
               } catch (pubErr) {
                 send({ type: 'tistory_error', keyword, reason: pubErr instanceof Error ? pubErr.message : String(pubErr) });
+                alertOwner('tistory', `⚠️ 티스토리 발행 오류\n${String(pubErr).slice(0, 300)}`);
               }
             }
           } else if (result.reason && !result.reason.includes('중복')) {

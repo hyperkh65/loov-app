@@ -8,6 +8,7 @@
  * 또는 대시보드에서 수동 실행 (로그인 세션 사용)
  */
 
+import { alertOwner, isAuthError } from '@/lib/owner-alert';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-server';
@@ -1113,6 +1114,8 @@ async function executeSchedule(schedule: Schedule) {
     return { success: true, summary };
   } catch (err: unknown) {
     const errorMsg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+
+    if (isAuthError(errorMsg)) alertOwner(`sched:${schedule.id}`, `⚠️ [${schedule.name}] 인증 문제로 실패\n${errorMsg.slice(0, 300)}\n→ LOOV에서 해당 계정 재연결/쿠키 갱신 필요`);
 
     // 발행 슬롯 대기(분산 발행)는 실패가 아니라 순서 대기 — 1주기를 통째로 날리지 않게 10분 뒤 재시도
     const nextRunAt = errorMsg.includes(SLOT_WAIT_ERROR)
