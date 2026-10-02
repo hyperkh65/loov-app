@@ -22,7 +22,7 @@ import { SLOT_WAIT_ERROR } from '@/lib/scheduler/blog-runner';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 60 * 60 * 1000; // 2026-10-02: 사용자 확정 — 워드프레스 발행은 그룹당 1시간에 1건
+const PUBLISH_INTERVAL_MS = 30 * 60 * 1000; // 2026-10-03: 사용자 확정 — 글·SNS 발행 모두 30분 단위
 const MAX_PUBLISHES_PER_CALL = 8;
 // 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
 // 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
@@ -152,9 +152,7 @@ async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, o
   const candidates = groupKeys.map((group) => {
     const lastAt = lastPublishedAtByGroup.get(group);
     const sinceLast = lastAt ? Date.now() - new Date(lastAt).getTime() : Infinity;
-    // 2days.kr(@2dayskr 그룹, yoosol/yoonfree 핵심 소스)은 40분 간격(사용자 확정 2026-10-03)
-    const interval = group === '@2dayskr' ? 40 * 60 * 1000 : PUBLISH_INTERVAL_MS;
-    return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, interval - sinceLast) };
+    return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, PUBLISH_INTERVAL_MS - sinceLast) };
   });
 
   const ready = candidates.filter((c) => c.waitMs === 0).sort((a, b) => (a.lastServedAt < b.lastServedAt ? -1 : 1));

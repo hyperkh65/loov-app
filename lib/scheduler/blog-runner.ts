@@ -164,11 +164,11 @@ function getSafeCategoryFor(wpUrl: string): number[] | undefined {
 }
 
 // 콘텐츠 사이트 발행을 시간축에 고르게 분산(사용자 확정 2026-10-03): 여러 사이트가 한꺼번에
-// 올라가지 않게 전체 통틀어 10분에 1건, 같은 사이트는 40분 간격.
+// 올라가지 않게 전체 통틀어 10분에 1건, 같은 사이트는 30분 간격.
 // ponytail: 프로세스 메모리 기준 — 앱 인스턴스가 여러 개로 늘면 DB 예약 테이블로 옮길 것
 const STAGGER_HOSTS = new Set(['2days.kr', 'aboda.kr', 'miracool.co.kr', 'money.2days.kr', 'finance.2days.kr', 'yellow.2days.kr']);
 const GLOBAL_GAP_MS = 10 * 60e3;
-const SITE_GAP_MS = 40 * 60e3;
+const SITE_GAP_MS = 30 * 60e3;
 export const SLOT_WAIT_ERROR = '발행 슬롯 대기';
 let lastGlobalAt = 0;
 const lastSiteAt = new Map<string, number>();
