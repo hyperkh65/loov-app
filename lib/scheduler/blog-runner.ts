@@ -218,7 +218,7 @@ export async function getWpCredentials(siteId: string): Promise<{ url: string; u
   return { url: data.site_url, username: data.wp_username, appPassword: data.app_password };
 }
 
-export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string; url: string; title: string }> {
+export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string; rawOutput: string }): Promise<{ keyword: string; url: string; title: string }> {
   const config = schedule.config as BlogAutoConfig;
 
   // 키워드 자동 발굴 — config.keywords가 있으면(고CPC 카테고리 시범 등 특정
@@ -228,7 +228,9 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   // config.keywords가 아예 없으면 기존대로 범용 캐시/트렌드 기반 자동 발굴.
   let keyword: string;
   try {
-    if (config.keywords?.length) {
+    if (manual) {
+      keyword = manual.keyword;
+    } else if (config.keywords?.length) {
       const dynamic = config.dynamic_category
         ? await pickDynamicKeywordByCategory(schedule, config.dynamic_category)
         : null;
@@ -243,7 +245,7 @@ export async function runBlogAuto(schedule: Schedule): Promise<{ keyword: string
   // 콘텐츠 생성
   let title: string, content: string, keywords: string[], imageUrl: string | null;
   try {
-    const result = await generateBlogContent(keyword, config.ai_model);
+    const result = await generateBlogContent(keyword, config.ai_model, manual?.rawOutput);
     title = result.title; content = result.content; keywords = result.keywords; imageUrl = result.imageUrl;
     if (!title || !content) throw new Error('AI 출력 파싱 오류 (title/content 없음)');
   } catch (e) {
