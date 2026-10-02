@@ -518,10 +518,12 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3', ra
   for (let attempt = 0; attempt < 2; attempt++) {
     const raw = sanitizeInvisible(cleanWatermarks(rawOverride ?? await generateText(prompt, aiModel, undefined, undefined, undefined, undefined, { ollamaOnly: true })));
     parsed = parseAiOutput(raw);
-    if (parsed.title && parsed.content && !findHtmlProblem(parsed.title, parsed.content)) break;
+    if (parsed.title && parsed.content && !findHtmlProblem(parsed.title, parsed.content) && parsed.content.replace(/<[^>]*>/g, '').length >= 1000) break;
   }
   const { title, meta_description, content: rawContent, keywords } = parsed;
   if (!title || !rawContent) throw new Error('AI 출력 파싱 실패');
+  const bodyLen = rawContent.replace(/<[^>]*>/g, '').length;
+  if (bodyLen < 1000) throw new Error(`발행 차단: 본문이 너무 짧음/잘림(${bodyLen}자)`);
 
   const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
   const inlineImages = await rehostImages(foundImages);
