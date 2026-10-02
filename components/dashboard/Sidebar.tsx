@@ -57,6 +57,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/shorts/thumbnail', icon: '🖼️', label: '썸네일 제작' },
       { href: '/dashboard/shorts/english', icon: '🇺🇸', label: '영어 숏폼 (yarn.co)' },
       { href: '/dashboard/coupang/hub',   icon: '💰', label: '쿠팡 수익 허브' },
+      { href: '/dashboard/revenue',      icon: '📈', label: '블로그 수익표' },
       { href: '/dashboard/coupang',   icon: '🛒', label: '쿠팡파트너스 (URL)' },
       { href: '/dashboard/coupang/notion', icon: '🗂️', label: '쿠팡 Notion DB' },
       { href: '/dashboard/wordpress', icon: '📝', label: 'WordPress 발행' },
