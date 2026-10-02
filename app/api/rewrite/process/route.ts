@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
     // (lib/blog-content-generator.ts generateBlogContent)와 동일하게 제목으로
     // 실제 이미지를 검색해 섹션마다 넣는 방식으로 통일.
     let content = rawContent;
-    const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(title, 6)
+    const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(title, 6, { aiThumb: true })
       .catch(() => ({ displayUrls: [] as string[], thumbUrl: undefined as string | undefined }));
     if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
 

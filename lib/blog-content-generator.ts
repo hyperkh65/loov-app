@@ -88,7 +88,33 @@ async function generateAiImage(subject: string): Promise<string | null> {
   return null;
 }
 
-export async function searchInlineImages(query: string, count = 3): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
+// 네이버 이미지 검색(관련성 최우선) — 사용자 확정(2026-10-03): 본문 이미지는 예전처럼 네이버에서
+async function searchNaverImages(query: string, count: number): Promise<string[]> {
+  const [naverClientId, naverClientSecret] = await Promise.all([getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET')]);
+  if (!naverClientId || !naverClientSecret) return [];
+  try {
+    const res = await fetch(
+      `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count + 3}&sort=sim`,
+      { headers: { 'X-Naver-Client-Id': naverClientId, 'X-Naver-Client-Secret': naverClientSecret }, signal: AbortSignal.timeout(10_000) }
+    );
+    if (!res.ok) return [];
+    const items = ((await res.json()).items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
+    // blogfiles/postfiles는 "불법촬영물 검토중" 플레이스홀더로 바뀌는 경우가 있어 제외, imgnews(언론사 사진)도 제외,
+    // 제목에 키워드가 없는 무관 이미지·작은 이미지 제외
+    const kwTokens = query.split(/\s+/).filter(t => t.length >= 2);
+    return items.filter((item: { link: string; sizewidth?: string; title?: string }) => {
+      const imgTitle = (item.title || '').replace(/<[^>]+>/g, '');
+      if (kwTokens.length && !kwTokens.some(t => imgTitle.includes(t.slice(0, Math.max(2, Math.min(t.length, 4)))))) return false;
+      const host = new URL(item.link).hostname;
+      if (/^(blogfiles|postfiles)\.(pstatic\.net|naver\.net)$/i.test(host)) return false;
+      if (/^imgnews\./i.test(host)) return false;
+      const w = Number(item.sizewidth) || 0;
+      return w === 0 || w >= 500;
+    }).slice(0, count).map((item: { link: string }) => item.link);
+  } catch { return []; }
+}
+
+async function searchStockImages(query: string, count: number): Promise<string[]> {
   const q = await toEnglishImageQuery(query);
   const urls: string[] = [];
   const pexelsKey = await getSetting('PEXELS_API_KEY');
@@ -104,16 +130,23 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
     try {
       const res = await fetch(`https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(q)}&image_type=photo&per_page=${count + 3}&safesearch=true&min_width=600&orientation=horizontal`,
         { signal: AbortSignal.timeout(10_000) });
-      if (res.ok) {
-        // webformatURL은 만료되는 서명 URL이라 previewURL에서 640px 버전을 파생
-        for (const h of (await res.json()).hits || []) urls.push(h.previewURL ? h.previewURL.replace(/_\d+\./, '_640.') : h.webformatURL);
-      }
+      // webformatURL은 만료되는 서명 URL이라 previewURL에서 640px 버전을 파생
+      if (res.ok) for (const h of (await res.json()).hits || []) urls.push(h.previewURL ? h.previewURL.replace(/_\d+\./, '_640.') : h.webformatURL);
     } catch { /* fallthrough */ }
   }
-  // 대표이미지는 주제와 정확히 맞아야 신뢰가 유지됨 — 스톡 검색은 엉뚱한 사진이 섞이므로 AI 생성 우선
-  const ai = await generateAiImage(q);
-  // AI 이미지는 대표이미지 전용(사용자 확정 2026-10-03) — 본문엔 스톡 사진만
-  const picked = [...new Set(urls)].slice(0, count);
+  return [...new Set(urls)].slice(0, count);
+}
+
+/**
+ * 본문 이미지: 네이버 이미지 검색 → 부족하면 Pexels/Pixabay.
+ * 대표이미지: aiThumb(자동 크론 발행)면 Cloudflare AI 생성, 아니면(수동 자동화블로그 메뉴) 네이버 첫 이미지.
+ */
+export async function searchInlineImages(query: string, count = 3, opts: { aiThumb?: boolean } = {}): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
+  const [naver, ai] = await Promise.all([
+    searchNaverImages(query, count),
+    opts.aiThumb ? toEnglishImageQuery(query).then(generateAiImage) : Promise.resolve(null),
+  ]);
+  const picked = naver.length >= count ? naver : [...naver, ...(await searchStockImages(query, count - naver.length))];
   return { displayUrls: picked, thumbUrl: ai || picked[0] };
 }
 
@@ -509,7 +542,7 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3', ra
   const bodyLen = rawContent.replace(/<[^>]*>/g, '').length;
   if (bodyLen < 1000) throw new Error(`발행 차단: 본문이 너무 짧음/잘림(${bodyLen}자)`);
 
-  const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
+  const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3, { aiThumb: true });
   const inlineImages = await rehostImages(foundImages);
   let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
   content = injectTitleIntoH3(content, title);
