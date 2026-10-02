@@ -202,6 +202,22 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
   return text;
 }
 
+const exhaustedNvidia = { until: 0 };
+
+// NVIDIA NIM(build.nvidia.com) 무료 호출 — Ollama와 같은 nemotron-3-super 계열이라 블로그 본문에도 동일 품질로 쓴다.
+async function callNvidia(apiKey: string, prompt: string): Promise<string> {
+  const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'nvidia/nemotron-3-super-120b-a12b', messages: [{ role: 'user', content: prompt }], max_tokens: 8192, temperature: 0.7 }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  if (!res.ok) throw new Error(`NVIDIA ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const text = (await res.json()).choices?.[0]?.message?.content || '';
+  if (!text) throw new Error('NVIDIA 빈 응답');
+  return text;
+}
+
 async function callOpenRouter(apiKey: string, model: string, prompt: string): Promise<string> {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -437,6 +453,17 @@ export async function generateText(
   const legacyKey = await getSetting('OLLAMA_API_KEY');
   if (legacyKey && !ollamaKeys.includes(legacyKey)) ollamaKeys.push(legacyKey);
 
+  const tryNvidia = async (): Promise<string | false> => {
+    const key = await getSetting('NVIDIA_API_KEY');
+    if (!key || exhaustedNvidia.until > Date.now()) return false;
+    try { return await callNvidia(key, prompt); }
+    catch (e) {
+      errors.push(String(e).slice(0, 120));
+      if (/NVIDIA (402|429)/.test(String(e))) exhaustedNvidia.until = Date.now() + 3600_000;
+      return false;
+    }
+  };
+
   // ── Ollama Cloud ────────────────────────────────────────
   const tryOllama = async (mainModel: string) => {
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
@@ -624,7 +651,7 @@ export async function generateText(
   } else if (preferModel.startsWith('gpt') || preferModel === 'openai') {
     result = clean(await tryOpenAI());
   } else if (isOllamaPreferred) {
-    result = clean(await tryOllama(preferModel));
+    result = clean((await tryNvidia()) || (await tryOllama(preferModel)));
   }
   if (result) return result;
 
