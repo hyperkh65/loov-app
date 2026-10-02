@@ -77,7 +77,7 @@ async function generateAiImage(subject: string): Promise<string | null> {
       const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${a.account}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${a.token}` },
-        body: JSON.stringify({ prompt: `${subject}, realistic photo, natural light, clean composition, no text, no watermark`, steps: 6 }),
+        body: JSON.stringify({ prompt: `${subject}, set in South Korea, Korean people with natural Korean look, everyday Korean setting (Korean apartment, Korean cafe, Korean office or Seoul street), realistic photo, natural light, clean composition, absolutely no text, no letters, no writing, no documents or signs with words, no watermark`, steps: 6 }),
         signal: AbortSignal.timeout(60_000),
       });
       const b64 = (await res.json().catch(() => ({})))?.result?.image;
@@ -186,7 +186,7 @@ C. 구조 — 글마다 같은 틀로 보이지 않게
 - FAQ는 독자가 실제 검색창에 칠 만한 질문 2~4개만 쓴다. 억지로 4개를 채우지 않는다.
 
 D. 구글·네이버 검색 최적화
-- TITLE(검색 유입의 전부 — 가장 신경 쓸 것): 독자가 검색창에 실제로 칠 핵심 키워드로 시작(앞 15자 안). 이어서 검색 의도어(방법/조건/신청/추천/비교/후기/가격/총액 등) + 독자가 얻는 구체적 이득(금액·기간·대상·해결) 한 구절. 30~45자. 감성 문장·은유·뜬금없는 질문형 금지, 과장·낚시 금지. 예: "청년월세지원 신청방법, 월 20만원 받는 조건 3가지" / "제습기 전기세 계산, 하루 8시간 한 달 요금 비교"
+- TITLE(검색 유입의 전부 — 가장 신경 쓸 것): 독자가 검색창에 실제로 칠 핵심 키워드로 시작(앞 15자 안). 이어서 검색 의도어(방법/조건/신청/추천/비교/후기/가격/총액 등) + 독자가 얻는 구체적 이득(금액·기간·대상·해결) 한 구절. 20~32자(절대 초과 금지 — 길면 잘림). 이득은 하나만. 감성 문장·은유·질문형 금지, 과장·낚시 금지. 예: "청년월세지원 신청방법, 월 20만원 조건" / "제습기 전기세 계산, 한 달 요금 비교"
 - META: 키워드 + 핵심 답 + 읽을 이유를 담는다.
 - 키워드는 INTRO 첫 100자 안에 넣고, 소제목 2~3곳과 본문에 자연스럽게 녹인다. 같은 키워드를 도배하지 않는다.
 - 소제목은 독자가 궁금해할 문장("신청은 어디서 하나요")으로 쓴다. KEYWORDS는 실제 검색어 형태(롱테일 포함)로 쓴다.

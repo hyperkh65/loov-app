@@ -71,3 +71,14 @@ export function findForeignWords(html: string): string[] {
   const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]*>/g, ' ').replace(/\S*\.(com|kr|net|org|co|io)\S*/g, ' ');
   return [...new Set((text.match(/\b[a-z]{4,}\b/g) || []).filter(w => !FOREIGN_ALLOW.has(w)))];
 }
+
+// 제목 길이 강제(사용자 확정 2026-10-03: 길면 목록/검색결과에서 잘림) — 32자 넘으면 구분자 기준으로 앞부분만
+export function tightTitle(title: string, max = 32): string {
+  const t = title.replace(/\s+/g, ' ').trim();
+  if ([...t].length <= max) return t;
+  const head = [...t].slice(0, max).join('');
+  const cut = Math.max(head.lastIndexOf(','), head.lastIndexOf('·'), head.lastIndexOf('|'), head.lastIndexOf(' - '), head.lastIndexOf('–'), head.lastIndexOf(':'));
+  if (cut >= 12) return head.slice(0, cut).trim();
+  const sp = head.lastIndexOf(' ');
+  return (sp >= 12 ? head.slice(0, sp) : head).trim();
+}

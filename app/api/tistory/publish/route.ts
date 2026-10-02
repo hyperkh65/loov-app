@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { notifyPublished } from '@/lib/owner-alert';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { nasExecWithStdin } from '@/lib/nas-ssh';
-import { sanitizeInvisible, findHtmlProblem } from '@/lib/html-gate';
+import { sanitizeInvisible, findHtmlProblem, tightTitle } from '@/lib/html-gate';
 
 export const maxDuration = 60;
 
@@ -194,7 +194,7 @@ async function handlePublish(
     return NextResponse.json({ error: 'blog_id, title, content 필요' }, { status: 400 });
   }
 
-  title = sanitizeInvisible(title);
+  title = tightTitle(sanitizeInvisible(title));
   content = sanitizeInvisible(content);
   const problem = findHtmlProblem(title, content);
   if (problem) return NextResponse.json({ error: `발행 차단(불완전 HTML): ${problem}` }, { status: 422 });

@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-server';
+import { tightTitle } from '@/lib/html-gate';
 import { buildHookCaptions } from '@/lib/sns/hook-captions';
 import { notifyPublished } from '@/lib/owner-alert';
 import { withUtm } from '@/lib/utm';
@@ -103,6 +104,7 @@ async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
 }
 
 async function publishToBlogger(accessToken: string, blogId: string, title: string, content: string, labels: string[]): Promise<string> {
+  title = tightTitle(title);
   const res = await fetch(`https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -198,6 +200,7 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
     lastSiteAt.set(new URL(wpUrl.replace(/\/$/, '')).host, lastGlobalAt);
   }
   content = injectAdSenseForSite(wpUrl, content);
+  title = tightTitle(title);
   const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
   const apiUrl = `${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
 
