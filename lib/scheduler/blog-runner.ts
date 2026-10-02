@@ -7,7 +7,6 @@ import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
-import { translateAndCrossPost } from '@/lib/ai-translate';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
@@ -333,8 +332,6 @@ export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string
   if (publishedUrl) {
     publishToWordpressCom({ title, content, articleUrl: publishedUrl }).catch(() => {});
     publishToGithubPages({ title, content, articleUrl: publishedUrl }).catch(() => {});
-    // 영어/일본어로 번역해서 engmag.2days.kr / japmag.2days.kr에도 크로스 발행
-    translateAndCrossPost({ title, content, representative_image_url: imageUrl }).catch(() => {});
     // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
     // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
     // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
