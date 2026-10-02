@@ -150,7 +150,7 @@ ${refBlock}
   if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
 
   // 출처/참고 주소 하단 표기는 제거(사용자 요청 2026-10-03)
-  const { displayUrls, thumbUrl } = await searchInlineImages(title, 3);
+  const { displayUrls, thumbUrl } = await searchInlineImages(title, 3, { aiThumb: true });
   content = insertImages(content, [...new Set([thumbUrl, ...displayUrls].filter((u): u is string => !!u))]);
 
   // 네이버 연결 정보 (쿠키) — Playwright 워커가 naver_connections에서 다시
