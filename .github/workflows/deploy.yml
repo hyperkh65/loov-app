@@ -97,6 +97,10 @@ jobs:
           NAS_SSH_PORT=79
           NAS_SSH_USER=${{ secrets.NAS_SSH_USER }}
           NAS_SSH_PASSWORD="${{ secrets.NAS_SSH_PASSWORD }}"
+          NAS2_SSH_HOST=2days.kr
+          NAS2_SSH_PORT=79
+          NAS2_SSH_USER=urjent
+          NAS2_SSH_PASSWORD="${{ secrets.NAS2_SSH_PASSWORD }}"
           R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}"
@@ -299,6 +303,10 @@ jobs:
           NAS_SSH_PORT=79
           NAS_SSH_USER=urjent
           NAS_SSH_PASSWORD="${{ secrets.NAS2_SSH_PASSWORD }}"
+          NAS2_SSH_HOST=host.docker.internal
+          NAS2_SSH_PORT=79
+          NAS2_SSH_USER=urjent
+          NAS2_SSH_PASSWORD="${{ secrets.NAS2_SSH_PASSWORD }}"
           R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}"
