@@ -151,7 +151,42 @@ function getSafeCategoryFor(wpUrl: string): number[] | undefined {
   return host === '2days.kr' ? [968] : undefined; // 968 = economic
 }
 
+// 콘텐츠 사이트 발행을 시간축에 고르게 분산(사용자 확정 2026-10-03): 여러 사이트가 한꺼번에
+// 올라가지 않게 전체 통틀어 10분에 1건, 같은 사이트는 40분 간격.
+// ponytail: 프로세스 메모리 기준 — 앱 인스턴스가 여러 개로 늘면 DB 예약 테이블로 옮길 것
+const STAGGER_HOSTS = new Set(['2days.kr', 'aboda.kr', 'miracool.co.kr', 'money.2days.kr', 'finance.2days.kr', 'yellow.2days.kr']);
+const GLOBAL_GAP_MS = 10 * 60e3;
+const SITE_GAP_MS = 40 * 60e3;
+export const SLOT_WAIT_ERROR = '발행 슬롯 대기';
+let lastGlobalAt = 0;
+const lastSiteAt = new Map<string, number>();
+
+async function latestPostAt(base: string): Promise<number> {
+  try {
+    const r = await fetch(`${base}/wp-json/wp/v2/posts?per_page=1&_fields=date_gmt`, { signal: AbortSignal.timeout(8000) });
+    const d = (await r.json() as Array<{ date_gmt?: string }>)[0]?.date_gmt;
+    return d ? new Date(`${d}Z`).getTime() : 0;
+  } catch { return 0; }
+}
+
+/** 생성 전에 미리 확인(예약 안 함) — 슬롯이 없으면 AI 생성을 건너뛰어 토큰 절약 */
+export async function publishSlotFree(wpUrl: string): Promise<boolean> {
+  const base = wpUrl.replace(/\/$/, '');
+  const host = new URL(base).host;
+  if (!STAGGER_HOSTS.has(host)) return true;
+  const now = Date.now();
+  if (now - lastGlobalAt < GLOBAL_GAP_MS) return false;
+  const last = Math.max(lastSiteAt.get(host) || 0, await latestPostAt(base));
+  lastSiteAt.set(host, last);
+  return now - last >= SITE_GAP_MS;
+}
+
 export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish'): Promise<WordPressPublishResult> {
+  if (status === 'publish') {
+    if (!await publishSlotFree(wpUrl)) throw new Error(`${SLOT_WAIT_ERROR}(${wpUrl})`);
+    lastGlobalAt = Date.now();
+    lastSiteAt.set(new URL(wpUrl.replace(/\/$/, '')).host, lastGlobalAt);
+  }
   content = injectAdSenseForSite(wpUrl, content);
   const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
   const apiUrl = `${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
@@ -226,6 +261,11 @@ export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string
   // 같이 설정돼 있으면 그 카테고리의 실시간 발굴 후보를 먼저 시도하고 없을 때만
   // 정적 목록으로 폴백 — 정적 목록만 쓸 때보다 소재가 더 다양해짐.
   // config.keywords가 아예 없으면 기존대로 범용 캐시/트렌드 기반 자동 발굴.
+  if (!manual && config.blog_platform === 'wordpress' && config.wp_site_id
+    && !await publishSlotFree((await getWpCredentials(config.wp_site_id)).url)) {
+    throw new Error(`[스킵] ${SLOT_WAIT_ERROR}`);
+  }
+
   let keyword: string;
   try {
     if (manual) {

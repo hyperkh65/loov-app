@@ -3,6 +3,7 @@
  * 10분 크론: Notion 동기화 → pending 기사 최대 N개 리라이팅
  * Auth: Bearer CRON_SECRET
  */
+import { publishSlotFree } from '@/lib/scheduler/blog-runner';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 300;
@@ -179,12 +180,7 @@ export async function POST(req: NextRequest) {
   // 나가야 해서 전용 슬롯으로 따로 처리
   let financeCycleResult: unknown = null;
   try {
-    // 1시간에 1건 (사용자 확정) — 마지막 글이 1시간 안이면 건너뜀
-    const last = await fetch('https://finance.2days.kr/wp-json/wp/v2/posts?per_page=1&orderby=date&order=desc', { signal: AbortSignal.timeout(8000) })
-      .then(r => r.json() as Promise<Array<{ date_gmt?: string }>>).catch(() => []);
-    if (last[0]?.date_gmt && Date.now() - new Date(`${last[0].date_gmt}Z`).getTime() < 60 * 60 * 1000) {
-      throw Object.assign(new Error('skip'), { skip: true });
-    }
+    if (!await publishSlotFree('https://finance.2days.kr')) throw Object.assign(new Error('skip'), { skip: true });
     const res = await fetch(`${BASE}/api/rewrite/site-cycle`, {
       method: 'POST', headers,
       body: JSON.stringify({ site_url: 'https://finance.2days.kr' }),
@@ -192,7 +188,7 @@ export async function POST(req: NextRequest) {
     });
     financeCycleResult = await res.json();
   } catch (e) {
-    financeCycleResult = (e as { skip?: boolean }).skip ? { ok: true, message: '1시간 간격 — 건너뜀' } : { ok: false, error: String(e) };
+    financeCycleResult = (e as { skip?: boolean }).skip ? { ok: true, message: '발행 슬롯 대기(분산 발행) — 건너뜀' } : { ok: false, error: String(e) };
   }
 
   // 7. money.2days.kr — 뉴스 리라이팅과 별개로, 진짜 돈 되는(diamond/gold)
