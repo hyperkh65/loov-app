@@ -39,5 +39,7 @@ export async function alertOwner(key: string, text: string): Promise<void> {
 
 /** 글 발행 성공 알림(사용자 요청: 배포될 때마다) */
 export function notifyPublished(platform: string, title: string, url: string): void {
-  alertOwner(`pub:${url || title}`, `✅ [${platform}] 발행\n${title}\n${url}`).catch(() => {});
+  let shown = url;
+  try { shown = decodeURI(url); } catch { /* 그대로 */ }
+  alertOwner(`pub:${url || title}`, `✅ [${platform}] 발행\n${title}\n${shown}`).catch(() => {});
 }
