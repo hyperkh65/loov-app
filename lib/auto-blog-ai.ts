@@ -209,12 +209,14 @@ async function callNvidia(apiKey: string, prompt: string): Promise<string> {
   const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'nvidia/nemotron-3-super-120b-a12b', messages: [{ role: 'user', content: prompt }], max_tokens: 8192, temperature: 0.7 }),
+    body: JSON.stringify({ model: 'nvidia/nemotron-3-super-120b-a12b', messages: [{ role: 'user', content: prompt }], max_tokens: 16000, temperature: 0.7 }),
     signal: AbortSignal.timeout(90_000),
   });
   if (!res.ok) throw new Error(`NVIDIA ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const text = (await res.json()).choices?.[0]?.message?.content || '';
+  const choice = (await res.json()).choices?.[0];
+  const text = choice?.message?.content || '';
   if (!text) throw new Error('NVIDIA 빈 응답');
+  if (choice?.finish_reason === 'length') throw new Error('NVIDIA 응답 잘림(max_tokens)');
   return text;
 }
 
@@ -225,13 +227,14 @@ async function callCloudflare(token: string, accountId: string, prompt: string):
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/openai/gpt-oss-120b`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 8192, temperature: 0.7 }),
+    body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 16000, temperature: 0.7 }),
     signal: AbortSignal.timeout(90_000),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) throw new Error(`Cloudflare ${res.status}: ${JSON.stringify(data.errors || data).slice(0, 200)}`);
   const text = data.result?.choices?.[0]?.message?.content || data.result?.response || '';
   if (!text) throw new Error('Cloudflare 빈 응답');
+  if (data.result?.choices?.[0]?.finish_reason === 'length') throw new Error('Cloudflare 응답 잘림(max_tokens)');
   return text;
 }
 
