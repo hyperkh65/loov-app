@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { publishRewrittenArticle, getSnsAccountRouting } from '@/lib/rewrite-publish';
 import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
+import { SLOT_WAIT_ERROR } from '@/lib/scheduler/blog-runner';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
@@ -88,6 +89,8 @@ async function publishArticle(supabase: ReturnType<typeof createAdminClient>, ow
 
     return { ok: true, published: !!result.wordpressUrl, data: { id: article.id, title: article.rewritten_title, ...result } };
   } catch (e) {
+    // 분산 발행 슬롯 대기는 실패가 아님 — ready 그대로 두고 다음 크론에 재시도
+    if (String(e).includes(SLOT_WAIT_ERROR)) return { ok: true, published: false, slotWait: true, data: { id: article.id } };
     // 예외가 나도 status를 안 건드리면 'ready'인 채로 남아 위와 똑같은 무한
     // 재시도 루프에 빠짐 — 여기도 'failed'로 종결.
     await supabase
@@ -217,6 +220,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await publishArticle(supabase, ownerId, picked);
+    if ('slotWait' in result) { lastNoWork = { ok: true, published: false, reason: '발행 슬롯 대기(분산 발행)' }; break; }
     results.push(result);
   }
 

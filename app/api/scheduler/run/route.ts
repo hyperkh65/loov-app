@@ -19,7 +19,7 @@ function intervalHoursOf(s: { interval_hours: number; config?: unknown }): numbe
   const m = Number((s.config as { interval_minutes?: number } | null)?.interval_minutes);
   return m > 0 ? m / 60 : s.interval_hours;
 }
-import { runBlogAuto } from '@/lib/scheduler/blog-runner';
+import { runBlogAuto, SLOT_WAIT_ERROR } from '@/lib/scheduler/blog-runner';
 import { runCoupangAuto } from '@/lib/scheduler/coupang-runner';
 import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
 import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
@@ -1114,7 +1114,10 @@ async function executeSchedule(schedule: Schedule) {
   } catch (err: unknown) {
     const errorMsg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
 
-    const nextRunAt = computeNextRunAt(intervalHoursOf(schedule), schedule.run_at_hour, now);
+    // 발행 슬롯 대기(분산 발행)는 실패가 아니라 순서 대기 — 1주기를 통째로 날리지 않게 10분 뒤 재시도
+    const nextRunAt = errorMsg.includes(SLOT_WAIT_ERROR)
+      ? new Date(Date.now() + 10 * 60e3)
+      : computeNextRunAt(intervalHoursOf(schedule), schedule.run_at_hour, now);
     await supabase.from('bossai_schedules').update({
       last_run_at: now,
       next_run_at: nextRunAt.toISOString(),
