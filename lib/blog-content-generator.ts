@@ -7,7 +7,7 @@ import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { uploadToR2 } from '@/lib/r2-storage';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
-import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem } from '@/lib/html-gate';
+import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem, findForeignWords } from '@/lib/html-gate';
 
 // ── 이미지 스크래핑 ────────────────────────────────────────────────────────
 export async function scrapeArticleImages(
@@ -518,10 +518,12 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3', ra
   for (let attempt = 0; attempt < 2; attempt++) {
     const raw = sanitizeInvisible(cleanWatermarks(rawOverride ?? await generateText(prompt, aiModel, undefined, undefined, undefined, undefined, { ollamaOnly: true })));
     parsed = parseAiOutput(raw);
-    if (parsed.title && parsed.content && !findHtmlProblem(parsed.title, parsed.content) && parsed.content.replace(/<[^>]*>/g, '').length >= 1000) break;
+    if (parsed.title && parsed.content && !findHtmlProblem(parsed.title, parsed.content) && parsed.content.replace(/<[^>]*>/g, '').length >= 1000 && findForeignWords(parsed.content).length === 0) break;
   }
   const { title, meta_description, content: rawContent, keywords } = parsed;
   if (!title || !rawContent) throw new Error('AI 출력 파싱 실패');
+  const foreign = findForeignWords(rawContent);
+  if (foreign.length) throw new Error(`발행 차단: 외국어 혼입(${foreign.slice(0, 5).join(', ')})`);
   const bodyLen = rawContent.replace(/<[^>]*>/g, '').length;
   if (bodyLen < 1000) throw new Error(`발행 차단: 본문이 너무 짧음/잘림(${bodyLen}자)`);
 
