@@ -8,6 +8,7 @@
  * 또는 대시보드에서 수동 실행 (로그인 세션 사용)
  */
 
+import { SNS_HOOK_GUIDE } from '@/lib/sns/hook-style';
 import { alertOwner, isAuthError } from '@/lib/owner-alert';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
@@ -61,11 +62,10 @@ const AFFILIATE_DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일
 // 한 줄을 훅과 CTA 사이에 넣어 전환 유도력을 높임.
 function buildAffiliateCaption(hook: string | undefined, productName: string | undefined): string {
   return [
-    hook || (productName ? `요즘 이거 없인 못 살아요 👀 ${productName}` : '이건 진짜 안 보면 후회하는 템'),
+    hook || '이거 하나 바꿨더니 매일 쓰는 시간이 달라짐',
     '',
     productName ? `▶ ${productName}` : '',
-    '직접 써보고 진심으로 추천하는 거라 자신 있게 올려요.',
-    '👇 구매 링크는 댓글에 있어요, 놓치지 마세요!',
+    '가격이랑 실제 후기는 댓글 링크에 정리해뒀어요 👇',
     '',
     '#쿠팡 #쿠팡추천 #생활꿀템 #가성비템 #추천템',
   ].filter(Boolean).join('\n');
@@ -898,7 +898,7 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
       `상품명: ${picked.goodsName}\n브랜드: ${picked.brandName || '무신사'}\n정가: ${picked.originalPrice.toLocaleString()}원\n` +
       `할인가: ${picked.finalPrice.toLocaleString()}원 (${picked.finalDiscount}% 할인)\n` +
       `${priceDropNote ? `${priceDropNote}\n` : ''}\n` +
-      `마지막에 링크나 해시태그는 넣지 마(내가 따로 붙일 거임). 본문만 출력해.`,
+      `${SNS_HOOK_GUIDE}\n\n마지막에 링크나 해시태그는 넣지 마(내가 따로 붙일 거임). 본문만 출력해.`,
     )).trim();
   } catch (e) {
     console.error('[musinsa_curator_auto] 캡션 생성 실패, 기본 문구로 폴백:', e);
