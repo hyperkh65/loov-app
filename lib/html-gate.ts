@@ -60,3 +60,12 @@ export function assertPublishableHtml(title: string, html: string): void {
   const problem = findHtmlProblem(title, html);
   if (problem) throw new Error(`발행 차단(불완전 HTML): ${problem}`);
 }
+
+// 한국어 본문에 새어 들어온 외국어(영·스페인·프랑스·튀르키예어 등) 단어 감지.
+// 브랜드·약어는 대문자/혼합 표기(eSIM, LAFC)라 걸리지 않고, 전부 소문자인 4자 이상 단어만 본다.
+const FOREIGN_ALLOW = new Set('wifi apps mail blog html http https www nbsp amp kakao naver google apple youtube tistory instagram threads iphone chatgpt claude email tips live news nasa covid json code data cloud server token app'.split(' '));
+
+export function findForeignWords(html: string): string[] {
+  const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]*>/g, ' ').replace(/\S*\.(com|kr|net|org|co|io)\S*/g, ' ');
+  return [...new Set((text.match(/\b[a-z]{4,}\b/g) || []).filter(w => !FOREIGN_ALLOW.has(w)))];
+}
