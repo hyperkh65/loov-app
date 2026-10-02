@@ -4,6 +4,7 @@
  */
 import { generateText } from '@/lib/auto-blog-ai';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { uploadToR2 } from '@/lib/r2-storage';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem } from '@/lib/html-gate';
@@ -132,6 +133,23 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
     } catch { /* skip */ }
   }
   return { displayUrls: [], thumbUrl: undefined };
+}
+
+// 외부 이미지를 우리 R2에 재호스팅 — 핫링크는 FIFU/wp.com 프록시·원본 서버 차단으로 깨짐. 실패한 건 버림.
+const IMG_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+async function rehostImages(urls: string[]): Promise<string[]> {
+  const out = await Promise.all(urls.map(async (u) => {
+    try {
+      const res = await fetch(u, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const type = (res.headers.get('content-type') || '').split(';')[0].trim();
+      const ext = IMG_EXT[type];
+      if (!res.ok || !ext) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 5_000 || buf.length > 8_000_000) return null;
+      return await uploadToR2(`inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`, buf, type);
+    } catch { return null; }
+  }));
+  return out.filter((x): x is string => !!x);
 }
 
 // ── 프롬프트 빌더 ──────────────────────────────────────────────────────────
@@ -505,7 +523,8 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3', ra
   const { title, meta_description, content: rawContent, keywords } = parsed;
   if (!title || !rawContent) throw new Error('AI 출력 파싱 실패');
 
-  const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
+  const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3);
+  const inlineImages = await rehostImages(foundImages);
   let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
   content = injectTitleIntoH3(content, title);
 
