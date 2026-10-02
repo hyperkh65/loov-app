@@ -60,11 +60,12 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
 // 전부 20분으로 단축(2026-10-01 사용자 확정) — 기존 30~40분 중간값(35분)에서
 // 앞당김. 그룹별로 다르게 둘 수 있게 Record로 유지.
 const MIN_GAP_MS: Record<SnsGroup, number> = {
-  default: 20 * 60 * 1000,
-  ads_default: 20 * 60 * 1000,
-  aboda_miracool: 0, // 고정 단일 계정 — 간격으로 스킵하지 않음
-  aboda: 0,
-  twodays: 0,
+  // 2026-10-03 사용자 확정: 모든 계정 30분 단위
+  default: 30 * 60 * 1000,
+  ads_default: 30 * 60 * 1000,
+  aboda_miracool: 30 * 60 * 1000,
+  aboda: 30 * 60 * 1000,
+  twodays: 30 * 60 * 1000,
 };
 
 export function snsGroupFor(siteUrl: string): SnsGroup {
