@@ -17,6 +17,7 @@
  * 같은 기사 자동화 용도로 성공 이력이 있다(status: completed, 실제 post_url
  * 확인됨) — 검증된 경로로 되돌리는 것.
  */
+import { tightTitle } from '@/lib/html-gate';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
@@ -133,7 +134,7 @@ ${refBlock}
 7. 글 마지막에 자주 묻는 질문 3~4개(질문+답변 2~3문장)
 
 [출력 형식 — 순수 HTML만, 다른 설명·코드블록 없이. 첫 줄은 반드시 제목 주석]
-<!--TITLE: (한국 소비자가 검색할 제품명·핵심 키워드로 시작 + 출시일/가격/스펙/비교/후기 같은 검색 의도어 + 얻는 정보, 30~45자. 감성 문장 금지)-->
+<!--TITLE: (한국 소비자가 검색할 제품명·핵심 키워드로 시작 + 출시일/가격/스펙/비교/후기 같은 검색 의도어 + 얻는 정보 하나, 20~32자. 감성 문장 금지)-->
 <h2>(소제목1)</h2>
 <p>(단락1)</p>
 <p>(단락2)</p>
@@ -144,7 +145,7 @@ ${refBlock}
   const rawOut = await generateText(prompt, 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true });
   const cleaned = rawOut.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
   const titleMatch = cleaned.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i);
-  const title = (titleMatch?.[1] || topic.title).trim();
+  const title = tightTitle((titleMatch?.[1] || topic.title).trim());
   let content = cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, '');
   if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
 

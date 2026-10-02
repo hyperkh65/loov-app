@@ -690,13 +690,14 @@ export async function generateText(
   } else if (preferModel.startsWith('gpt') || preferModel === 'openai') {
     result = clean(await tryOpenAI());
   } else if (isOllamaPreferred) {
-    result = clean((await tryOllama(preferModel)) || (options?.ollamaOnly ? false : await tryNvidia()) || (await tryCloudflare()));
+    result = clean((await tryOllama(preferModel)) || (options?.ollamaOnly ? false : await tryNvidia()));
   }
   if (result) return result;
 
   if (options?.ollamaOnly) {
-    // 블로그 본문은 Ollama → Cloudflare → Gemini 순으로만 폴백(NVIDIA는 한국어 품질·영어 혼입 문제로 제외)(Claude/OpenAI 등 유료 경로는 쓰지 않음)
-    const g = clean(await tryGemini());
+    // 블로그 본문은 Ollama → Gemini → Cloudflare 순으로만 폴백(NVIDIA는 한국어 품질·영어 혼입 문제로 제외)(Claude/OpenAI 등 유료 경로는 쓰지 않음)
+    // Cloudflare 무료 할당량은 대표이미지 생성(flux)에 우선 쓰도록 텍스트는 Gemini 다음 최후 폴백
+    const g = clean(await tryGemini()) || clean(await tryCloudflare());
     if (g) return g;
     throw new Error(`Ollama/Cloudflare/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
   }
