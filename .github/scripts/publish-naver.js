@@ -15,6 +15,19 @@ const JOB_ID = process.env.JOB_ID;
 
 // ── Supabase REST API ──────────────────────────────────────────────────────────
 
+// 텔레그램 알림(app_settings의 봇 토큰/대화방) — 실패해도 발행 결과엔 영향 없음
+async function tgNotify(text) {
+  try {
+    const rows = await sbGet('app_settings', 'id=eq.1&select=settings');
+    const st = rows[0]?.settings || {};
+    if (!st.TELEGRAM_BOT_TOKEN || !st.TELEGRAM_ALERT_CHAT_ID) return;
+    await fetch(`https://api.telegram.org/bot${st.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: st.TELEGRAM_ALERT_CHAT_ID, text: text.slice(0, 3500), disable_web_page_preview: true }),
+    });
+  } catch { /* ignore */ }
+}
+
 async function sbGet(table, query) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
@@ -598,6 +611,7 @@ async function main() {
       completed_at: new Date().toISOString(),
     });
     console.error(`[Job] Failed: ${errMsg}`);
+    await tgNotify(isAuth ? `⚠️ 네이버 블로그 쿠키 만료 — 발행 실패\n${job.title}\n→ 크롬 쿠키 자동갱신 확장이 켜져 있는지 확인하거나 LOOV 설정에서 쿠키 갱신` : `⚠️ 네이버 블로그 발행 실패\n${job.title}\n${errMsg.slice(0, 300)}`);
     process.exit(1);
   }
 
@@ -621,8 +635,10 @@ async function main() {
       status: 'publish',
     });
     console.log(`✅ Published: ${result.postUrl}`);
+    await tgNotify(`✅ [네이버 블로그] 발행\n${job.title}\n${result.postUrl || ''}`);
   } else {
     console.error(`❌ Failed: ${result.error}`);
+    await tgNotify(`⚠️ 네이버 블로그 발행 실패\n${job.title}\n${String(result.error).slice(0, 300)}`);
     process.exit(1);
   }
 }

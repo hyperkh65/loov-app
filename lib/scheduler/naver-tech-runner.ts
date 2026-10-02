@@ -20,7 +20,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
-import { searchNaver } from '@/lib/blog-content-generator';
+import { searchNaver, searchInlineImages } from '@/lib/blog-content-generator';
 import { sanitizeForNaver } from '@/lib/naver-blog';
 
 async function dispatchNaverPublishJob(jobId: string): Promise<void> {
@@ -78,7 +78,7 @@ async function pickTopic(): Promise<{ title: string; link: string; source: strin
   return candidates.find((c) => !usedSet.has(c.link)) || null;
 }
 
-/** 소제목(h2)마다 원문 사진을 순서대로 배치 — 스톡사진은 글과 무관해서 안 씀 */
+/** 소제목(h2)마다 이미지를 순서대로 배치 — 원문 사진은 저작권 문제로 안 쓰고 AI 생성/스톡 사진만 사용 */
 function insertImages(html: string, images: string[]): string {
   if (!images.length) return html;
   let i = 0;
@@ -88,14 +88,6 @@ function insertImages(html: string, images: string[]): string {
     const alt = match.replace(/<[^>]+>/g, '').trim();
     return `${match}\n<figure><img src="${url}" alt="${alt}"/></figure>`;
   });
-}
-
-/** 글 끝에 출처를 "텍스트로만" 남긴다 — 링크로 걸면 독자가 원문으로 빠져나감.
- * 사진 출처 줄은 안 남기고(요청), 원문/참고 사이트 링크만 남긴다. */
-function sourcesFooter(sourceUrl: string, refs: { title: string; link: string }[]): string {
-  const lines = [`원문: ${sourceUrl}`];
-  for (const r of refs) if (r.link) lines.push(`참고: ${r.title} - ${r.link}`);
-  return `\n<h2>출처</h2>\n<p>${lines.join('<br/>')}</p>`;
 }
 
 export interface NaverTechResult {
@@ -156,8 +148,9 @@ ${refBlock}
   let content = cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, '');
   if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
 
-  content = insertImages(content, scraped.images);
-  content += sourcesFooter(topic.link, refs);
+  // 출처/참고 주소 하단 표기는 제거(사용자 요청 2026-10-03)
+  const { displayUrls, thumbUrl } = await searchInlineImages(title, 3);
+  content = insertImages(content, [...new Set([thumbUrl, ...displayUrls].filter((u): u is string => !!u))]);
 
   // 네이버 연결 정보 (쿠키) — Playwright 워커가 naver_connections에서 다시
   // 조회하지만, 여기서도 미리 확인해서 연결 자체가 없는 경우 빨리 실패시킨다.
