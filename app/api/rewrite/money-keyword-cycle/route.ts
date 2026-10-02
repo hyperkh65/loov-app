@@ -17,9 +17,9 @@ import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 // 키워드 발행 사이트도 publishRewrittenArticle의 카페/텀블러/SNS 크로스포스팅을
 // 그대로 재사용하기 위함 (is_active=false라 sync-sites 폴링 대상에서는 제외됨).
 const SITES: Record<string, { sourceId: string; minGapMs: number }> = {
-  'https://money.2days.kr': { sourceId: '78df8c59-b47f-49cc-a273-09f34cf2693d', minGapMs: 2 * 60 * 60 * 1000 },
-  'https://miracool.co.kr': { sourceId: '9ff047e8-eda9-4115-b227-3176844e2ba8', minGapMs: 2 * 60 * 60 * 1000 },
-  'https://finance.2days.kr': { sourceId: 'ed651d96-f3d8-420d-a430-59722b746147', minGapMs: 2 * 60 * 60 * 1000 },
+  'https://money.2days.kr': { sourceId: '78df8c59-b47f-49cc-a273-09f34cf2693d', minGapMs: 60 * 60 * 1000 },
+  'https://miracool.co.kr': { sourceId: '9ff047e8-eda9-4115-b227-3176844e2ba8', minGapMs: 60 * 60 * 1000 },
+  'https://finance.2days.kr': { sourceId: 'ed651d96-f3d8-420d-a430-59722b746147', minGapMs: 60 * 60 * 1000 },
 };
 // 이 사이클보다 먼저 나갈 만큼 신선한 후보만 씀 — 너무 오래된 캐시는 경쟁 상황이 바뀌었을 수 있음
 const FRESH_MS = 24 * 60 * 60 * 1000;
