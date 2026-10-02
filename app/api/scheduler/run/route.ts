@@ -977,14 +977,17 @@ async function executeSchedule(schedule: Schedule) {
     if (schedule.type === 'coupang_auto') {
       const { data: recentLogs } = await supabase
         .from('bossai_schedule_logs')
-        .select('result')
+        .select('result, started_at')
         .eq('schedule_id', schedule.id)
         .eq('status', 'success')
         .order('started_at', { ascending: false })
         .limit(5000);
-      recentProductIds = (recentLogs || [])
-        .map(l => (l.result as { productId?: string })?.productId)
-        .filter(Boolean) as string[];
+      const postedLogs = (recentLogs || [])
+        .map(l => ({ id: (l.result as { productId?: string })?.productId, t: new Date(l.started_at as string).getTime() }))
+        .filter(l => l.id) as { id: string; t: number }[];
+      // 클릭 나온 상품도 최소 7일은 쉬게 함 — 이 쿨다운이 없어서 같은 상품이 매시간 재발행됐음
+      const cooldownCutoff = Date.now() - 7 * 24 * 3600 * 1000;
+      recentProductIds = postedLogs.map(l => l.id);
 
       // 클릭이 실제로 나온 상품은 "영구 제외" 대상에서 빼서 다른 앵글로 재사용
       // 가능하게 한다 — 지금까지는 뭐가 잘 됐는지와 무관하게 한 번 쓴 상품은
@@ -1004,7 +1007,7 @@ async function executeSchedule(schedule: Schedule) {
             .in('go_link_id', [...idToProduct.keys()])
             .limit(5000);
           const winningProductIds = new Set((clicks || []).map(c => idToProduct.get(c.go_link_id)).filter(Boolean));
-          recentProductIds = recentProductIds.filter(id => !winningProductIds.has(id));
+          recentProductIds = postedLogs.filter(l => l.t >= cooldownCutoff || !winningProductIds.has(l.id)).map(l => l.id);
         }
       } catch { /* 클릭 데이터 조회 실패는 무시 — 기존 dedup 동작으로 폴백 */ }
     }
