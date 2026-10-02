@@ -37,7 +37,7 @@ import { searchAliExpressItems, getAliExpressItemDetail } from '@/lib/affiliate-
 import { upsertCoupangMatch } from '@/lib/affiliate-engine/coupang-match';
 import { searchProducts } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
-import { callAI, callAISimple } from '@/lib/ai-call';
+import { callAI, callAISimple, getGeminiKeys } from '@/lib/ai-call';
 import { renderShortsVideo } from '@/lib/shorts/render-core';
 import { findFfmpeg, findKoreanFont, escapeDrawtext } from '@/lib/shorts/nas-ffmpeg';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
@@ -51,6 +51,7 @@ export const maxDuration = 300;
 // 빌드에서 이 라우트가 아닌 엉뚱한 라우트(coupang/auto-post)의 청크에 코드가 묶여버려
 // 런타임에 실행 자체가 안 되는 버그를 실측 확인 — 이 라우트 파일에 직접 인라인해서 회피.
 const AFFILIATE_IG_PLATFORM_USER_ID = '34489947500650071'; // @2dayskr
+const VIRAL_THREADS_PLATFORM_USER_ID = '25203934249239577'; // @2dayskr — 바이럴 영상 전용(사용자 확정 2026-10-03)
 const AFFILIATE_THREADS_PLATFORM_USER_ID = '25873039292318366'; // @2days.kr (표시명 "투데이s" — 사용자가 스크린샷으로 재확인한 실제 계정, @2dayskr 아님)
 const AFFILIATE_YOUTUBE_CHANNEL_ID = 'UCOThNyCRe20_Qz1m65NYzfA'; // 현가젯 — 쿠팡 발행용 채널
 const AFFILIATE_DISCLOSURE = '이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
@@ -566,41 +567,38 @@ async function ensurePublicVideoUrl(supabase: ReturnType<typeof createAdminClien
   return publicUrl;
 }
 
-// 원본을 그냥 재업로드하지 말고 편집해서 올리자는 요청(사용자 확정) — 검정
-// 배경 레터박스 + 위쪽 2줄 후킹 문구(흰색+노란 강조) + 아래쪽 반응 자막, 요즘
-// 커뮤니티 이슈요약 숏폼에서 흔한 스타일. 세로 꽉 채우는 크롭이 아니라
-// force_original_aspect_ratio=decrease+pad로 원본 비율은 그대로 두고 위아래
-// 검정으로 채운다 — 그래야 저 스타일의 "검정 바탕" 느낌이 남.
+// 쇼츠 편집(2026-10-03 사용자 확정 디자인): 흰 배경 + 상단 채널명 + 굵은 2단 제목(흰 글씨/노란 강조,
+// 두꺼운 검정 외곽선) + 가운데 영상 + 하단 검정 굵은 자막 2줄 — 인기 이슈요약 쇼츠 스타일.
+const fitFont = (text: string, max: number, width = 1000) => {
+  const units = [...text].reduce((n, ch) => n + (/[ㄱ-힝]/.test(ch) ? 1 : 0.6), 0) || 1;
+  return Math.max(40, Math.min(max, Math.floor(width / units)));
+};
+
 async function editViralVideoForShorts(params: {
-  sourceUrl: string; lineTop1: string; lineTop2: string; caption: string;
+  sourceUrl: string; lineTop1: string; lineTop2: string; sub1: string; sub2: string;
 }): Promise<string> {
   const ffmpeg = await findFfmpeg();
-  // findKoreanFont()는 다른 파이프라인(상품영상)도 같이 쓰는 공용 검색이라 새로
-  // 설치한 볼드 폰트 때문에 그쪽 결과가 흔들리면 안 됨 — 이 용도로만 직접 경로 지정.
-  // (요청사항: "글자도 좀 크고 볼드처리하는게 핵심" — 일반체는 두꺼워 보이지 않아서
-  // Nanum Gothic Bold를 별도로 받아 설치함)
-  // ponytail: 경로 하드코딩 + 존재 확인 없음 — NAS에 직접 설치해둔 폰트라 자체적으로
-  // 사라질 일은 없지만, 없어지면 이 파이프라인만 실패(다른 파이프라인은 무관).
+  // ponytail: NAS에 직접 설치한 볼드 폰트 경로 하드코딩 — 없어지면 이 파이프라인만 실패
   const BOLD_FONT_PATH = '/volume1/homes/urjent/bin/fonts/NanumGothicBold.ttf';
   const jobId = `viral_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const dir = `/tmp/${jobId}`;
+  const f = `fontfile='${BOLD_FONT_PATH}':`;
+  const t = (s: string) => escapeDrawtext(s);
+  const title = (text: string, color: string, y: number) =>
+    `drawtext=${f}text='${t(text)}':fontsize=${fitFont(text, 110)}:fontcolor=${color}:borderw=12:bordercolor=black:shadowcolor=black@0.45:shadowx=5:shadowy=6:x=(w-text_w)/2:y=${y}`;
+  const sub = (text: string, y: number) =>
+    `drawtext=${f}text='${t(text)}':fontsize=${fitFont(text, 70)}:fontcolor=black:borderw=1:bordercolor=black:x=(w-text_w)/2:y=${y}`;
 
-  const top1 = escapeDrawtext(params.lineTop1);
-  const top2 = escapeDrawtext(params.lineTop2);
-  const bottom = escapeDrawtext(params.caption);
-  const fontArg = `fontfile='${BOLD_FONT_PATH}':`;
-
-  // 요청사항: 영상은 더 작게 가운데로, 검정 배경이 확실히 더 넓게 보이게, 글자는
-  // 크고 굵게. 900x1250 박스 안으로만 축소(비율 유지)한 뒤 1080x1920 검정
-  // 캔버스 가운데에 배치 — 위/아래뿐 아니라 좌우에도 검정 여백이 생김.
-  // borderw(외곽선)까지 더해 폰트 자체보다 훨씬 굵고 도드라져 보이게 함.
+  const VIDEO_TOP = 520, VIDEO_H = 1000;
   const vf = [
-    'scale=900:1250:force_original_aspect_ratio=decrease',
-    'pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black',
-    `drawtext=${fontArg}text='${top1}':fontsize=70:fontcolor=white:borderw=6:bordercolor=black:x=(w-text_w)/2:y=h*0.05`,
-    `drawtext=${fontArg}text='${top2}':fontsize=92:fontcolor=yellow:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h*0.13`,
-    `drawtext=${fontArg}text='${bottom}':fontsize=66:fontcolor=white:borderw=7:bordercolor=black:x=(w-text_w)/2:y=h*0.90`,
-  ].join(',');
+    `scale=1080:${VIDEO_H}:force_original_aspect_ratio=decrease`,
+    `pad=1080:1920:(ow-iw)/2:${VIDEO_TOP}+(${VIDEO_H}-ih)/2:white`,
+    `drawtext=${f}text='투데이즈 영상':fontsize=46:fontcolor=black:x=60:y=80`,
+    title(params.lineTop1, 'white', 210),
+    title(params.lineTop2, 'yellow', 350),
+    params.sub1 ? sub(params.sub1, 1560) : '',
+    params.sub2 ? sub(params.sub2, 1660) : '',
+  ].filter(Boolean).join(',');
 
   const outFile = `${jobId}.mp4`;
   const script = [
@@ -616,11 +614,49 @@ async function editViralVideoForShorts(params: {
   ].join('\n');
 
   await nasExecWithStdin(`cat > /tmp/${jobId}.sh`, script);
-  // 큰 원본(20MB대)은 -preset fast 인코딩도 2분을 넘기는 게 실측 확인돼 넉넉히 잡음
   const result = await nasExec(`bash /tmp/${jobId}.sh; rm -f /tmp/${jobId}.sh`, 240_000);
   if (!result.stdout.includes('EDIT_DONE')) throw new Error('영상 편집 실패: ' + (result.stderr || result.stdout).slice(0, 300));
-
   return `https://hy64.synology.me/xmedia/_edited/${outFile}`;
+}
+
+// 영상 프레임 3장을 뽑아 base64로 — 자막을 원문 트윗이 아니라 실제 화면 기준으로 쓰기 위함
+async function extractVideoFrames(sourceUrl: string): Promise<string[]> {
+  const ffmpeg = await findFfmpeg();
+  const dir = `/tmp/frames_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const script = [
+    '#!/bin/bash', 'set -e', `mkdir -p "${dir}"`,
+    `curl -sL --max-time 60 "${sourceUrl}" -o "${dir}/s.mp4"`,
+    `${ffmpeg} -hide_banner -loglevel error -i "${dir}/s.mp4" -vf "fps=1/2,scale=512:-2" -frames:v 3 "${dir}/f%d.jpg"`,
+    `for x in "${dir}"/f*.jpg; do echo "FRAME:$(base64 "$x" | tr -d '\\n')"; done`,
+    `rm -rf "${dir}"`,
+  ].join('\n');
+  const id = dir.split('/').pop();
+  await nasExecWithStdin(`cat > /tmp/${id}.sh`, script);
+  const r = await nasExec(`bash /tmp/${id}.sh; rm -f /tmp/${id}.sh`, 120_000);
+  return r.stdout.split('\n').filter(l => l.startsWith('FRAME:')).map(l => l.slice(6)).filter(Boolean);
+}
+
+async function geminiVisionJson(prompt: string, images: string[]): Promise<Record<string, string>> {
+  for (const key of await getGeminiKeys()) {
+    for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }, ...images.map(data => ({ inline_data: { mime_type: 'image/jpeg', data } }))] }],
+            generationConfig: { temperature: 0.7, responseMimeType: 'application/json' },
+          }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (!res.ok) continue;
+        const text = (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const json = text.match(/\{[\s\S]*\}/)?.[0];
+        if (json) return JSON.parse(json);
+      } catch { /* 다음 모델/키 */ }
+    }
+  }
+  throw new Error('Gemini 비전 실패');
 }
 
 async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded: number; results: string[] }> {
@@ -628,13 +664,13 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
   const config = (schedule.config as { usernames?: string[] }) || {};
   const usernames = config.usernames?.length ? config.usernames : ['momentoviral'];
 
-  // 쿠팡 발행에 쓰던 것과 같은 스레드 계정(@2dayskr)에도 같이 올림(사용자 확정).
+  // 영상은 @2dayskr 스레드로(사용자 확정 2026-10-03 — @2days.kr은 블로그 글 전용)
   const { data: threadsConn } = await supabase
     .from('sns_connections')
     .select('access_token, platform_user_id')
     .eq('user_id', schedule.user_id)
     .eq('platform', 'threads')
-    .eq('platform_user_id', AFFILIATE_THREADS_PLATFORM_USER_ID)
+    .eq('platform_user_id', VIRAL_THREADS_PLATFORM_USER_ID)
     .eq('is_active', true)
     .single();
 
@@ -681,36 +717,39 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
       // 딴 얘기를 하는 경우가 있었던 것으로 추정. JSON 강제 출력으로 바꿔 신뢰도를 높이고,
       // koDesc 기본값도 원문(외국어일 수 있음) 대신 안전한 한국어 문구로 고정
       // (예전엔 여기만 원문 그대로 노출되는 사고가 있었음).
-      let top1 = '요즘 화제라는', top2 = '이 영상', caption = '완전 신기하지 않아?';
+      let top1 = '요즘 난리난', top2 = '이 영상 ㄷㄷ', sub1 = '', sub2 = '';
       let koTitle = '오늘의 화제 영상';
       let koDesc = '오늘 알고리즘에 뜬 영상인데 진짜 신기해서 가져와봤어!';
+      let threadsHook = '';
       try {
-        const raw = await callAISimple(
-          `다음은 영상에 달린 원문 캡션이다(외국어일 수 있음, 종교/문화 등 어떤 소재든 담담하고 정중하게 소개하면 됨).\n` +
-          `이 영상을 한국 쇼츠 채널에 소개하려 한다. 요즘 인스타/유튜브 쇼츠에서 유행하는 "커뮤니티 짤 요약"체로 —\n` +
-          `실제 사람이 재밌어서 공유하듯 유쾌하고 친근한 말투로. 딱딱한 설명체·존댓말 절대 금지(반말/구어체만).\n` +
-          `ㅋㅋㅋ, ㄷㄷ, !, ? 같은 감탄 표현을 자연스럽게 섞어도 좋음.\n\n` +
-          `원문: ${video.tweet_text || '(텍스트 없음)'}\n\n` +
-          `다른 설명이나 코드블록 없이, 반드시 아래 키를 모두 포함한 JSON 객체 하나만 출력해라:\n` +
-          `{"top1": "영상 상황을 궁금증 유발하듯 짧게(12자 내외, 예: 산책하던 강아지가)", ` +
-          `"top2": "핵심 포인트/감탄 키워드(6~10자, 예: 실화냐;;)", ` +
-          `"caption": "보고 난 반응을 사람처럼 한 줄(12자 내외, 예: 이거 실화임?ㅋㅋㅋ)", ` +
-          `"title": "유튜브 쇼츠 제목(25자 이내, 클릭하고 싶게)", ` +
-          `"desc": "유튜브 설명란(2~3문장, 친근한 반말체)"}`,
+        // 원문 트윗만 보고 쓰면 강아지를 고양이라 하는 식의 엉뚱한 자막이 나옴 — 실제 프레임을 보고 쓰게 함
+        const frames = await extractVideoFrames(publicVideoUrl);
+        if (!frames.length) throw new Error('프레임 추출 실패');
+        const parsed = await geminiVisionJson(
+          `이 이미지들은 한 짧은 영상의 장면들이다. 원문 캡션(외국어일 수 있음, 참고만): ${video.tweet_text || '(없음)'}\n\n` +
+          `한국 쇼츠 채널용 자막을 써라. 반드시 **화면에 실제로 보이는 것**만 근거로 — 동물 종류·인물 수·행동을 정확히. ` +
+          `원문 캡션이 화면과 다르면 화면을 따른다. 확실하지 않은 디테일(나이·국적·이름)은 쓰지 마라.\n` +
+          `말투: 커뮤니티 짤 요약체 반말, 사람이 재밌어서 공유하듯. ㄷㄷ/ㅋㅋ/?! 자연스럽게.\n\n` +
+          `JSON 하나만 출력:\n` +
+          `{"top1":"상단 제목 1줄(8~10자, 상황 제시, 예: 6살 수영천재의)",` +
+          `"top2":"상단 제목 2줄(6~9자, 감탄 포인트, 예: 미친 훈련수준 ㄷㄷ)",` +
+          `"sub1":"하단 자막 1줄(12~16자, 장면 설명)","sub2":"하단 자막 2줄(12~16자, 여운·반응)",` +
+          `"title":"유튜브 쇼츠 제목(25자 이내)","desc":"유튜브 설명(2~3문장 반말)",` +
+          `"threads":"스레드 본문(아래 규칙)"}\n\n${SNS_HOOK_GUIDE}`,
+          frames,
         );
-        const jsonStr = raw.match(/\{[\s\S]*\}/)?.[0];
-        if (!jsonStr) throw new Error('JSON 응답 아님: ' + raw.slice(0, 200));
-        const parsed = JSON.parse(jsonStr) as Record<string, string>;
         top1 = parsed.top1?.trim() || top1;
         top2 = parsed.top2?.trim() || top2;
-        caption = parsed.caption?.trim() || caption;
+        sub1 = parsed.sub1?.trim() || '';
+        sub2 = parsed.sub2?.trim() || '';
         koTitle = (parsed.title?.trim() || koTitle).slice(0, 80);
         koDesc = parsed.desc?.trim() || koDesc;
+        threadsHook = parsed.threads?.trim() || '';
       } catch (e) {
         console.error('[viral_video_youtube_auto] 자막/제목 생성 실패, 기본 문구로 폴백:', e);
       }
 
-      const editedVideoUrl = await editViralVideoForShorts({ sourceUrl: publicVideoUrl, lineTop1: top1, lineTop2: top2, caption });
+      const editedVideoUrl = await editViralVideoForShorts({ sourceUrl: publicVideoUrl, lineTop1: top1, lineTop2: top2, sub1, sub2 });
 
       const description = [koDesc, '', `원본: ${video.tweet_url}`, VIRAL_VIDEO_DISCLOSURE].filter(Boolean).join('\n');
 
@@ -738,7 +777,7 @@ async function runViralVideoYoutubeAuto(schedule: Schedule): Promise<{ uploaded:
       let threadsNote = '';
       if (threadsConn) {
         try {
-          const threadsCaption = [koTitle, '', koDesc].filter(Boolean).join('\n');
+          const threadsCaption = threadsHook || [koTitle, '', koDesc].filter(Boolean).join('\n');
           const pub = await postToPlatformWithMedia('threads', threadsConn.access_token, threadsConn.platform_user_id, threadsCaption, [editedVideoUrl]);
           postedPlatforms.push('threads_2dayskr');
           threadsNote = ` / 스레드 발행 완료 (${pub.id})`;
