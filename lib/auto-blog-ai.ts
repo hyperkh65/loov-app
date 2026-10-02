@@ -218,6 +218,23 @@ async function callNvidia(apiKey: string, prompt: string): Promise<string> {
   return text;
 }
 
+const exhaustedCloudflare = new Map<string, number>();
+
+// Cloudflare Workers AI 무료 할당량(계정당 하루) — 계정 여러 개를 돌려가며 사용
+async function callCloudflare(token: string, accountId: string, prompt: string): Promise<string> {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/openai/gpt-oss-120b`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 8192, temperature: 0.7 }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) throw new Error(`Cloudflare ${res.status}: ${JSON.stringify(data.errors || data).slice(0, 200)}`);
+  const text = data.result?.choices?.[0]?.message?.content || data.result?.response || '';
+  if (!text) throw new Error('Cloudflare 빈 응답');
+  return text;
+}
+
 async function callOpenRouter(apiKey: string, model: string, prompt: string): Promise<string> {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -469,6 +486,20 @@ export async function generateText(
     return false;
   };
 
+  const tryCloudflare = async (): Promise<string | false> => {
+    let accounts: Array<{ token: string; account: string }> = [];
+    try { const arr = JSON.parse(await getSetting('CLOUDFLARE_AI_ACCOUNTS') || '[]'); if (Array.isArray(arr)) accounts = arr; } catch { /* ignore */ }
+    for (const a of accounts) {
+      if (!a.token || !a.account || (exhaustedCloudflare.get(a.account) || 0) > Date.now()) continue;
+      try { return await callCloudflare(a.token, a.account, prompt); }
+      catch (e) {
+        errors.push(String(e).slice(0, 120));
+        if (/Cloudflare (429|4006)|4006|allocation/i.test(String(e))) exhaustedCloudflare.set(a.account, Date.now() + 3600_000);
+      }
+    }
+    return false;
+  };
+
   // ── Ollama Cloud ────────────────────────────────────────
   const tryOllama = async (mainModel: string) => {
     if (ollamaKeys.length === 0) { errors.push('Ollama: API 키 미설정'); return false; }
@@ -656,15 +687,15 @@ export async function generateText(
   } else if (preferModel.startsWith('gpt') || preferModel === 'openai') {
     result = clean(await tryOpenAI());
   } else if (isOllamaPreferred) {
-    result = clean((await tryOllama(preferModel)) || (await tryNvidia()));
+    result = clean((await tryOllama(preferModel)) || (await tryNvidia()) || (await tryCloudflare()));
   }
   if (result) return result;
 
   if (options?.ollamaOnly) {
-    // Ollama → NVIDIA → Gemini 순으로만 폴백(Claude/OpenAI 등 유료 경로는 쓰지 않음)
+    // Ollama → NVIDIA → Cloudflare → Gemini 순으로만 폴백(Claude/OpenAI 등 유료 경로는 쓰지 않음)
     const g = clean(await tryGemini());
     if (g) return g;
-    throw new Error(`Ollama/NVIDIA/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
+    throw new Error(`Ollama/NVIDIA/Cloudflare/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
   }
 
   // ── 나머지 provider 순서대로 fallback ─────────────────────
