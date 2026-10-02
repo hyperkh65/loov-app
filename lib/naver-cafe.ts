@@ -2,6 +2,7 @@
  * 네이버 카페 발행 공용 로직. app/api/naver-cafe/publish(세션 사용자용 HTTP 엔드포인트)와
  * lib/rewrite-publish.ts(자동화 파이프라인, admin 클라이언트 + 고정 userId)가 공유한다.
  */
+import { alertOwner } from '@/lib/owner-alert';
 import { withUtm } from '@/lib/utm';
 import { createAdminClient } from '@/lib/supabase-server';
 
@@ -68,9 +69,15 @@ export async function publishToNaverCafe(
   let accessToken: string = conn.access_token;
   const needsRefresh = !conn.token_expires_at || new Date(conn.token_expires_at) < new Date(Date.now() + 60_000);
   if (needsRefresh) {
-    if (!conn.refresh_token) throw new Error('네이버 카페 재연결 필요 (refresh token 없음)');
+    if (!conn.refresh_token) {
+      alertOwner('naver_cafe', '⚠️ 네이버 카페 재연결 필요 (refresh token 없음) — LOOV 설정에서 카페 다시 연결해주세요');
+      throw new Error('네이버 카페 재연결 필요 (refresh token 없음)');
+    }
     const refreshed = await refreshNaverToken(conn.refresh_token);
-    if (!refreshed) throw new Error('네이버 카페 토큰 갱신 실패 — 설정에서 재연결해주세요.');
+    if (!refreshed) {
+      alertOwner('naver_cafe', '⚠️ 네이버 카페 토큰 갱신 실패 — LOOV 설정에서 카페 다시 연결해주세요');
+      throw new Error('네이버 카페 토큰 갱신 실패 — 설정에서 재연결해주세요.');
+    }
     accessToken = refreshed.access_token;
     const payload: Record<string, string> = {
       access_token: refreshed.access_token,
