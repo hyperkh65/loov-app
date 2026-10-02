@@ -85,7 +85,7 @@ async function getGroqKeys(): Promise<string[]> {
 // Gemini 멀티키 풀(GEMINI_API_KEYS, JSON 배열) — 계정을 계속 늘릴 예정이라 Groq처럼
 // 여러 키를 등록해두고 순환. 배열 설정이 없으면 기존 단일 GEMINI_API_KEY로 폴백
 // (다른 17곳의 호출부는 그대로 단일 키를 쓰므로 영향 없음).
-async function getGeminiKeys(): Promise<string[]> {
+export async function getGeminiKeys(): Promise<string[]> {
   const keys: string[] = [];
   try {
     const raw = await getSetting('GEMINI_API_KEYS');
