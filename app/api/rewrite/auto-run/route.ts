@@ -3,6 +3,7 @@
  * 10분 크론: Notion 동기화 → pending 기사 최대 N개 리라이팅
  * Auth: Bearer CRON_SECRET
  */
+import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
 import { publishSlotFree } from '@/lib/scheduler/blog-runner';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -76,14 +77,21 @@ export async function POST(req: NextRequest) {
 
   // 발행은 1시간에 1건뿐이라 이미 발행 대기(ready)가 쌓여 있으면 생성(=Ollama 토큰)을 건너뜀
   let readyBacklog = 0;
+  let priorityPending = 0;
   try {
     const { createAdminClient } = await import('@/lib/supabase-server');
-    const { count } = await createAdminClient()
+    const admin = createAdminClient();
+    const { count } = await admin
       .from('bossai_rewrite_articles').select('id', { count: 'exact', head: true }).eq('status', 'ready');
     readyBacklog = count || 0;
+    // 다른 소스(aboda 정부자료 등) ready 적체 때문에 핵심 소스(yoosol/yoonfree) 리라이트까지 멈추던 버그 방지
+    const { count: pc } = await admin
+      .from('bossai_rewrite_articles').select('id', { count: 'exact', head: true })
+      .eq('status', 'pending').in('source_id', [...PRIORITY_SOURCE_IDS]);
+    priorityPending = pc || 0;
   } catch { /* 조회 실패 시 그냥 진행 */ }
 
-  for (let i = 0; i < (readyBacklog >= 3 ? 0 : max); i++) {
+  for (let i = 0; i < (readyBacklog >= 3 ? Math.min(max, priorityPending) : max); i++) {
     try {
       const res = await fetch(`${BASE}/api/rewrite/process`, {
         method: 'POST',

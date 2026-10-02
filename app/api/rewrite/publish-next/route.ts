@@ -152,7 +152,9 @@ async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, o
   const candidates = groupKeys.map((group) => {
     const lastAt = lastPublishedAtByGroup.get(group);
     const sinceLast = lastAt ? Date.now() - new Date(lastAt).getTime() : Infinity;
-    return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, PUBLISH_INTERVAL_MS - sinceLast) };
+    // 2days.kr(@2dayskr 그룹, yoosol/yoonfree 핵심 소스)은 40분 간격(사용자 확정 2026-10-03)
+    const interval = group === '@2dayskr' ? 40 * 60 * 1000 : PUBLISH_INTERVAL_MS;
+    return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, interval - sinceLast) };
   });
 
   const ready = candidates.filter((c) => c.waitMs === 0).sort((a, b) => (a.lastServedAt < b.lastServedAt ? -1 : 1));

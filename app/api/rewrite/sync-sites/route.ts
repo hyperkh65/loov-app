@@ -58,7 +58,8 @@ export async function POST(req: NextRequest) {
       // 없으므로 3일 넘은 건 발행 전에 정리
       // 우선 소스(yoosol/yoonfree)는 "발행 직전 최신글 1~2개만 대기" — 12시간 넘은 건 폐기, 최신 2개 유지
       const isPriority = PRIORITY_SOURCE_IDS.has(site.id);
-      const keepN = isPriority ? 2 : 1;
+      // yoosol은 1분 사이 4~5개씩 몰아서 올려 최신 2개만 보면 나머지를 놓쳤음 → 우선 소스는 6개까지 확인
+      const keepN = isPriority ? 6 : 1;
       if (site.latest_only) {
         const staleMs = (isPriority ? 12 : 72) * 3600 * 1000;
         const threeDaysAgoReady = new Date(Date.now() - staleMs).toISOString();
