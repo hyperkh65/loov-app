@@ -202,7 +202,7 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
   return text;
 }
 
-const exhaustedNvidia = { until: 0 };
+const exhaustedNvidia = new Map<string, number>();
 
 // NVIDIA NIM(build.nvidia.com) 무료 호출 — Ollama와 같은 nemotron-3-super 계열이라 블로그 본문에도 동일 품질로 쓴다.
 async function callNvidia(apiKey: string, prompt: string): Promise<string> {
@@ -454,14 +454,19 @@ export async function generateText(
   if (legacyKey && !ollamaKeys.includes(legacyKey)) ollamaKeys.push(legacyKey);
 
   const tryNvidia = async (): Promise<string | false> => {
-    const key = await getSetting('NVIDIA_API_KEY');
-    if (!key || exhaustedNvidia.until > Date.now()) return false;
-    try { return await callNvidia(key, prompt); }
-    catch (e) {
-      errors.push(String(e).slice(0, 120));
-      if (/NVIDIA (402|429)/.test(String(e))) exhaustedNvidia.until = Date.now() + 3600_000;
-      return false;
+    const keys: string[] = [];
+    try { const arr = JSON.parse(await getSetting('NVIDIA_API_KEYS') || '[]'); if (Array.isArray(arr)) keys.push(...arr.filter(Boolean)); } catch { /* ignore */ }
+    const legacy = await getSetting('NVIDIA_API_KEY');
+    if (legacy && !keys.includes(legacy)) keys.push(legacy);
+    for (const key of keys) {
+      if ((exhaustedNvidia.get(key) || 0) > Date.now()) continue;
+      try { return await callNvidia(key, prompt); }
+      catch (e) {
+        errors.push(String(e).slice(0, 120));
+        if (/NVIDIA (402|429)/.test(String(e))) exhaustedNvidia.set(key, Date.now() + 3600_000);
+      }
     }
+    return false;
   };
 
   // ── Ollama Cloud ────────────────────────────────────────
@@ -651,12 +656,15 @@ export async function generateText(
   } else if (preferModel.startsWith('gpt') || preferModel === 'openai') {
     result = clean(await tryOpenAI());
   } else if (isOllamaPreferred) {
-    result = clean((await tryNvidia()) || (await tryOllama(preferModel)));
+    result = clean((await tryOllama(preferModel)) || (await tryNvidia()));
   }
   if (result) return result;
 
   if (options?.ollamaOnly) {
-    throw new Error(`Ollama Cloud 전용 생성 실패 (다른 AI로 폴백 안 함)\n${errors.join(' | ')}`);
+    // Ollama → NVIDIA → Gemini 순으로만 폴백(Claude/OpenAI 등 유료 경로는 쓰지 않음)
+    const g = clean(await tryGemini());
+    if (g) return g;
+    throw new Error(`Ollama/NVIDIA/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
   }
 
   // ── 나머지 provider 순서대로 fallback ─────────────────────
