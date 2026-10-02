@@ -22,7 +22,7 @@ export const PLATFORMS: Record<Platform, {
     name: 'Threads',
     authUrl: 'https://threads.net/oauth/authorize',
     tokenUrl: 'https://graph.threads.net/oauth/access_token',
-    scopes: ['threads_basic', 'threads_content_publish', 'threads_manage_replies'],
+    scopes: ['threads_basic', 'threads_content_publish', 'threads_manage_replies', 'threads_read_replies'],
     charLimit: 500,
   },
   facebook: {
