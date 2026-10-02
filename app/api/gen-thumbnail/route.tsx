@@ -231,7 +231,7 @@ export async function GET(req: NextRequest) {
                     boxShadow: `0 0 8px ${t.accent}, 0 0 16px ${t.accent}80`,
                   }} />
                   <div style={{ fontSize: 18, fontWeight: 800, color: t.accent2, letterSpacing: '0.08em', display: 'flex' }}>
-                    {site || 'NEWS'}
+                    {site || 'GUIDE'}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -348,7 +348,7 @@ export async function GET(req: NextRequest) {
                   boxShadow: `0 0 12px ${t.accent}, 0 0 24px ${t.accent}80`,
                 }} />
                 <div style={{ fontSize: 24, fontWeight: 800, color: t.accent2, letterSpacing: '0.08em', display: 'flex' }}>
-                  {site || 'NEWS'}
+                  {site || 'GUIDE'}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -518,7 +518,7 @@ export async function GET(req: NextRequest) {
                 boxShadow: `0 0 10px ${t.accent}, 0 0 20px ${t.accent}80`,
               }} />
               <div style={{ fontSize: 20, fontWeight: 800, color: t.accent2, letterSpacing: '0.08em', display: 'flex' }}>
-                {site || 'NEWS'}
+                {site || 'GUIDE'}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -674,7 +674,7 @@ export async function GET(req: NextRequest) {
               boxShadow: `0 0 14px ${t.accent}, 0 0 28px ${t.accent}80`,
             }} />
             <div style={{ fontSize: 26, fontWeight: 800, color: t.accent2, letterSpacing: '0.08em', display: 'flex' }}>
-              {site || 'NEWS'}
+              {site || 'GUIDE'}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>

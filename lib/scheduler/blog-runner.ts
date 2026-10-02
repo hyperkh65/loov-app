@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-server';
+import { buildHookCaptions } from '@/lib/sns/hook-captions';
 import { notifyPublished } from '@/lib/owner-alert';
 import { withUtm } from '@/lib/utm';
 import { refreshBloggerToken } from '@/lib/blogger-token';
@@ -15,7 +16,13 @@ import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-r
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
 
-async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null): Promise<void> {
+async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = ''): Promise<void> {
+  // 제목만 캡션으로 올리면 AI 티 나고 클릭할 이유가 없음 — 채널별 훅 캡션 생성(60초 넘으면 제목으로 폴백)
+  const summary = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const captions = await Promise.race([
+    buildHookCaptions(title, summary),
+    new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 60_000)),
+  ]).catch(() => ({} as Record<string, string>));
   const supabase = createAdminClient();
   const { data } = await supabase
     .from('sns_connections')
@@ -45,7 +52,7 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
 
   await Promise.all(targets.map(async (conn) => {
     try {
-      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, title, imageUrl ? [imageUrl] : undefined);
+      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, (captions[conn.platform] || title).slice(0, 500), imageUrl ? [imageUrl] : undefined);
       const linkUrl = withUtm(articleUrl, `${conn.platform}_${connections.find(c => c.platform_user_id === conn.platform_user_id)?.platform_username || ''}`);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
         logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
@@ -66,7 +73,7 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
   }));
 
   // 네이버 카페 + 텀블러도 공통으로(부분 실패 허용 — rewrite-publish.ts와 동일 패턴)
-  publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl }).catch(() => {});
+  publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl, hook: captions.cafe }).catch(() => {});
   publishToTumblr({ title, canonical_url: articleUrl }).catch(() => {});
 }
 
@@ -338,7 +345,7 @@ export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string
     // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
     // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
     // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
-    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl).catch(() => {});
+    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl, content).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
