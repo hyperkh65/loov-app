@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-server';
+import { withUtm } from '@/lib/utm';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { pickKeywordForUser, pickFromKeywordList, pickDynamicKeywordByCategory, pickSeedByCategory } from './keyword-picker';
 import { generateBlogContent } from '@/lib/blog-content-generator';
@@ -45,6 +46,7 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
   await Promise.all(targets.map(async (conn) => {
     try {
       const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, title, imageUrl ? [imageUrl] : undefined);
+      const linkUrl = withUtm(articleUrl, `${conn.platform}_${connections.find(c => c.platform_user_id === conn.platform_user_id)?.platform_username || ''}`);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
         logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
       }
@@ -53,11 +55,11 @@ async function crossPostBlogToSns(userId: string, siteUrl: string, title: string
       // (rewrite-publish.ts와 동일하게 짧은 대기 + 1회 재시도로 보강)
       try {
         await new Promise(r => setTimeout(r, 4000));
-        await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, articleUrl);
+        await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
       } catch {
         try {
           await new Promise(r => setTimeout(r, 5000));
-          await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, articleUrl);
+          await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
         } catch { /* 재시도까지 실패 — 본문 발행은 이미 성공이라 전체는 실패 처리 안 함 */ }
       }
     } catch { /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }

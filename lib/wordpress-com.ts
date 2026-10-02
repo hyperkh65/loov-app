@@ -2,6 +2,7 @@
  * WordPress.com(무료 위성 블로그) 발행 — OAuth2 기반. Blogger/네이버 카페와 같은
  * "백링크용 위성 블로그" 역할: 요약 + 원문 링크만 올려서 실제 사이트로 유입을 유도.
  */
+import { withUtm } from '@/lib/utm';
 import { getSetting, invalidateSettingsCache } from '@/lib/get-setting';
 import { createAdminClient } from '@/lib/supabase-server';
 
@@ -54,7 +55,7 @@ export async function publishToWordpressCom(
 
   const stripped = htmlToPlainText(content);
   const excerpt = stripped.slice(0, 500) + (stripped.length > 500 ? '...' : '');
-  const linkLine = articleUrl ? `\n\n▶ 전체 내용 보기: ${articleUrl}` : '';
+  const linkLine = articleUrl ? `\n\n▶ 전체 내용 보기: ${withUtm(articleUrl, 'wpcom')}` : '';
   const body = excerpt + linkLine;
 
   async function tryPost(token: string) {

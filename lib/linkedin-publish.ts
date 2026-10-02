@@ -5,6 +5,7 @@
  * 호출하지 않아 실제로는 한 번도 안 쓰이고 있었음 — 백링크/추가 유입 경로
  * 확보를 위해 rewrite-publish.ts에 연결.
  */
+import { withUtm } from '@/lib/utm';
 import { getSetting } from '@/lib/get-setting';
 
 export interface LinkedInPublishParams {
@@ -62,7 +63,7 @@ export async function publishToLinkedIn(params: LinkedInPublishParams): Promise<
           media: [{
             status: 'READY',
             description: { text: (meta_description || '').slice(0, 256) },
-            originalUrl: canonical_url,
+            originalUrl: withUtm(canonical_url, 'linkedin'),
             title: { text: title.slice(0, 200) },
           }],
         },

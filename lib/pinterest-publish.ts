@@ -2,6 +2,7 @@
  * Pinterest 발행 공용 로직. app/api/backlink/pinterest(세션 사용자용 HTTP 엔드포인트)와
  * lib/rewrite-publish.ts(자동화 파이프라인)가 공유한다. tumblr-publish.ts와 동일한 패턴.
  */
+import { withUtm } from '@/lib/utm';
 import { getSetting } from '@/lib/get-setting';
 
 export interface PinterestPublishParams {
@@ -33,7 +34,7 @@ export async function publishToPinterest(params: PinterestPublishParams): Promis
       board_id: boardId,
       title: title.slice(0, 100),
       description: (meta_description || '').slice(0, 800),
-      link: canonical_url,
+      link: withUtm(canonical_url, 'pinterest'),
       media_source: { source_type: 'image_url', url: representative_image_url },
     }),
     signal: AbortSignal.timeout(20_000),

@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
   // 키워드를 정면으로 노리는 오리지널 글 전용 사이클. 라우트 내부에서 4시간
   // 최소 간격을 자체 체크하니 매 크론 불러도 됨.
   const moneyCycleResult: Record<string, unknown> = {};
-  for (const site_url of ['https://money.2days.kr', 'https://miracool.co.kr', 'https://finance.2days.kr']) {
+  for (const site_url of ['https://money.2days.kr', 'https://finance.2days.kr']) {
     try {
       const res = await fetch(`${BASE}/api/rewrite/money-keyword-cycle`, {
         method: 'POST', headers,

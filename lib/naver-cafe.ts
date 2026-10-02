@@ -2,6 +2,7 @@
  * 네이버 카페 발행 공용 로직. app/api/naver-cafe/publish(세션 사용자용 HTTP 엔드포인트)와
  * lib/rewrite-publish.ts(자동화 파이프라인, admin 클라이언트 + 고정 userId)가 공유한다.
  */
+import { withUtm } from '@/lib/utm';
 import { createAdminClient } from '@/lib/supabase-server';
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -88,21 +89,19 @@ export async function publishToNaverCafe(
   // 발췌 대신 그걸 먼저 보여주고, 링크는 줄바꿈으로 분리해 다음 줄에 넣음.
   // "▶ 원문 보기:" 같은 딱딱한 라벨보다 자연스러운 유도 문구가 클릭을 더
   // 이끌어낸다는 게 확인된 사실이라(쿠팡/무신사 캡션과 동일한 원칙) 문구를 바꿈.
-  const linkLine = blogUrl ? `👉 전체 내용은 여기서 확인하세요\n${blogUrl}` : '';
-  let textContent: string;
-  if (hook?.trim()) {
-    textContent = [hook.trim(), linkLine].filter(Boolean).join('\n\n');
-  } else {
+  const textFor = (cafeTag: string) => {
+    const linkLine = blogUrl ? `👉 전체 내용은 여기서 확인하세요\n${withUtm(blogUrl, `cafe_${cafeTag}`)}` : '';
+    if (hook?.trim()) return [hook.trim(), linkLine].filter(Boolean).join('\n\n');
     const stripped = htmlToPlainText(content);
     const excerpt = stripped.slice(0, 400) + (stripped.length > 400 ? '...' : '');
-    textContent = [excerpt, linkLine].filter(Boolean).join('\n\n');
-  }
+    return [excerpt, linkLine].filter(Boolean).join('\n\n');
+  };
 
   const menuList = conn.menu_list as { menuId: number; menuName: string }[] | null;
   const primary = await postToCafe(admin, {
     userId, accessToken, clubId: conn.club_id, cafeSlug: conn.cafe_url || conn.club_id,
     menuId: targetMenuId, menuName: menuList?.find(m => String(m.menuId) === String(targetMenuId))?.menuName,
-    title, textContent, openYn,
+    title, textContent: textFor(conn.cafe_url || conn.club_id), openYn,
   });
 
   // 같은 네이버 계정의 추가 카페들 — 기본 카페가 성공한 뒤 같은 토큰으로 순서대로 발행. 하나가 실패해도 나머지는 계속.
@@ -113,7 +112,7 @@ export async function publishToNaverCafe(
     try {
       const r = await postToCafe(admin, {
         userId, accessToken, clubId: c.club_id, cafeSlug: c.cafe_url || c.club_id,
-        menuId: c.menu_id, menuName: c.menu_name, title, textContent, openYn,
+        menuId: c.menu_id, menuName: c.menu_name, title, textContent: textFor(c.cafe_url || c.club_id), openYn,
       });
       extraResults.push({ cafe: c.cafe_name || c.club_id, articleUrl: r ?? undefined });
     } catch (e) {
