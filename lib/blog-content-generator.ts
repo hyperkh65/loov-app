@@ -112,8 +112,8 @@ export async function searchInlineImages(query: string, count = 3): Promise<{ di
   }
   // 대표이미지는 주제와 정확히 맞아야 신뢰가 유지됨 — 스톡 검색은 엉뚱한 사진이 섞이므로 AI 생성 우선
   const ai = await generateAiImage(q);
+  // AI 이미지는 대표이미지 전용(사용자 확정 2026-10-03) — 본문엔 스톡 사진만
   const picked = [...new Set(urls)].slice(0, count);
-  if (!picked.length && ai) picked.push(ai);
   return { displayUrls: picked, thumbUrl: ai || picked[0] };
 }
 
