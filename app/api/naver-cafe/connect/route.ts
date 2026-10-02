@@ -68,6 +68,9 @@ export async function DELETE() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  await supabase.from('naver_cafe_connections').delete().eq('user_id', user.id);
+  // 행을 지우면 추가 카페·게시판 설정까지 날아가서 재연결 때마다 다시 등록해야 했음 — 토큰만 비움
+  await supabase.from('naver_cafe_connections')
+    .update({ access_token: '', refresh_token: '', token_expires_at: null, updated_at: new Date().toISOString() })
+    .eq('user_id', user.id);
   return NextResponse.json({ ok: true });
 }

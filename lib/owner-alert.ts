@@ -36,3 +36,8 @@ export async function alertOwner(key: string, text: string): Promise<void> {
     if (r.ok) lastSent.set(key, now);
   } catch { /* 알림 실패는 무시 */ }
 }
+
+/** 글 발행 성공 알림(사용자 요청: 배포될 때마다) */
+export function notifyPublished(platform: string, title: string, url: string): void {
+  alertOwner(`pub:${url || title}`, `✅ [${platform}] 발행\n${title}\n${url}`).catch(() => {});
+}

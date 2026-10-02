@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { notifyPublished } from '@/lib/owner-alert';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { nasExecWithStdin } from '@/lib/nas-ssh';
 import { sanitizeInvisible, findHtmlProblem } from '@/lib/html-gate';
@@ -258,5 +259,6 @@ async function handlePublish(
     .update({ last_tested_at: new Date().toISOString() })
     .eq('id', blogId);
 
+  if (isPublish && result.postUrl) notifyPublished('티스토리', title, result.postUrl);
   return NextResponse.json({ ok: true, url: result.postUrl, post_id: result.postId, isDraft: !isPublish });
 }

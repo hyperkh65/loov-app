@@ -88,6 +88,9 @@ export async function runKeywordAuto(
   userId: string, sourceId: string, category = 'twenties',
   tistory?: { blog_name?: string; category_id?: string | number },
 ): Promise<KeywordAutoResult> {
+  // 'twenties,tech,finance'처럼 여러 개면 시간대별로 돌아가며 사용
+  const cats = category.split(',').map(c => c.trim()).filter(Boolean);
+  category = cats[Math.floor(Date.now() / 3600e3) % cats.length] || 'twenties';
   const admin = createAdminClient();
 
   // 안 쓴 키워드 중 점수 높은 순으로 후보 조회

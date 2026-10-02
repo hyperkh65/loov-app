@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-server';
+import { notifyPublished } from '@/lib/owner-alert';
 import { withUtm } from '@/lib/utm';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { pickKeywordForUser, pickFromKeywordList, pickDynamicKeywordByCategory, pickSeedByCategory } from './keyword-picker';
@@ -105,6 +106,7 @@ async function publishToBlogger(accessToken: string, blogId: string, title: stri
     throw new Error(err.error?.message || `Blogger API 오류 ${res.status}`);
   }
   const data = await res.json();
+  if (data.url) notifyPublished('블로그스팟', title, data.url);
   return data.url || data.id || '';
 }
 
@@ -240,6 +242,7 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
   // 발행 직후 검색엔진(네이버/빙 등 IndexNow 참여 엔진)에 새 글을 바로 알려서
   // 크롤링/노출을 앞당김 — 실패해도 발행 자체에는 영향 없음(fire-and-forget)
   if (link) submitToIndexNow(link).catch(() => {});
+  if (link && status === 'publish') notifyPublished(new URL(wpUrl).host, title, link);
   return { link, featuredImageUrl: uploadedImageUrl };
 }
 
