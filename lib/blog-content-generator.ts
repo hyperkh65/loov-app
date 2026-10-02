@@ -55,84 +55,66 @@ export async function searchNaver(type: 'news' | 'blog', query: string) {
 }
 
 // ── 인라인 이미지 검색 ─────────────────────────────────────────────────────
+// 저작권 안전한 출처만 사용(2026-10-03): 대표이미지는 Cloudflare AI 생성, 본문은 Pexels/Pixabay(상업적 무료).
+// 네이버/구글 이미지 검색은 남의 사진이라 제외. 스톡 검색은 한글 정확도가 낮아 영어 검색어로 변환.
+async function toEnglishImageQuery(keyword: string): Promise<string> {
+  if (!/[가-힣]/.test(keyword)) return keyword;
+  try {
+    const out = await Promise.race([
+      generateText(`Convert this Korean blog topic into a 2-4 word English stock-photo search query describing the concrete visual subject (no brand names). Output only the query.\nTopic: ${keyword}`, 'groq', undefined, undefined, undefined, undefined, { multilingual: true }),
+      new Promise<string>((_, rej) => setTimeout(() => rej(new Error('timeout')), 20_000)),
+    ]);
+    const q = out.trim().split('\n')[0].replace(/["'`*.]/g, '').trim();
+    return /^[A-Za-z0-9\s-]{3,60}$/.test(q) ? q : keyword;
+  } catch { return keyword; }
+}
+
+async function generateAiImage(subject: string): Promise<string | null> {
+  let accounts: Array<{ token: string; account: string }> = [];
+  try { const arr = JSON.parse(await getSetting('CLOUDFLARE_AI_ACCOUNTS') || '[]'); if (Array.isArray(arr)) accounts = arr; } catch { /* ignore */ }
+  for (const a of accounts) {
+    try {
+      const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${a.account}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${a.token}` },
+        body: JSON.stringify({ prompt: `${subject}, realistic photo, natural light, clean composition, no text, no watermark`, steps: 6 }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      const b64 = (await res.json().catch(() => ({})))?.result?.image;
+      if (!res.ok || !b64) continue;
+      return await uploadToR2(`ai/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`, Buffer.from(b64, 'base64'), 'image/jpeg');
+    } catch { /* 다음 계정 */ }
+  }
+  return null;
+}
+
 export async function searchInlineImages(query: string, count = 3): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
-  const [naverClientId, naverClientSecret] = await Promise.all([getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET')]);
-  if (naverClientId && naverClientSecret) {
+  const q = await toEnglishImageQuery(query);
+  const urls: string[] = [];
+  const pexelsKey = await getSetting('PEXELS_API_KEY');
+  if (pexelsKey) {
     try {
-      const res = await fetch(
-        `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count + 3}&sort=sim`,
-        { headers: { 'X-Naver-Client-Id': naverClientId, 'X-Naver-Client-Secret': naverClientSecret } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
-        // blogfiles/postfiles(네이버 블로그·카페 사용자 업로드 이미지)는 "전기통신사업법에
-        // 따라 불법촬영물등 여부를 검토중입니다" 플레이스홀더로 대체되는 경우가 실사용 중
-        // 확인됨 — 그 둘만 제외. imgnews.naver.net(뉴스 기사용 언론사 사진, 사람/연예
-        // 검색에서 검색결과 대부분을 차지함)은 라이브로 재확인 결과 문제없이 로드되는데도
-        // 과거엔 *.naver.net 전체를 막아서 대부분의 관련성 높은 사진이 걸러지고 Pixabay
-        // 같은 무관한 대체 이미지만 쓰이던 문제가 실사용 중 확인됨(2026-10-01).
-        // sizewidth 낮은(작게 나오는 원인) 결과도 같이 제외.
-        // 이미지 제목에 키워드 단어가 하나도 없으면 무관한 이미지(예: 보험 글에 게임 캐릭터)라 제외
-        const kwTokens = query.split(/\s+/).filter(t => t.length >= 2);
-        const safeItems = items.filter((item: { link: string; sizewidth?: string; title?: string }) => {
-          const imgTitle = (item.title || '').replace(/<[^>]+>/g, '');
-          if (kwTokens.length && !kwTokens.some(t => imgTitle.includes(t.slice(0, Math.max(2, Math.min(t.length, 4)))))) return false;
-          const host = new URL(item.link).hostname;
-          if (/^(blogfiles|postfiles)\.(pstatic\.net|naver\.net)$/i.test(host)) return false;
-          // 언론사 기사 사진(imgnews)은 저작권 문제로 사용하지 않음(2026-10-01 사용자 결정)
-          if (/^imgnews\./i.test(host)) return false;
-          const w = Number(item.sizewidth) || 0;
-          return w === 0 || w >= 500;
-        });
-        if (safeItems.length > 0) {
-          // 배경 이미지는 저해상도 thumbnail 대신 원본 link를 써야 화질이 안 뭉개짐
-          return {
-            displayUrls: safeItems.slice(0, count).map((item: { link: string }) => item.link),
-            thumbUrl: safeItems[0].link,
-          };
-        }
-      }
+      const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=${count + 2}&orientation=landscape`,
+        { headers: { Authorization: pexelsKey }, signal: AbortSignal.timeout(10_000) });
+      if (res.ok) for (const p of (await res.json()).photos || []) if (p.src?.large) urls.push(p.src.large);
     } catch { /* fallthrough */ }
   }
-  const [googleKey, googleCx] = await Promise.all([getSetting('GOOGLE_SEARCH_API_KEY'), getSetting('GOOGLE_SEARCH_CX')]);
-  if (googleKey && googleCx) {
-    try {
-      const res = await fetch(
-        `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCx}&q=${encodeURIComponent(query)}&searchType=image&num=${Math.min(count, 10)}&safe=active`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const items = data.items || [];
-        if (items.length > 0) {
-          const urls = items.slice(0, count).map((item: { link: string }) => item.link);
-          return { displayUrls: urls, thumbUrl: urls[0] };
-        }
-      }
-    } catch { /* fallthrough */ }
-  }
-  const pixabayKey = await getSetting('PIXABAY_API_KEY');
+  const pixabayKey = urls.length < count ? await getSetting('PIXABAY_API_KEY') : '';
   if (pixabayKey) {
     try {
-      const res = await fetch(
-        `https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count + 3}&safesearch=true&min_width=600`
-      );
+      const res = await fetch(`https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(q)}&image_type=photo&per_page=${count + 3}&safesearch=true&min_width=600&orientation=horizontal`,
+        { signal: AbortSignal.timeout(10_000) });
       if (res.ok) {
-        const data = await res.json();
-        const hits = data.hits || [];
-        if (hits.length > 0) {
-          const urls = hits.slice(0, count).map((h: { webformatURL: string; previewURL?: string }) => {
-            // previewURL is a stable CDN URL (cdn.pixabay.com); derive 640px version from it
-            // webformatURL uses pixabay.com/get/ signed URLs that expire
-            const preview = h.previewURL || '';
-            return preview ? preview.replace(/_\d+\./, '_640.') : h.webformatURL;
-          });
-          return { displayUrls: urls, thumbUrl: urls[0] };
-        }
+        // webformatURL은 만료되는 서명 URL이라 previewURL에서 640px 버전을 파생
+        for (const h of (await res.json()).hits || []) urls.push(h.previewURL ? h.previewURL.replace(/_\d+\./, '_640.') : h.webformatURL);
       }
-    } catch { /* skip */ }
+    } catch { /* fallthrough */ }
   }
-  return { displayUrls: [], thumbUrl: undefined };
+  // 대표이미지는 주제와 정확히 맞아야 신뢰가 유지됨 — 스톡 검색은 엉뚱한 사진이 섞이므로 AI 생성 우선
+  const ai = await generateAiImage(q);
+  const picked = [...new Set(urls)].slice(0, count);
+  if (!picked.length && ai) picked.push(ai);
+  return { displayUrls: picked, thumbUrl: ai || picked[0] };
 }
 
 // 외부 이미지를 우리 R2에 재호스팅 — 핫링크는 FIFU/wp.com 프록시·원본 서버 차단으로 깨짐. 실패한 건 버림.

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { searchInlineImages } from '@/lib/blog-content-generator';
 import { alertOwner } from '@/lib/owner-alert';
 import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
@@ -253,73 +254,6 @@ async function downloadAndUploadToR2(urls: string[]): Promise<string[]> {
   return results;
 }
 
-async function searchInlineImages(query: string, count = 3): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
-  // 1순위: 네이버 이미지 검색
-  // displayUrls: R2에 업로드된 URL (원본 외부링크 대신)
-  // thumbUrl: item.thumbnail (CDN URL, 서버 fetch 가능 → 대표이미지 배경용)
-  const [naverClientId, naverClientSecret] = await Promise.all([getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET')]);
-  if (naverClientId && naverClientSecret) {
-    try {
-      const res = await fetch(
-        `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count + 3}&sort=sim`,
-        { headers: { 'X-Naver-Client-Id': naverClientId, 'X-Naver-Client-Secret': naverClientSecret } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const items = (data.items || []).filter((item: { link: string }) => item.link?.startsWith('http'));
-        if (items.length > 0) {
-          const rawUrls = items.slice(0, count).map((item: { link: string }) => item.link);
-          const displayUrls = await downloadAndUploadToR2(rawUrls);
-          // blogfiles/postfiles(사용자 업로드 이미지)만 "불법촬영물등 검토중" 플레이스홀더
-          // 위험이 있어 제외 — imgnews.naver.net(언론사 사진)까지 막으면 인물/연예 검색의
-          // 관련성 높은 배경 후보 대부분이 사라지는 문제가 실사용 중 확인됨(2026-10-01).
-          const safeItems = items.filter((item: { link: string }) => !/^(blogfiles|postfiles)\.(pstatic\.net|naver\.net)$/i.test(new URL(item.link).hostname));
-          return { displayUrls, thumbUrl: safeItems[0]?.link };
-        }
-      }
-    } catch { /* fallthrough */ }
-  }
-  // 2순위: Google Custom Search
-  const [googleKey, googleCx] = await Promise.all([
-    getSetting('GOOGLE_SEARCH_API_KEY'),
-    getSetting('GOOGLE_SEARCH_CX'),
-  ]);
-  if (googleKey && googleCx) {
-    try {
-      const res = await fetch(
-        `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCx}&q=${encodeURIComponent(query)}&searchType=image&num=${Math.min(count, 10)}&safe=active`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const items = data.items || [];
-        if (items.length > 0) {
-          const rawUrls = items.slice(0, count).map((item: { link: string }) => item.link);
-          const displayUrls = await downloadAndUploadToR2(rawUrls);
-          return { displayUrls, thumbUrl: rawUrls[0] };
-        }
-      }
-    } catch { /* fallthrough */ }
-  }
-  // 3순위: Pixabay (한글 검색만, 폴백 없음)
-  const pixabayKey = await getSetting('PIXABAY_API_KEY');
-  if (pixabayKey) {
-    try {
-      const res = await fetch(
-        `https://pixabay.com/api/?key=${pixabayKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count + 3}&safesearch=true&min_width=600`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const hits = data.hits || [];
-        if (hits.length > 0) {
-          const rawUrls = hits.slice(0, count).map((h: { webformatURL: string }) => h.webformatURL);
-          const displayUrls = await downloadAndUploadToR2(rawUrls);
-          return { displayUrls, thumbUrl: rawUrls[0] };
-        }
-      }
-    } catch { /* skip */ }
-  }
-  return { displayUrls: [], thumbUrl: undefined };
-}
 
 function extractH2Title(h2Tag: string): string {
   return h2Tag.replace(/<[^>]+>/g, '').trim();
