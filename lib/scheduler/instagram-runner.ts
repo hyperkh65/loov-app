@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-server';
+import { SNS_HOOK_GUIDE } from '@/lib/sns/hook-style';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
 import type { Schedule, InstagramAutoConfig } from './index';
@@ -36,8 +37,9 @@ export async function runInstagramAuto(schedule: Schedule): Promise<{ topic: str
 주제: ${topic}
 톤: ${toneGuide}
 
+${SNS_HOOK_GUIDE}
+
 요구사항:
-- 첫 줄은 시선을 끄는 훅 문장
 - 이모지 적절히 활용
 - 해시태그 10-15개 포함 (캡션 끝에)
 - 총 400자 이내

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SNS_HOOK_GUIDE } from '@/lib/sns/hook-style';
 import { createAdminClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import { generateText } from '@/lib/auto-blog-ai';
@@ -48,13 +49,8 @@ function buildHookPrompt(title: string, excerpt: string): string {
 제목: ${title}
 요약: ${excerpt.slice(0, 300)}
 
-[작성 규칙]
-1. 반드시 한국어로만 작성
-2. 첫 줄: 핵심 내용을 툭 던지는 한 문장 + 이모지 1개
-3. 빈 줄 하나
-4. 2~3줄: 구어체로 풀어써
-5. URL, 광고성 표현 절대 금지
-6. 이모지는 첫 줄에만 1개
+${SNS_HOOK_GUIDE}
+- 반드시 한국어로만, 2~4줄, URL 금지, 이모지 0~1개
 
 후킹 멘트만 출력:`;
 }

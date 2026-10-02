@@ -5,6 +5,7 @@
  * 바로 주기 때문에 이미지 포스트로 충분하고, 영상 파이프라인(스크립트/TTS/렌더)을
  * 새로 만드는 건 별도 요청 시 확장.
  */
+import { SNS_HOOK_GUIDE } from '@/lib/sns/hook-style';
 import { createAdminClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { toInstagramSafeImage } from '@/lib/rewrite-publish';
@@ -49,7 +50,7 @@ async function buildCaption(p: TossProduct, angle: ContentAngle): Promise<string
       `상품명: ${p.displayName}\n가격: ${p.displayPrice.toLocaleString()}원` +
       (p.originalPrice > p.displayPrice ? ` (정가 ${p.originalPrice.toLocaleString()}원, ${discount})` : '') + `\n` +
       `${reviewLine}\n${endLine ? `마감: ${endLine}\n` : ''}\n` +
-      `마지막에 링크/해시태그는 넣지 마(따로 붙일 거임). 본문만 출력해. 반드시 한국어로만.`,
+      `${SNS_HOOK_GUIDE}\n\n마지막에 링크/해시태그는 넣지 마(따로 붙일 거임). 본문만 출력해. 반드시 한국어로만.`,
     )).trim();
     if (caption) return caption;
   } catch { /* 폴백으로 진행 */ }
