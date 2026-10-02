@@ -1,6 +1,7 @@
 /**
  * 리라이팅 완료된 기사를 설정된 WordPress 사이트 + 연결된 모든 SNS 계정에 발행
  */
+import { withUtm } from '@/lib/utm';
 import { getSection } from '@/lib/sns/sections';
 import { THREADS_HOOK_GUIDE, scrubThreads } from '@/lib/sns/hook-style';
 import { createAdminClient } from '@/lib/supabase-server';
@@ -372,7 +373,7 @@ export async function publishRewrittenArticle(
   // 캡션에 링크를 텍스트로 넣으면 하이퍼링크가 안 걸려서 클릭이 안 되는 문제가
   // 있어서(실사용 중 확인) 댓글로 되돌림 — 대표이미지가 링크 미리보기로 한 번
   // 더 보이는 건 감수하고, 실제로 클릭 가능한 링크를 우선함(사용자 선택)
-  const comment = wordpressUrl ? `🔗 전체 기사 보기\n${wordpressUrl}` : '';
+  const commentFor = (src: string) => wordpressUrl ? `🔗 전체 기사 보기\n${withUtm(wordpressUrl, src)}` : '';
 
   const hasInstagram = relevantConns.some(c => c.platform === 'instagram');
   let instagramImages: string[] = [];
@@ -395,6 +396,7 @@ export async function publishRewrittenArticle(
     const caption = (captions[platform] || fallbackCaption).slice(0, 500);
     try {
       const posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, caption, platformImages);
+      const comment = commentFor(`${platform}_${conn.platform_username || ''}`);
       if (comment) {
         // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
         // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨

@@ -2,6 +2,7 @@
  * GitHub Pages(Jekyll) 위성 블로그 발행 — Blogger/워드프레스닷컴과 같은 목적.
  * _posts/YYYY-MM-DD-slug.md 파일을 커밋하면 GitHub Pages가 자동 빌드해서 반영.
  */
+import { withUtm } from '@/lib/utm';
 import { getSetting } from '@/lib/get-setting';
 
 function htmlToPlainText(content: string): string {
@@ -41,7 +42,7 @@ export async function publishToGithubPages(
 
   const stripped = htmlToPlainText(content);
   const excerpt = stripped.slice(0, 800) + (stripped.length > 800 ? '...' : '');
-  const linkLine = articleUrl ? `\n\n▶ [전체 내용 보기](${articleUrl})` : '';
+  const linkLine = articleUrl ? `\n\n▶ [전체 내용 보기](${withUtm(articleUrl, 'github')})` : '';
 
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);

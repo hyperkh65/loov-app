@@ -20,7 +20,7 @@ add_action('wp_head', function () {
 (function(){try{
 var u='https://loov.co.kr/api/analytics/beacon',s=Math.random().toString(36).slice(2)+Date.now().toString(36);
 function send(o){var b=JSON.stringify(o);if(navigator.sendBeacon)navigator.sendBeacon(u,b);else fetch(u,{method:'POST',body:b,keepalive:true,mode:'no-cors'})}
-send({t:'pv',s:s,h:location.hostname,p:location.pathname,r:document.referrer});
+send({t:'pv',s:s,h:location.hostname,p:location.pathname,r:(new URLSearchParams(location.search).get('utm_source')?'utm:'+new URLSearchParams(location.search).get('utm_source'):document.referrer)});
 var vis=0,last=Date.now(),on=!document.hidden;
 function tick(){if(on)vis+=Date.now()-last;last=Date.now()}
 function dwell(){tick();send({t:'d',s:s,d:Math.round(vis/1000)})}

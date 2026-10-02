@@ -2,6 +2,7 @@
  * Tumblr 발행 공용 로직. app/api/backlink/tumblr(세션 사용자용 HTTP 엔드포인트)와
  * lib/rewrite-publish.ts(자동화 파이프라인, admin 클라이언트 + 고정 userId)가 공유한다.
  */
+import { withUtm } from '@/lib/utm';
 import { getSetting } from '@/lib/get-setting';
 import crypto from 'crypto';
 
@@ -86,7 +87,7 @@ export async function publishToTumblr(params: TumblrPublishParams): Promise<{ ur
   const postUrl = `https://api.tumblr.com/v2/blog/${blogName}/post`;
   const formParams: Record<string, string> = {
     type: 'link',
-    url: canonical_url,
+    url: withUtm(canonical_url, 'tumblr'),
     title: title.slice(0, 250),
     description: (meta_description || '').slice(0, 500),
     tags: tags.join(','),
