@@ -1,6 +1,6 @@
 export const GA_ID = 'GT-WVG7Q63';
 
-// 방문/체류시간 비콘 + GA4(gtag)를 wp_footer에 출력하는 mu-plugin. miracool은 이미 GA가 있어 gtag만 생략.
+// 방문/체류시간 비콘 + GA4(gtag)를 wp_head에 출력하는 mu-plugin. miracool은 이미 GA가 있어 gtag만 생략.
 export function analyticsMuPlugin(): string {
   return `<?php
 /**
@@ -8,7 +8,7 @@ export function analyticsMuPlugin(): string {
  * Description: GA4 + 방문/체류시간 비콘
  */
 if (!defined('ABSPATH')) exit;
-add_action('wp_footer', function () {
+add_action('wp_head', function () {
     if (is_admin() || is_user_logged_in()) return;
     $host = $_SERVER['HTTP_HOST'] ?? '';
     if (strpos($host, 'miracool.co.kr') === false) {
