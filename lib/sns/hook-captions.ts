@@ -1,6 +1,6 @@
 import { generateText } from '@/lib/auto-blog-ai';
 import { getSection } from '@/lib/sns/sections';
-import { THREADS_HOOK_GUIDE, scrubThreads } from '@/lib/sns/hook-style';
+import { THREADS_HOOK_GUIDE, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
 
 const CAFE_TAG = 'CAFE';
 const CAPTION_TAGS_WITH_CAFE = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM', CAFE_TAG];
@@ -14,10 +14,10 @@ export async function buildHookCaptions(title: string, summary: string): Promise
 
 [채널별 작성 규칙]
 - THREADS: 아래 [스레드 훅 작성법]을 따른다. URL 없이 (댓글로 추가)
-- TWITTER: 한 방에 꽂히는 문장 + 해시태그 2~3개. 240자 이내. URL 없이 (댓글로 추가)
-- FACEBOOK: 친근하게 250자 내외. 이모지 적당히. URL 없이 (댓글로 추가)
-- INSTAGRAM: 감성적, 이모지 풍부, 해시태그 8개. URL 없이 (댓글로 추가)
-- CAFE: 카페 게시글 서두에 쓸 문구. 첫 문장은 호기심을 자극하는 후킹 멘트로 시작(딱딱한 요약문 금지). 이어서 2~3문장으로 자연스럽게 핵심 내용을 풀고, 마지막엔 "더 자세한 내용/전체 글은 아래에서 확인하세요" 같은 자연스러운 문장으로 블로그 이동을 유도. 200자 내외, 이모지는 1개 이하로 절제. URL 없이 (내가 따로 붙임)
+- TWITTER: 아래 작성법의 첫 줄+둘째 덩어리만(3~4줄, 줄바꿈 유지) + 해시태그 2개. 240자 이내. URL 없이
+- FACEBOOK: 아래 작성법 형식 그대로(줄바꿈·짧은 줄·반말). 이모지 1~2개. URL 없이
+- INSTAGRAM: THREADS와 똑같은 형식·길이·말투(4~7줄 짧은 줄, 핵심은 숨기기, 존댓말 금지). 맨 끝 빈 줄 뒤 해시태그 6개만 추가. URL 없이
+- CAFE: THREADS와 같은 형식(한 줄 한 문장, 짧은 줄, 빈 줄로 2~3덩어리, 4~6줄). 핵심 조건·방법은 숨기고 마지막 줄은 "전체 내용은 아래 링크에" 같은 짧은 한 줄. 해요체 허용, 이모지 0~1개. URL 없이 (내가 따로 붙임)
 
 ${THREADS_HOOK_GUIDE}
 
@@ -37,8 +37,8 @@ ${THREADS_HOOK_GUIDE}
   return {
     threads: scrubThreads(getSection(raw, 'THREADS', CAPTION_TAGS_WITH_CAFE)),
     twitter: getSection(raw, 'TWITTER', CAPTION_TAGS_WITH_CAFE),
-    facebook: getSection(raw, 'FACEBOOK', CAPTION_TAGS_WITH_CAFE),
-    instagram: getSection(raw, 'INSTAGRAM', CAPTION_TAGS_WITH_CAFE),
-    cafe: getSection(raw, CAFE_TAG, CAPTION_TAGS_WITH_CAFE),
+    facebook: formatHookLines(getSection(raw, 'FACEBOOK', CAPTION_TAGS_WITH_CAFE)),
+    instagram: formatHookLines(getSection(raw, 'INSTAGRAM', CAPTION_TAGS_WITH_CAFE)),
+    cafe: formatHookLines(getSection(raw, CAFE_TAG, CAPTION_TAGS_WITH_CAFE)),
   };
 }
