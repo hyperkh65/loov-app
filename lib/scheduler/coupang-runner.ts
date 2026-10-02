@@ -329,12 +329,18 @@ export async function runCoupangAuto(
     discountRate?: number;
   };
 
-  // 제휴링크 생성
-  let affiliateUrl = product.productUrl;
-  try {
-    const links = await createAffiliateLinks([product.productUrl], accessKey, secretKey);
-    if (links[0]) affiliateUrl = links[0];
-  } catch { /* 폴백: 원본 URL */ }
+  // 제휴링크 생성 — 골드박스/검색 productUrl은 이미 제휴링크라 딥링크 API가 거부하므로
+  // 순수 상품 URL로 채널별 subId(sns/wp) 딥링크를 만든다 → 쿠팡 리포트에서 채널별 수익 분리
+  const plainUrl = `https://www.coupang.com/vp/products/${product.productId}`;
+  const subLink = async (subId: string) => {
+    try {
+      const [l] = await createAffiliateLinks([plainUrl], accessKey, secretKey, subId);
+      return l && l !== plainUrl ? l : product.productUrl;
+    } catch { return product.productUrl; }
+  };
+  const affiliateUrl = product.productUrl;
+  const snsAffiliateUrl = await subLink('sns');
+  const wpAffiliateUrl = await subLink('wp');
 
   // 실데이터 긴급성 — 어제 스냅샷과 비교해서 진짜 가격 하락이면 문구에 반영,
   // 아니면 언급 안 함(가짜 긴급성 금지). 오늘 스냅샷은 다음 회차 비교용으로 저장.
@@ -397,7 +403,7 @@ ${priceDropNote ? `${priceDropNote}\n` : ''}
     platform: 'coupang',
     networkProductId: String(product.productId),
     productName: product.productName,
-    destinationUrl: affiliateUrl,
+    destinationUrl: snsAffiliateUrl,
     scheduleId: schedule.id,
     contentChannel: 'sns_comment',
     contentAngle,
@@ -485,7 +491,7 @@ ${priceDropNote ? `${priceDropNote}\n` : ''}
         platform: 'coupang',
         networkProductId: String(product.productId),
         productName: product.productName,
-        destinationUrl: affiliateUrl,
+        destinationUrl: wpAffiliateUrl,
         scheduleId: schedule.id,
         contentChannel: 'wordpress_cta',
         contentAngle,

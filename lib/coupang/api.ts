@@ -5,7 +5,7 @@
 import crypto from 'crypto';
 
 const BASE_URL = 'https://api-gateway.coupang.com';
-const API_PREFIX = '/v2/providers/affiliate_open_api/apis/openapi/v1';
+export const API_PREFIX = '/v2/providers/affiliate_open_api/apis/openapi/v1';
 
 export interface CoupangProduct {
   productId: number | string;
@@ -60,7 +60,7 @@ function checkRCode(body: { rCode?: string; rMessage?: string }): void {
   }
 }
 
-async function coupangGet<T extends { rCode?: string; rMessage?: string }>(path: string, query: string, accessKey: string, secretKey: string): Promise<T> {
+export async function coupangGet<T extends { rCode?: string; rMessage?: string }>(path: string, query: string, accessKey: string, secretKey: string): Promise<T> {
   const auth = getCoupangAuth('GET', path, query, accessKey, secretKey);
   const url = query ? `${BASE_URL}${path}?${query}` : `${BASE_URL}${path}`;
   const res = await fetch(url, {
@@ -106,12 +106,13 @@ export async function searchProducts(keyword: string, accessKey: string, secretK
 
 // ── 제휴 링크 생성 ─────────────────────────────────────
 
-export async function createAffiliateLinks(productUrls: string[], accessKey: string, secretKey: string): Promise<string[]> {
+export async function createAffiliateLinks(productUrls: string[], accessKey: string, secretKey: string, subId?: string): Promise<string[]> {
   const path = `${API_PREFIX}/deeplink`;
-  const data = await coupangPost<{ rCode: string; data?: { shortenUrls?: string[]; landingUrl?: string } }>(
-    path, accessKey, secretKey, { coupangUrls: productUrls },
+  const data = await coupangPost<{ rCode: string; data?: { shortenUrl?: string; landingUrl?: string }[] }>(
+    path, accessKey, secretKey, { coupangUrls: productUrls, ...(subId ? { subId } : {}) },
   );
-  return data.data?.shortenUrls || (data.data?.landingUrl ? [data.data.landingUrl] : productUrls);
+  const rows = Array.isArray(data.data) ? data.data : [];
+  return productUrls.map((u, i) => rows[i]?.shortenUrl || rows[i]?.landingUrl || u);
 }
 
 // ── 스크래핑 ──────────────────────────────────────────
