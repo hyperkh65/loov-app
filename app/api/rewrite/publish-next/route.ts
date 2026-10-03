@@ -22,7 +22,13 @@ import { SLOT_WAIT_ERROR } from '@/lib/scheduler/blog-runner';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 20 * 60 * 1000; // 2026-10-03: 사용자 확정 30분 단위 — 크론 30분 주기 + 발행 처리 시간 여유로 20분 판정
+// 2026-10-04 사용자 확정: 그룹별 발행 간격 2~3시간 랜덤(메타 스팸 판정 회피). 마지막 발행 시각으로 간격을 정해 무상태로 랜덤화.
+// 크론이 30분 단위로 돌아 실제 간격은 30분 단위로 올림됨.
+function publishIntervalMs(lastAt: string | undefined): number {
+  if (!lastAt) return 0;
+  const h = [...lastAt].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return (120 + (h % 61) - 10) * 60 * 1000; // 110~170분 + 크론/처리 지연 보정 → 실제 2~3시간
+}
 const MAX_PUBLISHES_PER_CALL = 8;
 // 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
 // 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
@@ -155,7 +161,7 @@ async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, o
   const candidates = groupKeys.map((group) => {
     const lastAt = lastPublishedAtByGroup.get(group);
     const sinceLast = lastAt ? Date.now() - new Date(lastAt).getTime() : Infinity;
-    return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, PUBLISH_INTERVAL_MS - sinceLast) };
+    return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, publishIntervalMs(lastAt) - sinceLast) };
   });
 
   // 2days.kr 그룹(@2dayskr — yoosol/yoonfree/infolife 핵심 소스)을 항상 먼저(사용자 확정 2026-10-03)
