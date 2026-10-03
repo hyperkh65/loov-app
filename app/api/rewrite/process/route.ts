@@ -15,7 +15,7 @@ import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
 import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
-import { rehostImages, searchNaver, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
+import { rehostImages, searchInlineImages, searchNaver, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
 import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
@@ -196,54 +196,37 @@ export async function POST(req: NextRequest) {
       useOwnThumbnail = !!source?.use_generated_thumbnail;
     }
 
-    // 본문 섹션 이미지: 원문 페이지를 통째로 스크랩해서 담아뒀던 article.image_urls는
-    // "관련기사/많이 본 뉴스" 위젯 등 기사 본문과 무관한 이미지까지 섞여 들어오는
-    // 문제가 있었음(예: 금융 기사에 정치 화보가 들어감) — "블로그 자동화"
-    // (lib/blog-content-generator.ts generateBlogContent)와 동일하게 제목으로
-    // 실제 이미지를 검색해 섹션마다 넣는 방식으로 통일.
-    let content = rawContent;
-    // 본문 사진: 원문 본문 안의 실제 사진만 내려받아 재호스팅(없으면 안 넣음). 검색/스톡 이미지는 쓰지 않음(사용자 확정 2026-10-03).
-    // infolife는 원문 사진을 쓰지 않는 소스라 본문 사진도 없음.
-    // yoosol/yoonfree/infowid/2days 같은 우리 자체 블로그 원문의 사진은 자동 삽입된 스톡 사진이라 쓰지 않음.
-    const ownBlogSource = /yoosol\.com|yoonfree\.com|infowid\.com|2days\.kr/i.test(article.source_url || '');
-    const bodyScrape = article.source_id !== INFOLIFE_SOURCE_ID && !ownBlogSource && article.source_url
-      ? await scrapeArticleFull(article.source_url).catch(() => null) : null;
-    const inlineImages = bodyScrape?.bodyImages.length ? await rehostImages(bodyScrape.bodyImages) : [];
-    if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
-
-    // 대표이미지: 원문에서 스크랩된 게 있으면 그걸 쓰고, 없거나(또는 소스 설정상
-    // 항상 자체 생성해야 하면) 새로 생성
-    // 수집 당시(옛 스크래퍼) 이미지가 비어 저장된 글은 지금 원문에서 다시 긁어서 보충 —
-    // 안 그러면 원문 사진이 있어도 무관한 검색 이미지/그라디언트 배경이 됨
-    let sourceImage = article.representative_image_url;
-    if (!sourceImage && article.source_url) {
-      sourceImage = (await scrapeArticleFull(article.source_url).catch(() => null))?.images[0] || null;
-    }
-    // infolife: 원문 블로그 이미지를 대표이미지로 쓰지 않음(사용자 확정 2026-10-03) — 우리 틀 + Pixabay 민무늬 배경 + 제목
+    // 이미지 규칙(2days.kr 자동발행, 사용자 확정 2026-10-03):
+    //  - 원문에 대표+본문 사진이 다 있으면: 대표는 원문 대표사진을 배경으로 대표이미지툴에 넣어 제작, 본문 사진은 가져와 재호스팅
+    //  - 한쪽만 있으면: 있는 사진을 배경으로 대표이미지만 제작(본문 사진 임의 삽입 금지)
+    //  - 둘 다 없거나 infolife: AI 이미지를 배경으로 대표이미지툴로 제작(본문 사진 없음)
+    // yoosol/yoonfree/infowid/2days 같은 자체 블로그 원문의 사진은 자동 삽입된 스톡 사진이라 없는 것으로 취급.
     const plainBgOnly = article.source_id === INFOLIFE_SOURCE_ID;
-    if (plainBgOnly) sourceImage = null;
-    let representativeImageUrl = useOwnThumbnail || plainBgOnly ? null : sourceImage;
-    if (representativeImageUrl) representativeImageUrl = (await rehostImages([representativeImageUrl]))[0] || null;
-    if (representativeImageUrl) {
-      content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
+    const ownBlogSource = /yoosol\.com|yoonfree\.com|infowid\.com|2days\.kr/i.test(article.source_url || '');
+    const needScrape = !plainBgOnly && !!article.source_url;
+    const scraped = needScrape ? await scrapeArticleFull(article.source_url as string).catch(() => null) : null;
+    const srcRep: string | null = plainBgOnly || useOwnThumbnail ? null : (article.representative_image_url || scraped?.images[0] || null);
+    const srcBody: string[] = plainBgOnly || ownBlogSource ? [] : (scraped?.bodyImages || []);
+
+    let content: string = rawContent;
+    let bgUrl: string | undefined;
+    if (srcRep && srcBody.length) {
+      const inlineImages = await rehostImages(srcBody);
+      if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
+      bgUrl = srcRep;
     } else {
-      // use_generated_thumbnail 소스는 매번 브랜딩 카드(제목 오버레이)를 새로
-      // 만들지만, 원문에 실제 스크랩된 사진이 있으면(article.representative_image_url)
-      // 제목 기반 검색 이미지보다 그걸 배경으로 우선 사용 — one.yoosol처럼 실제
-      // 인물 사진이 있는 소스인데 무관한 검색 이미지가 배경으로 깔리는 문제가
-      // 실사용 중 확인됨(2026-10-01, 사용자 확정: "이 사진을 배경으로 대표이미지
-      // 만들기를 해야지").
-      // infolife: 원문 이미지 대신 제목으로 설계한 AI 배경(실패 시 민무늬 배경)
-      // 자동 발행 대표이미지: AI·Pixabay 금지(사용자 확정 2026-10-03) — 원문 실제 사진이 있으면 배경으로, 없으면 제목 카드(그라디언트)
-      const preferredBg = sourceImage || undefined;
+      bgUrl = srcRep || srcBody[0];
+    }
+    if (!bgUrl) {
+      bgUrl = (await searchInlineImages(title, 0, { aiThumb: true, hq: plainBgOnly, noInline: true }).catch(() => ({ thumbUrl: undefined as string | undefined }))).thumbUrl;
+    }
+
+    let representativeImageUrl: string | null = null;
+    {
+      const shortTitle = title.split(/[,，·|:]/)[0].trim().split(' ').slice(0, 3).join(' ');
       try {
-        representativeImageUrl = await generateAndUploadThumbnail(title, plainBgOnly ? (title.split(/[,，·|:]/)[0].trim().split(' ').slice(0, 3).join(' ')) : article.title, 'blue', preferredBg);
+        representativeImageUrl = await generateAndUploadThumbnail(title, plainBgOnly ? shortTitle : article.title, 'blue', bgUrl);
       } catch {
-        // bgImageUrl(스크랩된 배경 이미지)이 죽은 링크라 썸네일 생성 자체가
-        // 실패하는 경우가 실사용 중 확인됨(2026-10-01) — 대표이미지가 아예
-        // null로 남으면 FIFU 플러그인이 본문 첫 이미지를 대신 대표이미지로
-        // 쓰는데, 그 이미지도 검증 안 된 스크랩 이미지라 깨진 채로 노출됨
-        // (2days.kr 실사용 확인) — bgImageUrl 없이 한 번 더 시도.
         try { representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue'); } catch { /* 썸네일은 선택사항 */ }
       }
       if (representativeImageUrl) content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
