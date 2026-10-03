@@ -85,10 +85,14 @@ export async function POST(req: NextRequest) {
       .from('bossai_rewrite_articles').select('id', { count: 'exact', head: true }).eq('status', 'ready');
     readyBacklog = count || 0;
     // 다른 소스(aboda 정부자료 등) ready 적체 때문에 핵심 소스(yoosol/yoonfree) 리라이트까지 멈추던 버그 방지
-    const { count: pc } = await admin
-      .from('bossai_rewrite_articles').select('id', { count: 'exact', head: true })
-      .eq('status', 'pending').in('source_id', [...PRIORITY_SOURCE_IDS]);
-    priorityPending = pc || 0;
+    const [{ count: pc }, { count: pr }] = await Promise.all([
+      admin.from('bossai_rewrite_articles').select('id', { count: 'exact', head: true })
+        .eq('status', 'pending').in('source_id', [...PRIORITY_SOURCE_IDS]),
+      admin.from('bossai_rewrite_articles').select('id', { count: 'exact', head: true })
+        .eq('status', 'ready').in('source_id', [...PRIORITY_SOURCE_IDS]),
+    ]);
+    // 우선 소스도 발행 대기 3건 이상이면 더 만들지 않음(30분에 1건 발행이라 초과분은 토큰 낭비)
+    priorityPending = (pr || 0) >= 3 ? 0 : (pc || 0);
   } catch { /* 조회 실패 시 그냥 진행 */ }
 
   for (let i = 0; i < (readyBacklog >= 3 ? Math.min(max, priorityPending) : max); i++) {
