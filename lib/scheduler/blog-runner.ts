@@ -353,3 +353,13 @@ export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string
 
   return { keyword, url: publishedUrl, title };
 }
+
+// 상품·호텔처럼 SNS는 자주, 블로그 글은 드물게 내는 러너용(사용자 확정 2026-10-03: blog.2days.kr 6시간마다)
+export function wpDue(schedule: Schedule, hours: number): boolean {
+  const last = Number((schedule.config as { last_wp_at?: number } | null)?.last_wp_at || 0);
+  return Date.now() - last >= hours * 3600e3;
+}
+export async function markWpPublished(schedule: Schedule): Promise<void> {
+  const config = { ...((schedule.config as object) || {}), last_wp_at: Date.now() };
+  await createAdminClient().from('bossai_schedules').update({ config }).eq('id', schedule.id);
+}
