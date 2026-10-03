@@ -450,7 +450,7 @@ export async function POST(req: NextRequest) {
   let imageUrl: string | null = null;
   let thumbnailError: string | undefined;
   try {
-    imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+    imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', [bgImageUrl, ...inlineImages].filter((u): u is string => !!u));
   } catch (err) {
     thumbnailError = err instanceof Error ? err.message : String(err);
     console.error('[generate] 썸네일 생성 실패:', thumbnailError);
