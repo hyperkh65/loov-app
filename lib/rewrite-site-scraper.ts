@@ -89,12 +89,12 @@ export async function fetchFeedItems(feedUrl: string, limit = 10): Promise<FeedI
   return items;
 }
 
-export interface ScrapedArticle { text: string; images: string[] }
+export interface ScrapedArticle { text: string; images: string[]; bodyImages: string[] }
 
 /** 원문 기사 페이지에서 본문 텍스트 + 이미지 여러 장을 스크랩 */
 export async function scrapeArticleFull(url: string): Promise<ScrapedArticle> {
   const html = await fetchText(url, 8000);
-  if (!html) return { text: '', images: [] };
+  if (!html) return { text: '', images: [], bodyImages: [] };
 
   // 이미지: og:image 우선 + 본문 <img> 태그들 (아이콘/로고/배너류 제외)
   const images: string[] = [];
@@ -127,5 +127,24 @@ export async function scrapeArticleFull(url: string): Promise<ScrapedArticle> {
     .trim()
     .slice(0, 4000);
 
-  return { text, images };
+  return { text, images, bodyImages: extractBodyImages(html) };
+}
+
+// 본문 컨테이너 안의 사진만 — 컨테이너를 못 찾으면 사이드바/관련글 이미지가 섞이므로 없는 걸로 처리
+function extractBodyImages(html: string): string[] {
+  const start = html.search(/class=["'][^"']*(post-body|entry-content|article-body|articleBody|post-content|se-main-container|tt_article_useless_p_margin)[^"']*["']/i);
+  if (start < 0) return [];
+  let body = html.slice(start, start + 80_000);
+  const end = body.search(/post-footer|<footer|class=["'][^"']*(related|comment|sidebar|widget|share)/i);
+  if (end > 0) body = body.slice(0, end);
+  const out: string[] = [];
+  for (const m of body.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+)["']/gi)) {
+    const u = m[1]
+      .replace(/\/s\d+(-c)?\//, '/s1200/')
+      .replace(/=w\d+-h\d+[^"']*$/, '=w1200');
+    if (/(icon|logo|button|banner|sprite|pixel|blank|tracking|avatar|emoji|emoticon|cropped-|\.gif)/i.test(u)) continue;
+    if (!out.includes(u)) out.push(u);
+    if (out.length >= 4) break;
+  }
+  return out;
 }

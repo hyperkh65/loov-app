@@ -3,7 +3,7 @@
  * 서버는 ① 텔레그램/API 요청을 대기열에 넣고 ② 로컬이 넘긴 완성 글에 이미지를 붙여 발행·SNS만 한다.
  */
 import { createAdminClient } from '@/lib/supabase-server';
-import { searchInlineImages, rehostImages, insertImagesIntoContent, generateHqImage } from '@/lib/blog-content-generator';
+import { rehostImages, insertImagesIntoContent, generateHqImage } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { sanitizeInvisible, assertPublishableHtml, tightTitle } from '@/lib/html-gate';
 import { publishToWordPress, crossPostBlogToSns, TREND_CATEGORY_2DAYS } from '@/lib/scheduler/blog-runner';
@@ -32,11 +32,8 @@ export async function publishTrendArticle(article: TrendArticle, keyword: string
   assertPublishableHtml(title, content);
   // 대표이미지: 글을 쓴 로컬 AI가 묘사한 장면(thumb_prompt)으로 생성 — 서버가 키워드로 추측하면 엉뚱해짐
   const sourceImgs = await rehostImages((article.source_images || []).slice(0, 4));
-  const [{ displayUrls }, aiBg] = await Promise.all([
-    sourceImgs.length >= 2 ? Promise.resolve({ displayUrls: [] as string[] }) : searchInlineImages(keyword, 3),
-    article.thumb_image_url ? Promise.resolve(article.thumb_image_url) : article.thumb_prompt ? generateHqImage(article.thumb_prompt) : Promise.resolve(null),
-  ]);
-  const bodyImgs = sourceImgs.length >= 2 ? sourceImgs : [...sourceImgs, ...displayUrls];
+  const aiBg = article.thumb_image_url || (article.thumb_prompt ? await generateHqImage(article.thumb_prompt) : null);
+  const bodyImgs = sourceImgs;
   content = insertImagesIntoContent(content, bodyImgs, keyword);
   if (article.outlets?.length) content += `\n<p style="margin-top:24px;padding:12px 14px;background:#f6f7f9;border-radius:8px;font-size:14px;color:#555;">이 글은 ${article.outlets.slice(0, 5).join('·')} 보도를 교차 확인해 공통된 사실을 중심으로 정리했습니다.</p>`;
   const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', aiBg || bodyImgs[0], 'TREND').catch(() => null);

@@ -202,8 +202,13 @@ export async function POST(req: NextRequest) {
     // (lib/blog-content-generator.ts generateBlogContent)와 동일하게 제목으로
     // 실제 이미지를 검색해 섹션마다 넣는 방식으로 통일.
     let content = rawContent;
-    const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(title, 6, { aiThumb: true, hq: article.source_id === INFOLIFE_SOURCE_ID })
-      .catch(() => ({ displayUrls: [] as string[], thumbUrl: undefined as string | undefined }));
+    // 본문 사진: 원문 본문 안의 실제 사진만 내려받아 재호스팅(없으면 안 넣음). 검색/스톡 이미지는 쓰지 않음(사용자 확정 2026-10-03).
+    // infolife는 원문 사진을 쓰지 않는 소스라 본문 사진도 없음.
+    const { thumbUrl: bgImageUrl } = await searchInlineImages(title, 0, { aiThumb: true, hq: article.source_id === INFOLIFE_SOURCE_ID, noInline: true })
+      .catch(() => ({ thumbUrl: undefined as string | undefined }));
+    const bodyScrape = article.source_id !== INFOLIFE_SOURCE_ID && article.source_url
+      ? await scrapeArticleFull(article.source_url).catch(() => null) : null;
+    const inlineImages = bodyScrape?.bodyImages.length ? await rehostImages(bodyScrape.bodyImages) : [];
     if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
 
     // 대표이미지: 원문에서 스크랩된 게 있으면 그걸 쓰고, 없거나(또는 소스 설정상
