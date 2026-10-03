@@ -204,7 +204,9 @@ export async function POST(req: NextRequest) {
     let content = rawContent;
     // 본문 사진: 원문 본문 안의 실제 사진만 내려받아 재호스팅(없으면 안 넣음). 검색/스톡 이미지는 쓰지 않음(사용자 확정 2026-10-03).
     // infolife는 원문 사진을 쓰지 않는 소스라 본문 사진도 없음.
-    const bodyScrape = article.source_id !== INFOLIFE_SOURCE_ID && article.source_url
+    // yoosol/yoonfree/infowid/2days 같은 우리 자체 블로그 원문의 사진은 자동 삽입된 스톡 사진이라 쓰지 않음.
+    const ownBlogSource = /yoosol\.com|yoonfree\.com|infowid\.com|2days\.kr/i.test(article.source_url || '');
+    const bodyScrape = article.source_id !== INFOLIFE_SOURCE_ID && !ownBlogSource && article.source_url
       ? await scrapeArticleFull(article.source_url).catch(() => null) : null;
     const inlineImages = bodyScrape?.bodyImages.length ? await rehostImages(bodyScrape.bodyImages) : [];
     if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
