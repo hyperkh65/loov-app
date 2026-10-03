@@ -5,4 +5,5 @@
 export const PRIORITY_SOURCE_IDS = new Set([
   '1c036b9d-2a2b-449d-9b97-0a12c76dab6f', // one.yoosol
   '132c4df6-2a18-4693-8799-342893aa1469', // yoonfree
+  '627b59b2-01f5-4537-ab7d-4f4a2c401573', // infolife.infowid.com (2026-10-03 추가, 2days.kr)
 ]);
