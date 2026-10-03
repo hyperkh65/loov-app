@@ -22,7 +22,7 @@ import { SLOT_WAIT_ERROR } from '@/lib/scheduler/blog-runner';
 
 export const maxDuration = 200; // self-hosted라 실제 강제는 안 되지만 auto-run의 fetch 타임아웃과 맞춤
 
-const PUBLISH_INTERVAL_MS = 30 * 60 * 1000; // 2026-10-03: 사용자 확정 — 글·SNS 발행 모두 30분 단위
+const PUBLISH_INTERVAL_MS = 25 * 60 * 1000; // 2026-10-03: 사용자 확정 30분 단위 — 크론이 30분 주기라 25분 판정
 const MAX_PUBLISHES_PER_CALL = 8;
 // 기사 1건 발행(워드프레스+SNS 여러 개+네이버카페+텀블러 등 순차 호출)이 실측
 // 60~90초까지 걸리는 걸 확인함(과거 maxDuration을 60→300으로 올린 이력, d14d305).
@@ -118,7 +118,7 @@ async function accountGroupForSource(sourceId: string | null): Promise<string> {
   return group;
 }
 
-async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, ownerId: string): Promise<ArticleRow | { waitMinutes: number } | null> {
+async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, ownerId: string, skipGroups: Set<string> = new Set()): Promise<ArticleRow | { waitMinutes: number } | null> {
   const { data: readyArticles } = await supabase
     .from('bossai_rewrite_articles')
     .select('id, source_id, created_at')
@@ -148,14 +148,17 @@ async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, o
     if (!lastPublishedAtByGroup.has(group) && p.published_at) lastPublishedAtByGroup.set(group, p.published_at);
   }
 
-  const groupKeys = [...new Set(readyWithGroup.map((a) => a.group))];
+  const groupKeys = [...new Set(readyWithGroup.map((a) => a.group))].filter((g) => !skipGroups.has(g));
+  if (!groupKeys.length) return null;
   const candidates = groupKeys.map((group) => {
     const lastAt = lastPublishedAtByGroup.get(group);
     const sinceLast = lastAt ? Date.now() - new Date(lastAt).getTime() : Infinity;
     return { group, lastServedAt: lastAt || '0000-01-01', waitMs: Math.max(0, PUBLISH_INTERVAL_MS - sinceLast) };
   });
 
-  const ready = candidates.filter((c) => c.waitMs === 0).sort((a, b) => (a.lastServedAt < b.lastServedAt ? -1 : 1));
+  // 2days.kr 그룹(@2dayskr — yoosol/yoonfree/infolife 핵심 소스)을 항상 먼저(사용자 확정 2026-10-03)
+  const ready = candidates.filter((c) => c.waitMs === 0).sort((a, b) =>
+    (a.group === '@2dayskr' ? 0 : 1) - (b.group === '@2dayskr' ? 0 : 1) || (a.lastServedAt < b.lastServedAt ? -1 : 1));
   if (!ready.length) {
     const soonest = candidates.sort((a, b) => a.waitMs - b.waitMs)[0];
     return { waitMinutes: Math.ceil(soonest.waitMs / 60000) };
@@ -208,11 +211,12 @@ export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   const results: Array<Record<string, unknown>> = [];
   let lastNoWork: { ok: true; published: false; reason: string } | null = null;
+  const slotBusyGroups = new Set<string>();
 
   for (let i = 0; i < MAX_PUBLISHES_PER_CALL; i++) {
     if (Date.now() - startedAt > TIME_BUDGET_MS) break;
 
-    const picked = await pickNextArticle(supabase, ownerId);
+    const picked = await pickNextArticle(supabase, ownerId, slotBusyGroups);
     if (!picked) { lastNoWork = { ok: true, published: false, reason: '발행 대기 중인 기사 없음' }; break; }
     if ('waitMinutes' in picked) {
       lastNoWork = { ok: true, published: false, reason: `발행 간격 대기 중 — ${picked.waitMinutes}분 후 재시도` };
@@ -220,7 +224,8 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await publishArticle(supabase, ownerId, picked);
-    if ('slotWait' in result) { lastNoWork = { ok: true, published: false, reason: '발행 슬롯 대기(분산 발행)' }; break; }
+    // 이 그룹 사이트가 슬롯 대기면 끝내지 말고 다른 그룹 시도(예전엔 aboda가 막히면 2days.kr까지 같이 굶었음)
+    if ('slotWait' in result) { slotBusyGroups.add(await accountGroupForSource(picked.source_id)); lastNoWork = { ok: true, published: false, reason: '발행 슬롯 대기(분산 발행)' }; continue; }
     results.push(result);
   }
 

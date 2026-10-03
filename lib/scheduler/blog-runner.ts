@@ -168,7 +168,8 @@ function getSafeCategoryFor(wpUrl: string): number[] | undefined {
 // ponytail: 프로세스 메모리 기준 — 앱 인스턴스가 여러 개로 늘면 DB 예약 테이블로 옮길 것
 const STAGGER_HOSTS = new Set(['2days.kr', 'aboda.kr', 'miracool.co.kr', 'money.2days.kr', 'finance.2days.kr', 'yellow.2days.kr']);
 const GLOBAL_GAP_MS = 10 * 60e3;
-const SITE_GAP_MS = 30 * 60e3;
+// 크론이 정확히 30분 주기라 30분으로 두면 몇 초 차이로 한 회차씩 밀려 실제 1시간 간격이 됨 → 25분 판정 = 실질 30분 단위
+const SITE_GAP_MS = 25 * 60e3;
 export const SLOT_WAIT_ERROR = '발행 슬롯 대기';
 let lastGlobalAt = 0;
 const lastSiteAt = new Map<string, number>();
@@ -187,7 +188,8 @@ export async function publishSlotFree(wpUrl: string): Promise<boolean> {
   const host = new URL(base).host;
   if (!STAGGER_HOSTS.has(host)) return true;
   const now = Date.now();
-  if (now - lastGlobalAt < GLOBAL_GAP_MS) return false;
+  // 2days.kr(핵심 소스)은 30분마다 한 번뿐인 발행 크론이 다른 사이트 발행에 밀리지 않게 전체 간격 면제
+  if (host !== '2days.kr' && now - lastGlobalAt < GLOBAL_GAP_MS) return false;
   const last = Math.max(lastSiteAt.get(host) || 0, await latestPostAt(base));
   lastSiteAt.set(host, last);
   return now - last >= SITE_GAP_MS;
