@@ -67,7 +67,7 @@ ${blockType === 'hero' ? `{
     } else {
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(apiKey);
-      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
       const result = await geminiModel.generateContent(prompt);
       text = result.response.text();
     }

@@ -69,6 +69,28 @@ async function toEnglishImageQuery(keyword: string): Promise<string> {
   } catch { return keyword; }
 }
 
+// 대표이미지 장면 설계 — 키워드 몇 단어만 넘기면 엉뚱한 그림(로봇 가면 등)이 나와서 제목을 보고 구체적 장면을 먼저 설계
+async function designImageScene(title: string): Promise<string> {
+  try {
+    const out = await Promise.race([
+      generateText(
+        `You design ONE thumbnail photo for a Korean blog post. Title: "${title}"\n` +
+        `Write an English image prompt (40-60 words) for a single realistic photo that a Korean reader instantly connects to this title.\n` +
+        `- Show the concrete subject and situation of the title (who, doing what, with which object, where). Example: 근로장려금 신청 → a Korean office worker in their 30s checking a smartphone at a kitchen table at night, relieved expression, envelope of bills nearby.\n` +
+        `- Korean people, everyday Korean setting. Natural, warm, believable — like a magazine photo.\n` +
+        `- No robots, androids, sci-fi or fantasy unless the title is literally about them. No celebrities or real named people.\n` +
+        `- No visible text, letters, logos, documents with writing, or screens with words.\n` +
+        `Output only the prompt.`,
+        'gemini', undefined, undefined, undefined, undefined, { multilingual: true },
+      ),
+      new Promise<string>((_, rej) => setTimeout(() => rej(new Error('timeout')), 25_000)),
+    ]);
+    const q = out.trim().replace(/^["'`]|["'`]$/g, '');
+    if (q.length > 30 && /^[\x20-\x7E\s]+$/.test(q)) return q;
+  } catch { /* 폴백 */ }
+  return toEnglishImageQuery(title);
+}
+
 async function generateAiImage(subject: string): Promise<string | null> {
   let accounts: Array<{ token: string; account: string }> = [];
   try { const arr = JSON.parse(await getSetting('CLOUDFLARE_AI_ACCOUNTS') || '[]'); if (Array.isArray(arr)) accounts = arr; } catch { /* ignore */ }
@@ -141,10 +163,10 @@ async function searchStockImages(query: string, count: number): Promise<string[]
  * 본문 이미지: 네이버 이미지 검색 → 부족하면 Pexels/Pixabay.
  * 대표이미지: aiThumb(자동 크론 발행)면 Cloudflare AI 생성, 아니면(수동 자동화블로그 메뉴) 네이버 첫 이미지.
  */
-export async function searchInlineImages(query: string, count = 3, opts: { aiThumb?: boolean } = {}): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
+export async function searchInlineImages(query: string, count = 3, opts: { aiThumb?: boolean; thumbTitle?: string } = {}): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
   const [naver, ai] = await Promise.all([
     searchNaverImages(query, count),
-    opts.aiThumb ? toEnglishImageQuery(query).then(generateAiImage) : Promise.resolve(null),
+    opts.aiThumb ? designImageScene(opts.thumbTitle || query).then(generateAiImage) : Promise.resolve(null),
   ]);
   const picked = naver.length >= count ? naver : [...naver, ...(await searchStockImages(query, count - naver.length))];
   return { displayUrls: picked, thumbUrl: ai || picked[0] };
@@ -542,7 +564,7 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3', ra
   const bodyLen = rawContent.replace(/<[^>]*>/g, '').length;
   if (bodyLen < 1000) throw new Error(`발행 차단: 본문이 너무 짧음/잘림(${bodyLen}자)`);
 
-  const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3, { aiThumb: true });
+  const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3, { aiThumb: true, thumbTitle: title });
   const inlineImages = await rehostImages(foundImages);
   let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
   content = injectTitleIntoH3(content, title);

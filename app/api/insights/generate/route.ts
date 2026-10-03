@@ -56,7 +56,7 @@ JSON 배열만 반환해주세요.`;
     // Gemini
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(apiKey);
-    const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const geminiModel = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
     const result = await geminiModel.generateContent(prompt);
     text = result.response.text();
   }

@@ -56,7 +56,7 @@ ${platform}용 글 써줘.`;
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
     const result = await model.generateContent(systemPrompt + '\n\n' + userPrompt);
     return result.response.text().trim();
   } catch {

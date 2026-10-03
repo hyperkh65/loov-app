@@ -52,7 +52,7 @@ async function translateToKorean(text: string): Promise<string> {
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(gKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
       const result = await model.generateContent(
         `다음 영어 문장을 자연스럽고 짧은 한국어 구어체로 번역해줘 (번역문만 출력):\n"${text}"`
       );
