@@ -43,8 +43,8 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
   // 2days.kr 사이트 전용(사용자 확정 2026-10-01) — @2dayskr 스레드/인스타 고정, 로테이션 없음.
   // 이 계정이 메인이라 간격 체크도 면제(MIN_GAP 0) — 같은 계정을 쓰는 다른 그룹이 로그를 보고 양보함.
   twodays: {
-    threads: ['25203934249239577'], // @2dayskr
-    instagram: ['34489947500650071'], // @2dayskr
+    threads: ['27198401606479414'], // @2dayskr_korea (2026-10-04 사용자 확정: 2days.kr 블로그 SNS는 전부 @2dayskr_korea로)
+    instagram: ['27094702240139938'], // @2dayskr_korea
   },
   // aboda.kr 전용 — @2dayskr_korea 고정 (사용자 확정 2026-10-01)
   aboda: {
