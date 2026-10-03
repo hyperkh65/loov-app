@@ -36,7 +36,7 @@ export async function publishTrendArticle(article: TrendArticle, keyword: string
     sourceImgs.length >= 2 ? Promise.resolve({ displayUrls: [] as string[] }) : searchInlineImages(keyword, 3),
     article.thumb_image_url ? Promise.resolve(article.thumb_image_url) : article.thumb_prompt ? generateHqImage(article.thumb_prompt) : Promise.resolve(null),
   ]);
-  const bodyImgs = sourceImgs.length >= 2 ? sourceImgs : [...sourceImgs, ...(await rehostImages(displayUrls))];
+  const bodyImgs = sourceImgs.length >= 2 ? sourceImgs : [...sourceImgs, ...displayUrls];
   content = insertImagesIntoContent(content, bodyImgs, keyword);
   if (article.outlets?.length) content += `\n<p style="margin-top:24px;padding:12px 14px;background:#f6f7f9;border-radius:8px;font-size:14px;color:#555;">이 글은 ${article.outlets.slice(0, 5).join('·')} 보도를 교차 확인해 공통된 사실을 중심으로 정리했습니다.</p>`;
   const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', aiBg || bodyImgs[0], 'TREND').catch(() => null);
