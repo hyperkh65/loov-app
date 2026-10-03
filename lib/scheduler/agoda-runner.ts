@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
-import { publishToWordPress, getWpCredentials } from './blog-runner';
+import { publishToWordPress, getWpCredentials, wpDue, markWpPublished } from './blog-runner';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, AgodaAutoConfig } from './index';
 
@@ -230,7 +230,7 @@ HTML 본문 전체`;
     const token = await getBloggerTokenAdmin(schedule.user_id);
     if (!token) throw new Error('Blogger 계정이 연결되지 않았습니다');
     publishedUrl = await publishToBlogger(token, config.blogger_blog_id || '7951763866955162015', title, content, labels);
-  } else if (config.blog_platform === 'wordpress') {
+  } else if (config.blog_platform === 'wordpress' && wpDue(schedule, 6)) {
     let wpUrl: string, wpUser: string, wpPass: string;
     if (config.wp_site_id) {
       const creds = await getWpCredentials(config.wp_site_id);
@@ -241,6 +241,7 @@ HTML 본문 전체`;
       throw new Error('WordPress 사이트를 선택해주세요');
     }
     publishedUrl = (await publishToWordPress(wpUrl, wpUser, wpPass, title, content, top5[0]?.imageURL || null)).link;
+    await markWpPublished(schedule);
   }
 
   // SNS 발행 — 블로그 발행 성공/실패와 무관하게 별도로 시도(부분 실패 허용)

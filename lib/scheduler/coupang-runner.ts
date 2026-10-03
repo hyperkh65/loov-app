@@ -3,7 +3,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { getGoldboxProducts, searchProducts, createAffiliateLinks, scrapeProductData, type CoupangProduct } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
-import { publishToWordPress, getWpCredentials } from './blog-runner';
+import { publishToWordPress, getWpCredentials, wpDue, markWpPublished } from './blog-runner';
 import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
@@ -460,7 +460,7 @@ ${PRODUCT_HOOK_GUIDE}
 
   // 워드프레스 발행 — SNS 발행 성공/실패와 무관하게 별도로 시도(부분 실패 허용)
   let wordpressUrl: string | undefined;
-  if (targets.includes('wordpress') && config.wp_site_id) {
+  if (targets.includes('wordpress') && config.wp_site_id && wpDue(schedule, 6)) {
     try {
       let scraped: { reviews: { content: string }[] } | null = null;
       try {
@@ -499,6 +499,7 @@ ${PRODUCT_HOOK_GUIDE}
       const { url, username, appPassword } = await getWpCredentials(config.wp_site_id);
       wordpressUrl = (await publishToWordPress(url, username, appPassword, title, content, product.productImage || null)).link;
       results.push(`wordpress: 발행 완료 (${wordpressUrl})`);
+      await markWpPublished(schedule);
     } catch (err) {
       // 실측: 이 실패 사유가 results 배열에만 담기고 서버 로그엔 안 남아서, 자동실행이
       // 조용히 실패했을 때 원인을 나중에 알 방법이 없었다 — 항상 로그에도 남긴다.
