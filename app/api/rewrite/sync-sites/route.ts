@@ -56,12 +56,12 @@ export async function POST(req: NextRequest) {
       // 대상이 아니라서 계속 쌓여서 최대 688개(5일치)까지 밀린 적이 있었음.
       // latest_only 소스는 애초에 "최신성"이 핵심이라 오래된 ready도 발행 의미가
       // 없으므로 3일 넘은 건 발행 전에 정리
-      // 우선 소스(yoosol/yoonfree)는 "발행 직전 최신글 1~2개만 대기" — 12시간 넘은 건 폐기, 최신 2개 유지
+      // 우선 소스(yoosol/yoonfree)는 24시간 넘은 ready 폐기
       const isPriority = PRIORITY_SOURCE_IDS.has(site.id);
       // yoosol은 1분 사이 4~5개씩 몰아서 올려 최신 2개만 보면 나머지를 놓쳤음 → 우선 소스는 6개까지 확인
       const keepN = isPriority ? 6 : 1;
       if (site.latest_only) {
-        const staleMs = (isPriority ? 12 : 72) * 3600 * 1000;
+        const staleMs = (isPriority ? 24 : 72) * 3600 * 1000; // 우선 소스 24시간(사용자 확정 2026-10-03, 연휴 등 원문 뜸할 때 대비)
         const threeDaysAgoReady = new Date(Date.now() - staleMs).toISOString();
         await supabase
           .from('bossai_rewrite_articles')
