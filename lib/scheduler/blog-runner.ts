@@ -131,11 +131,14 @@ export interface WordPressPublishResult {
 // 안에는 광고가 없거나 적어서, 발행하는 본문에 직접 광고 코드를 삽입한다(9/26~27 수익이
 // 좋았던 기준 상태로 복원 + 본문 광고 3곳으로 확대). aboda.kr/miracool.co.kr은 이미 본문 광고가 충분해 건드리지 않는다.
 // 슬롯은 같은 계정(ca-pub-8940400388075870)에서 이미 검증된 기존 슬롯만 재사용.
+const BODY_ADS_ENABLED = false;
 const TWODAYS_BODY_AD_SLOTS = ['4238744126', '1739739148', '4238744126'];
 function injectAdSenseForSite(wpUrl: string, content: string): string {
   let host: string;
   try { host = new URL(wpUrl).host; } catch { return content; }
   if (host !== '2days.kr' && !host.endsWith('.2days.kr')) return content;
+  // 본문 광고 끔(사용자 확정 2026-10-03): 테마가 맨 위/본문 위/본문 아래/사이드바 4곳을 넣으므로 본문 삽입은 중복
+  if (!BODY_ADS_ENABLED) return content;
   const ad = (slot: string, first: boolean) => `<div class="loov-ad" style="margin:20px auto;text-align:center;clear:both;">
 ${first ? '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8940400388075870" crossorigin="anonymous"></script>\n' : ''}<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-8940400388075870" data-ad-slot="${slot}" data-ad-format="auto" data-full-width-responsive="true"></ins>
 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
