@@ -174,7 +174,7 @@ export async function searchInlineImages(query: string, count = 3, opts: { aiThu
 
 // 외부 이미지를 우리 R2에 재호스팅 — 핫링크는 FIFU/wp.com 프록시·원본 서버 차단으로 깨짐. 실패한 건 버림.
 const IMG_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
-async function rehostImages(urls: string[]): Promise<string[]> {
+export async function rehostImages(urls: string[]): Promise<string[]> {
   const out = await Promise.all(urls.map(async (u) => {
     try {
       const res = await fetch(u, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -541,13 +541,15 @@ export interface GeneratedBlogContent {
   imageUrl: string | null;
 }
 
-export async function generateBlogContent(keyword: string, aiModel = 'qwen3', rawOverride?: string): Promise<GeneratedBlogContent> {
+export async function generateBlogContent(keyword: string, aiModel = 'qwen3', rawOverride?: string, extraFacts?: string): Promise<GeneratedBlogContent> {
   const [newsItems, blogItems] = await Promise.all([
     searchNaver('news', keyword),
     searchNaver('blog', keyword),
   ]);
 
-  const prompt = buildBlogPrompt(keyword, newsItems, blogItems);
+  const prompt = buildBlogPrompt(keyword, newsItems, blogItems) + (extraFacts
+    ? `\n\n[교차검증된 사실 — 2개 이상 매체가 일치하게 보도한 내용. 본문의 핵심 근거로 반드시 반영하고, 여기와 어긋나는 내용은 쓰지 말 것]\n${extraFacts}`
+    : '');
   const allSourceItems = [...newsItems, ...blogItems];
 
   // 모델이 같은 단어를 무한 반복하거나 잘린 출력을 내는 경우가 있어 1회 재시도

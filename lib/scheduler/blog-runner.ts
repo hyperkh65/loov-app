@@ -17,7 +17,7 @@ import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-r
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
 
-async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = ''): Promise<void> {
+export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = ''): Promise<void> {
   // 제목만 캡션으로 올리면 AI 티 나고 클릭할 이유가 없음 — 채널별 훅 캡션 생성(60초 넘으면 제목으로 폴백)
   const summary = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const captions = await Promise.race([
@@ -195,8 +195,8 @@ export async function publishSlotFree(wpUrl: string): Promise<boolean> {
   return now - last >= SITE_GAP_MS;
 }
 
-export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish'): Promise<WordPressPublishResult> {
-  if (status === 'publish') {
+export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish', opts: { bypassSlot?: boolean } = {}): Promise<WordPressPublishResult> {
+  if (status === 'publish' && !opts.bypassSlot) {
     if (!await publishSlotFree(wpUrl)) throw new Error(`${SLOT_WAIT_ERROR}(${wpUrl})`);
     lastGlobalAt = Date.now();
     lastSiteAt.set(new URL(wpUrl.replace(/\/$/, '')).host, lastGlobalAt);
