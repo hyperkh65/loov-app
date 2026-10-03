@@ -171,12 +171,15 @@ const GLOBAL_GAP_MS = 10 * 60e3;
 // 크론이 정확히 30분 주기라 30분으로 두면 몇 초 차이로 한 회차씩 밀려 실제 1시간 간격이 됨 + 발행 처리 1~5분 → 20분 판정 = 실질 30분 단위
 const SITE_GAP_MS = 20 * 60e3;
 export const SLOT_WAIT_ERROR = '발행 슬롯 대기';
+export const TREND_CATEGORY_2DAYS = 21338; // 2days.kr '트렌드' 카테고리
 let lastGlobalAt = 0;
 const lastSiteAt = new Map<string, number>();
 
 async function latestPostAt(base: string): Promise<number> {
   try {
-    const r = await fetch(`${base}/wp-json/wp/v2/posts?per_page=1&_fields=date_gmt`, { signal: AbortSignal.timeout(8000) });
+    // 2days.kr 트렌드 글(로컬 Claude, 별도 카테고리)은 정규 30분 발행 간격 계산에서 제외 — 서로 끼어들지 않게
+    const exclude = base.endsWith('//2days.kr') ? `&categories_exclude=${TREND_CATEGORY_2DAYS}` : '';
+    const r = await fetch(`${base}/wp-json/wp/v2/posts?per_page=1&_fields=date_gmt${exclude}`, { signal: AbortSignal.timeout(8000) });
     const d = (await r.json() as Array<{ date_gmt?: string }>)[0]?.date_gmt;
     return d ? new Date(`${d}Z`).getTime() : 0;
   } catch { return 0; }
@@ -195,7 +198,7 @@ export async function publishSlotFree(wpUrl: string): Promise<boolean> {
   return now - last >= SITE_GAP_MS;
 }
 
-export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish', opts: { bypassSlot?: boolean } = {}): Promise<WordPressPublishResult> {
+export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish', opts: { bypassSlot?: boolean; categories?: number[] } = {}): Promise<WordPressPublishResult> {
   if (status === 'publish' && !opts.bypassSlot) {
     if (!await publishSlotFree(wpUrl)) throw new Error(`${SLOT_WAIT_ERROR}(${wpUrl})`);
     lastGlobalAt = Date.now();
@@ -237,7 +240,7 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
 
   const body: Record<string, unknown> = { title, content, status };
   if (featuredMediaId) body.featured_media = featuredMediaId;
-  const safeCategories = getSafeCategoryFor(wpUrl);
+  const safeCategories = opts.categories || getSafeCategoryFor(wpUrl);
   if (safeCategories) body.categories = safeCategories;
 
   const res = await fetch(apiUrl, {

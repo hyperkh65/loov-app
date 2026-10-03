@@ -25,19 +25,31 @@
   마지막 `<h2>자주 묻는 질문</h2>` 3~4개(`<p><strong>Q. …</strong><br>답</p>`).
   한국어만, 친근한 존댓말, 독자에게 실제로 도움 되는 맥락(왜 중요한지·앞으로 일정·확인 방법) 포함.
   `<img>`·외부 링크·출처 문단은 넣지 말 것(서버가 이미지와 교차확인 문구를 넣음)
-- thumb_prompt: 대표이미지 장면을 영어 40~60단어로. **글 내용과 바로 연결되는 구체적 장면**(누가·무엇을·어디서),
-  한국 사람·한국 배경, 실사 사진풍, 글자·로고·문서·화면 글씨 없음, 실존 인물 얼굴 금지.
+
+## 3-1. 이미지 (네가 직접 만들고 직접 확인한다)
+- **대표이미지**: 글 내용과 바로 연결되는 장면을 영어 60~90단어 프롬프트로 설계한다.
+  잡지 화보풍 실사(editorial photo, cinematic light, shallow depth of field), 한국 사람·한국 배경,
+  누가·무엇을·어디서가 분명한 한 장면. 글자·로고·문서 글씨·실존 인물 얼굴 금지.
+  ```bash
+  curl -s -X POST https://loov.co.kr/api/trend-post -H "x-trend-key: $TREND_POST_KEY" \
+    -H "Content-Type: application/json" -d '{"image_prompt":"..."}' --max-time 120   # → {"ok":true,"url":...}
+  curl -s -o .trend-work/thumb.jpg "<url>"
+  ```
+  `.trend-work/thumb.jpg` 를 Read로 **직접 열어 확인**한다. 주제와 안 맞거나, 가짜 글자·뭉개진 손/얼굴이 있으면
+  프롬프트를 고쳐 다시 생성(최대 3회). 통과한 url을 `thumb_image_url` 로 쓴다.
+- **본문 이미지(소스)**: 2단계에서 읽은 기사들 중 주제와 직접 관련된 기사의 대표 사진(og:image) 2~4개를 고른다.
+  `curl -sI <이미지URL>` 로 200 + image/* 인지 확인, 로고·기본 썸네일·광고 이미지는 제외. → `source_images`
 
 ## 4. 발행
 article.html 을 `.trend-work/article.html` 에 저장한 뒤:
 ```bash
 jq -n --arg k "검색 키워드" --arg t "제목" --rawfile h .trend-work/article.html \
-  --arg p "thumb prompt in English" --argjson o '["연합뉴스","KBS"]' \
-  '{keyword:$k, article:{title:$t, html:$h, thumb_prompt:$p, outlets:$o}}' \
+  --arg th "<확인한 대표이미지 url>" --argjson si '["<기사사진1>","<기사사진2>"]' --argjson o '["연합뉴스","KBS"]' \
+  '{keyword:$k, article:{title:$t, html:$h, thumb_image_url:$th, source_images:$si, outlets:$o}}' \
 | curl -s -X POST https://loov.co.kr/api/trend-post -H "x-trend-key: $TREND_POST_KEY" \
   -H "Content-Type: application/json" -d @- --max-time 280
 ```
-응답 `{"ok":true,"url":...}` 의 url 을 마지막에 출력한다. 실패하면 오류 내용을 고쳐 1회 재시도.
+응답 `{"ok":true,"url":...}` 의 url 을 마지막에 출력한다. (트렌드 글은 '트렌드' 카테고리로 올라가 정규 30분 발행과 별개로 처리됨) 실패하면 오류 내용을 고쳐 1회 재시도.
 
 ## 하지 말 것
 - 워드프레스에 직접 로그인/발행 금지(위 API만 사용 — 이미지·SNS·텔레그램 알림이 함께 처리됨)

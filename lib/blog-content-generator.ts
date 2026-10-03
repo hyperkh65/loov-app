@@ -91,6 +91,29 @@ async function designImageScene(title: string): Promise<string> {
   return toEnglishImageQuery(title);
 }
 
+// 고품질(잡지 화보급) — Cloudflare Leonardo Lucid Origin, 실패 시 flux. 프롬프트는 호출 측(로컬 Claude)이 설계
+export async function generateHqImage(prompt: string): Promise<string | null> {
+  let accounts: Array<{ token: string; account: string }> = [];
+  try { const arr = JSON.parse(await getSetting('CLOUDFLARE_AI_ACCOUNTS') || '[]'); if (Array.isArray(arr)) accounts = arr; } catch { /* ignore */ }
+  for (const a of accounts) {
+    try {
+      const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${a.account}/ai/run/@cf/leonardo/lucid-origin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${a.token}` },
+        body: JSON.stringify({ prompt: `${prompt}, absolutely no text, no letters, no watermark`, width: 1216, height: 832, steps: 25 }),
+        signal: AbortSignal.timeout(90_000),
+      });
+      if (!res.ok) continue;
+      const buf = (res.headers.get('content-type') || '').includes('image')
+        ? Buffer.from(await res.arrayBuffer())
+        : Buffer.from((await res.json())?.result?.image || '', 'base64');
+      if (buf.length < 10_000) continue;
+      return await uploadToR2(`ai/hq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`, buf, 'image/jpeg');
+    } catch { /* 다음 계정 */ }
+  }
+  return generateAiImage(prompt);
+}
+
 export async function generateAiImage(subject: string): Promise<string | null> {
   let accounts: Array<{ token: string; account: string }> = [];
   try { const arr = JSON.parse(await getSetting('CLOUDFLARE_AI_ACCOUNTS') || '[]'); if (Array.isArray(arr)) accounts = arr; } catch { /* ignore */ }
