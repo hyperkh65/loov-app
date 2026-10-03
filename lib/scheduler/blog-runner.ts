@@ -308,7 +308,7 @@ export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string
   let title: string, content: string, keywords: string[], imageUrl: string | null;
   try {
     const targetUrl = config.wp_site_id ? (await getWpCredentials(config.wp_site_id).catch(() => null))?.url || '' : config.wp_url || '';
-    const result = await generateBlogContent(keyword, config.ai_model, manual?.rawOutput, undefined, { noInlineImages: targetUrl.includes('2days.kr') });
+    const result = await generateBlogContent(keyword, config.ai_model, manual?.rawOutput, undefined, { noInlineImages: !manual && targetUrl.includes('2days.kr') });
     title = result.title; content = result.content; keywords = result.keywords; imageUrl = result.imageUrl;
     if (!title || !content) throw new Error('AI 출력 파싱 오류 (title/content 없음)');
   } catch (e) {

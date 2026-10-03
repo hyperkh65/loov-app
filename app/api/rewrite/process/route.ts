@@ -15,7 +15,7 @@ import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
 import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
-import { rehostImages, pickPlainBackground, searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
+import { rehostImages, searchNaver, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
 import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
@@ -204,8 +204,6 @@ export async function POST(req: NextRequest) {
     let content = rawContent;
     // 본문 사진: 원문 본문 안의 실제 사진만 내려받아 재호스팅(없으면 안 넣음). 검색/스톡 이미지는 쓰지 않음(사용자 확정 2026-10-03).
     // infolife는 원문 사진을 쓰지 않는 소스라 본문 사진도 없음.
-    const { thumbUrl: bgImageUrl } = await searchInlineImages(title, 0, { aiThumb: true, hq: article.source_id === INFOLIFE_SOURCE_ID, noInline: true })
-      .catch(() => ({ thumbUrl: undefined as string | undefined }));
     const bodyScrape = article.source_id !== INFOLIFE_SOURCE_ID && article.source_url
       ? await scrapeArticleFull(article.source_url).catch(() => null) : null;
     const inlineImages = bodyScrape?.bodyImages.length ? await rehostImages(bodyScrape.bodyImages) : [];
@@ -234,7 +232,8 @@ export async function POST(req: NextRequest) {
       // 실사용 중 확인됨(2026-10-01, 사용자 확정: "이 사진을 배경으로 대표이미지
       // 만들기를 해야지").
       // infolife: 원문 이미지 대신 제목으로 설계한 AI 배경(실패 시 민무늬 배경)
-      const preferredBg = plainBgOnly ? (bgImageUrl || await pickPlainBackground()) : (sourceImage || bgImageUrl);
+      // 자동 발행 대표이미지: AI·Pixabay 금지(사용자 확정 2026-10-03) — 원문 실제 사진이 있으면 배경으로, 없으면 제목 카드(그라디언트)
+      const preferredBg = sourceImage || undefined;
       try {
         representativeImageUrl = await generateAndUploadThumbnail(title, plainBgOnly ? (title.split(/[,，·|:]/)[0].trim().split(' ').slice(0, 3).join(' ')) : article.title, 'blue', preferredBg);
       } catch {

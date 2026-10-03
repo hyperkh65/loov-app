@@ -32,11 +32,10 @@ export async function publishTrendArticle(article: TrendArticle, keyword: string
   assertPublishableHtml(title, content);
   // 대표이미지: 글을 쓴 로컬 AI가 묘사한 장면(thumb_prompt)으로 생성 — 서버가 키워드로 추측하면 엉뚱해짐
   const sourceImgs = await rehostImages((article.source_images || []).slice(0, 4));
-  const aiBg = article.thumb_image_url || (article.thumb_prompt ? await generateHqImage(article.thumb_prompt) : null);
   const bodyImgs = sourceImgs;
   content = insertImagesIntoContent(content, bodyImgs, keyword);
   if (article.outlets?.length) content += `\n<p style="margin-top:24px;padding:12px 14px;background:#f6f7f9;border-radius:8px;font-size:14px;color:#555;">이 글은 ${article.outlets.slice(0, 5).join('·')} 보도를 교차 확인해 공통된 사실을 중심으로 정리했습니다.</p>`;
-  const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', aiBg || bodyImgs[0], 'TREND').catch(() => null);
+  const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bodyImgs[0], 'TREND').catch(() => null);
   const { data: site } = await createAdminClient().from('wordpress_sites').select('site_url, wp_username, app_password').eq('site_url', SITE).single();
   if (!site) throw new Error('2days.kr 연결 정보 없음');
   const wp = await publishToWordPress(site.site_url, site.wp_username, site.app_password, title, content, imageUrl, 'publish', { bypassSlot: true, categories: [TREND_CATEGORY_2DAYS] });

@@ -605,7 +605,7 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3', ra
   const bodyLen = rawContent.replace(/<[^>]*>/g, '').length;
   if (bodyLen < 1000) throw new Error(`발행 차단: 본문이 너무 짧음/잘림(${bodyLen}자)`);
 
-  const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3, { aiThumb: true, thumbTitle: title, noInline: opts.noInlineImages });
+  const { displayUrls: foundImages, thumbUrl: bgImageUrl } = await searchInlineImages(keyword, 3, { aiThumb: !opts.noInlineImages, thumbTitle: title, noInline: opts.noInlineImages });
   const inlineImages = foundImages;
   let content = insertImagesIntoContent(rawContent, inlineImages, keyword);
   content = injectTitleIntoH3(content, title);
