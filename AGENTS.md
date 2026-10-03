@@ -1,7 +1,7 @@
-# 2days.kr 트렌드 글 발행 — Codex / Claude 공용 지침
+# 트렌드 글 발행(aboda.kr) — Codex / Claude 공용 지침
 
 "2days 글 써줘", "트렌드 글 발행", "투데이즈 블로그에 올려" 요청 또는 trend-runner가 실행했을 때 아래대로만 한다.
-**글은 반드시 너(로컬 AI)가 직접 조사하고 쓴다. 서버는 이미지·발행·SNS만 한다.** 결과는 항상 2days.kr 발행.
+**글은 반드시 너(로컬 AI)가 직접 조사하고 쓴다. 서버는 이미지·발행·SNS만 한다.** 결과는 항상 aboda.kr 발행(2026-10-04 사용자 확정: 2days.kr엔 one.yoosol만 남김).
 환경변수 `TREND_POST_KEY`가 없으면 `set -a; . ./.env.local; set +a` 로 불러온다(값을 출력·커밋 금지).
 
 ## 1. 키워드 (지정 키워드가 있으면 그것을 쓴다)
@@ -11,7 +11,7 @@
 - 네이버 실시간: https://api.signal.bz/news/realtime
 - 구글 뉴스: https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko
 - 빙 뉴스: https://www.bing.com/news/search?q=속보&format=rss&setmkt=ko-KR
-- **중복 금지**: https://2days.kr/wp-json/wp/v2/posts?per_page=30&_fields=title 의 최근 제목과 같은 사건·주제면 다른 후보
+- **중복 금지**: https://aboda.kr/wp-json/wp/v2/posts?per_page=30&_fields=title 의 최근 제목과 같은 사건·주제면 다른 후보
 - 제외: 사고 희생자 개인 신상, 선정적 루머
 
 ## 2. 자료 조사·교차검증

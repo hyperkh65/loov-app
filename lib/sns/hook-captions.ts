@@ -16,7 +16,8 @@ export async function buildHookCaptions(title: string, summary: string): Promise
 - THREADS: 아래 [스레드 훅 작성법]을 따른다. URL 없이 (댓글로 추가)
 - TWITTER: 아래 작성법의 첫 줄+둘째 덩어리만(3~4줄, 줄바꿈 유지) + 해시태그 2개. 240자 이내. URL 없이
 - FACEBOOK: 아래 작성법 형식 그대로(줄바꿈·짧은 줄·반말). 이모지 1~2개. URL 없이
-- INSTAGRAM: THREADS와 똑같은 형식·길이·말투(4~7줄 짧은 줄, 핵심은 숨기기, 존댓말 금지). 맨 끝 빈 줄 뒤 해시태그 6개만 추가. URL 없이
+- INSTAGRAM: THREADS와 같은 형식·길이·말투(4~7줄 짧은 줄, 핵심은 숨기기, 존댓말 금지). 맨 끝 빈 줄 뒤 해시태그 6개만 추가. URL 없이
+- 채널끼리 같은 문장·같은 첫 줄 재사용 금지(메타가 계정 간 동일 문구를 스팸으로 봄). 채널마다 다른 각도로 시작: THREADS=의외의 사실/질문, INSTAGRAM=독자 상황 공감, FACEBOOK=숫자·핵심 한 줄, TWITTER=속보형 한 줄
 - CAFE: THREADS와 같은 형식(한 줄 한 문장, 짧은 줄, 빈 줄로 2~3덩어리, 4~6줄). 핵심 조건·방법은 숨기고 마지막 줄은 "전체 내용은 아래 링크에" 같은 짧은 한 줄. 해요체 허용, 이모지 0~1개. URL 없이 (내가 따로 붙임)
 
 ${THREADS_HOOK_GUIDE}

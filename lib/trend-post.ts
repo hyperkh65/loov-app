@@ -6,10 +6,11 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { rehostImages, insertImagesIntoContent, generateHqImage } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { sanitizeInvisible, assertPublishableHtml, tightTitle } from '@/lib/html-gate';
-import { publishToWordPress, crossPostBlogToSns, TREND_CATEGORY_2DAYS } from '@/lib/scheduler/blog-runner';
+import { publishToWordPress, crossPostBlogToSns } from '@/lib/scheduler/blog-runner';
 import { alertOwner } from '@/lib/owner-alert';
 
-const SITE = 'https://2days.kr';
+const SITE = 'https://aboda.kr'; // 2026-10-04 사용자 확정: 2days.kr엔 one.yoosol만 남기고 나머지는 aboda.kr로
+const TREND_CATEGORY_ABODA = 3252; // aboda.kr 'Aboda'
 
 // ponytail: 프로세스 메모리 대기열 — 컨테이너 재시작 시 대기 작업 유실(그땐 텔레그램으로 다시 /글)
 type Job = { id: string; keyword?: string; at: number };
@@ -38,8 +39,8 @@ export async function publishTrendArticle(article: TrendArticle, keyword: string
   if (article.outlets?.length) content += `\n<p style="margin-top:24px;padding:12px 14px;background:#f6f7f9;border-radius:8px;font-size:14px;color:#555;">이 글은 ${article.outlets.slice(0, 5).join('·')} 보도를 교차 확인해 공통된 사실을 중심으로 정리했습니다.</p>`;
   const imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', aiBg || bodyImgs[0], 'TREND').catch(() => null);
   const { data: site } = await createAdminClient().from('wordpress_sites').select('site_url, wp_username, app_password').eq('site_url', SITE).single();
-  if (!site) throw new Error('2days.kr 연결 정보 없음');
-  const wp = await publishToWordPress(site.site_url, site.wp_username, site.app_password, title, content, imageUrl, 'publish', { bypassSlot: true, categories: [TREND_CATEGORY_2DAYS] });
+  if (!site) throw new Error('aboda.kr 연결 정보 없음');
+  const wp = await publishToWordPress(site.site_url, site.wp_username, site.app_password, title, content, imageUrl, 'publish', { bypassSlot: true, categories: [TREND_CATEGORY_ABODA] });
   if (!wp.link) throw new Error('워드프레스 발행 실패');
   crossPostBlogToSns(process.env.OWNER_USER_ID!, SITE, title, wp.link, wp.featuredImageUrl || imageUrl, content).catch(() => {});
   alertOwner(`trend:${wp.link}`, `🔥 트렌드 글 발행(Claude 작성)\n키워드: ${keyword}\n교차확인: ${(article.outlets || []).join(', ') || '-'}\n${decodeURI(wp.link)}`).catch(() => {});
