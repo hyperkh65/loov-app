@@ -202,7 +202,7 @@ export async function POST(req: NextRequest) {
     // (lib/blog-content-generator.ts generateBlogContent)와 동일하게 제목으로
     // 실제 이미지를 검색해 섹션마다 넣는 방식으로 통일.
     let content = rawContent;
-    const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(title, 6, { aiThumb: true })
+    const { displayUrls: inlineImages, thumbUrl: bgImageUrl } = await searchInlineImages(title, 6, { aiThumb: true, hq: article.source_id === INFOLIFE_SOURCE_ID })
       .catch(() => ({ displayUrls: [] as string[], thumbUrl: undefined as string | undefined }));
     if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
 
@@ -228,9 +228,10 @@ export async function POST(req: NextRequest) {
       // 인물 사진이 있는 소스인데 무관한 검색 이미지가 배경으로 깔리는 문제가
       // 실사용 중 확인됨(2026-10-01, 사용자 확정: "이 사진을 배경으로 대표이미지
       // 만들기를 해야지").
-      const preferredBg = plainBgOnly ? await pickPlainBackground() : (sourceImage || bgImageUrl);
+      // infolife: 원문 이미지 대신 제목으로 설계한 AI 배경(실패 시 민무늬 배경)
+      const preferredBg = plainBgOnly ? (bgImageUrl || await pickPlainBackground()) : (sourceImage || bgImageUrl);
       try {
-        representativeImageUrl = await generateAndUploadThumbnail(title, plainBgOnly ? title.split(' ').slice(0, 2).join(' ') : article.title, 'blue', preferredBg);
+        representativeImageUrl = await generateAndUploadThumbnail(title, plainBgOnly ? (title.split(/[,，·|:]/)[0].trim().split(' ').slice(0, 3).join(' ')) : article.title, 'blue', preferredBg);
       } catch {
         // bgImageUrl(스크랩된 배경 이미지)이 죽은 링크라 썸네일 생성 자체가
         // 실패하는 경우가 실사용 중 확인됨(2026-10-01) — 대표이미지가 아예
