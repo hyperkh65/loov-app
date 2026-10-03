@@ -91,7 +91,7 @@ async function designImageScene(title: string): Promise<string> {
   return toEnglishImageQuery(title);
 }
 
-async function generateAiImage(subject: string): Promise<string | null> {
+export async function generateAiImage(subject: string): Promise<string | null> {
   let accounts: Array<{ token: string; account: string }> = [];
   try { const arr = JSON.parse(await getSetting('CLOUDFLARE_AI_ACCOUNTS') || '[]'); if (Array.isArray(arr)) accounts = arr; } catch { /* ignore */ }
   for (const a of accounts) {

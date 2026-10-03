@@ -1,25 +1,37 @@
 /**
- * POST /api/trend-post — 트렌드 키워드로 2days.kr 글 자동 발행(Codex/Claude/외부 공용 진입점)
- * Auth: x-trend-key 헤더 = app_settings.TREND_POST_KEY
- * Body: { keyword?, wait?, article?: { title, html, outlets? } }
- *  - article 없음: 서버 AI가 트렌드 선정·교차검증·작성(로컬 꺼져도 동작). wait=false(기본)면 즉시 응답, 결과는 텔레그램
- *  - article 있음: 로컬 Claude/Codex가 쓴 완성 글 → 서버는 이미지·발행·SNS만(응답에 URL)
+ * /api/trend-post — 2days.kr 트렌드 글(로컬 Claude가 작성). Auth: x-trend-key = app_settings.TREND_POST_KEY
+ *  POST { article: {title, html, outlets?, thumb_prompt?}, keyword } → 이미지 붙여 즉시 발행, 응답에 url
+ *  POST { keyword? }                → 작성 대기열에 추가(PC의 trend-runner가 Claude로 처리)
+ *  POST { notify: "..." }           → 텔레그램 알림(로컬 러너 실패 보고용)
+ *  GET                              → 대기열에서 작업 1건 꺼내기(로컬 러너 전용)
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
 import { getSetting } from '@/lib/get-setting';
-import { runTrendPost } from '@/lib/trend-post';
+import { enqueueTrendJob, takeTrendJob, publishTrendArticle, type TrendArticle } from '@/lib/trend-post';
+import { alertOwner } from '@/lib/owner-alert';
 
-export const maxDuration = 600;
+export const maxDuration = 300;
 
-export async function POST(req: NextRequest) {
+async function authed(req: NextRequest) {
   const key = await getSetting('TREND_POST_KEY');
   const got = req.headers.get('x-trend-key') || '';
-  if (!key || got.length !== key.length || !timingSafeEqual(Buffer.from(got), Buffer.from(key))) {
-    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  return !!key && got.length === key.length && timingSafeEqual(Buffer.from(got), Buffer.from(key));
+}
+
+export async function GET(req: NextRequest) {
+  if (!await authed(req)) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  return NextResponse.json({ ok: true, job: takeTrendJob() });
+}
+
+export async function POST(req: NextRequest) {
+  if (!await authed(req)) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  const { keyword, article, notify } = await req.json().catch(() => ({})) as { keyword?: string; article?: TrendArticle; notify?: string };
+  if (notify) { await alertOwner(`runner:${Date.now()}`, String(notify).slice(0, 1000)); return NextResponse.json({ ok: true }); }
+  if (article) {
+    try { return NextResponse.json(await publishTrendArticle(article, keyword || article.title)); }
+    catch (e) { return NextResponse.json({ ok: false, error: (e as Error).message?.slice(0, 300) }, { status: 500 }); }
   }
-  const { keyword, wait, article } = await req.json().catch(() => ({})) as { keyword?: string; wait?: boolean; article?: { title: string; html: string; outlets?: string[] } };
-  if (wait || article) return NextResponse.json(await runTrendPost({ keyword, article }));
-  runTrendPost({ keyword }).catch(() => {});
-  return NextResponse.json({ ok: true, started: true, keyword: keyword || '(자동 선정)', note: '3~6분 뒤 텔레그램으로 결과 링크 전송' });
+  const job = enqueueTrendJob(keyword);
+  return NextResponse.json({ ok: true, queued: job });
 }

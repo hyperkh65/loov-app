@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getSetting } from '@/lib/get-setting';
-import { runTrendPost } from '@/lib/trend-post';
+import { enqueueTrendJob } from '@/lib/trend-post';
 
 async function reply(chatId: string, text: string) {
   const token = await getSetting('TELEGRAM_BOT_TOKEN');
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
   const keyword = (named?.[1] || slash?.[2] || '').trim() || undefined;
-  await reply(chatId, `🔎 ${keyword ? `“${keyword}”` : '실시간 트렌드(구글·X·네이버·빙)'} 분석 후 2days.kr 글 작성 시작\n3~6분 뒤 링크 보내드릴게요.`);
-  runTrendPost({ keyword }).catch(() => {});
+  enqueueTrendJob(keyword);
+  await reply(chatId, `📝 접수: ${keyword ? `“${keyword}”` : '실시간 트렌드'} → PC의 Claude가 조사·작성 후 2days.kr 발행\n(1분 안에 시작, 보통 5~10분. PC가 꺼져 있으면 켜질 때 처리)`);
   return NextResponse.json({ ok: true });
 }
