@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { title, content, meta_description, imageUrl } = await generateBlogContent(picked.keyword, ai_model);
+    const { title, content, meta_description, imageUrl } = await generateBlogContent(picked.keyword, ai_model, undefined, undefined, { noInlineImages: true });
     const result = await publishRewrittenArticle(
       { title, content, representative_image_url: imageUrl, meta: meta_description },
       ownerId, cfg.sourceId,
