@@ -15,7 +15,7 @@ import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
 import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
-import { pickPlainBackground, searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
+import { rehostImages, pickPlainBackground, searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
 import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
@@ -218,6 +218,7 @@ export async function POST(req: NextRequest) {
     const plainBgOnly = article.source_id === INFOLIFE_SOURCE_ID;
     if (plainBgOnly) sourceImage = null;
     let representativeImageUrl = useOwnThumbnail || plainBgOnly ? null : sourceImage;
+    if (representativeImageUrl) representativeImageUrl = (await rehostImages([representativeImageUrl]))[0] || null;
     if (representativeImageUrl) {
       content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
     } else {
@@ -229,7 +230,7 @@ export async function POST(req: NextRequest) {
       // 만들기를 해야지").
       const preferredBg = plainBgOnly ? await pickPlainBackground() : (sourceImage || bgImageUrl);
       try {
-        representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', preferredBg);
+        representativeImageUrl = await generateAndUploadThumbnail(title, plainBgOnly ? title.split(' ').slice(0, 2).join(' ') : article.title, 'blue', preferredBg);
       } catch {
         // bgImageUrl(스크랩된 배경 이미지)이 죽은 링크라 썸네일 생성 자체가
         // 실패하는 경우가 실사용 중 확인됨(2026-10-01) — 대표이미지가 아예
