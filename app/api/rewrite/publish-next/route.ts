@@ -143,7 +143,9 @@ async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, o
     readyArticles.map(async (a) => ({ ...a, group: await accountGroupForSource(a.source_id) }))
   );
   const lastPublishedAtByGroup = new Map<string, string>();
+  const lastPublishedAtBySource = new Map<string, string>();
   for (const p of recentPublished || []) {
+    if (p.source_id && p.published_at && !lastPublishedAtBySource.has(p.source_id)) lastPublishedAtBySource.set(p.source_id, p.published_at);
     const group = await accountGroupForSource(p.source_id);
     if (!lastPublishedAtByGroup.has(group) && p.published_at) lastPublishedAtByGroup.set(group, p.published_at);
   }
@@ -170,6 +172,10 @@ async function pickNextArticle(supabase: ReturnType<typeof createAdminClient>, o
       const pa = PRIORITY_SOURCE_IDS.has(a.source_id || '');
       const pb = PRIORITY_SOURCE_IDS.has(b.source_id || '');
       if (pa !== pb) return pa ? -1 : 1;
+      // 같은 그룹 안에선 소스별 돌아가며(infolife 적체가 yoosol/yoonfree를 밀어내지 않게)
+      const la = lastPublishedAtBySource.get(a.source_id || '') || '0';
+      const lb = lastPublishedAtBySource.get(b.source_id || '') || '0';
+      if (la !== lb) return la < lb ? -1 : 1;
       return a.created_at < b.created_at ? -1 : 1;
     });
   const chosenId = inGroup[0].id;
