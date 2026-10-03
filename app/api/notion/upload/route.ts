@@ -87,7 +87,7 @@ ${truncated}
 
   try {
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
     const result = await model.generateContent(prompt);
     const raw = result.response.text().trim();
     const jsonStr = raw.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();

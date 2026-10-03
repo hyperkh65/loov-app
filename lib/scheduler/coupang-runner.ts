@@ -8,7 +8,7 @@ import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
-import { THREADS_HOOK_GUIDE, scrubThreads } from '@/lib/sns/hook-style';
+import { PRODUCT_HOOK_GUIDE, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, CoupangAutoConfig } from './index';
 
@@ -362,29 +362,22 @@ export async function runCoupangAuto(
     use_case: '이 상품이 필요해지는 구체적 상황(언제·어떤 불편) 묘사에 집중.',
   };
   const TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
-  const prompt = `너는 SNS 마케팅 전문가야. 쿠팡 파트너스 상품을 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
-반드시 한국어로만 작성하고, 중국어·일본어 등 외국 문자 절대 사용 금지.
+  const p = product as typeof product & { discountRate?: number; categoryName?: string; isRocket?: boolean; isFreeShipping?: boolean; keyword?: string };
+  const prompt = `쿠팡 상품을 SNS에 소개하는 카피를 채널별로 써라. 반드시 한국어로만.
 
-상품명: ${product.productName}
-가격: ${product.productPrice.toLocaleString()}원${(product as typeof product & { discountRate?: number }).discountRate ? ` (-${(product as typeof product & { discountRate: number }).discountRate}%)` : ''}
-${priceDropNote ? `${priceDropNote}\n` : ''}
-[클릭을 유도하는 훅 규칙 — 반드시 지킬 것]
-1. 첫 1~2줄엔 상품명·브랜드명을 절대 넣지 마라. 상황이나 변화만 먼저 던지고
-   "이게 뭔지"는 뒤에서 밝혀라. 상품명을 먼저 말하는 순간 광고로 읽혀서
-   궁금증이 사라진다.
-2. 막연한 칭찬("진짜 좋아요", "추천합니다") 대신 구체적이고 의외인 디테일을
-   최소 하나 넣어라(전후 비교, 의외의 결과, 구체적 상황 묘사 등).
-3. 이번 글의 앵글: ${contentAngle}. ${ANGLE_GUIDE[contentAngle]}
-4. 가격/할인 정보 등 "정확히 얼마인지"는 있어도 되지만, 다 풀어서 결론까지
-   내려주지 말고 "댓글에 링크 있어요" 쪽으로 궁금증을 넘겨라.
+[상품 정보 — 이것만 근거로 쓸 것]
+상품명: ${p.productName}
+${p.categoryName ? `카테고리: ${p.categoryName}\n` : ''}${p.keyword ? `사람들이 검색한 키워드: ${p.keyword}\n` : ''}가격: ${p.productPrice.toLocaleString()}원${p.discountRate ? ` (${p.discountRate}% 할인)` : ''}
+${p.isRocket ? '로켓배송\n' : ''}${p.isFreeShipping ? '무료배송\n' : ''}${priceDropNote ? `${priceDropNote}\n` : ''}
+이번 글의 앵글: ${contentAngle}. ${ANGLE_GUIDE[contentAngle]}
 
-[플랫폼별 작성 규칙]
-- THREADS: 아래 [스레드 훅 작성법]을 따른다. URL 없이 (댓글로 추가)
-- TWITTER: 한 방에 꽂히는 문장 + 해시태그 2~3개. 240자 이내. URL 없이 (댓글로 추가)
-- FACEBOOK: 친근하게 250자 내외. 이모지 적당히. URL 없이
-- INSTAGRAM: 감성적, 이모지 풍부, 해시태그 10개. URL 없이
+${PRODUCT_HOOK_GUIDE}
 
-${THREADS_HOOK_GUIDE}
+[채널별]
+- THREADS: 위 규칙 그대로(4~6줄). URL 없이
+- TWITTER: 위 ①②⑤만 3줄 + 해시태그 2개. 240자 이내. URL 없이
+- FACEBOOK: 위 규칙 그대로. URL 없이
+- INSTAGRAM: 위 규칙 그대로 + 맨 끝 빈 줄 뒤 해시태그 8개. URL 없이
 
 반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):
 [[[THREADS]]]
@@ -396,12 +389,12 @@ ${THREADS_HOOK_GUIDE}
 [[[INSTAGRAM]]]
 인스타그램용 텍스트`;
 
-  const aiText = await generateText(prompt, 'groq');
+  const aiText = await generateText(prompt, 'gemini');
 
   const textMap: Record<string, string> = {
     threads:   scrubThreads(getSection(aiText, 'THREADS', TAGS)),
     twitter:   getSection(aiText, 'TWITTER', TAGS),
-    facebook:  getSection(aiText, 'FACEBOOK', TAGS),
+    facebook:  formatHookLines(getSection(aiText, 'FACEBOOK', TAGS)),
     instagram: getSection(aiText, 'INSTAGRAM', TAGS),
   };
 

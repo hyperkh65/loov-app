@@ -88,7 +88,7 @@ async function callAI(prompt: string, provider: string, apiKey: string): Promise
   // Gemini
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const m = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const m = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
   const result = await m.generateContent(prompt);
   return result.response.text();
 }
