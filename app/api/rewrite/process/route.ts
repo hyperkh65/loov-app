@@ -15,10 +15,12 @@ import { createAdminClient, createClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { cleanWatermarks } from '@/lib/ai-watermark';
 import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
-import { searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
+import { pickPlainBackground, searchNaver, searchInlineImages, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
 import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
+
+const INFOLIFE_SOURCE_ID = '627b59b2-01f5-4537-ab7d-4f4a2c401573';
 
 export const maxDuration = 300;
 
@@ -212,7 +214,10 @@ export async function POST(req: NextRequest) {
     if (!sourceImage && article.source_url) {
       sourceImage = (await scrapeArticleFull(article.source_url).catch(() => null))?.images[0] || null;
     }
-    let representativeImageUrl = useOwnThumbnail ? null : sourceImage;
+    // infolife: 원문 블로그 이미지를 대표이미지로 쓰지 않음(사용자 확정 2026-10-03) — 우리 틀 + Pixabay 민무늬 배경 + 제목
+    const plainBgOnly = article.source_id === INFOLIFE_SOURCE_ID;
+    if (plainBgOnly) sourceImage = null;
+    let representativeImageUrl = useOwnThumbnail || plainBgOnly ? null : sourceImage;
     if (representativeImageUrl) {
       content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
     } else {
@@ -222,7 +227,7 @@ export async function POST(req: NextRequest) {
       // 인물 사진이 있는 소스인데 무관한 검색 이미지가 배경으로 깔리는 문제가
       // 실사용 중 확인됨(2026-10-01, 사용자 확정: "이 사진을 배경으로 대표이미지
       // 만들기를 해야지").
-      const preferredBg = sourceImage || bgImageUrl;
+      const preferredBg = plainBgOnly ? await pickPlainBackground() : (sourceImage || bgImageUrl);
       try {
         representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue', preferredBg);
       } catch {

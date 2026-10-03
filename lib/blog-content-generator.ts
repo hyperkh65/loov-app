@@ -92,6 +92,20 @@ async function designImageScene(title: string): Promise<string> {
 }
 
 // 고품질(잡지 화보급) — Cloudflare Leonardo Lucid Origin, 실패 시 flux. 프롬프트는 호출 측(로컬 Claude)이 설계
+// 텍스트 위주 대표이미지용 민무늬 배경(Pixabay) — 원문 이미지를 쓰면 안 되는 소스(infolife 등)
+export async function pickPlainBackground(): Promise<string | undefined> {
+  const key = await getSetting('PIXABAY_API_KEY');
+  if (!key) return undefined;
+  const queries = ['plain pastel background', 'minimal texture background', 'soft gradient background', 'paper texture background', 'abstract minimal background'];
+  try {
+    const q = queries[Math.floor(Math.random() * queries.length)];
+    const res = await fetch(`https://pixabay.com/api/?key=${key}&q=${encodeURIComponent(q)}&image_type=all&per_page=30&safesearch=true&min_width=1000`, { signal: AbortSignal.timeout(10_000) });
+    const hits = ((await res.json()).hits || []) as Array<{ largeImageURL?: string }>;
+    const pick = hits[Math.floor(Math.random() * hits.length)];
+    return pick?.largeImageURL || undefined;
+  } catch { return undefined; }
+}
+
 export async function generateHqImage(prompt: string): Promise<string | null> {
   let accounts: Array<{ token: string; account: string }> = [];
   try { const arr = JSON.parse(await getSetting('CLOUDFLARE_AI_ACCOUNTS') || '[]'); if (Array.isArray(arr)) accounts = arr; } catch { /* ignore */ }
