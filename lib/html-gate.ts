@@ -72,13 +72,20 @@ export function findForeignWords(html: string): string[] {
   return [...new Set((text.match(/\b[a-z]{4,}\b/g) || []).filter(w => !FOREIGN_ALLOW.has(w)))];
 }
 
-// 제목 길이 강제(사용자 확정 2026-10-03: 길면 목록/검색결과에서 잘림) — 32자 넘으면 구분자 기준으로 앞부분만
+// 제목 길이 강제(사용자 확정 2026-10-03: 길면 목록/검색결과에서 잘림) — 32자 넘으면 구분자 기준으로 앞부분만.
+// 잘린 끝이 "및"·"그리고"·쉼표처럼 뜻 없이 매달리지 않게 정리
 export function tightTitle(title: string, max = 32): string {
   const t = title.replace(/\s+/g, ' ').trim();
   if ([...t].length <= max) return t;
   const head = [...t].slice(0, max).join('');
   const cut = Math.max(head.lastIndexOf(','), head.lastIndexOf('·'), head.lastIndexOf('|'), head.lastIndexOf(' - '), head.lastIndexOf('–'), head.lastIndexOf(':'));
-  if (cut >= 12) return head.slice(0, cut).trim();
-  const sp = head.lastIndexOf(' ');
-  return (sp >= 12 ? head.slice(0, sp) : head).trim();
+  let out: string;
+  if (cut >= 12) out = head.slice(0, cut);
+  else {
+    const sp = head.lastIndexOf(' ');
+    out = sp >= 12 ? head.slice(0, sp) : head;
+  }
+  // 잘린 지점이 단어 중간이면(원문의 다음 글자가 공백이 아님) 마지막 단어 버림
+  if (out === head && t[max] && t[max] !== ' ') out = out.replace(/\s+\S*$/, '');
+  return out.replace(/(\s+(및|그리고|또는|와|과|vs))+$/i, '').replace(/[\s,·|:–-]+$/, '').trim();
 }
