@@ -105,7 +105,7 @@ export default function WpStatsPage() {
 
   const monthlyEntries = stats?.monthly ? Object.entries(stats.monthly).sort(([a], [b]) => a.localeCompare(b)).slice(-12) : [];
   const maxMonthly = Math.max(1, ...monthlyEntries.map(([, v]) => v));
-  const maxCat = Math.max(1, stats?.categories[0]?.count || 1);
+  const maxCat = Math.max(1, stats?.categories?.[0]?.count || 1);
   const recent30 = stats?.monthly ? Object.entries(stats.monthly).filter(([m]) => m >= new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 7)).reduce((s, [, v]) => s + v, 0) : 0;
   const totalGscClicks = gscRows?.reduce((s, r) => s + r.clicks, 0) ?? null;
 
@@ -436,7 +436,7 @@ export default function WpStatsPage() {
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
               <p className="text-sm font-semibold text-gray-800 mb-4">📂 카테고리별 글 수</p>
               {loadingStats ? <div className="text-gray-300 text-sm animate-pulse text-center py-8">불러오는 중...</div> :
-               !stats?.categories.length ? <p className="text-gray-300 text-sm text-center py-8">카테고리 없음</p> : (
+               !stats?.categories?.length ? <p className="text-gray-300 text-sm text-center py-8">카테고리 없음</p> : (
                 <div className="space-y-2.5">
                   {stats.categories.map(cat => (
                     <div key={cat.id} className="flex items-center gap-3">
