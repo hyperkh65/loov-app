@@ -52,10 +52,20 @@ async function newsFor(keyword: string): Promise<Array<{ outlet: string; title: 
     return { outlet: outlet.trim(), title: t.replace(/ - [^-]+$/, '').trim(), desc: d.replace(/\s+/g, ' ').trim().slice(0, 200) };
   });
   return [
-    ...naver.slice(0, 8).map((n: { title: string; description: string; link: string }) => ({ outlet: (() => { try { return new URL(n.link).hostname.replace(/^www\./, ''); } catch { return '네이버뉴스'; } })(), title: n.title, desc: n.description })),
+    ...naver.slice(0, 8).map((n: { title: string; description: string; link: string }) => ({ outlet: (() => { try { return outletName(new URL(n.link).hostname.replace(/^www\./, '')); } catch { return '네이버뉴스'; } })(), title: n.title, desc: n.description })),
     ...fromRss(gn, '구글뉴스'), ...fromRss(bing, '빙뉴스'),
   ];
 }
+
+const OUTLET: Record<string, string> = {
+  'yna.co.kr': '연합뉴스', 'kbs.co.kr': 'KBS', 'imbc.com': 'MBC', 'sbs.co.kr': 'SBS', 'jtbc.co.kr': 'JTBC', 'ytn.co.kr': 'YTN',
+  'chosun.com': '조선일보', 'joongang.co.kr': '중앙일보', 'donga.com': '동아일보', 'hani.co.kr': '한겨레', 'khan.co.kr': '경향신문',
+  'mk.co.kr': '매일경제', 'hankyung.com': '한국경제', 'newsis.com': '뉴시스', 'news1.kr': '뉴스1', 'edaily.co.kr': '이데일리',
+  'mt.co.kr': '머니투데이', 'sedaily.com': '서울경제', 'asiae.co.kr': '아시아경제', 'fnnews.com': '파이낸셜뉴스',
+  'heraldcorp.com': '헤럴드경제', 'nocutnews.co.kr': '노컷뉴스', 'segye.com': '세계일보', 'kmib.co.kr': '국민일보',
+  'hankookilbo.com': '한국일보', 'munhwa.com': '문화일보', 'ohmynews.com': '오마이뉴스', 'yonhapnewstv.co.kr': '연합뉴스TV',
+};
+const outletName = (host: string) => Object.entries(OUTLET).find(([d]) => host.endsWith(d))?.[1] || host;
 
 const jsonOf = (s: string) => { try { return JSON.parse(s.match(/\{[\s\S]*\}/)?.[0] || '{}'); } catch { return {}; } };
 
@@ -75,11 +85,20 @@ export async function runTrendPost(opts: { keyword?: string; userId?: string; ar
         `아래는 지금 한국의 인기 검색어·트렌드·헤드라인이다(소스별).\n${JSON.stringify(trends)}\n\n` +
         `최근 우리 블로그에 이미 쓴 글(중복 금지): ${recent.map(p => p.title.rendered).join(' / ').slice(0, 1500)}\n\n` +
         `2개 이상 소스에서 겹치는(같은 사건·인물·주제) 것 중, 사람들이 지금 검색해서 읽고 싶어 할 주제 1개를 골라라. 비극적 사고의 희생자 개인 신상, 선정적 루머는 제외.\n` +
-        `블로그 검색 키워드 형태(2~5단어 한국어 명사구)로. JSON만: {"keyword":"...","reason":"겹친 소스와 이유 한 줄"}`,
+        `블로그 검색 키워드 형태(2~5단어 한국어 명사구)로 좋은 순서대로 후보 3개. JSON만: {"candidates":[{"keyword":"...","reason":"겹친 소스와 이유 한 줄"}]}`,
         'gemini', undefined, undefined, undefined, undefined, { multilingual: true },
       ));
-      keyword = String(pick.keyword || '').trim() || trends.naver_realtime[0] || trends.google_trends[0];
-      reason = pick.reason || '';
+      // 프롬프트만으론 중복을 못 막아(같은 날 같은 주제 재발행 확인) 코드로 한 번 더 거름:
+      // 후보 핵심 단어 2개 이상이 최근 제목 하나에 다 들어 있으면 이미 쓴 주제로 보고 다음 후보
+      const titles = recent.map(p => p.title.rendered);
+      const isDup = (k: string) => {
+        const toks = k.split(/\s+/).filter(t => t.length >= 2);
+        return titles.some(t => toks.filter(tok => t.includes(tok)).length >= Math.min(2, toks.length));
+      };
+      const cands: Array<{ keyword?: string; reason?: string }> = Array.isArray(pick.candidates) ? pick.candidates : [];
+      const chosen = cands.find(c => c.keyword && !isDup(c.keyword));
+      keyword = chosen?.keyword?.trim() || [...trends.naver_realtime, ...trends.google_trends].find(k => !isDup(k));
+      reason = chosen?.reason || '';
     }
     if (!keyword) throw new Error('트렌드 키워드를 찾지 못함');
 
@@ -92,7 +111,9 @@ export async function runTrendPost(opts: { keyword?: string; userId?: string; ar
       'gemini', undefined, undefined, undefined, undefined, { multilingual: true },
     ));
     const facts: string[] = Array.isArray(verified.facts) ? verified.facts.slice(0, 10) : [];
-    const outlets: string[] = Array.isArray(verified.outlets) ? verified.outlets.slice(0, 5) : [];
+    let outlets: string[] = Array.isArray(verified.outlets) ? verified.outlets.slice(0, 5) : [];
+    // 모델이 매체 목록을 비우면 실제 수집한 기사 매체명으로 대체(키워드가 제목에 들어간 기사 기준)
+    if (!outlets.length) outlets = [...new Set(news.filter(n => !/naver/i.test(n.outlet) && keyword!.split(/\s+/).some(t => t.length >= 2 && n.title.includes(t))).map(n => n.outlet))].slice(0, 4);
 
     // 3) 글·이미지
     const gen = await generateBlogContent(keyword, 'qwen3', undefined, facts.length ? facts.map(f => `- ${f}`).join('\n') : undefined);
