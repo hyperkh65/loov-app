@@ -168,8 +168,8 @@ function getSafeCategoryFor(wpUrl: string): number[] | undefined {
 // ponytail: 프로세스 메모리 기준 — 앱 인스턴스가 여러 개로 늘면 DB 예약 테이블로 옮길 것
 const STAGGER_HOSTS = new Set(['2days.kr', 'aboda.kr', 'miracool.co.kr', 'money.2days.kr', 'finance.2days.kr', 'yellow.2days.kr']);
 const GLOBAL_GAP_MS = 10 * 60e3;
-// 크론이 정확히 30분 주기라 30분으로 두면 몇 초 차이로 한 회차씩 밀려 실제 1시간 간격이 됨 → 25분 판정 = 실질 30분 단위
-const SITE_GAP_MS = 25 * 60e3;
+// 크론이 정확히 30분 주기라 30분으로 두면 몇 초 차이로 한 회차씩 밀려 실제 1시간 간격이 됨 + 발행 처리 1~5분 → 20분 판정 = 실질 30분 단위
+const SITE_GAP_MS = 20 * 60e3;
 export const SLOT_WAIT_ERROR = '발행 슬롯 대기';
 let lastGlobalAt = 0;
 const lastSiteAt = new Map<string, number>();
