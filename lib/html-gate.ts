@@ -72,9 +72,9 @@ export function findForeignWords(html: string): string[] {
   return [...new Set((text.match(/\b[a-z]{4,}\b/g) || []).filter(w => !FOREIGN_ALLOW.has(w)))];
 }
 
-// 제목 길이 강제(사용자 확정 2026-10-03: 길면 목록/검색결과에서 잘림) — 32자 넘으면 구분자 기준으로 앞부분만.
+// 제목은 프롬프트로 20~32자 유도, 여기선 비정상적으로 긴 경우(50자 초과)만 안전망으로 정리 — 조금 넘는 건 자르지 않음
 // 잘린 끝이 "및"·"그리고"·쉼표처럼 뜻 없이 매달리지 않게 정리
-export function tightTitle(title: string, max = 32): string {
+export function tightTitle(title: string, max = 50): string {
   const t = title.replace(/\s+/g, ' ').trim();
   if ([...t].length <= max) return t;
   const head = [...t].slice(0, max).join('');
