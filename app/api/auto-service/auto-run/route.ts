@@ -406,7 +406,7 @@ async function generateArticleForUser(
     content = injectTitleIntoH3(content, title);
     let imageUrl: string | null = null;
     try {
-      imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', bgImageUrl);
+      imageUrl = await generateAndUploadThumbnail(title, keyword, 'blue', [bgImageUrl, ...inlineImages].filter((u): u is string => !!u));
     } catch (thumbErr) {
       console.error(`[auto-run] 썸네일 실패 (${keyword}):`, thumbErr instanceof Error ? thumbErr.message : thumbErr);
     }

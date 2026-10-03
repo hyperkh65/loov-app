@@ -108,6 +108,7 @@ export async function GET(req: NextRequest) {
 
   const fontOpts = {
     width: W, height: H,
+    headers: { 'x-bg': validBgUrl ? '1' : '0' },
     fonts: fontData ? [{ name: 'NotoSansKR', data: fontData, weight: 700 as const, style: 'normal' as const }] : [],
   };
 
