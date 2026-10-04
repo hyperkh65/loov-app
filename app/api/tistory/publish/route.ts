@@ -90,12 +90,12 @@ for ch in strip_chars:
     slug = slug.replace(ch, '')
 slug = re.sub(r'\\s+', '-', slug.strip())[:80] or 'post'
 
-# 실제 캡처된 페이로드 그대로: visibility 0=비공개, 1=공개(보호), 3=공개(발행)
+# visibility 0=비공개, 15=보호, 20=공개 (3으로 보내면 비공개로 저장됨 — 2026-10-04 확인)
 payload = {
     'title': title,
     'content': content,
     'slogan': slug,
-    'visibility': 3 if is_publish else 0,
+    'visibility': 20 if is_publish else 0,
     'category': category_id,
     'tag': ','.join(tags[:10]),
     'acceptComment': 1,
@@ -123,13 +123,17 @@ list_url = (blog_url + '/manage/posts.json?category=-3&page=1&searchType=title&v
 list_body, _, list_status = http_get(list_url, blog_url + '/manage/posts/')
 match = None
 try:
-    items = json.loads(list_body).get('data', {}).get('items', [])
+    _j = json.loads(list_body)
+    items = _j.get('items') or _j.get('data', {}).get('items', [])
     match = next((it for it in items if it.get('title') == title), items[0] if items else None)
 except Exception:
     pass
 
 if not match:
     out({'error': '발행 요청은 200으로 응답했으나 글 목록에서 확인 실패', 'errorCode': 'VERIFY_FAIL'})
+
+if is_publish and str(match.get('visibility', '')).upper() == 'PRIVATE':
+    out({'error': '글이 비공개로 저장됨 (visibility 값 확인 필요)', 'errorCode': 'PRIVATE'})
 
 out({'postId': match.get('id'), 'postUrl': match.get('permalink'), 'visibility': match.get('visibility')})
 `;
