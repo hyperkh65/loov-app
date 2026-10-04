@@ -201,14 +201,13 @@ async function searchStockImages(query: string, count: number): Promise<string[]
  * 대표이미지: aiThumb(자동 크론 발행)면 Cloudflare AI 생성, 아니면(수동 자동화블로그 메뉴) 네이버 첫 이미지.
  */
 export async function searchInlineImages(query: string, count = 3, opts: { aiThumb?: boolean; thumbTitle?: string; keepExternal?: boolean; hq?: boolean; noInline?: boolean } = {}): Promise<{ displayUrls: string[]; thumbUrl: string | undefined }> {
-  const [naver, ai] = await Promise.all([
-    opts.noInline ? Promise.resolve([] as string[]) : searchNaverImages(query, count),
-    opts.aiThumb ? designImageScene(opts.thumbTitle || query).then(opts.hq ? generateHqImage : generateAiImage) : Promise.resolve(null),
-  ]);
+  const naver = opts.noInline ? [] : await searchNaverImages(query, count);
   const found = opts.noInline || naver.length >= count ? naver : [...naver, ...(await searchStockImages(query, count - naver.length))];
   // 네이버·티스토리 외 플랫폼은 핫링크 대신 우리 R2로 재호스팅(사용자 확정 2026-10-03)
   const picked = opts.keepExternal ? found : await rehostImages(found);
-  return { displayUrls: picked, thumbUrl: ai || picked[0] };
+  // 사용자 확정(2026-10-04): 찾은 실제 이미지가 있으면 그걸 대표이미지로, 없을 때만 AI 생성 (실명 인물 글에 가짜 인물 사진이 붙던 문제)
+  const ai = !picked[0] && opts.aiThumb ? await designImageScene(opts.thumbTitle || query).then(opts.hq ? generateHqImage : generateAiImage) : null;
+  return { displayUrls: picked, thumbUrl: picked[0] || ai || undefined };
 }
 
 // 외부 이미지를 우리 R2에 재호스팅 — 핫링크는 FIFU/wp.com 프록시·원본 서버 차단으로 깨짐. 실패한 건 버림.
