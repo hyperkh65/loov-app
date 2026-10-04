@@ -125,7 +125,8 @@ match = None
 try:
     _j = json.loads(list_body)
     items = _j.get('items') or _j.get('data', {}).get('items', [])
-    match = next((it for it in items if it.get('title') == title), items[0] if items else None)
+    same = [it for it in items if it.get('title') == title]
+    match = max(same, key=lambda it: int(it.get('id') or 0)) if same else (items[0] if items else None)
 except Exception:
     pass
 
