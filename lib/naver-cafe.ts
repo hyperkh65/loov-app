@@ -105,31 +105,36 @@ export async function publishToNaverCafe(
   };
 
   const menuList = conn.menu_list as { menuId: number; menuName: string }[] | null;
-  // 카페별 글쓰기 한도(약 50건/일)가 따로 세어지므로, 기본 카페가 막혀도 나머지는 올라가도록 전부 병렬·독립 발행
-  const extras = ((conn.extra_cafes as ExtraCafe[] | null) || []).filter(c => c.club_id && c.menu_id);
-  const [primaryRes, ...extraRes] = await Promise.allSettled([
-    postToCafe(admin, {
-      userId, accessToken, clubId: conn.club_id, cafeSlug: conn.cafe_url || conn.club_id,
-      menuId: targetMenuId, menuName: menuList?.find(m => String(m.menuId) === String(targetMenuId))?.menuName,
-      title, textContent: textFor(conn.cafe_url || conn.club_id), openYn,
-    }),
-    ...extras.map(c => postToCafe(admin, {
-      userId, accessToken, clubId: c.club_id, cafeSlug: c.cafe_url || c.club_id,
-      menuId: c.menu_id, menuName: c.menu_name, title, textContent: textFor(c.cafe_url || c.club_id), openYn,
+  // 글 1개 = 카페 1곳. 카페별 글쓰기 한도(약 50건/일)를 나눠 쓰도록 "가장 오래 전에 올린 카페"부터
+  // 순서대로 시도하고, 한도(403/999 등)로 실패하면 다음 카페로 넘어간다.
+  type Target = { clubId: string; cafeSlug: string; menuId: string | number; menuName?: string; label: string };
+  const targets: Target[] = [
+    { clubId: String(conn.club_id), cafeSlug: conn.cafe_url || conn.club_id, menuId: targetMenuId,
+      menuName: menuList?.find(m => String(m.menuId) === String(targetMenuId))?.menuName, label: conn.cafe_name || conn.club_id },
+    ...((conn.extra_cafes as ExtraCafe[] | null) || []).filter(c => c.club_id && c.menu_id).map(c => ({
+      clubId: String(c.club_id), cafeSlug: c.cafe_url || c.club_id, menuId: c.menu_id, menuName: c.menu_name, label: c.cafe_name || c.club_id,
     })),
-  ]);
-  const extraResults = extras.map((c, i) => {
-    const r = extraRes[i];
-    return r.status === 'fulfilled'
-      ? { cafe: c.cafe_name || c.club_id, articleUrl: r.value ?? undefined }
-      : { cafe: c.cafe_name || c.club_id, error: r.reason instanceof Error ? r.reason.message : String(r.reason) };
-  });
-  if (primaryRes.status === 'rejected') {
-    const okExtras = extraResults.filter(e => e.articleUrl).length;
-    const msg = primaryRes.reason instanceof Error ? primaryRes.reason.message : String(primaryRes.reason);
-    throw new Error(okExtras ? `${msg} (추가 카페 ${okExtras}/${extras.length}곳은 발행됨)` : msg);
+  ];
+  const { data: recent } = await admin.from('naver_cafe_history')
+    .select('club_id, created_at').eq('user_id', userId).in('club_id', targets.map(t => t.clubId))
+    .order('created_at', { ascending: false }).limit(400);
+  const lastAt = new Map<string, number>();
+  for (const r of recent || []) if (!lastAt.has(String(r.club_id))) lastAt.set(String(r.club_id), new Date(r.created_at).getTime());
+  targets.sort((x, y) => (lastAt.get(x.clubId) || 0) - (lastAt.get(y.clubId) || 0));
+
+  const errors: string[] = [];
+  for (const t of targets) {
+    try {
+      const url = await postToCafe(admin, {
+        userId, accessToken, clubId: t.clubId, cafeSlug: t.cafeSlug,
+        menuId: t.menuId, menuName: t.menuName, title, textContent: textFor(t.cafeSlug), openYn,
+      });
+      return { articleUrl: url, extra: [] };
+    } catch (e) {
+      errors.push(`${t.label}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
-  return { articleUrl: primaryRes.value, extra: extraResults };
+  throw new Error(`모든 카페 발행 실패 — ${errors.join(' / ')}`.slice(0, 900));
 }
 
 export interface ExtraCafe {
