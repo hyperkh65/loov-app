@@ -928,17 +928,32 @@ export async function POST(req: NextRequest) {
         };
 
         const primaryMenuName = (conn.menu_list as { menuId: number; menuName: string }[] | null)?.find(m => String(m.menuId) === String(naver_cafe_menu_id))?.menuName || null;
-        results.naver_cafe = await postCafe(String(conn.club_id), (conn.cafe_url as string | null) || String(conn.club_id), String(naver_cafe_menu_id), primaryMenuName);
+        const targets = [
+          { clubId: String(conn.club_id), slug: (conn.cafe_url as string | null) || String(conn.club_id), menuId: String(naver_cafe_menu_id), menuName: primaryMenuName },
+          ...((conn.extra_cafes as { club_id: string; cafe_url?: string; menu_id: string; menu_name?: string }[] | null) || [])
+            .filter(c => c.club_id && c.menu_id)
+            .map(c => ({ clubId: String(c.club_id), slug: c.cafe_url || String(c.club_id), menuId: String(c.menu_id), menuName: c.menu_name || null })),
+        ];
 
-        // 같은 네이버 계정의 추가 카페 — 같은 토큰으로 순서대로, 개별 실패는 격리
-        for (const c of (conn.extra_cafes as { club_id: string; cafe_name?: string; cafe_url?: string; menu_id: string; menu_name?: string }[] | null) || []) {
-          if (!c.club_id || !c.menu_id) continue;
+        // 글 1개 = 카페 1곳: 가장 오래 글을 안 올린 카페부터, 실패(일일 한도 등)하면 다음 카페로
+        const { data: hist } = await adminSupa.from('naver_cafe_history')
+          .select('club_id, created_at').eq('user_id', userId)
+          .in('club_id', targets.map(t => t.clubId)).order('created_at', { ascending: false }).limit(400);
+        const lastAt = new Map<string, number>();
+        for (const h of hist || []) if (!lastAt.has(String(h.club_id))) lastAt.set(String(h.club_id), new Date(h.created_at as string).getTime());
+        targets.sort((x, y) => (lastAt.get(x.clubId) || 0) - (lastAt.get(y.clubId) || 0));
+
+        const errs: string[] = [];
+        for (const t of targets) {
           try {
-            results[`naver_cafe_${c.cafe_url || c.club_id}`] = await postCafe(String(c.club_id), c.cafe_url || String(c.club_id), String(c.menu_id), c.menu_name || null);
+            const r = await postCafe(t.clubId, t.slug, t.menuId, t.menuName);
+            if (r.success) { results.naver_cafe = r; break; }
+            errs.push(r.error || t.slug);
           } catch (e) {
-            results[`naver_cafe_${c.cafe_url || c.club_id}`] = { success: false, error: e instanceof Error ? e.message : String(e) };
+            errs.push(`${t.slug}: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
+        if (!results.naver_cafe) results.naver_cafe = { success: false, error: `모든 카페 발행 실패 — ${errs.join(' / ')}`.slice(0, 900) };
       } else {
         results.naver_cafe = { success: false, error: '카페 연결 없음 또는 club_id 미설정' };
       }
