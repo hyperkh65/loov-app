@@ -12,7 +12,7 @@ const NAS_SCRIPT_PATH = '/volume1/homes/urjent/tistory_publish/post.py';
 // 직접 눌러 Network 탭으로 캡처해 확인한 실제 요청 포맷을 그대로 재현한다.
 // 예전 버전은 /manage/drafts(임시저장)만 호출해 실제로는 한 번도 정식 글을 발행한 적이 없었음.
 const TISTORY_POST_SCRIPT = `#!/usr/bin/env python3
-import sys, json, http.cookiejar, secrets, re
+import sys, json, http.cookiejar, secrets, re, time
 import urllib.request, urllib.error, urllib.parse
 
 data = json.loads(sys.stdin.read())
@@ -120,15 +120,20 @@ if status != 200:
 # 생성 응답 포맷이 불안정할 수 있어, 글 목록 조회로 실제 생성된 글의 permalink를 확정한다
 list_url = (blog_url + '/manage/posts.json?category=-3&page=1&searchType=title&visibility=all'
             + '&searchKeyword=' + urllib.parse.quote(title))
-list_body, _, list_status = http_get(list_url, blog_url + '/manage/posts/')
 match = None
-try:
-    _j = json.loads(list_body)
-    items = _j.get('items') or _j.get('data', {}).get('items', [])
-    same = [it for it in items if it.get('title') == title]
-    match = max(same, key=lambda it: int(it.get('id') or 0)) if same else (items[0] if items else None)
-except Exception:
-    pass
+# 목록 반영이 늦을 수 있어, 방금 만든 글(공개 상태)이 보일 때까지 재조회
+for attempt in range(5):
+    list_body, _, list_status = http_get(list_url, blog_url + '/manage/posts/')
+    try:
+        _j = json.loads(list_body)
+        items = _j.get('items') or _j.get('data', {}).get('items', [])
+        same = [it for it in items if it.get('title') == title]
+        match = max(same, key=lambda it: int(it.get('id') or 0)) if same else None
+    except Exception:
+        match = None
+    if match and not (is_publish and str(match.get('visibility', '')).upper() == 'PRIVATE'):
+        break
+    time.sleep(3)
 
 if not match:
     out({'error': '발행 요청은 200으로 응답했으나 글 목록에서 확인 실패', 'errorCode': 'VERIFY_FAIL'})
