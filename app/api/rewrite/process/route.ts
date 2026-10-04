@@ -199,14 +199,13 @@ export async function POST(req: NextRequest) {
     // 이미지 규칙(2days.kr 자동발행, 사용자 확정 2026-10-03):
     //  - 원문에 대표+본문 사진이 다 있으면: 대표는 원문 대표사진을 배경으로 대표이미지툴에 넣어 제작, 본문 사진은 가져와 재호스팅
     //  - 한쪽만 있으면: 있는 사진을 배경으로 대표이미지만 제작(본문 사진 임의 삽입 금지)
-    //  - 둘 다 없거나 infolife: AI 이미지를 배경으로 대표이미지툴로 제작(본문 사진 없음)
-    // yoosol/yoonfree/infowid/2days 같은 자체 블로그 원문의 사진은 자동 삽입된 스톡 사진이라 없는 것으로 취급.
+    //  - 둘 다 없으면: 네이버 이미지 검색 1장 → 없으면 AI 이미지를 배경으로 제작 (infolife는 AI만)
+    // 우선순위(사용자 확정 2026-10-04): 원문 본문 이미지 → 네이버 이미지 검색 → AI 생성. 자체 블로그 원문(yoosol 등)의 사진도 그대로 쓴다.
     const plainBgOnly = article.source_id === INFOLIFE_SOURCE_ID;
-    const ownBlogSource = /yoosol\.com|yoonfree\.com|infowid\.com|2days\.kr/i.test(article.source_url || '');
     const needScrape = !plainBgOnly && !!article.source_url;
     const scraped = needScrape ? await scrapeArticleFull(article.source_url as string).catch(() => null) : null;
     const srcRep: string | null = plainBgOnly || useOwnThumbnail ? null : (article.representative_image_url || scraped?.images[0] || null);
-    const srcBody: string[] = plainBgOnly || ownBlogSource ? [] : (scraped?.bodyImages || []);
+    const srcBody: string[] = plainBgOnly ? [] : (scraped?.bodyImages || []);
 
     let content: string = rawContent;
     let bgUrl: string | undefined;
@@ -218,7 +217,7 @@ export async function POST(req: NextRequest) {
       bgUrl = srcRep || srcBody[0];
     }
     if (!bgUrl) {
-      bgUrl = (await searchInlineImages(title, 0, { aiThumb: true, hq: plainBgOnly, noInline: true }).catch(() => ({ thumbUrl: undefined as string | undefined }))).thumbUrl;
+      bgUrl = (await searchInlineImages(title, 1, { aiThumb: true, hq: plainBgOnly, noInline: plainBgOnly }).catch(() => ({ thumbUrl: undefined as string | undefined }))).thumbUrl;
     }
 
     let representativeImageUrl: string | null = null;
