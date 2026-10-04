@@ -91,6 +91,41 @@ export async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null
 }
 
 
+// 2days.kr은 하루 3건만 올리고 나머지는 티스토리로 보낸다(사용자 확정 2026-10-04 —
+// 저가치 대량발행으로 색인이 풀려서). 소스별 실행 빈도는 건드리지 않는다.
+const TWODAYS_DAILY_CAP = 3;
+
+async function twodaysCapReached(siteUrl: string): Promise<boolean> {
+  if (!/^https:\/\/2days\.kr\/?$/.test(siteUrl)) return false;
+  const kstMidnight = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) + 'T00:00:00';
+  try {
+    const res = await fetch(`${siteUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts?per_page=1&_fields=id&after=${kstMidnight}`, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return true; // 세어 보지 못하면 상한을 지키는 쪽(티스토리)으로
+    return parseInt(res.headers.get('x-wp-total') || '0', 10) >= TWODAYS_DAILY_CAP;
+  } catch {
+    return true;
+  }
+}
+
+async function publishRewrittenToTistory(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  article: { title: string; content: string; representative_image_url: string | null },
+): Promise<string> {
+  const { data: conn } = await admin.from('tistory_connections').select('id').eq('user_id', userId).eq('is_active', true).limit(1).single();
+  if (!conn) throw new Error('티스토리 연결 없음');
+  const body = (article.representative_image_url ? `<p><img src="${article.representative_image_url}" alt="${article.title.replace(/"/g, '')}"></p>\n` : '') + article.content;
+  const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://loov.co.kr'}/api/tistory/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CRON_SECRET}` },
+    body: JSON.stringify({ user_id: userId, blog_id: conn.id, title: article.title, content: body, is_publish: true }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  const d = await res.json().catch(() => ({})) as { url?: string; error?: string };
+  if (!res.ok || !d.url) throw new Error(`티스토리 발행 실패: ${d.error || `HTTP ${res.status}`}`);
+  return d.url;
+}
+
 /** 플랫폼별 후킹 캡션 생성 — URL은 절대 포함하지 않음(댓글/링크는 따로 붙임) */
 export interface PublishResult {
   wordpressUrl: string | null;
@@ -150,6 +185,9 @@ export async function publishRewrittenArticle(
       .single();
     if (site) {
       wpCreds = { url: site.site_url, username: site.wp_username, appPassword: site.app_password };
+      if (await twodaysCapReached(site.site_url)) {
+        wordpressUrl = await publishRewrittenToTistory(admin, userId, article);
+      } else {
       // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
       // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행 자체는 진행
       const crossLink = await findCrossSiteLink(site.site_url, article.title).catch(() => null);
@@ -160,6 +198,7 @@ export async function publishRewrittenArticle(
       );
       wordpressUrl = wpResult.link;
       if (wpResult.featuredImageUrl) snsImageUrl = wpResult.featuredImageUrl;
+      }
     }
   }
 
