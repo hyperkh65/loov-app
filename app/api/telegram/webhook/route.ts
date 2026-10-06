@@ -234,28 +234,29 @@ async function handleKeyword(chatId: number, keyword: string) {
   return sendMessage(chatId, truncate(text));
 }
 
+// 대시보드 "특정 키워드 직접 생성"과 같은 잡(/api/auto-service/jobs) → 초안 관리에 쌓임
 async function handleBlog(chatId: number, topic: string) {
-  // Try auto-service generate first
-  const res = await internalFetch('/api/auto-service/generate', {
-    method: 'POST',
-    body: JSON.stringify({ topic, type: 'blog' }),
-  });
+  const { createAdminClient } = await import('@/lib/supabase-server');
+  const admin = createAdminClient();
+  const { data: st } = await admin.from('bossai_auto_settings').select('ai_model, use_gpt, use_openrouter')
+    .eq('user_id', process.env.OWNER_USER_ID!).maybeSingle();
+  const ai_model = st?.use_gpt ? 'openai' : st?.use_openrouter ? 'openrouter' : st?.ai_model || 'qwen3.5';
 
-  if (res.ok) {
-    const data = await res.json() as { title?: string; content?: string; error?: string };
-    if (data.title && data.content) {
-      const preview = data.content.replace(/<[^>]+>/g, '').slice(0, 500);
-      return sendMessage(chatId, `✍️ <b>${data.title}</b>\n\n${truncate(preview, 500)}\n\n<i>블로그 글 생성 완료</i>`);
+  const res = await internalFetch('/api/auto-service/jobs', { method: 'POST', body: JSON.stringify({ keyword: topic, ai_model }) });
+  const job = await res.json().catch(() => ({})) as { article_id?: string; error?: string };
+  if (!res.ok || !job.article_id) return sendMessage(chatId, `❌ 글 생성 시작 실패: ${job.error ?? res.status}`);
+
+  // 완료되면 알려주기 (최대 15분, 15초 간격) — 웹훅 응답과 별개로 계속 실행
+  void (async () => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 15_000));
+      const { data: a } = await admin.from('bossai_auto_articles').select('status, title, word_count, meta_description').eq('id', job.article_id!).maybeSingle();
+      if (a?.status === 'draft') return void sendMessage(chatId, `✅ 초안 완성 (${a.word_count}자)\n<b>${a.title}</b>\n\n대시보드 → 블로그 자동화 → 초안 관리에서 확인하세요.`).catch(() => {});
+      if (a?.status === 'failed') return void sendMessage(chatId, `❌ 생성 실패: ${topic}\n${a.meta_description ?? ''}`).catch(() => {});
     }
-  }
+  })();
 
-  // Fallback: use global AI
-  try {
-    const text = await callAISimple(`다음 주제로 SEO 최적화된 블로그 글을 작성해주세요. 제목과 본문을 포함하세요.\n주제: ${topic}`);
-    return sendMessage(chatId, `✍️ <b>블로그 글: ${topic}</b>\n\n${truncate(text, 3500)}`);
-  } catch {
-    return sendMessage(chatId, '❌ AI API 키가 설정되지 않았습니다.');
-  }
+  return sendMessage(chatId, `✍️ "<b>${topic}</b>" 글 생성 시작 — 보통 몇 분 걸리고, 끝나면 여기로 알려드려요.`);
 }
 
 async function handleInsights(chatId: number) {
@@ -607,7 +608,7 @@ async function handleMessage(msg: TgMessage) {
         if (!arg) return sendMessage(chatId, '🔍 사용법: <code>/keyword [키워드]</code>\n예: <code>/keyword AI 마케팅</code>');
         return handleKeyword(chatId, arg);
       case 'blog':
-        if (!arg) return sendMessage(chatId, '✍️ 사용법: <code>/blog [주제]</code>\n예: <code>/blog 1인 기업 마케팅 전략</code>');
+        if (!arg) return sendMessage(chatId, '✍️ 사용법: <code>/blog [키워드]</code>\n예: <code>/blog BTS 광화문 공연 후기</code> → 초안 관리에 저장');
         return handleBlog(chatId, arg);
       case 'naver':
         if (!arg) return sendMessage(chatId, '📝 사용법: <code>/naver [주제]</code>\n예: <code>/naver 소상공인 SNS 활용법</code>');

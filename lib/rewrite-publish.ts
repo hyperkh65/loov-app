@@ -91,20 +91,17 @@ export async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null
 }
 
 
-// 2days.kr은 하루 3건만 올리고 나머지는 티스토리로 보낸다(사용자 확정 2026-10-04 —
-// 저가치 대량발행으로 색인이 풀려서). 소스별 실행 빈도는 건드리지 않는다.
+// 2days.kr은 "자동(리라이트 파이프라인) 발행"만 하루 3건 보장하고 초과분은 티스토리로 보낸다
+// (사용자 확정 2026-10-06 — 수동/타 소스 발행 건수와 무관하게 자동 3건 확보).
 const TWODAYS_DAILY_CAP = 3;
 
-async function twodaysCapReached(siteUrl: string): Promise<boolean> {
+async function twodaysCapReached(admin: ReturnType<typeof createAdminClient>, siteUrl: string): Promise<boolean> {
   if (!/^https:\/\/2days\.kr\/?$/.test(siteUrl)) return false;
-  const kstMidnight = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) + 'T00:00:00';
-  try {
-    const res = await fetch(`${siteUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts?per_page=1&_fields=id&after=${kstMidnight}`, { signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) return true; // 세어 보지 못하면 상한을 지키는 쪽(티스토리)으로
-    return parseInt(res.headers.get('x-wp-total') || '0', 10) >= TWODAYS_DAILY_CAP;
-  } catch {
-    return true;
-  }
+  const kstMidnightUtc = new Date(new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) + 'T00:00:00+09:00').toISOString();
+  const { count, error } = await admin.from('bossai_rewrite_articles').select('id', { count: 'exact', head: true })
+    .eq('status', 'published').gte('published_at', kstMidnightUtc).like('published_urls->>wordpress', 'https://2days.kr/%');
+  if (error) return true; // 세어 보지 못하면 상한을 지키는 쪽(티스토리)으로
+  return (count ?? 0) >= TWODAYS_DAILY_CAP;
 }
 
 async function publishRewrittenToTistory(
@@ -185,7 +182,7 @@ export async function publishRewrittenArticle(
       .single();
     if (site) {
       wpCreds = { url: site.site_url, username: site.wp_username, appPassword: site.app_password };
-      if (await twodaysCapReached(site.site_url)) {
+      if (await twodaysCapReached(admin, site.site_url)) {
         wordpressUrl = await publishRewrittenToTistory(admin, userId, article);
       } else {
       // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
