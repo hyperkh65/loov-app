@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { createJobToken } from '@/lib/internal-job-auth';
+import { isInternalRequest } from '@/lib/internal-auth';
 
 export const maxDuration = 10;
 
 // POST: 백그라운드 글 생성 잡 시작
 // 즉시 article_id 반환 → 실제 생성은 서버 백그라운드에서 계속 실행
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // 텔레그램 봇(내부 요청)은 소유자 계정으로 실행
+  const user = isInternalRequest(req) && process.env.OWNER_USER_ID
+    ? { id: process.env.OWNER_USER_ID }
+    : (await (await createClient()).auth.getUser()).data.user;
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
   const body = await req.json() as {
