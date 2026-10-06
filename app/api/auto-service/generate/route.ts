@@ -6,6 +6,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 import { consumeJobToken } from '@/lib/internal-job-auth';
+import { findHtmlProblem } from '@/lib/html-gate';
 
 export const maxDuration = 300;
 
@@ -400,9 +401,26 @@ export async function POST(req: NextRequest) {
     } catch { /* 재시도 실패 → 원본으로 진행 */ }
   }
 
-  const { title, meta_description, content: rawContent, keywords } = parseAiOutput(rawOutput);
+  let parsed = parseAiOutput(rawOutput);
+  // 잘림/너무 짧음 감지(gemma4가 문장 중간에서 끊겨 903자 초안이 나온 사례): 다른 모델로 1회 재시도, 그래도 나쁘면 실패 처리
+  const badOutput = (p: ReturnType<typeof parseAiOutput>) =>
+    !p.title || !p.content || p.content.replace(/<[^>]+>/g, '').length < 3000 || findHtmlProblem(p.title, p.content);
+  if (badOutput(parsed)) {
+    try {
+      const retried = cleanWatermarks(await generateText(
+        prompt, ai_model === 'qwen3.5' ? 'gemma4:31b' : 'qwen3.5', clientOllamaKey, clientOpenrouterKey, clientGlobalAIKey, clientGlobalAIModel, { ollamaOnly: true },
+      ));
+      const p2 = parseAiOutput(retried);
+      if (!badOutput(p2)) parsed = p2;
+    } catch { /* 재시도 실패 → 아래에서 실패 처리 */ }
+  }
+  const { title, meta_description, content: rawContent, keywords } = parsed;
   if (!title || !rawContent) {
     return NextResponse.json({ error: 'AI 출력 파싱 실패. 다시 시도해주세요.' }, { status: 500 });
+  }
+  const problem = badOutput(parsed);
+  if (problem) {
+    return NextResponse.json({ error: `AI 출력이 잘렸거나 너무 짧습니다(${typeof problem === 'string' ? problem : '3000자 미만'}). 다시 시도해주세요.` }, { status: 500 });
   }
 
   // 3. 이미지 검색 + 본문 삽입
