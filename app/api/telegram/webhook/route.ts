@@ -11,6 +11,7 @@ import {
   type TgCallbackQuery,
 } from '@/lib/telegram';
 import { callAISimple } from '@/lib/ai-call';
+import { startDraftJob } from '@/lib/draft-job';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -234,29 +235,9 @@ async function handleKeyword(chatId: number, keyword: string) {
   return sendMessage(chatId, truncate(text));
 }
 
-// 대시보드 "특정 키워드 직접 생성"과 같은 잡(/api/auto-service/jobs) → 초안 관리에 쌓임
 async function handleBlog(chatId: number, topic: string) {
-  const { createAdminClient } = await import('@/lib/supabase-server');
-  const admin = createAdminClient();
-  const { data: st } = await admin.from('bossai_auto_settings').select('ai_model, use_gpt, use_openrouter')
-    .eq('user_id', process.env.OWNER_USER_ID!).maybeSingle();
-  const ai_model = st?.use_gpt ? 'openai' : st?.use_openrouter ? 'openrouter' : st?.ai_model || 'qwen3.5';
-
-  const res = await internalFetch('/api/auto-service/jobs', { method: 'POST', body: JSON.stringify({ keyword: topic, ai_model }) });
-  const job = await res.json().catch(() => ({})) as { article_id?: string; error?: string };
-  if (!res.ok || !job.article_id) return sendMessage(chatId, `❌ 글 생성 시작 실패: ${job.error ?? res.status}`);
-
-  // 완료되면 알려주기 (최대 15분, 15초 간격) — 웹훅 응답과 별개로 계속 실행
-  void (async () => {
-    for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 15_000));
-      const { data: a } = await admin.from('bossai_auto_articles').select('status, title, word_count, meta_description').eq('id', job.article_id!).maybeSingle();
-      if (a?.status === 'draft') return void sendMessage(chatId, `✅ 초안 완성 (${a.word_count}자)\n<b>${a.title}</b>\n\n대시보드 → 블로그 자동화 → 초안 관리에서 확인하세요.`).catch(() => {});
-      if (a?.status === 'failed') return void sendMessage(chatId, `❌ 생성 실패: ${topic}\n${a.meta_description ?? ''}`).catch(() => {});
-    }
-  })();
-
-  return sendMessage(chatId, `✍️ "<b>${topic}</b>" 글 생성 시작 — 보통 몇 분 걸리고, 끝나면 여기로 알려드려요.`);
+  const err = await startDraftJob(topic, m => sendMessage(chatId, m));
+  return sendMessage(chatId, err ? `❌ 글 생성 시작 실패: ${err}` : `✍️ "<b>${topic}</b>" 글 생성 시작 — 끝나면 여기로 알려드려요. 초안 관리에 저장됩니다.`);
 }
 
 async function handleInsights(chatId: number) {
