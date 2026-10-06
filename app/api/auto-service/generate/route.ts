@@ -116,10 +116,11 @@ ${ANTI_WATERMARK_PROMPT}
 - 자료에 없는 숫자, 날짜, 인물명, 발언, 전망을 만들지 않습니다
 
 【분량 원칙】
-- 분량은 참고자료에 있는 사실의 양만큼만. 순수 텍스트(HTML 태그 제외) 약 1800~3200자이며, 자료가 적으면 더 짧아도 된다. 글자 수를 채우려고 늘리지 않는다
-- H2 섹션 3~5개(자료가 적으면 줄인다), 각 섹션 단락 1~3개. 단락은 보통 2~4문장
-- 모든 문장은 앞에 없던 새 정보를 담는다. 같은 사실을 표현만 바꿔 다시 쓰거나 "독자들은 ~궁금해하고 있습니다", "~를 상징하는 사건입니다" 같은 군더더기 문장은 금지
-- 도입부(h2 앞) 200자 이상 450자 이하
+- 순수 텍스트(HTML 태그 제외) 4000자 이상 4800자 이하
+- H2 섹션 정확히 5개, 각 섹션 단락 2~3개
+- 각 H2 첫 번째 단락 4~5문장, 두 번째 단락 3~4문장
+- 도입부(h2 앞) 400자 이상 600자 이하
+- 분량은 참고자료의 사실을 구체적 수치·조건·사례·독자 관점의 영향으로 풀어 채운다. 같은 사실을 표현만 바꿔 다시 쓰거나 "독자들은 ~궁금해하고 있습니다", "~를 상징하는 사건입니다" 같은 군더더기 문장은 금지
 
 【금지 요소 - 절대 삽입 금지】
 - 💡 핵심 포인트 박스
@@ -149,33 +150,33 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 ===CONTENT===
 <p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[두괄식 도입: 핵심 결론/사실을 첫 문장에 직접 명시. 3~4문장]</span></p>
 <p data-ke-size="size16">[배경과 맥락. 구체적 날짜, 인물, 수치 포함. 4~5문장]</p>
-<p data-ke-size="size16">[이 글에서 독자가 확인할 내용을 자연스럽게 연결. 3~4문장. 새 정보 없으면 생략]</p>
+<p data-ke-size="size16">[이 글에서 독자가 확인할 내용을 자연스럽게 연결. 3~4문장]</p>
 <h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
 
 <h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[핵심 사실을 첫 문장에. 참고자료 내용 직접 반영. 4~5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[배경, 원인, 변화 과정. 앞 단락 반복 금지. 3~4문장. 새 정보 없으면 생략]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[배경, 원인, 변화 과정. 앞 단락 반복 금지. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점의 영향, 주의 사항. 3~4문장. 자료 부족 시 생략]</p>
 
 <h2 id="section2" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. [참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[앞 섹션과 겹치지 않는 새로운 사실. 4~5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[세부 흐름, 비교 요소, 조건. 3~4문장. 새 정보 없으면 생략]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[세부 흐름, 비교 요소, 조건. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자가 실제로 궁금해할 영향, 주의 사항. 3~4문장. 자료 부족 시 생략]</p>
 
 <h2 id="section3" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. [참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[주제에 맞는 핵심 사실. 4~5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[관련 배경과 변화 과정. 3~4문장. 새 정보 없으면 생략]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[관련 배경과 변화 과정. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자의 실생활 영향, 실제 활용 관점. 3~4문장. 자료 부족 시 생략]</p>
 
 <h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자가 실제로 알아야 할 내용. 4~5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[앞 섹션과 중복되지 않는 세부 조건, 주의 사항. 3~4문장. 새 정보 없으면 생략]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[앞 섹션과 중복되지 않는 세부 조건, 주의 사항. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자가 확인하거나 실천할 수 있는 내용. 3~4문장. 자료 부족 시 생략]</p>
 
 <h2 id="section5" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. [참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[현재 확인된 상황, 향후 일정, 독자가 기억할 사항. 4~5문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[공식 전망이나 향후 계획이 있으면 반영. 없으면 현재 확인 가능한 사항. 3~4문장. 새 정보 없으면 생략]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[본문 전체를 자연스럽게 마무리. 새로운 사실 추가 금지. 3~4문장. 새 정보 없으면 생략]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[공식 전망이나 향후 계획이 있으면 반영. 없으면 현재 확인 가능한 사항. 3~4문장]</p>
+<p style="margin-bottom:15px;" data-ke-size="size16">[본문 전체를 자연스럽게 마무리. 새로운 사실 추가 금지. 3~4문장]</p>
 
 <h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
 <div style="margin:22px 0 0;">
