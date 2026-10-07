@@ -8,7 +8,6 @@
  * 또는 대시보드에서 수동 실행 (로그인 세션 사용)
  */
 
-import { runThreadsReplyAuto } from '@/lib/scheduler/threads-reply-runner';
 import { SNS_HOOK_GUIDE } from '@/lib/sns/hook-style';
 import { alertOwner, isAuthError } from '@/lib/owner-alert';
 import { NextRequest, NextResponse, after } from 'next/server';
@@ -1130,12 +1129,6 @@ async function executeSchedule(schedule: Schedule) {
         const r = await runMusinsaCuratorAuto(schedule);
         result = r as unknown as Record<string, unknown>;
         summary = `${r.posted}건 발행 — ${r.results.join(' / ')}`.slice(0, 500);
-        break;
-      }
-      case 'threads_reply_auto': {
-        const r = await runThreadsReplyAuto(schedule.user_id);
-        result = r as unknown as Record<string, unknown>;
-        summary = `${r.replied}건 답글 — ${r.results.join(' / ')}`.slice(0, 500);
         break;
       }
     }
