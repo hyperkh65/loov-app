@@ -46,7 +46,7 @@ ${SNS_HOOK_GUIDE}
 - 한국어로만 작성, 중국어·일본어 절대 금지
 - 설명 없이 캡션만 출력`;
 
-  const aiText = await generateText(prompt, 'gemini');
+  const aiText = await generateText(prompt, 'groq', undefined, undefined, undefined, undefined, { ollamaOnly: true }); // Groq → Gemini만(유료 폴백 없음)
 
   // 주제 인덱스 업데이트
   if (config.topic_mode === 'rotate') {

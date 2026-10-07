@@ -443,7 +443,7 @@ export async function generateText(
 
   // preferModel이 Ollama 모델인지 판단
   const NON_OLLAMA = ['gemini', 'claude', 'openai', 'gpt', 'openrouter', 'groq'];
-  const isOllamaPreferred = options?.ollamaOnly || !NON_OLLAMA.some(p => preferModel.toLowerCase().startsWith(p));
+  const isOllamaPreferred = (options?.ollamaOnly && preferModel !== 'groq') || !NON_OLLAMA.some(p => preferModel.toLowerCase().startsWith(p));
 
   // Ollama 키 수집
   const ollamaKeys: string[] = [];
@@ -642,7 +642,7 @@ export async function generateText(
   // 먼저 두드리며 시간을 낭비하지 않도록 Groq부터 시도한다. 단 Groq가 실패(429/키 문제)하면
   // 예전처럼 나머지 provider로 이어서 폴백(전용 모드일 땐 그대로 발행 실패로 끝나 성공률이 떨어졌음).
   let groqTried = false;
-  if (preferModel === 'groq' && !options?.ollamaOnly) {
+  if (preferModel === 'groq') {
     groqTried = true;
     const r = clean(await tryGroq());
     if (r) return r;
