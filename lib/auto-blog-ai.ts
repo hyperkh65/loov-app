@@ -193,7 +193,8 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
     // 조합 하나가 80s를 다 잡아먹으면 전체 100s 예산 안에서 남은 키를 거의
     // 못 시도해보고 폴백으로 넘어가버리는 게 실사용 중 확인됨(429/402 같은 실제
     // 거부 응답은 항상 즉시 옴 — 정상 생성도 대부분 30s 안에 끝나는 걸 확인)
-    signal: AbortSignal.timeout(30_000),
+    // nemotron-3-super로 블로그 본문(2500자+) 생성은 실측 19~76초 — 30초는 정상 응답 중인 키까지 끊어버려서 90초로 복구(2026-10-07)
+    signal: AbortSignal.timeout(90_000),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -491,7 +492,7 @@ export async function generateText(
     // 개별 호출은 80s 타임아웃이 있지만 모델을 6개까지 순차 시도하면 480s까지
     // 걸릴 수 있어 maxDuration(300s)을 넘긴다 — 전체 예산을 100s로 캡핑해서
     // 그 안에서만 시도하고 나머지는 다른 provider(Gemini 등) 폴백으로 넘긴다.
-    const deadline = Date.now() + 100_000;
+    const deadline = Date.now() + 200_000;
     const firstErrors: string[] = [];
     for (const key of ollamaKeys) {
       if (Date.now() > deadline) break;

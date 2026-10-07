@@ -440,14 +440,14 @@ ${PRODUCT_HOOK_GUIDE}
             platform as Platform,
             conn.access_token,
             conn.platform_user_id,
-            text,
+            platform === 'facebook' ? `${text}\n\n${comment}` : text, // 페이스북은 댓글 권한이 없어 링크를 본문에
             product.productImage ? [product.productImage] : undefined,
           );
           if (platform === 'threads' || platform === 'instagram') {
             logSnsPost(admin, platform, conn.platform_user_id).catch(() => {});
           }
           // 제휴링크를 댓글로
-          try {
+          if (platform !== 'facebook') try {
             await postCommentOnOwnPost(platform as Platform, conn.access_token, conn.platform_user_id, postResult.id, comment);
           } catch { /* 댓글 실패 시 무시 */ }
           results.push(`${label}: 발행 완료`);

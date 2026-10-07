@@ -381,9 +381,10 @@ export async function publishRewrittenArticle(
     }
     const caption = (captions[platform] || fallbackCaption).slice(0, 500);
     try {
-      const posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, caption, platformImages);
       const comment = commentFor(`${platform}_${conn.platform_username || ''}`);
-      if (comment) {
+      const isFb = platform === 'facebook'; // 페이스북은 댓글 권한이 없어 링크를 본문에
+      const posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, isFb && comment ? `${caption}\n\n${comment}` : caption, platformImages);
+      if (comment && !isFb) {
         // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
         // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
         // (app/api/auto-service/publish/route.ts의 수동 발행 경로엔 이미 폴링+재시도가
