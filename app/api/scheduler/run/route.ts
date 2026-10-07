@@ -1140,6 +1140,11 @@ async function executeSchedule(schedule: Schedule) {
       }
     }
 
+    // 예외 없이 결과 문구로만 실패를 알리는 러너(유튜브 연결 끊김 등)도 알림
+    if (/실패 —|연결 없음|재연결 필요/.test(summary)) {
+      alertOwner(`sched:${schedule.id}:sum`, `⚠️ [${schedule.name}] 일부 실패\n${summary.slice(0, 400)}`);
+    }
+
     const nextRunAt = computeNextRunAt(intervalHoursOf(schedule), schedule.run_at_hour, now);
 
     await supabase.from('bossai_schedules').update({
@@ -1161,7 +1166,10 @@ async function executeSchedule(schedule: Schedule) {
   } catch (err: unknown) {
     const errorMsg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
 
-    if (isAuthError(errorMsg)) alertOwner(`sched:${schedule.id}`, `⚠️ [${schedule.name}] 인증 문제로 실패\n${errorMsg.slice(0, 300)}\n→ LOOV에서 해당 계정 재연결/쿠키 갱신 필요`);
+    // 슬롯 대기·스킵은 정상 동작이라 제외, 나머지 연결/인증/AI 생성 실패는 텔레그램으로 알림(같은 사유 6시간 1회)
+    if (!errorMsg.includes(SLOT_WAIT_ERROR) && !errorMsg.startsWith('[스킵]') && (isAuthError(errorMsg) || /연결(이|되지| 없음)|api ?key|생성 실패|invalid argument/i.test(errorMsg))) {
+      alertOwner(`sched:${schedule.id}:${errorMsg.slice(0, 30)}`, `⚠️ [${schedule.name}] 실패\n${errorMsg.slice(0, 300)}\n→ 계정 연결/쿠키/API 키 확인 필요`);
+    }
 
     // 발행 슬롯 대기(분산 발행)는 실패가 아니라 순서 대기 — 1주기를 통째로 날리지 않게 10분 뒤 재시도
     const nextRunAt = errorMsg.includes(SLOT_WAIT_ERROR)
