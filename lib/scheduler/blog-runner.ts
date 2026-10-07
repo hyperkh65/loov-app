@@ -105,10 +105,17 @@ async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
 
 async function publishToBlogger(accessToken: string, blogId: string, title: string, content: string, labels: string[]): Promise<string> {
   title = tightTitle(title);
+  // Blogger는 라벨 합계가 200자를 넘으면 "invalid argument"로 거부(실측) — 190자 안에서만 사용
+  const safeLabels: string[] = [];
+  let labelLen = 0;
+  for (const l of labels.map(x => x.replace(/[<>",]/g, '').trim()).filter(Boolean)) {
+    if (labelLen + l.length > 190) break;
+    safeLabels.push(l); labelLen += l.length;
+  }
   const res = await fetch(`https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, content, labels, kind: 'blogger#post' }),
+    body: JSON.stringify({ title, content, labels: safeLabels, kind: 'blogger#post' }),
   });
   if (!res.ok) {
     const err = await res.json();
