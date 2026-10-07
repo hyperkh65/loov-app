@@ -24,7 +24,7 @@ import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
 import { searchNaver, searchInlineImages } from '@/lib/blog-content-generator';
 import { sanitizeForNaver } from '@/lib/naver-blog';
 
-async function dispatchNaverPublishJob(jobId: string): Promise<void> {
+export async function dispatchNaverPublishJob(jobId: string): Promise<void> {
   const pat = process.env.GITHUB_PAT;
   const repo = process.env.GITHUB_REPO || 'hyperkh65/loov-app';
   if (!pat) throw new Error('GITHUB_PAT 미설정 — Playwright 발행 큐 트리거 불가');
@@ -80,7 +80,7 @@ async function pickTopic(): Promise<{ title: string; link: string; source: strin
 }
 
 /** 소제목(h2)마다 이미지를 순서대로 배치 — 원문 사진은 저작권 문제로 안 쓰고 AI 생성/스톡 사진만 사용 */
-function insertImages(html: string, images: string[]): string {
+export function insertImages(html: string, images: string[]): string {
   if (!images.length) return html;
   let i = 0;
   return html.replace(/(<h2[^>]*>[\s\S]*?<\/h2>)/gi, (match) => {

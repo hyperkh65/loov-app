@@ -581,8 +581,13 @@ async function main() {
 
   await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, { status: 'processing' });
 
-  const conns = await sbGet('naver_connections', `user_id=eq.${job.user_id}&select=*`);
-  const conn = conns[0];
+  let conn;
+  if (job.notion_page_id === '__auto_econ__') { // 경제 블로그: 별도 계정 쿠키(app_settings)
+    const st = (await sbGet('app_settings', 'id=eq.1&select=settings'))[0]?.settings || {};
+    conn = { blog_id: st.NAVER_ECON_BLOG_ID, nid_aut: st.NAVER_ECON_NID_AUT, nid_ses: st.NAVER_ECON_NID_SES };
+  } else {
+    conn = (await sbGet('naver_connections', `user_id=eq.${job.user_id}&select=*`))[0];
+  }
   if (!conn?.nid_aut || !conn?.nid_ses) {
     await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, {
       status: 'failed', error_message: '네이버 쿠키 없음', completed_at: new Date().toISOString(),
