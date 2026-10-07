@@ -248,7 +248,9 @@ HTML 본문 전체`;
   const results: string[] = [];
   const snsPlatforms = (config.sns_platforms || []).filter(p => ['threads', 'twitter', 'facebook', 'instagram'].includes(p));
   const topHotel = top5[0];
-  if (snsPlatforms.length && topHotel) {
+  if (snsPlatforms.length && topHotel && !publishedUrl) {
+    results.push('SNS 스킵: 블로그 글이 이번 회차에 발행되지 않아 링크 연결할 곳 없음');
+  } else if (snsPlatforms.length && topHotel) {
     const TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
     const snsPrompt = `너는 SNS 마케팅 전문가야. 아고다 제휴 호텔 추천을 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
 반드시 한국어로만 작성하고, 중국어·일본어 등 외국 문자 절대 사용 금지.
@@ -285,7 +287,7 @@ ${THREADS_HOOK_GUIDE}
       };
       // 링크는 아고다 직링크가 아니라 블로그 글 주소로 — 후기·가격비교·다른 호텔 정보까지
       // 다 보여준 뒤 그 안의 예약 버튼으로 넘어가게 유도.
-      const linkUrl = publishedUrl || topHotel.landingURL;
+      const linkUrl = publishedUrl;
       const comment = `🔗 자세히 보기: ${linkUrl}\n\n${DISCLOSURE}`;
       const connections = await getSnsConnections(schedule.user_id);
 
