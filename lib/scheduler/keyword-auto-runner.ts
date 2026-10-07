@@ -10,6 +10,7 @@ import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
+import { alertOwner } from '@/lib/owner-alert';
 
 const THEME_COLORS = ['blue', 'dark', 'green', 'red', 'orange', 'violet', 'teal', 'golden'] as const;
 
@@ -170,6 +171,7 @@ export async function runKeywordAuto(
       const d = await res.json().catch(() => ({})) as { url?: string; error?: string };
       if (res.ok && d.url) tUrl = d.url; else err = d.error || `HTTP ${res.status}`;
     }
+    if (err) await alertOwner('tistory', `⚠️ 티스토리 발행 실패 [${category}] "${keyword}"\n${err.slice(0, 300)}\n→ 쿠키 만료면 PC 크롬 확장(loov-cookie-sync) 동작/티스토리 재로그인 확인`);
     await admin.from('bossai_keyword_auto_posts').insert({ user_id: userId, source_id: sourceId, category, keyword, title: article.title, post_url: tUrl });
     return { summary: `[${category}] "${keyword}" → 티스토리 ${tUrl || `실패: ${err}`}`, keyword, postUrl: tUrl || undefined };
   }
