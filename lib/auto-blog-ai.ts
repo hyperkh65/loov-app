@@ -536,7 +536,7 @@ export async function generateText(
           // 나는 경우(429/402처럼 즉시 오는 거부와 다름)가 실사용 중 확인됨 — 이런
           // 키는 다른 모델로 재시도해봤자 또 타임아웃 날 뿐이니 그 키는 바로 포기하고
           // 다음 키로 넘어가서 9개 키를 예산 안에서 최대한 많이 시도
-          if ((e as Error).name === 'TimeoutError') break;
+          if ((e as Error).name === 'TimeoutError') { exhaustedOllamaKeys.set(key, Date.now() + 5 * 60_000); break; }
           if (/Ollama 429[\s\S]*usage limit/.test(String(e))) { exhaustedOllamaKeys.set(key, Date.now() + 3600_000); break; }
           continue;
         }
