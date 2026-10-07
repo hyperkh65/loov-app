@@ -27,6 +27,7 @@ import { runAgodaAuto } from '@/lib/scheduler/agoda-runner';
 import { runShortsAuto } from '@/lib/scheduler/shorts-runner';
 import { runInstagramAuto } from '@/lib/scheduler/instagram-runner';
 import { runNaverTechAuto } from '@/lib/scheduler/naver-tech-runner';
+import { runNaverEconAuto } from '@/lib/scheduler/naver-econ-runner';
 import { runKeywordAuto } from '@/lib/scheduler/keyword-auto-runner';
 import { runTossAuto } from '@/lib/scheduler/toss-runner';
 import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
@@ -1090,6 +1091,12 @@ async function executeSchedule(schedule: Schedule) {
       }
       case 'naver_tech_auto': {
         const r = await runNaverTechAuto(schedule.user_id);
+        result = r as unknown as Record<string, unknown>;
+        summary = r.summary;
+        break;
+      }
+      case 'naver_econ_auto': {
+        const r = await runNaverEconAuto(schedule.user_id);
         result = r as unknown as Record<string, unknown>;
         summary = r.summary;
         break;
