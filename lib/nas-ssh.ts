@@ -14,7 +14,7 @@ export interface SSHResult {
  * 멈춰있는 게 확인됨. 기본값은 짧은 명령 기준, 오래 걸리는 작업(렌더링 등)은
  * 호출부에서 넉넉하게 지정.
  */
-export function nasExec(command: string, timeoutMs = 120_000): Promise<SSHResult> {
+function nasExecOnce(command: string, timeoutMs = 120_000): Promise<SSHResult> {
   return new Promise((resolve, reject) => {
     const conn = new Client();
     let stdout = '';
@@ -28,7 +28,9 @@ export function nasExec(command: string, timeoutMs = 120_000): Promise<SSHResult
       reject(new Error(`NAS SSH 명령 타임아웃(${timeoutMs}ms): ${command.slice(0, 100)}`));
     }, timeoutMs);
 
+    let ready = false;
     conn.on('ready', () => {
+      ready = true;
       conn.exec(command, (err: any, stream: any) => {
         if (err) {
           if (settled) return;
@@ -55,7 +57,7 @@ export function nasExec(command: string, timeoutMs = 120_000): Promise<SSHResult
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(e);
+      reject(Object.assign(e, { preReady: !ready }));
     });
 
     conn.connect({
@@ -73,7 +75,7 @@ export function nasExec(command: string, timeoutMs = 120_000): Promise<SSHResult
  * stdin으로 데이터를 pipe하며 명령 실행
  * 대용량 파일 저장 시 사용 (shell 인수 길이 제한 우회)
  */
-export function nasExecWithStdin(command: string, stdinData: Buffer | string, timeoutMs = 120_000): Promise<SSHResult> {
+function nasExecWithStdinOnce(command: string, stdinData: Buffer | string, timeoutMs = 120_000): Promise<SSHResult> {
   return new Promise((resolve, reject) => {
     const conn = new Client();
     let stdout = '';
@@ -87,7 +89,9 @@ export function nasExecWithStdin(command: string, stdinData: Buffer | string, ti
       reject(new Error(`NAS SSH stdin 명령 타임아웃(${timeoutMs}ms): ${command.slice(0, 100)}`));
     }, timeoutMs);
 
+    let ready = false;
     conn.on('ready', () => {
+      ready = true;
       conn.exec(command, (err: any, stream: any) => {
         if (err) {
           if (settled) return;
@@ -118,7 +122,7 @@ export function nasExecWithStdin(command: string, stdinData: Buffer | string, ti
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(e);
+      reject(Object.assign(e, { preReady: !ready }));
     });
 
     conn.connect({
@@ -131,6 +135,16 @@ export function nasExecWithStdin(command: string, stdinData: Buffer | string, ti
     });
   });
 }
+
+// 인증 완료 전 끊김은 명령이 실행되지 않은 상태라 재시도해도 중복 실행 없음(발행 등). 인증 후 오류는 재시도하지 않음.
+async function retryPreReady<T>(fn: () => Promise<T>): Promise<T> {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) { if (!(e as { preReady?: boolean })?.preReady || i >= 2) throw e; await new Promise(r => setTimeout(r, 2000 * (i + 1))); }
+  }
+}
+export const nasExec = (command: string, timeoutMs?: number) => retryPreReady(() => nasExecOnce(command, timeoutMs));
+export const nasExecWithStdin = (command: string, stdinData: Buffer | string, timeoutMs?: number) => retryPreReady(() => nasExecWithStdinOnce(command, stdinData, timeoutMs));
 
 /** docker exec n8n-DB psql -U n8n -c '...' 쿼리 실행 (싱글쿼트 사용) */
 export async function n8nQuery(sql: string): Promise<SSHResult> {

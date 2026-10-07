@@ -107,12 +107,12 @@ async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
 
 async function publishToBlogger(accessToken: string, blogId: string, title: string, content: string, labels: string[]): Promise<string> {
   title = tightTitle(title);
-  // Blogger는 라벨 합계가 200자를 넘으면 "invalid argument"로 거부(실측) — 190자 안에서만 사용
+  // Blogger는 라벨 합계가 200바이트(UTF-8, 한글 3바이트)를 넘으면 "invalid argument"로 거부(실측) — 190바이트 안에서만 사용
   const safeLabels: string[] = [];
   let labelLen = 0;
   for (const l of [...new Set(labels.map(x => x.replace(/[<>",]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))]) {
-    if (safeLabels.length >= 8 || labelLen + l.length > 190) break;
-    safeLabels.push(l); labelLen += l.length;
+    if (safeLabels.length >= 8 || labelLen + Buffer.byteLength(l) > 190) break;
+    safeLabels.push(l); labelLen += Buffer.byteLength(l);
   }
   const res = await fetch(`https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts`, {
     method: 'POST',
