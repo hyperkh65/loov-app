@@ -34,7 +34,7 @@ ${THREADS_HOOK_GUIDE}
 [[[CAFE]]]
 카페용 텍스트`;
 
-  const raw = await generateText(prompt, 'gemini');
+  const raw = await generateText(prompt, 'groq', undefined, undefined, undefined, undefined, { ollamaOnly: true }); // Groq → Gemini만
   return {
     threads: scrubThreads(getSection(raw, 'THREADS', CAPTION_TAGS_WITH_CAFE)),
     twitter: getSection(raw, 'TWITTER', CAPTION_TAGS_WITH_CAFE),

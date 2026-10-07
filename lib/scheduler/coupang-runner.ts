@@ -389,7 +389,7 @@ ${PRODUCT_HOOK_GUIDE}
 [[[INSTAGRAM]]]
 인스타그램용 텍스트`;
 
-  const aiText = await generateText(prompt, 'gemini');
+  const aiText = await generateText(prompt, 'groq', undefined, undefined, undefined, undefined, { ollamaOnly: true }); // Groq → Gemini만
 
   const textMap: Record<string, string> = {
     threads:   scrubThreads(getSection(aiText, 'THREADS', TAGS)),
