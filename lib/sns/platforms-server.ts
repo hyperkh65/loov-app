@@ -404,8 +404,31 @@ export async function postToThreadsWithMedia(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ creation_id: containerId, access_token: accessToken }),
   });
-  if (!publishRes.ok) throw new Error(`Threads 게시 실패: ${await publishRes.text()}`);
+  if (!publishRes.ok) {
+    const errText = await publishRes.text();
+    const recovered = await recoverThreadsPostId(userId, accessToken, containerBody.text as string);
+    if (recovered) return { id: recovered };
+    throw new Error(`Threads 게시 실패: ${errText}`);
+  }
   return { id: (await publishRes.json()).id };
+}
+
+// threads_publish가 2207051 같은 오류를 돌려주고도 글은 실제로 올라가는 경우가 있어(@seanonthemail 확인),
+// 에러 후 최근 글 목록에서 같은 본문의 글을 찾아 ID를 복구 — 못 찾으면 진짜 실패로 취급
+async function recoverThreadsPostId(userId: string, accessToken: string, text: string): Promise<string | null> {
+  const head = (text || '').trim().slice(0, 40);
+  if (!head) return null;
+  for (let i = 0; i < 3; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const res = await fetch(`https://graph.threads.net/v1.0/${userId}/threads?fields=id,text,timestamp&limit=5&access_token=${accessToken}`, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const { data } = await res.json() as { data?: Array<{ id: string; text?: string; timestamp?: string }> };
+      const hit = (data || []).find(p => (p.text || '').trim().slice(0, 40) === head && Date.now() - new Date(p.timestamp || 0).getTime() < 10 * 60_000);
+      if (hit) return hit.id;
+    } catch { /* 다음 시도 */ }
+  }
+  return null;
 }
 
 export async function postToFacebookWithMedia(
@@ -739,7 +762,14 @@ export async function postCommentOnOwnPost(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ creation_id: containerId, access_token: accessToken }),
       });
-      if (!pr.ok) throw new Error(`Threads 댓글 게시 실패: ${await pr.text()}`);
+      if (!pr.ok) {
+        const errText = await pr.text();
+        // 게시 오류를 돌려주고도 댓글이 실제로 달린 경우 — 컨테이너 상태가 PUBLISHED면 성공 처리
+        await new Promise(r => setTimeout(r, 5000));
+        const st = await fetch(`https://graph.threads.net/v1.0/${containerId}?fields=status&access_token=${accessToken}`).then(r => r.json()).catch(() => ({})) as { status?: string };
+        if (st.status === 'PUBLISHED') return { id: containerId };
+        throw new Error(`Threads 댓글 게시 실패: ${errText}`);
+      }
       return { id: (await pr.json()).id };
     }
 
