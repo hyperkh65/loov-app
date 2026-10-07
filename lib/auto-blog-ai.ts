@@ -669,9 +669,10 @@ export async function generateText(
   if (options?.ollamaOnly) {
     // 블로그 본문은 Ollama → Gemini 순으로만 폴백(NVIDIA는 한국어 품질·영어 혼입 문제로 제외)(Claude/OpenAI 등 유료 경로는 쓰지 않음)
     // Cloudflare 무료 할당량은 대표이미지 생성(flux) 전용 — 본문 생성엔 안 씀(사용자 확정 2026-10-03)
+    if (!groqTried) { const q = clean(await tryGroq()); if (q) return q; } // Ollama 고갈 시 Groq → Gemini 순
     const g = clean(await tryGemini());
     if (g) return g;
-    throw new Error(`Ollama/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
+    throw new Error(`Ollama/Groq/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
   }
 
   // ── 나머지 provider 순서대로 fallback ─────────────────────
