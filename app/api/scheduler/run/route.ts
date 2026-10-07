@@ -974,10 +974,12 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
   for (const { platform, conn, label } of targets) {
     if (!conn) continue;
     try {
-      const pub = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, mainCaption, images);
+      // 페이스북은 앱에 댓글 권한(pages_manage_engagement)이 없어 링크를 본문에 직접 넣음(사용자 확정 2026-10-07)
+      const isFb = platform === 'facebook';
+      const pub = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, isFb ? `${mainCaption.replace('댓글 링크 확인하세요', '아래 링크 확인하세요')}\n\n${linkComment}` : mainCaption, images);
       posted++;
       results.push(`${label} 발행 완료 (${pub.id})`);
-      try {
+      if (!isFb) try {
         await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, pub.id, linkComment);
       } catch (e) {
         results[results.length - 1] += ` / 링크 댓글 실패 — ${(e as Error).message?.slice(0, 80)}`;

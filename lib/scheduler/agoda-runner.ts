@@ -306,10 +306,10 @@ ${THREADS_HOOK_GUIDE}
               platform as Platform,
               conn.access_token,
               conn.platform_user_id,
-              text,
+              platform === 'facebook' ? `${text}\n\n${comment}` : text, // 페이스북은 댓글 권한이 없어 링크를 본문에
               topHotel.imageURL ? [topHotel.imageURL] : undefined,
             );
-            try {
+            if (platform !== 'facebook') try {
               await postCommentOnOwnPost(platform as Platform, conn.access_token, conn.platform_user_id, postResult.id, comment);
             } catch { /* 댓글 실패 시 무시 */ }
             results.push(`${label}: 발행 완료`);

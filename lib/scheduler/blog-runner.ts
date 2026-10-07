@@ -53,15 +53,17 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
 
   await Promise.all(targets.map(async (conn) => {
     try {
-      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, (captions[conn.platform] || title).slice(0, 500), imageUrl ? [imageUrl] : undefined);
       const linkUrl = withUtm(articleUrl, `${conn.platform}_${connections.find(c => c.platform_user_id === conn.platform_user_id)?.platform_username || ''}`);
+      const isFb = conn.platform === 'facebook'; // 페이스북은 댓글 권한이 없어 링크를 본문에
+      const caption = (captions[conn.platform] || title).slice(0, 500);
+      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, isFb ? `${caption}\n\n${linkUrl}` : caption, imageUrl ? [imageUrl] : undefined);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
         logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
       }
       // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
       // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
       // (rewrite-publish.ts와 동일하게 짧은 대기 + 1회 재시도로 보강)
-      try {
+      if (!isFb) try {
         await new Promise(r => setTimeout(r, 4000));
         await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
       } catch {
