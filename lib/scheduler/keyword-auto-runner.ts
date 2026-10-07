@@ -9,7 +9,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 import { publishRewrittenArticle } from '@/lib/rewrite-publish';
-import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
+import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem } from '@/lib/html-gate';
 import { alertOwner } from '@/lib/owner-alert';
 
 const THEME_COLORS = ['blue', 'dark', 'green', 'red', 'orange', 'violet', 'teal', 'golden'] as const;
@@ -138,14 +138,15 @@ export async function runKeywordAuto(
   ];
   if (!sources.length) return { summary: `"${keyword}" 참고자료 없음(네이버/카카오 API 키 확인 필요) — 건너뜀`, keyword };
 
-  const rawText = cleanWatermarks(await generateText(buildTwentiesPrompt(keyword, sources), 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true }));
-  const titleMatch = rawText.match(/###\s*제목\s*\n([^\n]+)/);
-  const metaMatch = rawText.match(/###\s*메타설명\s*\n([^\n]+)/);
-  const contentMatch = rawText.match(/###\s*본문\s*\n([\s\S]+?)(?=###|$)/);
-
-  const title = titleMatch?.[1]?.trim() || keyword;
-  const meta = metaMatch?.[1]?.trim() || '';
-  const content = contentMatch?.[1]?.trim() || rawText;
+  // 로컬 모델이 가끔 프롬프트의 '(단락1…)'·'[뉴스1]' 표기를 그대로 베껴 게이트에 걸림 → 슬롯을 버리지 않고 최대 3회 재생성
+  let title = keyword, meta = '', content = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const rawText = cleanWatermarks(await generateText(buildTwentiesPrompt(keyword, sources), 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true }));
+    title = rawText.match(/###\s*제목\s*\n([^\n]+)/)?.[1]?.trim() || keyword;
+    meta = rawText.match(/###\s*메타설명\s*\n([^\n]+)/)?.[1]?.trim() || '';
+    content = rawText.match(/###\s*본문\s*\n([\s\S]+?)(?=###|$)/)?.[1]?.trim() || rawText;
+    if (!findHtmlProblem(sanitizeInvisible(title), sanitizeInvisible(content))) break;
+  }
   if (!content || content.length < 300) return { summary: `"${keyword}" AI 응답이 비었거나 너무 짧음 — 건너뜀`, keyword };
 
   // 매번 다른 배경/색으로 대표이미지 생성(blue.2days.kr에서 확인된 "매번 같은 사진" 문제 방지)
