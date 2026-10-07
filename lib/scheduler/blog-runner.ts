@@ -108,8 +108,8 @@ async function publishToBlogger(accessToken: string, blogId: string, title: stri
   // Blogger는 라벨 합계가 200자를 넘으면 "invalid argument"로 거부(실측) — 190자 안에서만 사용
   const safeLabels: string[] = [];
   let labelLen = 0;
-  for (const l of labels.map(x => x.replace(/[<>",]/g, '').trim()).filter(Boolean)) {
-    if (labelLen + l.length > 190) break;
+  for (const l of [...new Set(labels.map(x => x.replace(/[<>",]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))]) {
+    if (safeLabels.length >= 8 || labelLen + l.length > 190) break;
     safeLabels.push(l); labelLen += l.length;
   }
   const res = await fetch(`https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts`, {
@@ -119,7 +119,7 @@ async function publishToBlogger(accessToken: string, blogId: string, title: stri
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error?.message || `Blogger API 오류 ${res.status}`);
+    throw new Error(`${err.error?.message || `Blogger API 오류 ${res.status}`} (title=${title.length}자, content=${content.length}자, labels=${JSON.stringify(safeLabels)})`);
   }
   const data = await res.json();
   if (data.url) notifyPublished('블로그스팟', title, data.url);
