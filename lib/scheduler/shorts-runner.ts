@@ -59,7 +59,7 @@ export async function runShortsAuto(schedule: Schedule): Promise<{ topic: string
   ]
 }`;
 
-  const aiText = await generateText(prompt, 'gemini');
+  const aiText = await generateText(prompt, 'groq', undefined, undefined, undefined, undefined, { ollamaOnly: true }); // Groq → Gemini만(유료 폴백 없음)
 
   // JSON 파싱
   let parsed: { title?: string; description?: string; hook?: string; scenes?: unknown[] } = {};
