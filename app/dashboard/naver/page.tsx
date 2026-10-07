@@ -115,6 +115,41 @@ function CookieGuide() {
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 
+function EconBlogCard() {
+  const [st, setSt] = useState<{ connected: boolean; blog_id: string; active: boolean } | null>(null);
+  const [f, setF] = useState({ blog_id: '', nid_aut: '', nid_ses: '' });
+  const [msg, setMsg] = useState('');
+  const load = useCallback(async () => { const r = await fetch('/api/naver/econ-connect'); if (r.ok) setSt(await r.json()); }, []);
+  useEffect(() => { load(); }, [load]);
+  const call = async (method: string, body?: object, ok = '저장되었습니다') => {
+    const r = await fetch('/api/naver/econ-connect', { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    setMsg(r.ok ? ok : d.error || '실패');
+    if (r.ok) { setF({ blog_id: '', nid_aut: '', nid_ses: '' }); load(); }
+  };
+  const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono';
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+      <div>
+        <h3 className="text-sm font-bold text-gray-800">📈 경제 블로그 (두 번째 계정)</h3>
+        <p className="text-[11px] text-gray-500 mt-1">
+          정책브리핑 보도자료 기반 생활경제 글을 3시간마다 자동 발행합니다. 위 계정과 별개의 블로그입니다.
+          {st?.connected && <span className="text-green-600 font-semibold ml-1">✅ {st.blog_id} 등록됨 · 자동발행 {st.active ? 'ON' : 'OFF'}</span>}
+        </p>
+      </div>
+      <input className={inp} placeholder="블로그 ID" value={f.blog_id} onChange={(e) => setF({ ...f, blog_id: e.target.value })} />
+      <input className={inp} placeholder="NID_AUT" value={f.nid_aut} onChange={(e) => setF({ ...f, nid_aut: e.target.value })} />
+      <input className={inp} placeholder="NID_SES" value={f.nid_ses} onChange={(e) => setF({ ...f, nid_ses: e.target.value })} />
+      <div className="flex gap-2">
+        <button onClick={() => call('POST', { ...f, active: true }, '저장 + 자동발행 ON')} disabled={!f.blog_id || !f.nid_aut || !f.nid_ses} className="flex-1 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white py-2.5 rounded-xl font-bold text-sm">💾 저장하고 자동발행 시작</button>
+        {st?.connected && <button onClick={() => call('POST', { active: !st.active }, st.active ? '자동발행 OFF' : '자동발행 ON')} className="px-4 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-semibold">{st.active ? '일시정지' : '재개'}</button>}
+        {st?.connected && <button onClick={() => call('DELETE', undefined, '연결 해제됨')} className="px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold">해제</button>}
+      </div>
+      {msg && <p className="text-xs text-gray-600">{msg}</p>}
+    </div>
+  );
+}
+
 export default function NaverPage() {
   const [tab, setTab] = useState<Tab>('publish');
 
@@ -1114,6 +1149,8 @@ export default function NaverPage() {
                 <li>2단계 인증을 사용하는 경우 쿠키 유효기간이 길어질 수 있습니다</li>
               </ul>
             </div>
+
+            <EconBlogCard />
 
             {/* 이미지 업로드 세션키 */}
             <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
