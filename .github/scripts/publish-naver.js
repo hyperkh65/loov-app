@@ -215,9 +215,9 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     const tmpImgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'naver-img-'));
     let imgCounter = 0;
     const insertImageAtCursor = async (imageUrl) => {
-      const res = await fetch(imageUrl).catch(() => null);
+      const res = await fetch(imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Referer: new URL(imageUrl).origin + '/', Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(20000) }).catch(() => null);
       if (!res || !res.ok) {
-        console.warn(`[Playwright] 이미지 다운로드 실패, 건너뜀: ${imageUrl}`);
+        console.warn(`[Playwright] 이미지 다운로드 실패(${res ? res.status : 'network'}), 건너뜀: ${imageUrl}`);
         return false;
       }
       const buf = Buffer.from(await res.arrayBuffer());
