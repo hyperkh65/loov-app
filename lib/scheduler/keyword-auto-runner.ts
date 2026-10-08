@@ -79,6 +79,25 @@ ${sourcesText}
 (HTML 태그로 작성: h2, h3, p, ul, li, strong 사용. 첫 줄부터 본문 시작)`;
 }
 
+// 로컬 모델이 HTML 지시를 무시하고 마크다운으로 쓰는 경우(### 소제목, **강조**, * 목록) 변환 — 안 하면 티스토리에 기호가 그대로 노출됨
+function markdownToHtml(md: string): string {
+  const inline = (t: string) => t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '');
+  const out: string[] = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of md.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    if (!line) { closeList(); continue; }
+    const h = line.match(/^(#{1,6})\s+(.+)/);
+    const li = line.match(/^[*-]\s+(.+)/);
+    if (h) { closeList(); out.push(`<h${h[1].length > 3 ? 3 : 2}>${inline(h[2])}</h${h[1].length > 3 ? 3 : 2}>`); }
+    else if (li) { if (!inList) { out.push('<ul>'); inList = true; } out.push(`<li>${inline(li[1])}</li>`); }
+    else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  return out.join('\n');
+}
+
 export interface KeywordAutoResult {
   summary: string;
   keyword?: string;
@@ -144,8 +163,9 @@ export async function runKeywordAuto(
     const rawText = cleanWatermarks(await generateText(buildTwentiesPrompt(keyword, sources), 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true }));
     meta = rawText.match(/###\s*메타설명\s*\n([^\n]+)/)?.[1]?.trim() || '';
     title = rawText.match(/###\s*제목\s*\n([^\n]+)/)?.[1]?.trim() || rawText.match(/===TITLE===\s*([^\n=<]+)/)?.[1]?.trim() || keyword;
-    content = rawText.match(/###\s*본문\s*\n([\s\S]+?)(?=###|$)/)?.[1]?.trim() || rawText.match(/===(?:BODY|CONTENT)===\s*([\s\S]+?)(?====[A-Z0-9]+===|$)/)?.[1]?.trim() || rawText.replace(/===TITLE===[^\n<]*/g, '').replace(/===[A-Z0-9]+===/g, '');
+    content = rawText.match(/###\s*본문\s*\n([\s\S]+)$/)?.[1]?.trim() || rawText.match(/===(?:BODY|CONTENT)===\s*([\s\S]+?)(?====[A-Z0-9]+===|$)/)?.[1]?.trim() || rawText.replace(/===TITLE===[^\n<]*/g, '').replace(/===[A-Z0-9]+===/g, '');
     content = content.replace(/\s*\[(?:뉴스|네이버블로그|다음블로그|블로그)\d+\]/g, '').replace(/\((?:단락\d|키워드 포함|메타 설명)[^)]*\)/g, '').replace(/<p>\s*<\/p>\n?/g, '');
+    if (!/<(p|h2|h3|ul)[\s>]/i.test(content)) content = markdownToHtml(content);
     for (const t of ['strong', 'b', 'em', 'i', 'span']) {
       const n = (re: string) => (content.match(new RegExp(re, 'gi')) || []).length;
       if (n(`<${t}[\\s>]`) !== n(`</${t}>`)) content = content.replace(new RegExp(`</?${t}(\\s[^>]*)?>`, 'gi'), '');
