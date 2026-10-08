@@ -142,9 +142,9 @@ export async function runKeywordAuto(
   let title = keyword, meta = '', content = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     const rawText = cleanWatermarks(await generateText(buildTwentiesPrompt(keyword, sources), 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true }));
-    title = rawText.match(/###\s*제목\s*\n([^\n]+)/)?.[1]?.trim() || keyword;
     meta = rawText.match(/###\s*메타설명\s*\n([^\n]+)/)?.[1]?.trim() || '';
-    content = rawText.match(/###\s*본문\s*\n([\s\S]+?)(?=###|$)/)?.[1]?.trim() || rawText;
+    title = rawText.match(/###\s*제목\s*\n([^\n]+)/)?.[1]?.trim() || rawText.match(/===TITLE===\s*([^\n=<]+)/)?.[1]?.trim() || keyword;
+    content = rawText.match(/###\s*본문\s*\n([\s\S]+?)(?=###|$)/)?.[1]?.trim() || rawText.match(/===(?:BODY|CONTENT)===\s*([\s\S]+?)(?====[A-Z0-9]+===|$)/)?.[1]?.trim() || rawText.replace(/===TITLE===[^\n<]*/g, '').replace(/===[A-Z0-9]+===/g, '');
     content = content.replace(/\s*\[(?:뉴스|네이버블로그|다음블로그|블로그)\d+\]/g, '').replace(/\((?:단락\d|키워드 포함|메타 설명)[^)]*\)/g, '').replace(/<p>\s*<\/p>\n?/g, '');
     for (const t of ['strong', 'b', 'em', 'i', 'span']) {
       const n = (re: string) => (content.match(new RegExp(re, 'gi')) || []).length;
