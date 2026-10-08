@@ -69,7 +69,7 @@ ${source}
 4. 개인별 수급 가능 여부·세액·이자 손익을 확정하지 않는다. 투자·종목 추천 금지. 겁주거나 과장하지 않는다.
 5. 시행 예정과 시행 중을 구분한다. 서로 다른 제도(예: 국민연금/기초연금)는 먼저 구분한다.
 6. 구성: 상황 3~5문장 → 직접 답 2~3문장 → 원인·조건 2~3개 → 예외 → 독자가 오늘 할 행동 → 마무리. 문단은 1~3문장.
-   문체: 친구한테 카톡하듯 가벼운 반말(~했어, ~거든, ~래, ~더라고). 존댓말·보도자료체·'~하겠습니다' 금지. 재밌게 — 공감 가는 상황, 의외의 반전, 가벼운 드립 1~2개. 단 드립 때문에 숫자·조건이 바뀌면 안 되고, 내가 직접 겪은 척하는 표현은 금지.
+   문체: 친구한테 카톡하듯 가벼운 반말(~했어, ~거든, ~래, ~더라고). 존댓말·보도자료체·'~하겠습니다' 금지. 재밌게 — 공감 가는 상황, 의외의 반전, 가벼운 드립 1~2개. 단 드립 때문에 숫자·조건이 바뀌면 안 되고, 내가 직접 겪은 척하는 표현은 금지. 처음부터 끝까지 반말로 통일, 영어·외국어 단어 섞지 말 것, 뜻이 안 통하는 억지 비유 금지, 쉬운 말로.
 7. 분량 공백 포함 900~1,500자. 금액·기간·연도는 아라비아 숫자. HTML은 h2·p·ul·li·table·strong만(script/iframe/외부링크 금지).
 ${fixes.length ? `8. 이전 초안의 문제를 반드시 고친다:\n${fixes.map(f => `- ${f}`).join('\n')}\n` : ''}
 [출력 — STATUS 줄 다음 줄에 제목 주석, 그 다음 HTML만]
@@ -95,6 +95,22 @@ ${article.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 4000)}`;
 
 const ai = (p: string) => generateText(p, 'groq', undefined, undefined, undefined, undefined, { ollamaOnly: true }); // Groq → Gemini
 
+
+function polishPrompt(html: string): string {
+  return `아래 블로그 글 HTML을 교정해라. 고칠 것: 맞춤법·오타, 한국어에 섞인 영어·외국어 단어(한국어로), 존댓말 섞임(전부 가벼운 반말로 통일), 뜻이 안 통하거나 억지스러운 비유·문장(삭제하거나 평이하게), 어색한 조사·어순.
+절대 바꾸지 말 것: 모든 숫자·금액·비율·기간·고유명사, 사실 관계, HTML 구조(태그 종류·순서), 글 길이(±10%). 새 내용 추가 금지.
+교정된 HTML만 출력(설명·코드펜스 금지).
+
+${html}`;
+}
+
+const LATIN = /[A-Za-z]{4,}/;
+async function polish(html: string, srcText: string): Promise<string> {
+  const out = (await ai(polishPrompt(html))).replace(/```html?\n?|\n?```/gi, '').trim();
+  const ok = out.length > html.length * 0.7 && out.length < html.length * 1.3 && /<h2/i.test(out) && !unsupportedNumbers(out, srcText).length;
+  return ok ? out : html;
+}
+
 export async function draftArticle(srcTitle: string, date: string, text: string): Promise<{ title: string; html: string; reason: string }> {
   let title = '', html = '', fixes: string[] = [], reason = '';
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -109,7 +125,11 @@ export async function draftArticle(srcTitle: string, date: string, text: string)
     if (bad.length) { fixes = [`원문에 없는 숫자 삭제 또는 원문 값으로 교체: ${bad.join(', ')}`]; reason = `원문에 없는 숫자: ${bad.join(', ')}`; continue; }
     const raw = await ai(checkerPrompt(html, text, date));
     const v = (() => { try { return JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}'); } catch { return {}; } })() as { result?: string; issues?: string[] };
-    if (v.result === 'pass') return { title, html, reason: '' };
+    if (v.result === 'pass') {
+      html = await polish(html, text);
+      if (LATIN.test(html.replace(/<[^>]+>/g, ''))) html = await polish(html, text);
+      return { title, html, reason: '' };
+    }
     fixes = v.issues || [];
     reason = `검수 ${v.result || '판정불가'}: ${fixes.join(' / ').slice(0, 120)}`;
     if (v.result === 'block' || !v.result) break;
@@ -145,7 +165,6 @@ export async function runNaverEconAuto(userId: string): Promise<NaverEconResult>
 
     const { displayUrls, thumbUrl } = await searchInlineImages(title, 0, { aiThumb: true, noInline: true, keepExternal: true });
     html = insertImages(html, [...new Set([thumbUrl, ...displayUrls].filter((u): u is string => !!u))]);
-    html += `\n<p>※ 이미지는 설명용 연출입니다. 최종 확인은 공식 안내를 따르세요.</p>\n<p>출처: 정책브리핑 보도자료 「${item.title}」(${date})</p>`;
 
     const { data: job, error } = await admin.from('naver_publish_jobs').insert({
       user_id: userId, title, content: sanitizeForNaver(html), tags: [], category_no: 0, is_publish: true,
