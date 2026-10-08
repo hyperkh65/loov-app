@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       if (!error) { invalidateSettingsCache(); updated.push('naver-econ'); }
     }
   }
-  if (!isTech && valid(body.tistory?.tssession)) {
+  if (valid(body.tistory?.tssession)) {
     const { data } = await admin.from('tistory_connections')
       .update({ tssession: body.tistory!.tssession, updated_at: now })
       .eq('user_id', owner).select('id');
