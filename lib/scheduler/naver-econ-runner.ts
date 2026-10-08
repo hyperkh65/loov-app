@@ -140,10 +140,8 @@ export async function draftArticle(srcTitle: string, date: string, text: string)
 export interface NaverEconResult { summary: string; sourceUrl?: string; title?: string }
 
 export async function runNaverEconAuto(userId: string): Promise<NaverEconResult> {
-  const [blogId, nidAut, nidSes] = await Promise.all([
-    getSetting('NAVER_ECON_BLOG_ID'), getSetting('NAVER_ECON_NID_AUT'), getSetting('NAVER_ECON_NID_SES'),
-  ]);
-  if (!blogId || !nidAut || !nidSes) return { summary: '경제 블로그 네이버 쿠키 미설정 — 대기(NAVER_ECON_*)' };
+  const blogId = await getSetting('NAVER_ECON_BLOG_ID');
+  if (!blogId) return { summary: '경제 블로그 ID 미설정 — 대기(NAVER_ECON_BLOG_ID)' };
 
   const admin = createAdminClient();
   const { data: used } = await admin.from('bossai_naver_tech_posts').select('source_url').like('source_name', 'econ%').order('created_at', { ascending: false }).limit(500);
