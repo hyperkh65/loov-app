@@ -91,45 +91,55 @@ function getKenBurnsVf(sceneIdx: number, dur: number): string {
 
 const KO_FONT_DIR = '/volume1/homes/urjent/bin/fonts';
 
-// ── ASS 자막 파일 생성 ────────────────────────────────────────────────────────
-function makeAssSubtitle(subtitle: string, durationSec: number): string {
-  const text = subtitle.replace(/[{}\\]/g, '').trim().slice(0, 30);
-  if (!text) return '';
+// ── ASS 자막 파일 생성 (상단 훅 박스 · 하단 자막 · 진행바 · 마지막 씬 CTA) ───────
+// 쇼츠 UI가 화면 하단 ~25%·상단 ~10%를 가리므로 그 바깥에 배치
+function makeAssSubtitle(
+  subtitle: string, durationSec: number,
+  o: { hook?: string; idx: number; total: number } = { idx: 0, total: 1 },
+): string {
+  const clean = (t: string, n: number) => t.replace(/[{}\\\n]/g, ' ').trim().slice(0, n);
+  const text = clean(subtitle, 30);
+  const hook = clean(o.hook ?? '', 18);
+  const cta = o.idx === o.total - 1;
+  if (!text && !hook && !cta) return '';
   const end = durationSec + 5;
-  const h = Math.floor(end / 3600);
-  const m = Math.floor((end % 3600) / 60);
-  const s = Math.floor(end % 60);
-  const endTime = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.00`;
+  const endTime = `${Math.floor(end / 3600)}:${String(Math.floor((end % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(end % 60)).padStart(2, '0')}.00`;
+  const fill = Math.round(((o.idx + 1) / o.total) * 1080);
+  const ev = (style: string, body: string, extra = '') => `Dialogue: 0,0:00:00.00,${endTime},${style},,0,0,0,,${extra}${body}`;
+  const bar = (color: string, w: number) => `{\\an7\\pos(0,1896)\\p1\\bord0\\shad0\\1c&H${color}&}m 0 0 l ${w} 0 ${w} 16 0 16{\\p0}`;
   return [
-    '[Script Info]',
-    'ScriptType: v4.00+',
-    'PlayResX: 1080',
-    'PlayResY: 1920',
-    'WrapStyle: 2',
-    '',
+    '[Script Info]', 'ScriptType: v4.00+', 'PlayResX: 1080', 'PlayResY: 1920', 'WrapStyle: 2', '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    'Style: Default,NanumGothicBold,72,&H00FFFFFF,&H000000FF,&H00000000,&HCC000000,1,0,0,0,100,100,0,0,1,4,2,2,60,60,80,1',
-    '',
-    '[Events]',
+    'Style: Default,NanumGothicBold,76,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,1,0,0,0,100,100,0,0,1,6,3,2,70,70,430,1',
+    'Style: Hook,NanumGothicBold,54,&H0000E5FF,&H000000FF,&H00241A12,&H00000000,1,0,0,0,100,100,1,0,3,16,0,8,60,60,230,1',
+    'Style: Cta,NanumGothicBold,58,&H00FFFFFF,&H000000FF,&H004A38E8,&H00000000,1,0,0,0,100,100,1,0,3,18,0,2,60,60,250,1',
+    '', '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
-    `Dialogue: 0,0:00:00.00,${endTime},Default,,0,0,0,,${text}`,
-  ].join('\n');
+    hook ? ev('Hook', hook) : '',
+    text ? ev('Default', text) : '',
+    cta ? ev('Cta', '설명란 링크에서 자세히 보기') : '',
+    `Dialogue: 1,0:00:00.00,${endTime},Default,,0,0,0,,${bar('404040', 1080)}`,
+    `Dialogue: 2,0:00:00.00,${endTime},Default,,0,0,0,,${bar('3C3CFF', fill)}`,
+  ].filter(Boolean).join('\n');
 }
 
-// ── YouTube 업로드 ────────────────────────────────────────────────────────────
+// ── YouTube 업로드 (현가젯 채널 고정, 실패 시 사유를 던진다) ───────────────────────
+const YT_CHANNEL = process.env.YT_SHORTS_CHANNEL || '현가젯';
+
 async function ytUpload(
   userId: string,
   videoBuffer: ArrayBuffer,
   title: string,
   description: string,
-  keyword: string,
-): Promise<string | null> {
+  tags: string[],
+): Promise<string> {
   const admin = createAdminClient();
-  const { data: conn } = await admin.from('sns_connections')
-    .select('access_token, refresh_token, extra')
-    .eq('user_id', userId).eq('platform', 'youtube').eq('is_active', true).single();
-  if (!conn) return null;
+  const { data: conns } = await admin.from('sns_connections')
+    .select('id, access_token, refresh_token, extra, platform_username')
+    .eq('user_id', userId).eq('platform', 'youtube').eq('is_active', true);
+  const conn = conns?.find(c => c.platform_username === YT_CHANNEL);
+  if (!conn) throw new Error(`YouTube '${YT_CHANNEL}' 채널 연결 없음 (연결된 채널: ${(conns ?? []).map(c => c.platform_username).join(', ') || '없음'})`);
 
   let accessToken = conn.access_token;
   const expiresAt = conn.extra?.expires_at ? new Date(conn.extra.expires_at) : null;
@@ -145,18 +155,13 @@ async function ytUpload(
       }),
     });
     const td = await tr.json() as { access_token?: string };
-    if (td.access_token) {
-      accessToken = td.access_token;
-      await admin.from('sns_connections').update({
-        access_token: accessToken,
-        extra: { expires_at: new Date(Date.now() + 3600000).toISOString() },
-      }).eq('user_id', userId).eq('platform', 'youtube');
-    }
+    if (!td.access_token) throw new Error('YouTube 토큰 갱신 실패 — 채널 재연결 필요');
+    accessToken = td.access_token;
+    await admin.from('sns_connections').update({
+      access_token: accessToken,
+      extra: { ...(conn.extra ?? {}), expires_at: new Date(Date.now() + 3600000).toISOString() },
+    }).eq('id', conn.id);
   }
-
-  const ytTitle = `${title} #Shorts`.slice(0, 100);
-  const ytDesc = `${description}\n\n#Shorts #쇼츠${keyword ? ` #${keyword}` : ''}`.slice(0, 5000);
-  const tags = ['Shorts', '쇼츠', ...(keyword ? [keyword] : [])].slice(0, 30);
 
   const initRes = await fetch(
     'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
@@ -169,25 +174,20 @@ async function ytUpload(
         'X-Upload-Content-Length': String(videoBuffer.byteLength),
       },
       body: JSON.stringify({
-        snippet: { title: ytTitle, description: ytDesc, tags, categoryId: '22' },
+        snippet: { title, description, tags, categoryId: '22', defaultLanguage: 'ko' },
         status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
       }),
     }
   );
-  if (!initRes.ok) return null;
-
+  if (!initRes.ok) throw new Error(`YouTube 업로드 시작 실패 (${initRes.status}): ${(await initRes.text()).slice(0, 200)}`);
   const uploadUrl = initRes.headers.get('Location');
-  if (!uploadUrl) return null;
+  if (!uploadUrl) throw new Error('YouTube 업로드 URL 없음');
 
-  const upRes = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'video/mp4' },
-    body: videoBuffer,
-  });
-  if (!upRes.ok) return null;
-
+  const upRes = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'video/mp4' }, body: videoBuffer });
+  if (!upRes.ok) throw new Error(`YouTube 업로드 실패 (${upRes.status}): ${(await upRes.text()).slice(0, 200)}`);
   const d = await upRes.json() as { id?: string };
-  return d.id ? `https://www.youtube.com/shorts/${d.id}` : null;
+  if (!d.id) throw new Error('YouTube 응답에 영상 ID 없음');
+  return `https://www.youtube.com/shorts/${d.id}`;
 }
 
 // ── SSE 핸들러 ───────────────────────────────────────────────────────────────
@@ -342,7 +342,7 @@ export async function POST(req: NextRequest) {
         for (let i = 0; i < scenes.length; i++) {
           send({ type: 'progress', msg: `파일 전송 ${i + 1}/${scenes.length}`, pct: 38 + Math.round((i / scenes.length) * 14) });
           await nasExecWithStdin(`cat > ${jobDir}/narration_${i}.txt`, scenes[i].narration);
-          const assContent = makeAssSubtitle(scenes[i].subtitle || '', Math.max(1, scenes[i].duration));
+          const assContent = makeAssSubtitle(scenes[i].subtitle || '', Math.max(1, scenes[i].duration), { hook: genData.hook, idx: i, total: scenes.length });
           if (assContent) await nasExecWithStdin(`cat > ${jobDir}/sub_${i}.ass`, assContent);
         }
 
@@ -385,9 +385,9 @@ export async function POST(req: NextRequest) {
         for (let i = 0; i < scenes.length; i++) {
           const dur = Math.max(1, scenes[i].duration);
           const kbVf = getKenBurnsVf(i, dur);
-          const hasSubFile = !!(makeAssSubtitle(scenes[i].subtitle || '', dur));
+          const hasSubFile = true;
           const assVf = hasSubFile ? `,ass=${jobDir}/sub_${i}.ass:fontsdir=${KO_FONT_DIR}` : '';
-          const vf = `${kbVf}${assVf}`;
+          const vf = `${kbVf},drawbox=x=0:y=0:w=iw:h=ih:color=black@0.22:t=fill${assVf}`;
 
           lines.push(`echo "SCENE_${i}_START" >> "$LOG"`);
           lines.push(
@@ -442,20 +442,37 @@ export async function POST(req: NextRequest) {
         // ── 9. YouTube 업로드 ─────────────────────────────────────────
         await upd('YouTube 업로드 중...', { pct: 90, video_url: videoUrl });
         const videoAB = mp4.buffer.slice(mp4.byteOffset, mp4.byteOffset + mp4.byteLength) as ArrayBuffer;
+        const kw = (body.keyword ?? '').replace(/\s+/g, '');
+        const hashtags = ['#Shorts', '#쇼츠', ...(kw ? [`#${kw}`] : [])].join(' ');
         const ytDescription = [
+          body.blog_url ? `▶ 자세한 내용은 블로그에서 확인하세요\n${body.blog_url}\n` : '',
           genData.description || body.description || body.title,
-          body.blog_url ? `\n원본 블로그: ${body.blog_url}` : '',
-        ].join('');
-        const ytUrl = await ytUpload(userId, videoAB, genData.title || body.title, ytDescription, body.keyword ?? '');
+          body.blog_url ? `\n📌 원문·상세 정보: ${body.blog_url}` : '',
+          `\n${hashtags}`,
+        ].filter(Boolean).join('\n').slice(0, 4900);
+        const ytTitle = `${(genData.title || body.title).replace(/#\S+/g, '').trim().slice(0, 88)} #Shorts`;
+        const ytTags = ['Shorts', '쇼츠', ...(body.keyword ? [body.keyword] : [])].slice(0, 15);
+        let ytUrl: string | null = null;
+        let ytError = '';
+        try { ytUrl = await ytUpload(userId, videoAB, ytTitle, ytDescription, ytTags); }
+        catch (e) { ytError = e instanceof Error ? e.message : String(e); }
 
         // ── 완료 ─────────────────────────────────────────────────────
+        if (ytError) {
+          await admin.from('bossai_shorts_queue').update({
+            status: 'error', progress: `영상 완성, 유튜브 업로드 실패: ${ytError}`, error_message: ytError,
+            video_url: videoUrl, updated_at: new Date().toISOString(),
+          }).eq('id', jobId);
+          send({ type: 'error', job_id: jobId, msg: `영상 완성, 유튜브 업로드 실패: ${ytError}` });
+          return;
+        }
         await admin.from('bossai_shorts_queue').update({
           status: 'done', progress: '완료!', pct: 100,
-          video_url: videoUrl, yt_url: ytUrl ?? null,
+          video_url: videoUrl, yt_url: ytUrl,
           updated_at: new Date().toISOString(),
         }).eq('id', jobId);
 
-        send({ type: 'done', job_id: jobId, video_url: videoUrl, yt_url: ytUrl ?? null, msg: '완료!' });
+        send({ type: 'done', job_id: jobId, video_url: videoUrl, yt_url: ytUrl, msg: '완료!' });
 
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -513,14 +530,16 @@ ${topic}
 • 나레이션: 친구에게 카톡 보내듯 빠른 구어체 (~야, ~거든, ~잖아)
 • 각 씬 duration × 9.5자 이상 필수 (침묵 = 이탈)
 • 훅: 첫 3초에 멈추게 하는 한 방
+• 마지막 씬 나레이션은 반드시 "더 자세한 내용은 설명란 블로그 링크에서 확인하세요"로 끝낼 것
+• 중간에 광고·과장·확인 안 된 사실 금지, 블로그 내용에 있는 사실만
 • 자막: 이모지1개 + 짧고 강렬한 감정 문구 (10자 이내, 이모지는 subtitle 필드 밖에 두지 말 것)
 • image_query: 해당 씬 내용을 가장 잘 표현하는 Pixabay 검색어 (한국어 2~3단어, 예: "아파트 화재", "소방차 진화", "주민 대피"처럼 구체적으로)
 
 JSON (이것만 출력):
 {
   "title": "클릭 안 하면 손해인 제목 (숫자·감정 포함, 40자 이내)",
-  "description": "SEO 설명 2~3줄 + 해시태그 5개",
-  "hook": "썸네일 문구 (15자 이내)",
+  "description": "영상 핵심 요약 2~3줄(검색 키워드 포함, 해시태그 제외)",
+  "hook": "상단 고정 문구 (14자 이내, 이모지 금지)",
   "scenes": [
     ${sceneTemplate}
   ]
