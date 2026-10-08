@@ -145,6 +145,7 @@ export async function runKeywordAuto(
     title = rawText.match(/###\s*제목\s*\n([^\n]+)/)?.[1]?.trim() || keyword;
     meta = rawText.match(/###\s*메타설명\s*\n([^\n]+)/)?.[1]?.trim() || '';
     content = rawText.match(/###\s*본문\s*\n([\s\S]+?)(?=###|$)/)?.[1]?.trim() || rawText;
+    content = content.replace(/\s*\[(?:뉴스|네이버블로그|다음블로그|블로그)\d+\]/g, '').replace(/\((?:단락\d|키워드 포함|메타 설명)[^)]*\)/g, '').replace(/<p>\s*<\/p>\n?/g, '');
     if (!findHtmlProblem(sanitizeInvisible(title), sanitizeInvisible(content))) break;
   }
   if (!content || content.length < 300) return { summary: `"${keyword}" AI 응답이 비었거나 너무 짧음 — 건너뜀`, keyword };
