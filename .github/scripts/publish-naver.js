@@ -582,9 +582,9 @@ async function main() {
   await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, { status: 'processing' });
 
   let conn = (await sbGet('naver_connections', `user_id=eq.${job.user_id}&select=*`))[0];
-  if (conn && job.notion_page_id === '__auto_econ__') { // 경제 블로그: 같은 네이버 계정 쿠키(크롬 동기화), 블로그 ID만 다름
+  if (conn && job.notion_page_id === '__auto_econ__') { // 경제 블로그(2days_kr): 별도 계정 — 쿠키는 크롬 확장(profile 기본)이 app_settings에 동기화
     const st = (await sbGet('app_settings', 'id=eq.1&select=settings'))[0]?.settings || {};
-    conn = { ...conn, blog_id: st.NAVER_ECON_BLOG_ID };
+    conn = { ...conn, blog_id: st.NAVER_ECON_BLOG_ID, nid_aut: st.NAVER_ECON_NID_AUT, nid_ses: st.NAVER_ECON_NID_SES };
   }
   if (!conn?.nid_aut || !conn?.nid_ses) {
     await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, {

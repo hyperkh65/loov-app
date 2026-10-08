@@ -40,7 +40,6 @@ export async function POST(req: NextRequest) {
   const cur = await readSettings();
   if (blog_id) {
     cur.NAVER_ECON_BLOG_ID = blog_id.trim().toLowerCase();
-    delete cur.NAVER_ECON_NID_AUT; delete cur.NAVER_ECON_NID_SES;
     const { error } = await createAdminClient().from('app_settings').update({ settings: cur }).eq('id', 1);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
