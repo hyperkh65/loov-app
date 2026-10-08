@@ -68,14 +68,14 @@ ${source}
 3. 개인 경험·상담·전화·인터뷰를 지어내지 않는다("제가 받아봤다" 금지). 예시는 반드시 "가정" 표시.
 4. 개인별 수급 가능 여부·세액·이자 손익을 확정하지 않는다. 투자·종목 추천 금지. 겁주거나 과장하지 않는다.
 5. 시행 예정과 시행 중을 구분한다. 서로 다른 제도(예: 국민연금/기초연금)는 먼저 구분한다.
-6. 구성: 상황 3~5문장 → 직접 답 2~3문장 → 원인·조건 2~3개 → 예외 → 독자가 오늘 할 행동 → 마무리. 문단은 1~3문장.
+6. 구성: 반드시 <h2> 소제목 3~4개로 나눈다(예: 요즘 상황 / 그래서 뭐가 달라지나 / 조건·예외 / 오늘 할 일). 소제목은 구체적이고 궁금증을 끄는 짧은 문장. 각 소제목 아래 문단 1~3개, 문단은 1~3문장. 맨 끝은 한 줄 마무리 문단으로 완결한다(문장 중간에 끊기면 안 됨).
    문체: 친구한테 카톡하듯 가벼운 반말(~했어, ~거든, ~래, ~더라고). 존댓말·보도자료체·'~하겠습니다' 금지. 재밌게 — 공감 가는 상황, 의외의 반전, 가벼운 드립 1~2개. 단 드립 때문에 숫자·조건이 바뀌면 안 되고, 내가 직접 겪은 척하는 표현은 금지. 처음부터 끝까지 반말로 통일, 영어·외국어 단어 섞지 말 것, 뜻이 안 통하는 억지 비유 금지, 쉬운 말로.
-7. 분량 공백 포함 900~1,500자. 금액·기간·연도는 아라비아 숫자. HTML은 h2·p·ul·li·table·strong만(script/iframe/외부링크 금지).
+7. 분량 공백 포함 1,200~1,800자. 금액·기간·연도는 아라비아 숫자. HTML은 h2·p·ul·li·table·strong만(script/iframe/외부링크 금지).
 ${fixes.length ? `8. 이전 초안의 문제를 반드시 고친다:\n${fixes.map(f => `- ${f}`).join('\n')}\n` : ''}
 [출력 — STATUS 줄 다음 줄에 제목 주석, 그 다음 HTML만]
 STATUS: draft
-<!--TITLE: (독자 질문 + 답의 범위, 20~32자, 반말도 OK, 선정적 낚시 금지)-->
-<h2>...</h2><p>...</p>`;
+<!--TITLE: (핵심 숫자나 대상이 들어간 완결된 한 문장, 20~32자, 반말도 OK, 선정적 낚시 금지)-->
+<h2>소제목1</h2><p>...</p><h2>소제목2</h2><p>...</p><h2>소제목3</h2><p>...</p>`;
 }
 
 function checkerPrompt(article: string, source: string, date: string): string {
@@ -105,21 +105,24 @@ ${html}`;
 }
 
 const LATIN = /[A-Za-z]{4,}/;
+const h2Count = (h: string) => (h.match(/<h2/gi) || []).length;
+const complete = (h: string) => /<\/(p|ul|ol|table)>\s*$/i.test(h.trim());
 async function polish(html: string, srcText: string): Promise<string> {
   const out = (await ai(polishPrompt(html))).replace(/```html?\n?|\n?```/gi, '').trim();
-  const ok = out.length > html.length * 0.7 && out.length < html.length * 1.3 && /<h2/i.test(out) && !unsupportedNumbers(out, srcText).length;
+  const ok = out.length > html.length * 0.7 && out.length < html.length * 1.3 && h2Count(out) === h2Count(html) && complete(out) && !unsupportedNumbers(out, srcText).length;
   return ok ? out : html;
 }
 
 export async function draftArticle(srcTitle: string, date: string, text: string): Promise<{ title: string; html: string; reason: string }> {
   let title = '', html = '', fixes: string[] = [], reason = '';
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const out = (await ai(writerPrompt(srcTitle, date, text, fixes))).replace(/```html?\n?|\n?```/gi, '').trim();
     if (/^STATUS:\s*needs_evidence/i.test(out)) return { title, html: '', reason: '근거 부족(작성 모델 판정)' };
     const body = out.replace(/^STATUS:\s*\w+\s*/i, '');
     title = tightTitle((body.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i)?.[1] || srcTitle).trim());
     html = body.replace(/^<!--\s*TITLE:.*?-->\s*/i, '');
     if (html.length < 400) return { title, html: '', reason: '본문 너무 짧음' };
+    if (h2Count(html) < 3 || !complete(html)) { fixes = ['<h2> 소제목 3~4개로 나누고, 마지막 문단까지 문장을 끝맺어 완결할 것']; reason = `구조 미달(h2 ${h2Count(html)}개/${complete(html) ? '완결' : '잘림'})`; continue; }
 
     const bad = unsupportedNumbers(html, text);
     if (bad.length) { fixes = [`원문에 없는 숫자 삭제 또는 원문 값으로 교체: ${bad.join(', ')}`]; reason = `원문에 없는 숫자: ${bad.join(', ')}`; continue; }
