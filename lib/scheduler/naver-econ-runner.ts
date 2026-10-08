@@ -68,18 +68,19 @@ ${source}
 3. 개인 경험·상담·전화·인터뷰를 지어내지 않는다("제가 받아봤다" 금지). 예시는 반드시 "가정" 표시.
 4. 개인별 수급 가능 여부·세액·이자 손익을 확정하지 않는다. 투자·종목 추천 금지. 겁주거나 과장하지 않는다.
 5. 시행 예정과 시행 중을 구분한다. 서로 다른 제도(예: 국민연금/기초연금)는 먼저 구분한다.
-6. 구성: 상황 3~5문장 → 직접 답 2~3문장 → 원인·조건 2~3개 → 예외 → 독자가 오늘 할 행동 → 마무리. 문단은 1~3문장, 생활어 존댓말.
+6. 구성: 상황 3~5문장 → 직접 답 2~3문장 → 원인·조건 2~3개 → 예외 → 독자가 오늘 할 행동 → 마무리. 문단은 1~3문장.
+   문체: 친구한테 카톡하듯 가벼운 반말(~했어, ~거든, ~래, ~더라고). 존댓말·보도자료체·'~하겠습니다' 금지. 재밌게 — 공감 가는 상황, 의외의 반전, 가벼운 드립 1~2개. 단 드립 때문에 숫자·조건이 바뀌면 안 되고, 내가 직접 겪은 척하는 표현은 금지.
 7. 분량 공백 포함 900~1,500자. 금액·기간·연도는 아라비아 숫자. HTML은 h2·p·ul·li·table·strong만(script/iframe/외부링크 금지).
 ${fixes.length ? `8. 이전 초안의 문제를 반드시 고친다:\n${fixes.map(f => `- ${f}`).join('\n')}\n` : ''}
 [출력 — STATUS 줄 다음 줄에 제목 주석, 그 다음 HTML만]
 STATUS: draft
-<!--TITLE: (독자 질문 + 답의 범위, 20~32자, 선정적·질문형 낚시 금지)-->
+<!--TITLE: (독자 질문 + 답의 범위, 20~32자, 반말도 OK, 선정적 낚시 금지)-->
 <h2>...</h2><p>...</p>`;
 }
 
 function checkerPrompt(article: string, source: string, date: string): string {
   return `당신은 경제 콘텐츠 검수자다. 초안을 보도자료 원문과 문장별로 대조한다.
-보도자료 날짜는 ${date}이며 이 연도·날짜는 사실로 인정한다. 용어 풀이·일반적 설명·문체는 위반이 아니다.
+보도자료 날짜는 ${date}이며 이 연도·날짜는 사실로 인정한다. 용어 풀이·일반적 설명은 위반이 아니다. 반말·구어체·가벼운 드립도 위반이 아니다.
 위반으로 지적할 것은 오직 다음뿐이다: 원문에 없거나 원문과 다른 숫자·금액·비율·기간·대상·조건, 증가/감소·상승/하락 방향 오류, 시행 예정/시행 중 혼동, 지어낸 개인 경험, 개인별 수급·세액 확정 판정, 특정 상품·종목 투자 권유.
 원문과 일치하면 pass다. 사소한 표현 차이는 지적하지 않는다.
 JSON 하나만 출력: {"result":"pass|revise|block","issues":["..."]}
@@ -142,9 +143,9 @@ export async function runNaverEconAuto(userId: string): Promise<NaverEconResult>
     const title = d.title;
     let html = d.html;
 
-    const { displayUrls, thumbUrl } = await searchInlineImages(title, 2, { aiThumb: true, keepExternal: true });
+    const { displayUrls, thumbUrl } = await searchInlineImages(title, 0, { aiThumb: true, noInline: true, keepExternal: true });
     html = insertImages(html, [...new Set([thumbUrl, ...displayUrls].filter((u): u is string => !!u))]);
-    html += `\n<p>※ 이미지는 설명용 연출입니다. 최종 확인은 공식 안내를 따르세요.</p>\n<p>출처: 정책브리핑 보도자료 「${item.title}」(${date}) ${item.url}</p>`;
+    html += `\n<p>※ 이미지는 설명용 연출입니다. 최종 확인은 공식 안내를 따르세요.</p>\n<p>출처: 정책브리핑 보도자료 「${item.title}」(${date})</p>`;
 
     const { data: job, error } = await admin.from('naver_publish_jobs').insert({
       user_id: userId, title, content: sanitizeForNaver(html), tags: [], category_no: 0, is_publish: true,
