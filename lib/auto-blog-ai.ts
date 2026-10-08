@@ -565,7 +565,7 @@ export async function generateText(
     try { return await callGemini(geminiKeys, prompt); }
     catch (e) { errors.push(`Gemini: ${e}`); return false; }
   };
-  const tryOpenRouter = async () => {
+  const tryOpenRouter = async (models: string[] = OPENROUTER_MODELS) => {
     // 다중 키 수집 (OPENROUTER_API_KEYS 배열 + 레거시 단일 키)
     const orKeys: string[] = [];
     if (clientOpenrouterKey) orKeys.push(clientOpenrouterKey);
@@ -583,7 +583,7 @@ export async function generateText(
 
     const firstErrors: string[] = [];
     for (const key of orKeys) {
-      for (const model of OPENROUTER_MODELS) {
+      for (const model of models) {
         try { return await callOpenRouter(key, model, prompt); }
         catch (e) {
           const msg = String(e);
@@ -672,7 +672,10 @@ export async function generateText(
     if (!groqTried) { const q = clean(await tryGroq()); if (q) return q; } // Ollama 고갈 시 Groq → Gemini 순
     const g = clean(await tryGemini());
     if (g) return g;
-    throw new Error(`Ollama/Groq/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
+    // 마지막 폴백: OpenRouter 무료 nemotron만 (장문 테스트 통과 모델, ultra 우선)
+    const o = clean(await tryOpenRouter(['nvidia/nemotron-3-ultra-550b-a55b:free', 'nvidia/nemotron-3-super-120b-a12b:free']));
+    if (o) return o;
+    throw new Error(`Ollama/Groq/Gemini/OpenRouter 생성 모두 실패\n${errors.join(' | ')}`);
   }
 
   // ── 나머지 provider 순서대로 fallback ─────────────────────
