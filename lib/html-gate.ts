@@ -45,7 +45,7 @@ export function findHtmlProblem(title: string, html: string): string | null {
   if (/style\s*=|data-ke-size|background\s*:|linear-gradient|&lt;\/?[a-z]/i.test(text)) return '본문에 태그/스타일 코드가 글자로 노출됨';
 
   // 프롬프트 자리표시자·마커 누출
-  const leak = text.match(/===[A-Z0-9]+===|\(단락\d|\(키워드 포함|\(메타 설명|\[뉴스\d\]|\[블로그\d\]/);
+  const leak = text.match(/===[A-Z0-9]+===|\(단락\d|\(키워드 포함|\(메타 설명|\[뉴스\d\]|\[블로그\d\]|\b(?:short|long) sentence\s*:/i);
   if (leak) return `프롬프트 지시문/마커가 본문에 남음: ${text.slice(Math.max(0, leak.index! - 20), leak.index! + 40)}`;
 
   // 모델 반복 루프: 같은 단어/구절이 연달아 반복되거나 줄 끝에 구분자 '='만 남은 경우
