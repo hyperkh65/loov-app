@@ -26,7 +26,7 @@ export async function GET() {
   const s = await readSettings();
   const { data: sch } = await createAdminClient().from('bossai_schedules').select('is_active, next_run_at').eq('user_id', user.id).eq('type', 'naver_econ_auto').maybeSingle();
   return NextResponse.json({
-    connected: !!(s.NAVER_ECON_BLOG_ID && s.NAVER_ECON_NID_AUT && s.NAVER_ECON_NID_SES),
+    connected: !!s.NAVER_ECON_BLOG_ID,
     blog_id: s.NAVER_ECON_BLOG_ID || '',
     active: !!sch?.is_active,
     next_run: sch?.next_run_at || null,
@@ -36,17 +36,15 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const user = await auth();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
-  const { blog_id, nid_aut, nid_ses, active } = await req.json();
+  const { blog_id, active } = await req.json();
   const cur = await readSettings();
-  if (blog_id || nid_aut || nid_ses) {
-    if (!blog_id?.trim() || !nid_aut?.trim() || !nid_ses?.trim()) return NextResponse.json({ error: '블로그 ID, NID_AUT, NID_SES 모두 필요' }, { status: 400 });
+  if (blog_id) {
     cur.NAVER_ECON_BLOG_ID = blog_id.trim().toLowerCase();
-    cur.NAVER_ECON_NID_AUT = nid_aut.trim();
-    cur.NAVER_ECON_NID_SES = nid_ses.trim();
+    delete cur.NAVER_ECON_NID_AUT; delete cur.NAVER_ECON_NID_SES;
     const { error } = await createAdminClient().from('app_settings').update({ settings: cur }).eq('id', 1);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (typeof active === 'boolean') await setSchedule(user.id, active && !!cur.NAVER_ECON_NID_SES);
+  if (typeof active === 'boolean') await setSchedule(user.id, active && !!cur.NAVER_ECON_BLOG_ID);
   return NextResponse.json({ ok: true });
 }
 
