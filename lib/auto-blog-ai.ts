@@ -171,6 +171,8 @@ const OPENROUTER_MODELS = [
   'google/gemma-4-31b-it:free',             // Gemma 4 31B, 262K ctx
   'openai/gpt-oss-20b:free',               // OpenAI OSS 20B (빠름)
 ];
+// 폴백 경로 전용: 장문 테스트를 통과한 nemotron만 (ultra 우선)
+const OPENROUTER_FALLBACK_MODELS = ['nvidia/nemotron-3-ultra-550b-a55b:free', 'nvidia/nemotron-3-super-120b-a12b:free'];
 
 const exhaustedOllamaKeys = new Map<string, number>();
 
@@ -670,12 +672,12 @@ export async function generateText(
     // 블로그 본문은 Ollama → Gemini 순으로만 폴백(NVIDIA는 한국어 품질·영어 혼입 문제로 제외)(Claude/OpenAI 등 유료 경로는 쓰지 않음)
     // Cloudflare 무료 할당량은 대표이미지 생성(flux) 전용 — 본문 생성엔 안 씀(사용자 확정 2026-10-03)
     if (!groqTried) { const q = clean(await tryGroq()); if (q) return q; } // Ollama 고갈 시 Groq → Gemini 순
+    // Groq 다음 OpenRouter 무료 nemotron(장문 테스트 통과 모델, ultra 우선) → 마지막 Gemini (2026-10-09 사용자 지시: Gemini보다 우선)
+    const o = clean(await tryOpenRouter(OPENROUTER_FALLBACK_MODELS));
+    if (o) return o;
     const g = clean(await tryGemini());
     if (g) return g;
-    // 마지막 폴백: OpenRouter 무료 nemotron만 (장문 테스트 통과 모델, ultra 우선)
-    const o = clean(await tryOpenRouter(['nvidia/nemotron-3-ultra-550b-a55b:free', 'nvidia/nemotron-3-super-120b-a12b:free']));
-    if (o) return o;
-    throw new Error(`Ollama/Groq/Gemini/OpenRouter 생성 모두 실패\n${errors.join(' | ')}`);
+    throw new Error(`Ollama/Groq/OpenRouter/Gemini 생성 모두 실패\n${errors.join(' | ')}`);
   }
 
   // ── 나머지 provider 순서대로 fallback ─────────────────────
@@ -685,9 +687,9 @@ export async function generateText(
   // 전부 동시에 죽었을 때(쿼터 소진 등, 실제로 발생했던 상황) 유일하게 살아있는 경로였다.
   if (!groqTried) fallbacks.push(tryGroq);
   if (!isOllamaPreferred) fallbacks.push(() => tryOllama('qwen3.5'));
+  if (preferModel !== 'openrouter') fallbacks.push(() => tryOpenRouter(OPENROUTER_FALLBACK_MODELS)); // Gemini보다 먼저 (2026-10-09 사용자 지시)
   if (!preferModel.startsWith('gemini') && preferModel !== 'gemini') fallbacks.push(tryGemini);
   if (!preferModel.startsWith('claude')) fallbacks.push(() => tryClaude());
-  if (preferModel !== 'openrouter') fallbacks.push(tryOpenRouter);
   fallbacks.push(tryGlobalAI);
   if (!preferModel.startsWith('gpt') && preferModel !== 'openai') fallbacks.push(tryOpenAI);
 
