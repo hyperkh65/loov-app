@@ -245,8 +245,9 @@ export async function POST(req: NextRequest) {
 
       const upd = async (progress: string, extra?: Record<string, unknown>) => {
         send({ type: 'progress', msg: progress, ...extra });
+        const { pct: _pct, ...dbExtra } = (extra ?? {}) as Record<string, unknown>; // 테이블에 pct 컬럼 없음 — 넣으면 업데이트 전체가 조용히 실패해 pending에 멈춤
         await admin.from('bossai_shorts_queue')
-          .update({ progress, status: 'running', updated_at: new Date().toISOString(), ...extra })
+          .update({ progress, status: 'running', updated_at: new Date().toISOString(), ...dbExtra })
           .eq('id', jobId);
       };
 
@@ -467,7 +468,7 @@ export async function POST(req: NextRequest) {
           return;
         }
         await admin.from('bossai_shorts_queue').update({
-          status: 'done', progress: '완료!', pct: 100,
+          status: 'done', progress: '완료!',
           video_url: videoUrl, yt_url: ytUrl,
           updated_at: new Date().toISOString(),
         }).eq('id', jobId);
