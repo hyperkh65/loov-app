@@ -50,7 +50,7 @@ export interface NaverCafePublishParams {
   menuId?: string | number;
   openYn?: 'Y' | 'N';
   blogUrl?: string; // 있으면 "원문 보기" 링크로 덧붙임
-  cafe?: 'all' | string; // 'all'=등록된 카페 전부, club_id=그 카페만, 미지정=가장 오래 안 쓴 카페 1곳(한도 시 다음 카페)
+  cafe?: 'all' | string; // 'all'=등록된 카페 전부, club_id 또는 카페 주소(예: 2dayskr)=그 카페만, 미지정=가장 오래 안 쓴 카페 1곳(한도 시 다음 카페)
   hook?: string; // SNS 스타일 짧은 요약 한두 줄 — 있으면 본문 발췌 대신 이걸 먼저 보여줌
 }
 
@@ -117,7 +117,7 @@ export async function publishToNaverCafe(
     })),
   ];
   if (params.cafe && params.cafe !== 'all') {
-    const only = targets.filter(t => t.clubId === params.cafe);
+    const only = targets.filter(t => t.clubId === params.cafe || t.cafeSlug === params.cafe);
     if (!only.length) throw new Error('선택한 카페를 찾을 수 없음(게시판 미설정 포함)');
     targets.splice(0, targets.length, ...only);
   }

@@ -49,7 +49,7 @@ export interface BlogAutoConfig {
   // 발행 채널 직접 지정: sns_connections.platform_user_id 목록(미지정=사이트별 기본 라우팅), 네이버 카페 on/off(미지정=켬)
   sns_account_ids?: string[];
   naver_cafe?: boolean;
-  naver_cafe_target?: 'all' | string; // 'all'=등록 카페 전부, club_id=그 카페만, 미지정=자동(1곳 순환)
+  naver_cafe_target?: 'all' | string; // 'all'=등록 카페 전부, club_id=그 카페만, 미지정=2dayskr 카페
   wp_url?: string;
   wp_username?: string;
   wp_app_password?: string;
@@ -60,6 +60,8 @@ export interface CoupangAutoConfig {
   search_keywords?: string[];
   sns_platforms: string[];
   sns_account_ids?: string[]; // 지정하면 sns_platforms 대신 이 계정들(platform_user_id)에만 발행
+  naver_cafe?: boolean; // 기본 끔
+  naver_cafe_target?: 'all' | string;
   min_discount?: number;
   // 워드프레스 발행(신규) — 미지정 시 기존처럼 SNS만 발행(하위호환)
   publish_targets?: ('sns' | 'wordpress')[];
