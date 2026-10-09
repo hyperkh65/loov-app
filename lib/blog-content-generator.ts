@@ -196,6 +196,19 @@ async function searchStockImages(query: string, count: number): Promise<string[]
   return [...new Set(urls)].slice(0, count);
 }
 
+// 핫링크 차단(403) 이미지는 네이버 워커가 받지 못해 글이 이미지·대표이미지 없이 올라가므로, 실제로 받아지는 것만 남김
+async function onlyDownloadable(urls: string[]): Promise<string[]> {
+  const ok = await Promise.all(urls.map(async (u) => {
+    try {
+      const res = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Referer: new URL(u).origin + '/', Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(10_000) });
+      const isImg = res.ok && (res.headers.get('content-type') || '').startsWith('image/');
+      await res.body?.cancel().catch(() => {});
+      return isImg;
+    } catch { return false; }
+  }));
+  return urls.filter((_, i) => ok[i]);
+}
+
 /**
  * 본문 이미지: 네이버 이미지 검색 → 부족하면 Pexels/Pixabay.
  * 대표이미지: aiThumb(자동 크론 발행)면 Cloudflare AI 생성, 아니면(수동 자동화블로그 메뉴) 네이버 첫 이미지.
@@ -204,7 +217,7 @@ export async function searchInlineImages(query: string, count = 3, opts: { aiThu
   const naver = opts.noInline ? [] : await searchNaverImages(query, count);
   const found = opts.noInline || naver.length >= count ? naver : [...naver, ...(await searchStockImages(query, count - naver.length))];
   // 네이버·티스토리 외 플랫폼은 핫링크 대신 우리 R2로 재호스팅(사용자 확정 2026-10-03)
-  const picked = opts.keepExternal ? found : await rehostImages(found);
+  const picked = opts.keepExternal ? await onlyDownloadable(found) : await rehostImages(found);
   // 사용자 확정(2026-10-04): 찾은 실제 이미지가 있으면 그걸 대표이미지로, 없을 때만 AI 생성 (실명 인물 글에 가짜 인물 사진이 붙던 문제)
   const ai = !picked[0] && opts.aiThumb ? await designImageScene(opts.thumbTitle || query).then(opts.hq ? generateHqImage : generateAiImage) : null;
   return { displayUrls: picked, thumbUrl: picked[0] || ai || undefined };
@@ -286,7 +299,7 @@ D. 구글·네이버 검색 최적화
 
 E. 출력 무결성
 - 출력은 반드시 ===KEYWORDS=== 까지 완결해서 끝낸다. 중간에 끊기거나 마커 이름·소제목이 비어 있으면 안 된다.
-- 괄호로 된 작성 지시문("(단락1…)" 등)을 그대로 출력하지 말 것.
+- 괄호로 된 작성 지시문과 "단락 1"·"단락2" 같은 번호 라벨을 그대로 출력하지 말 것. 각 본문은 라벨 없이 바로 문장으로 시작한다.
 - 참고자료의 출처 라벨([뉴스1], [블로그2] 등)을 본문에 인용·표기하지 말 것.
 
 F. AI 티 나는 문체 금지
@@ -307,33 +320,33 @@ F. AI 티 나는 문체 금지
 (도입부. 핵심 결론 먼저 → 그 근거·배경 → 이 글에서 다룰 내용. 6문장 이상)
 
 ===S1===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
+(6문장 이상의 본문)
+(6문장 이상의 본문)
 핵심: (이 섹션 핵심 1-2문장)
 
 ===S2===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
+(6문장 이상의 본문)
+(6문장 이상의 본문)
 핵심: (이 섹션 핵심 1-2문장)
 
 ===S3===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
+(6문장 이상의 본문)
+(6문장 이상의 본문)
 핵심: (이 섹션 핵심 1-2문장)
 
 ===S4===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
+(6문장 이상의 본문)
+(6문장 이상의 본문)
 핵심: (이 섹션 핵심 1-2문장)
 
 ===S5===소제목
-(단락1: 6문장 이상)
-(단락2: 6문장 이상)
+(6문장 이상의 본문)
+(6문장 이상의 본문)
 핵심: (이 섹션 핵심 1-2문장)
 
 ===S6===소제목
-(단락1: 6문장 이상)
-(단락2: 전망과 독자 행동 6문장 이상)
+(6문장 이상의 본문)
+(전망과 독자 행동을 담은 6문장 이상의 본문)
 핵심: (이 섹션 핵심 1-2문장)
 
 ===FAQ===
@@ -400,7 +413,11 @@ export function insertImagesIntoContent(content: string, imageUrls: string[], ke
 }
 
 export function parseAiOutput(raw: string) {
-  const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
+  const cleaned = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim()
+    // 모델이 "단락 2"·"*단락2*"·"(단락1:" 같은 번호 라벨을 줄 머리에 그대로 쓴 경우 제거
+    .replace(/^[ \t]*\([ \t]*단락[ \t]*\d[^)\n]*\)[ \t]*/gm, '')
+    .replace(/^[ \t]*[*_(\[]*[ \t]*단락[ \t]*\d+[ \t]*[*_)\]]*[ \t]*[:：]?[ \t]*/gm, '')
+    .replace(/^[ \t]*\(6문장 이상의 본문\)[ \t]*\n?/gm, '');
 
   const extract = (tag: string) => {
     const re = new RegExp(`===${tag}===\\s*([\\s\\S]*?)(?====[A-Za-z0-9]|$)`, 'i');
