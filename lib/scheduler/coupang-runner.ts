@@ -9,6 +9,7 @@ import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signa
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
 import { PRODUCT_HOOK_GUIDE, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
+import { publishToNaverCafe } from '@/lib/naver-cafe';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, CoupangAutoConfig } from './index';
 
@@ -411,8 +412,9 @@ ${PRODUCT_HOOK_GUIDE}
 
   // 발행 대상 — 미지정 시 기존 동작(SNS만)과 동일하게 하위호환
   const targets = config.publish_targets?.length ? config.publish_targets : ['sns'];
+  const picked = config.sns_account_ids;
   const platforms = targets.includes('sns')
-    ? config.sns_platforms.filter(p => ['threads', 'twitter', 'facebook', 'instagram'].includes(p))
+    ? (picked ? ['threads', 'twitter', 'facebook', 'instagram'] : config.sns_platforms.filter(p => ['threads', 'twitter', 'facebook', 'instagram'].includes(p)))
     : [];
   const results: string[] = [];
 
@@ -421,7 +423,10 @@ ${PRODUCT_HOOK_GUIDE}
     const admin = createAdminClient();
     for (const platform of platforms) {
       let conns: typeof connections;
-      if (platform === 'threads' || platform === 'instagram') {
+      if (picked) {
+        conns = connections.filter(c => c.platform === platform && picked.includes(c.platform_user_id));
+        if (!conns.length) continue;
+      } else if (platform === 'threads' || platform === 'instagram') {
         const picked = await pickRotatedAccount(admin, 'ads_default', platform, connections);
         conns = picked ? connections.filter(c => c.platform === platform && c.platform_user_id === picked.platform_user_id) : [];
         if (!conns.length) { results.push(`${platform}: 계정 전부 최근에 발행됨 — 이번 회차 스킵`); continue; }
@@ -455,6 +460,16 @@ ${PRODUCT_HOOK_GUIDE}
           results.push(`${label}: ${(err as Error).message?.slice(0, 50) || '실패'}`);
         }
       }
+    }
+  }
+
+  if (config.naver_cafe) {
+    try {
+      const body = `${textMap.threads}\n\n🔗 상품 링크: ${commentGoLink}\n\n${DISCLOSURE}`;
+      await publishToNaverCafe(createAdminClient(), { userId: schedule.user_id, title: product.productName.slice(0, 80), content: '', hook: body, cafe: config.naver_cafe_target });
+      results.push('naver_cafe: 발행 완료');
+    } catch (err) {
+      results.push(`naver_cafe: ${(err as Error).message?.slice(0, 80) || '실패'}`);
     }
   }
 

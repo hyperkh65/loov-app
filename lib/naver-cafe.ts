@@ -50,6 +50,7 @@ export interface NaverCafePublishParams {
   menuId?: string | number;
   openYn?: 'Y' | 'N';
   blogUrl?: string; // 있으면 "원문 보기" 링크로 덧붙임
+  cafe?: 'all' | string; // 'all'=등록된 카페 전부, club_id=그 카페만, 미지정=가장 오래 안 쓴 카페 1곳(한도 시 다음 카페)
   hook?: string; // SNS 스타일 짧은 요약 한두 줄 — 있으면 본문 발췌 대신 이걸 먼저 보여줌
 }
 
@@ -115,6 +116,11 @@ export async function publishToNaverCafe(
       clubId: String(c.club_id), cafeSlug: c.cafe_url || c.club_id, menuId: c.menu_id, menuName: c.menu_name, label: c.cafe_name || c.club_id,
     })),
   ];
+  if (params.cafe && params.cafe !== 'all') {
+    const only = targets.filter(t => t.clubId === params.cafe);
+    if (!only.length) throw new Error('선택한 카페를 찾을 수 없음(게시판 미설정 포함)');
+    targets.splice(0, targets.length, ...only);
+  }
   const { data: recent } = await admin.from('naver_cafe_history')
     .select('club_id, created_at').eq('user_id', userId).in('club_id', targets.map(t => t.clubId))
     .order('created_at', { ascending: false }).limit(400);
@@ -123,17 +129,21 @@ export async function publishToNaverCafe(
   targets.sort((x, y) => (lastAt.get(x.clubId) || 0) - (lastAt.get(y.clubId) || 0));
 
   const errors: string[] = [];
+  const done: { cafe: string; articleUrl?: string; error?: string }[] = [];
   for (const t of targets) {
     try {
       const url = await postToCafe(admin, {
         userId, accessToken, clubId: t.clubId, cafeSlug: t.cafeSlug,
         menuId: t.menuId, menuName: t.menuName, title, textContent: textFor(t.cafeSlug), openYn,
       });
-      return { articleUrl: url, extra: [] };
+      if (params.cafe !== 'all') return { articleUrl: url, extra: [] };
+      done.push({ cafe: t.label, articleUrl: url ?? undefined });
     } catch (e) {
       errors.push(`${t.label}: ${e instanceof Error ? e.message : String(e)}`);
+      done.push({ cafe: t.label, error: errors[errors.length - 1] });
     }
   }
+  if (params.cafe === 'all' && done.some(d => d.articleUrl)) return { articleUrl: done.find(d => d.articleUrl)!.articleUrl!, extra: done };
   throw new Error(`모든 카페 발행 실패 — ${errors.join(' / ')}`.slice(0, 900));
 }
 

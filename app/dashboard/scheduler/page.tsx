@@ -149,6 +149,8 @@ export default function SchedulerPage() {
   ]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [cafes, setCafes] = useState<Array<{ club_id: string; name: string }>>([]);
+  const [snsConns, setSnsConns] = useState<Array<{ platform: string; platform_user_id: string; platform_username: string; is_active: boolean }>>([]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500); };
 
@@ -164,7 +166,13 @@ export default function SchedulerPage() {
   useEffect(() => {
     if (!showModal) return;
     if (['blog_auto', 'agoda_auto', 'shorts_auto'].includes(form.type)) loadWpRegSites();
-    if (form.type === 'blog_auto') loadAiModels();
+    if (form.type === 'blog_auto' || form.type === 'coupang_auto') {
+      fetch('/api/naver-cafe/connect').then(r => r.ok ? r.json() : null).then(d => {
+        if (d?.connected) setCafes([{ club_id: String(d.club_id), name: d.cafe_name || String(d.club_id) }, ...((d.extra_cafes || []) as Array<{ club_id: string; cafe_name?: string }>).map(c => ({ club_id: String(c.club_id), name: c.cafe_name || String(c.club_id) }))]);
+      }).catch(() => {});
+      fetch('/api/sns/connections').then(r => r.ok ? r.json() : []).then(d => Array.isArray(d) && setSnsConns(d.filter(c => c.is_active))).catch(() => {});
+      if (form.type === 'blog_auto') loadAiModels();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showModal, form.type]);
 
@@ -297,6 +305,56 @@ export default function SchedulerPage() {
 
   const typeLabel = (t: string) => SCHEDULE_TYPES.find(s => s.id === t);
 
+  const renderChannels = (key: 'blog' | 'coupang') => {
+    const cfg = form[key] as { sns_account_ids?: string[]; naver_cafe?: boolean; naver_cafe_target?: string };
+    const set = (patch: Partial<typeof cfg>) => setForm(f => ({ ...f, [key]: { ...(f[key] as object), ...patch } }));
+    const ids = cfg.sns_account_ids;
+    const cafeOn = key === 'blog' ? cfg.naver_cafe !== false : cfg.naver_cafe === true;
+    return (
+      <div className="space-y-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-gray-600">📡 발행 채널 (SNS 계정)</label>
+          {ids
+            ? <button onClick={() => set({ sns_account_ids: undefined })} className="text-[10px] text-blue-500">{key === 'blog' ? '자동 라우팅으로' : '플랫폼 선택으로'}</button>
+            : <button onClick={() => set({ sns_account_ids: [] })} className="text-[10px] text-blue-500">계정 직접 지정</button>}
+        </div>
+        {!ids ? (
+          <p className="text-[11px] text-gray-400">{key === 'blog' ? '자동: 사이트별 기본 계정(스레드·인스타 로테이션 + 트위터·페북 전체)에 발행' : '위 플랫폼 선택대로 발행(스레드·인스타는 기본 계정 로테이션)'}</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {ids.length === 0 && <span className="text-[11px] text-gray-400">SNS 발행 안 함 — 아래에서 추가</span>}
+              {snsConns.filter(c => ids.includes(c.platform_user_id)).map(c => (
+                <span key={c.platform_user_id} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-[11px] rounded-full">
+                  {c.platform} @{c.platform_username}
+                  <button onClick={() => set({ sns_account_ids: ids.filter(x => x !== c.platform_user_id) })} className="text-blue-400">✕</button>
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {snsConns.filter(c => !ids.includes(c.platform_user_id)).map(c => (
+                <button key={c.platform_user_id} onClick={() => set({ sns_account_ids: [...ids, c.platform_user_id] })} className="px-2.5 py-1 text-[11px] rounded-full border border-dashed border-gray-300 text-gray-500 hover:border-blue-400">
+                  + {c.platform} @{c.platform_username}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <label className="flex items-center gap-2 text-xs text-gray-700">
+          <input type="checkbox" checked={cafeOn} onChange={e => set({ naver_cafe: e.target.checked })} className="rounded" />
+          ☕ 네이버 카페에도 발행
+        </label>
+        {cafeOn && (
+          <select value={cfg.naver_cafe_target || ''} onChange={e => set({ naver_cafe_target: e.target.value || undefined })} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none">
+            <option value="">자동 — 등록 카페 중 가장 오래 안 쓴 1곳</option>
+            <option value="all">등록된 카페 전부</option>
+            {cafes.map(c => <option key={c.club_id} value={c.club_id}>{c.name} 만</option>)}
+          </select>
+        )}
+      </div>
+    );
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">로딩 중...</div>;
 
   return (
@@ -355,6 +413,7 @@ export default function SchedulerPage() {
                       <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400 flex-wrap">
                         <span>🕐 {INTERVAL_OPTIONS.find(o => o.value === s.interval_hours)?.label || `${s.interval_hours}h`}</span>
                         {s.interval_hours >= 24 && <span>{s.run_at_hour}시</span>}
+                        {(s.type === 'blog_auto' || s.type === 'coupang_auto') && (() => { const c = s.config as BlogAutoConfig; const on = s.type === 'blog_auto' ? c.naver_cafe !== false : (c as unknown as CoupangAutoConfig).naver_cafe === true; return <span>📡 {c.sns_account_ids ? `SNS ${c.sns_account_ids.length}개` : 'SNS 자동'} · ☕ {on ? (c.naver_cafe_target === 'all' ? '전체' : c.naver_cafe_target ? '1곳 지정' : '자동') : '끔'}</span>; })()}
                         {s.last_run_at && <span>마지막: {formatRelativeTime(s.last_run_at)}</span>}
                         {s.next_run_at && s.is_active && <span className="text-blue-500">다음: {formatRelativeTime(s.next_run_at)}</span>}
                       </div>
@@ -573,6 +632,7 @@ export default function SchedulerPage() {
                       }
                     </div>
                   )}
+                  {renderChannels('blog')}
                 </div>
               )}
 
@@ -614,7 +674,7 @@ export default function SchedulerPage() {
                       })}
                     </div>
                   </div>
-                  {(form.coupang.publish_targets || ['sns']).includes('sns') && (
+                  {(form.coupang.publish_targets || ['sns']).includes('sns') && !form.coupang.sns_account_ids && (
                     <div>
                       <label className="text-xs font-semibold text-gray-600 mb-1 block">발행 SNS</label>
                       <div className="flex flex-wrap gap-2">
@@ -624,6 +684,7 @@ export default function SchedulerPage() {
                       </div>
                     </div>
                   )}
+                  {renderChannels('coupang')}
                   {(form.coupang.publish_targets || []).includes('wordpress') && (
                     <div className="bg-gray-50 rounded-xl p-3">
                       {form.coupang.wp_site_id
