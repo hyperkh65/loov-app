@@ -6,7 +6,7 @@
  * 통과 못하면 발행하지 않고 건너뜀(근거 부족 글 = 발행 안 함).
  * 발행 큐는 전자제품 블로그와 같은 Playwright 워커를 쓰되 계정만 다르다(notion_page_id='__auto_econ__').
  */
-import { tightTitle } from '@/lib/html-gate';
+import { tightTitle, sanitizeInvisible, findHtmlProblem } from '@/lib/html-gate';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { getSetting } from '@/lib/get-setting';
@@ -131,7 +131,7 @@ export async function draftArticle(srcTitle: string, date: string, text: string)
     if (/^STATUS:\s*needs_evidence/i.test(out)) return { title, html: '', reason: '근거 부족(작성 모델 판정)' };
     const body = out.replace(/^STATUS:\s*\w+\s*/i, '');
     title = tightTitle((body.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i)?.[1] || srcTitle).trim());
-    html = body.replace(/^<!--\s*TITLE:.*?-->\s*/i, '');
+    html = sanitizeInvisible(body.replace(/^<!--\s*TITLE:.*?-->\s*/i, ''));
     if (html.length < 400) return { title, html: '', reason: '본문 너무 짧음' };
     if (h2Count(html) < 3 || !complete(html)) { fixes = ['<h2> 소제목 정확히 4개(상황/핵심정리/조건·예외/오늘 할 일)로 나누고, 마지막 문단까지 문장을 끝맺어 완결할 것']; reason = `구조 미달(h2 ${h2Count(html)}개/${complete(html) ? '완결' : '잘림'})`; continue; }
 
@@ -173,7 +173,9 @@ export async function runNaverEconAuto(userId: string): Promise<NaverEconResult>
     const d = await draftArticle(item.title, date, text);
     if (!d.html) { await mark(item.url, item.title, d.title, `skipped:${d.reason.slice(0, 150)}`); continue; }
     const title = d.title;
-    let html = d.html;
+    let html = sanitizeInvisible(d.html);
+    const problem = findHtmlProblem(title, html);
+    if (problem) { await mark(item.url, item.title, title, `skipped:${problem.slice(0, 150)}`); continue; }
 
     const { displayUrls, thumbUrl } = await searchInlineImages(title, 0, { aiThumb: true, noInline: true, keepExternal: true });
     html = insertImages(html, [...new Set([thumbUrl, ...displayUrls].filter((u): u is string => !!u))]);

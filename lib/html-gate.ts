@@ -7,9 +7,29 @@ const INVISIBLE_RE = /[​-‏‪-‮⁠-⁤⁦-⁩­͏᠎﻿ᅟᅠㅤﾠ-
 // 모양만 공백인 특수 공백 → 일반 공백
 const ODD_SPACE_RE = /[  -   　]/g;
 
+// ai-watermark의 감지 목록과 동일한 문자(줄/문단 구분자, 사설 영역 포함)까지 제거
+const WM_CHARS_RE = /[\u200B-\u200F\u2028-\u202E\u2060-\u2064\u00AD\u034F\u180E\uFEFF\uE000-\uF8FF]/g;
+const NAMED_ENT: Record<string, string> = { nbsp: ' ', quot: '"', apos: "'", amp: '&' };
+const AI_LEAD_RE = /(^\s*|[.!?]["')\]]?\s+)(?:또한|더불어|아울러|결론적으로|종합하면|정리하자면|이처럼)[,\s]+/g;
+
+// 태그 바깥 글자만 대상: 엔티티 → 일반 문자(&lt; &gt;는 마크업 보호를 위해 유지), 문장 머리 AI 접속어 제거
+function cleanTextSegments(html: string): string {
+  return html.split(/(<[^>]*>)/).map((seg) => {
+    if (seg.startsWith('<')) return seg;
+    return seg
+      .replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+        if (e[0] === '#') {
+          const code = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+          return code === 60 || code === 62 || !code || code > 0x10ffff ? m : (code === 160 ? ' ' : String.fromCodePoint(code));
+        }
+        return NAMED_ENT[e.toLowerCase()] ?? m;
+      })
+      .replace(AI_LEAD_RE, '$1');
+  }).join('');
+}
+
 export function sanitizeInvisible(s: string): string {
-  // 섹션 구분자(===FAQ=== 등) 파싱 잔여물로 '=' 한 글자만 든 문단이 생기던 버그 방어
-  return s.replace(INVISIBLE_RE, '').replace(ODD_SPACE_RE, ' ').replace(/<p[^>]*>\s*=+\s*<\/p>\n?/g, '')
+  return cleanTextSegments(s.replace(INVISIBLE_RE, '').replace(WM_CHARS_RE, '').replace(ODD_SPACE_RE, ' ')).replace(/<p[^>]*>\s*=+\s*<\/p>\n?/g, '')
     // 프롬프트의 '단락 N' 번호 라벨이 문단 머리에 그대로 노출되는 것 방지
     .replace(/(<p[^>]*>)\s*(?:<(?:b|strong|i|em)>)?\s*[(\[]?\s*단락\s*\d+\s*[)\]]?\s*[:：]?\s*(?:<\/(?:b|strong|i|em)>)?\s*/g, '$1')
     // 프롬프트의 '핵심:' 라벨이 문단 머리에 그대로 노출되는 것 방지
@@ -45,6 +65,11 @@ export function findHtmlProblem(title: string, html: string): string | null {
 
   // 태그 문법이 본문 글자로 새어 나옴 (잘린 HTML이 이스케이프돼 노출되는 경우 포함)
   if (/style\s*=|data-ke-size|background\s*:|linear-gradient|&lt;\/?[a-z]/i.test(text)) return '본문에 태그/스타일 코드가 글자로 노출됨';
+
+  // AI 워터마크 잔여물: 보이지 않는 문자·글자로 남은 HTML 엔티티
+  if (html.replace(INVISIBLE_RE, '').replace(WM_CHARS_RE, '') !== html) return '본문에 보이지 않는 유니코드 워터마크 문자가 남음';
+  const ent = html.replace(/<[^>]*>/g, ' ').match(/&(?!lt;|gt;)(?:#\d+|#x[\da-f]+|[a-z]+);/i);
+  if (ent) return `본문에 HTML 엔티티가 글자로 남음: ${ent[0]}`;
 
   // 프롬프트 자리표시자·마커 누출
   const leak = text.match(/===[A-Z0-9]+===|단락\s*\d|\(키워드 포함|\(메타 설명|\[뉴스\d\]|\[블로그\d\]|\b(?:short|long) sentence\s*:/i);
