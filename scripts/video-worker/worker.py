@@ -42,8 +42,18 @@ def cookies_for(url):
     return None
 
 
+def normalize(url):
+    # rednote.com 공유 링크는 yt-dlp 미지원 + 로그인 리다이렉트 → xiaohongshu.com/explore 로 변환(xsec_token 유지)
+    m = re.match(r"https?://(?:www\.)?rednote\.com/(?:discovery/item|explore)/(\w+)\?(.*)", url)
+    if m:
+        q = urllib.parse.parse_qs(m.group(2))
+        return "https://www.xiaohongshu.com/explore/%s?xsec_token=%s&xsec_source=%s" % (
+            m.group(1), urllib.parse.quote(q.get("xsec_token", [""])[0]), q.get("xsec_source", ["pc_share"])[0])
+    return url
+
+
 def download(job):
-    url = job["input"]
+    url = normalize(job["input"])
     cmd = YTDLP + ["--no-playlist", "--restrict-filenames", "--no-warnings", "--print-json", "--no-simulate",
                    "-o", os.path.join(VIDEO_DIR, "%(extractor)s_%(id)s.%(ext)s"),
                    "-f", "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/b[ext=mp4]/bv*+ba/b",
