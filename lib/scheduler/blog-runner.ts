@@ -17,7 +17,7 @@ import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-r
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
 
-export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = ''): Promise<void> {
+export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = '', opts: { accountIds?: string[]; cafe?: boolean; cafeTarget?: string } = {}): Promise<void> {
   // 제목만 캡션으로 올리면 AI 티 나고 클릭할 이유가 없음 — 채널별 훅 캡션 생성(60초 넘으면 제목으로 폴백)
   const summary = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const captions = await Promise.race([
@@ -39,17 +39,23 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   // 사이트별 계정 로테이션 적용 — 같은 "2dayskr 계열" 안에서도 여러 자매
   // 계정에 분산시켜 계정당 최소 간격을 확보(lib/sns/account-rotation.ts).
   const group = snsGroupFor(siteUrl);
-  const [threadsTarget, instagramTarget] = await Promise.all([
-    pickRotatedAccount(supabase, group, 'threads', connections),
-    pickRotatedAccount(supabase, group, 'instagram', connections),
-  ]);
-  // 본문에 링크를 넣으면 SNS 알고리즘이 외부링크 게시물로 판단해 노출을 줄이는
-  // 페널티가 있음(사용자 확정) — rewrite-publish.ts와 동일하게 링크는 댓글로 분리.
-  const rotatedTargets = [threadsTarget, instagramTarget]
-    .filter((c): c is NonNullable<typeof c> => !!c)
-    .map(c => ({ ...c, platform: c.platform as 'threads' | 'instagram' }));
-  const otherTargets = connections.filter(c => ['twitter', 'facebook'].includes(c.platform)); // 현행 유지 — 전부 발행
-  const targets = [...rotatedTargets, ...otherTargets];
+  let targets: Array<{ platform: string; platform_user_id: string; access_token: string }>;
+  if (opts.accountIds) {
+    // 사용자가 지정한 채널 블록 그대로 발행(자동 라우팅·간격 로테이션 우회)
+    targets = connections.filter(c => opts.accountIds!.includes(c.platform_user_id));
+  } else {
+    const [threadsTarget, instagramTarget] = await Promise.all([
+      pickRotatedAccount(supabase, group, 'threads', connections),
+      pickRotatedAccount(supabase, group, 'instagram', connections),
+    ]);
+    // 본문에 링크를 넣으면 SNS 알고리즘이 외부링크 게시물로 판단해 노출을 줄이는
+    // 페널티가 있음(사용자 확정) — rewrite-publish.ts와 동일하게 링크는 댓글로 분리.
+    const rotatedTargets = [threadsTarget, instagramTarget]
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .map(c => ({ ...c, platform: c.platform as 'threads' | 'instagram' }));
+    const otherTargets = connections.filter(c => ['twitter', 'facebook'].includes(c.platform)); // 현행 유지 — 전부 발행
+    targets = [...rotatedTargets, ...otherTargets];
+  }
 
   await Promise.all(targets.map(async (conn) => {
     try {
@@ -76,7 +82,7 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   }));
 
   // 네이버 카페 + 텀블러도 공통으로(부분 실패 허용 — rewrite-publish.ts와 동일 패턴)
-  publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl, hook: captions.cafe }).catch(() => {});
+  if (opts.cafe !== false) publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl, hook: captions.cafe, cafe: opts.cafeTarget }).catch(() => {});
   publishToTumblr({ title, canonical_url: articleUrl }).catch(() => {});
 }
 
@@ -366,7 +372,7 @@ export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string
     // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
     // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
     // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
-    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl, content).catch(() => {});
+    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl, content, { accountIds: config.sns_account_ids, cafe: config.naver_cafe, cafeTarget: config.naver_cafe_target }).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
