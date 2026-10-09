@@ -126,6 +126,9 @@ jobs:
           METERED_API_KEY=${{ secrets.METERED_API_KEY }}
           METERED_APP_NAME=${{ secrets.METERED_APP_NAME }}
           FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
+          VIDEO_SUPABASE_URL=${{ secrets.VIDEO_SUPABASE_URL }}
+          VIDEO_SUPABASE_SERVICE_KEY=${{ secrets.VIDEO_SUPABASE_SERVICE_KEY }}
+          VIDEO_WORKER_TOKEN=${{ secrets.VIDEO_WORKER_TOKEN }}
           NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
           ENVEOF
@@ -332,6 +335,9 @@ jobs:
           METERED_API_KEY=${{ secrets.METERED_API_KEY }}
           METERED_APP_NAME=${{ secrets.METERED_APP_NAME }}
           FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
+          VIDEO_SUPABASE_URL=${{ secrets.VIDEO_SUPABASE_URL }}
+          VIDEO_SUPABASE_SERVICE_KEY=${{ secrets.VIDEO_SUPABASE_SERVICE_KEY }}
+          VIDEO_WORKER_TOKEN=${{ secrets.VIDEO_WORKER_TOKEN }}
           NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
           ENVEOF

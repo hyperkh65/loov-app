@@ -136,6 +136,7 @@ const NAV_GROUPS = [
       { href: '/dashboard/wp-auto',    icon: '🌐', label: 'WordPress 자동세팅' },
       { href: '/dashboard/nas-recovery', icon: '🔧', label: 'NAS 복구/컨테이너 재시작' },
       { href: '/dashboard/downloader',  icon: '🎥', label: '다운로더' },
+      { href: '/dashboard/video-search', icon: '🎬', label: '영상 수집' },
       { href: '/dashboard/deploy',     icon: '🚀', label: '배포 현황' },
     ],
   },
