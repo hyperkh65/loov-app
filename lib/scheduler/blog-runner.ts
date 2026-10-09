@@ -86,7 +86,7 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   // 네이버 카페 + 텀블러도 공통으로(부분 실패 허용 — rewrite-publish.ts와 동일 패턴)
   // 모든 글을 카페에 올리되 기본은 등록 카페 중 2dayskr 카페 한 곳만(사용자 확정)
   if (opts.cafe !== false) publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl, hook: captions.cafe, cafe: opts.cafeTarget ?? '2dayskr' }).catch(() => {});
-  publishToTumblr({ title, canonical_url: articleUrl }).catch(() => {});
+  publishToTumblr({ title, meta_description: captions.tumblr, tags: captions.tumblr_tags?.split(',').map(t => t.replace(/^#/, '').trim()).filter(Boolean), canonical_url: articleUrl }).catch(() => {});
 }
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {

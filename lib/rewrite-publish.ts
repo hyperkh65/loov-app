@@ -242,6 +242,8 @@ export async function publishRewrittenArticle(
       try {
         const { url } = await publishToTumblr({
           title: article.title,
+          meta_description: captions.tumblr,
+          tags: captions.tumblr_tags?.split(',').map(t => t.replace(/^#/, '').trim()).filter(Boolean),
           canonical_url: wordpressUrl,
         });
         tumblr = url ? `ok: ${url}` : 'ok';
@@ -261,8 +263,8 @@ export async function publishRewrittenArticle(
   } else {
     try {
       const { url } = await publishToPinterest({
-        title: article.title,
-        meta_description: article.meta || undefined,
+        title: captions.pinterest_title || article.title,
+        meta_description: captions.pinterest || article.meta || undefined,
         canonical_url: wordpressUrl,
         representative_image_url: article.representative_image_url,
       });
@@ -360,7 +362,7 @@ export async function publishRewrittenArticle(
   // 캡션에 링크를 텍스트로 넣으면 하이퍼링크가 안 걸려서 클릭이 안 되는 문제가
   // 있어서(실사용 중 확인) 댓글로 되돌림 — 대표이미지가 링크 미리보기로 한 번
   // 더 보이는 건 감수하고, 실제로 클릭 가능한 링크를 우선함(사용자 선택)
-  const commentFor = (src: string) => wordpressUrl ? `🔗 전체 기사 보기\n${withUtm(wordpressUrl, src)}` : '';
+  const commentFor = (src: string) => wordpressUrl ? `👉 이어서 보기\n${withUtm(wordpressUrl, src)}` : '';
 
   const hasInstagram = relevantConns.some(c => c.platform === 'instagram');
   let instagramImages: string[] = [];
