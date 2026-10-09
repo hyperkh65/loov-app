@@ -215,13 +215,20 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
     const tmpImgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'naver-img-'));
     let imgCounter = 0;
     const insertImageAtCursor = async (imageUrl) => {
-      const res = await fetch(imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Referer: new URL(imageUrl).origin + '/', Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(20000) }).catch(() => null);
+      const res = await fetch(imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Referer: new URL(imageUrl).origin + '/', Accept: 'image/jpeg,image/png,image/gif;q=0.9,*/*;q=0.1' }, signal: AbortSignal.timeout(20000) }).catch(() => null);
       if (!res || !res.ok) {
         console.warn(`[Playwright] 이미지 다운로드 실패(${res ? res.status : 'network'}), 건너뜀: ${imageUrl}`);
         return false;
       }
       const buf = Buffer.from(await res.arrayBuffer());
-      const ext = (imageUrl.match(/\.(jpg|jpeg|png|gif|webp)(?:[?#]|$)/i)?.[1] || 'jpg').toLowerCase();
+      // 확장자만 믿으면 webp/avif 가 .jpg 로 저장돼 네이버가 "알 수 없는 파일"로 거부 → 실제 매직바이트로 판별
+      const ext = buf.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) ? 'jpg'
+        : buf.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) ? 'png'
+        : buf.subarray(0, 3).toString() === 'GIF' ? 'gif' : null;
+      if (!ext) {
+        console.warn(`[Playwright] 지원하지 않는 이미지 형식, 건너뜀: ${imageUrl}`);
+        return false;
+      }
       const localPath = path.join(tmpImgDir, `img-${imgCounter++}.${ext}`);
       fs.writeFileSync(localPath, buf);
 
@@ -243,6 +250,13 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
         ]);
         await chooser.setFiles(localPath);
         await page.waitForTimeout(2000); // 업로드 + 에디터 삽입 처리 대기
+        // "파일 전송 오류" 모달이 남으면 제목 입력·발행 클릭이 전부 막힘 → 확인으로 닫고 실패 처리
+        const errOk = page.locator('div:has-text("파일 전송 오류") button:has-text("확인")').last();
+        if (await errOk.isVisible().catch(() => false)) {
+          await errOk.click({ force: true }).catch(() => {});
+          console.warn(`[Playwright] 이미지 업로드 거부됨(파일 전송 오류): ${imageUrl}`);
+          return false;
+        }
         console.log(`[Playwright] 이미지 삽입 완료: ${imageUrl}`);
         return true;
       } catch (e) {
@@ -443,6 +457,7 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
           await page.waitForTimeout(500);
           const retryText = await el.evaluate(n => (n.innerText || n.textContent || '').trim()).catch(() => null);
           console.log(`[Playwright] Title after retry: "${retryText}"`);
+          if (retryText !== null && retryText !== title.trim()) throw new Error(`제목 입력 실패 — 입력창에 "${retryText}" 남음 (모달/팝업이 가렸을 가능성)`);
         }
 
         console.log(`[Playwright] Title filled via: ${sel}`);
@@ -559,7 +574,8 @@ async function publishWithPlaywright({ blogId, nidAut, nidSes, title, content, t
       return { postId: bm[1], postUrl: `https://blog.naver.com/${blogId}/${bm[1]}` };
     }
 
-    // 발행은 됐을 수 있지만 postId 불명확
+    // postId 없음 = 글쓰기 화면에 그대로 남음 = 발행 안 됨 (예전엔 이걸 성공으로 기록함)
+    if (isPublish) return { postId: '', postUrl: '', error: `발행 확인 실패 — 글쓰기 화면에 머무름(${finalUrl})` };
     return { postId: '', postUrl: finalUrl };
 
   } finally {
@@ -618,7 +634,7 @@ async function main() {
     process.exit(1);
   }
 
-  const isSuccess = !result.error || result.postId;
+  const isSuccess = !result.error;
   await sbPatch('naver_publish_jobs', `id=eq.${JOB_ID}`, {
     status: isSuccess ? 'completed' : 'failed',
     post_id: result.postId || null,
