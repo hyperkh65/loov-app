@@ -12,6 +12,10 @@ const WM_CHARS_RE = /[\u200B-\u200F\u2028-\u202E\u2060-\u2064\u00AD\u034F\u180E\
 const NAMED_ENT: Record<string, string> = { nbsp: ' ', quot: '"', apos: "'", amp: '&' };
 const AI_LEAD_RE = /(^\s*|[.!?]["')\]]?\s+)(?:또한|더불어|아울러|결론적으로|종합하면|정리하자면|이처럼)[,\s]+/g;
 
+// AI가 썼다는 자기 언급·챗봇 말투 (주제로서의 AI 언급은 건드리지 않고 '내가/이 글이 AI'라는 표현만)
+const AI_SELF_RE = /(?:저는|나는)\s*(?:AI|인공지능|언어\s*모델)|(?:AI|인공지능|챗\s?GPT|ChatGPT|GPT|클로드|제미나이)(?:가|로|를\s*이용해|를\s*활용해|의\s*도움으로|에\s*의해)\s*(?:이\s*(?:글|콘텐츠|포스팅)을\s*)?(?:작성|생성|제작)(?:한|했|된|됐)|(?:AI|인공지능)\s*(?:작성|생성|제작)\s*(?:글|콘텐츠|문서)|이\s*(?:글|콘텐츠|게시물|포스팅)은\s*(?:AI|인공지능)|언어\s*모델로서|\bas an? (?:AI|language model)\b|\bI(?:'m| am) an? (?:AI|language model)\b|죄송하지만\s*(?:저는|제가)/i;
+const AI_SELF_SENTENCE_RE = new RegExp(`[^.!?\\n]*?(?:${AI_SELF_RE.source})[^.!?\\n]*[.!?]?[ \\t]*`, 'gi');
+
 // 태그 바깥 글자만 대상: 엔티티 → 일반 문자(&lt; &gt;는 마크업 보호를 위해 유지), 문장 머리 AI 접속어 제거
 function cleanTextSegments(html: string): string {
   return html.split(/(<[^>]*>)/).map((seg) => {
@@ -24,6 +28,7 @@ function cleanTextSegments(html: string): string {
         }
         return NAMED_ENT[e.toLowerCase()] ?? m;
       })
+      .replace(AI_SELF_SENTENCE_RE, '')
       .replace(AI_LEAD_RE, '$1');
   }).join('');
 }
@@ -70,6 +75,8 @@ export function findHtmlProblem(title: string, html: string): string | null {
   if (html.replace(INVISIBLE_RE, '').replace(WM_CHARS_RE, '') !== html) return '본문에 보이지 않는 유니코드 워터마크 문자가 남음';
   const ent = html.replace(/<[^>]*>/g, ' ').match(/&(?!lt;|gt;)(?:#\d+|#x[\da-f]+|[a-z]+);/i);
   if (ent) return `본문에 HTML 엔티티가 글자로 남음: ${ent[0]}`;
+
+  if (AI_SELF_RE.test(text)) return 'AI가 썼다는 자기 언급이 본문에 남음';
 
   // 프롬프트 자리표시자·마커 누출
   const leak = text.match(/===[A-Z0-9]+===|단락\s*\d|\(키워드 포함|\(메타 설명|\[뉴스\d\]|\[블로그\d\]|\b(?:short|long) sentence\s*:/i);

@@ -4,6 +4,7 @@
  * 각각 localStorage 키(무료AI 페이지) 또는 DB/env 설정값 사용
  */
 import { getSetting } from './get-setting';
+import { sanitizeInvisible } from './html-gate';
 
 // 한국어 강제 지시문 — 모든 프롬프트 뒤에 추가
 const KOREAN_ONLY_SUFFIX = `
@@ -427,7 +428,7 @@ async function callClaude(apiKey: string, prompt: string, model?: string): Promi
   return text;
 }
 
-export async function generateText(
+async function generateTextRaw(
   prompt: string,
   preferModel: string = 'qwen3',
   clientOllamaKey?: string,
@@ -703,4 +704,10 @@ export async function generateText(
     (errors.length ? `오류: ${errors.join(' | ')}\n` : '') +
     '설정 페이지에서 Gemini, Claude, OpenAI, OpenRouter API 키 중 하나를 저장하세요.'
   );
+}
+
+// 모든 AI 생성 글(블로그·쿠팡·SNS·쇼츠)의 단일 출입구: 유니코드 워터마크·엔티티·AI 접속어·AI 자기언급 제거
+export async function generateText(...args: Parameters<typeof generateTextRaw>): Promise<string> {
+  const out = await generateTextRaw(...args);
+  return /^\s*[{\[]/.test(out) ? out.replace(/[\u200B-\u200F\u2028-\u202E\u2060-\u2064\uFEFF]|[\u{E0000}-\u{E007F}]/gu, '') : sanitizeInvisible(out); // JSON 응답은 엔티티 디코딩이 구조를 깨므로 보이지 않는 문자만 제거
 }
