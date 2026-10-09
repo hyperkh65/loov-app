@@ -973,11 +973,11 @@ export async function POST(req: NextRequest) {
   const updateQuery = supabase
     .from('bossai_auto_articles')
     .update({
-      status: anySuccess ? 'published' : 'failed',
-      blog_platforms,
-      sns_platforms,
+      // 이미 발행된 글(published_urls 있음)을 빈 재요청·재시도 실패가 'failed'로 덮어쓰지 않게 함
+      status: anySuccess || Object.keys(mergedPublishedUrls).length > 0 ? 'published' : 'failed',
+      ...(anySuccess || Object.keys(mergedPublishedUrls).length === 0 ? { blog_platforms, sns_platforms } : {}),
       published_urls: mergedPublishedUrls,
-      published_at: anySuccess ? new Date().toISOString() : null,
+      ...(anySuccess ? { published_at: new Date().toISOString() } : Object.keys(mergedPublishedUrls).length > 0 ? {} : { published_at: null }),
       updated_at: new Date().toISOString(),
     })
     .eq('id', article_id);
