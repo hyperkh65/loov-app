@@ -9,7 +9,6 @@ import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signa
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
 import { PRODUCT_HOOK_GUIDE, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
-import { publishToNaverCafe } from '@/lib/naver-cafe';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, CoupangAutoConfig } from './index';
 
@@ -460,16 +459,6 @@ ${PRODUCT_HOOK_GUIDE}
           results.push(`${label}: ${(err as Error).message?.slice(0, 50) || '실패'}`);
         }
       }
-    }
-  }
-
-  if (config.naver_cafe) {
-    try {
-      const body = `${textMap.threads}\n\n🔗 상품 링크: ${commentGoLink}\n\n${DISCLOSURE}`;
-      await publishToNaverCafe(createAdminClient(), { userId: schedule.user_id, title: product.productName.slice(0, 80), content: '', hook: body, cafe: config.naver_cafe_target });
-      results.push('naver_cafe: 발행 완료');
-    } catch (err) {
-      results.push(`naver_cafe: ${(err as Error).message?.slice(0, 80) || '실패'}`);
     }
   }
 

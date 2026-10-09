@@ -60,8 +60,6 @@ export interface CoupangAutoConfig {
   search_keywords?: string[];
   sns_platforms: string[];
   sns_account_ids?: string[]; // 지정하면 sns_platforms 대신 이 계정들(platform_user_id)에만 발행
-  naver_cafe?: boolean; // 기본 끔
-  naver_cafe_target?: 'all' | string;
   min_discount?: number;
   // 워드프레스 발행(신규) — 미지정 시 기존처럼 SNS만 발행(하위호환)
   publish_targets?: ('sns' | 'wordpress')[];

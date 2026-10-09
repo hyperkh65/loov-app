@@ -220,15 +220,16 @@ export async function publishRewrittenArticle(
   }
 
   // 카페 발행은 SNS 연결 여부와 무관하게 시도 — 부분 실패 허용(다른 채널 발행에 영향 없음)
-  let naverCafe = 'skip: 연결 없음';
+  let naverCafe = 'skip: 2days.kr 글만 카페 발행';
   try {
+    if (!/\/\/(www\.)?2days\.kr(\/|$)/.test(wordpressUrl || '')) throw new Error('skip');
     const { articleUrl } = await publishToNaverCafe(admin, {
       userId, title: article.title, content: article.content, blogUrl: wordpressUrl || undefined,
       hook: captions.cafe || article.meta || undefined,
     });
     naverCafe = articleUrl ? `ok: ${articleUrl}` : 'ok';
   } catch (e) {
-    naverCafe = `error: ${(e as Error).message?.slice(0, 150)}`;
+    if ((e as Error).message !== 'skip') naverCafe = `error: ${(e as Error).message?.slice(0, 150)}`;
   }
 
   // 텀블러는 워드프레스 발행 URL을 링크 포스트로 거는 방식이라 워드프레스가
