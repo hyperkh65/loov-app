@@ -309,7 +309,7 @@ export default function SchedulerPage() {
     const cfg = form[key] as { sns_account_ids?: string[]; naver_cafe?: boolean; naver_cafe_target?: string };
     const set = (patch: Partial<typeof cfg>) => setForm(f => ({ ...f, [key]: { ...(f[key] as object), ...patch } }));
     const ids = cfg.sns_account_ids;
-    const cafeOn = cfg.naver_cafe !== false;
+    const cafeOn = key === 'blog' ? cfg.naver_cafe !== false : cfg.naver_cafe === true;
     return (
       <div className="space-y-2 pt-2 border-t border-gray-100">
         <div className="flex items-center justify-between">
@@ -340,13 +340,13 @@ export default function SchedulerPage() {
             </div>
           </>
         )}
-        {key === 'blog' && <label className="flex items-center gap-2 text-xs text-gray-700">
+        <label className="flex items-center gap-2 text-xs text-gray-700">
           <input type="checkbox" checked={cafeOn} onChange={e => set({ naver_cafe: e.target.checked })} className="rounded" />
-          ☕ 네이버 카페에도 발행 (2days.kr 사이트 글만)
-        </label>}
-        {key === 'blog' && cafeOn && (
+          ☕ 네이버 카페에도 발행
+        </label>
+        {cafeOn && (
           <select value={cfg.naver_cafe_target || ''} onChange={e => set({ naver_cafe_target: e.target.value || undefined })} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none">
-            <option value="">자동 — 등록 카페 중 가장 오래 안 쓴 1곳</option>
+            <option value="">기본 — 2dayskr 카페 1곳만</option>
             <option value="all">등록된 카페 전부</option>
             {cafes.map(c => <option key={c.club_id} value={c.club_id}>{c.name} 만</option>)}
           </select>
@@ -413,7 +413,7 @@ export default function SchedulerPage() {
                       <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400 flex-wrap">
                         <span>🕐 {INTERVAL_OPTIONS.find(o => o.value === s.interval_hours)?.label || `${s.interval_hours}h`}</span>
                         {s.interval_hours >= 24 && <span>{s.run_at_hour}시</span>}
-                        {(s.type === 'blog_auto' || s.type === 'coupang_auto') && (() => { const c = s.config as BlogAutoConfig; return <span>📡 {c.sns_account_ids ? `SNS ${c.sns_account_ids.length}개` : 'SNS 자동'}{s.type === 'blog_auto' && ` · ☕ ${c.naver_cafe === false ? '끔' : c.naver_cafe_target === 'all' ? '전체' : c.naver_cafe_target ? '1곳 지정' : '자동'}`}</span>; })()}
+                        {(s.type === 'blog_auto' || s.type === 'coupang_auto') && (() => { const c = s.config as BlogAutoConfig; return <span>📡 {c.sns_account_ids ? `SNS ${c.sns_account_ids.length}개` : 'SNS 자동'}{(s.type === 'blog_auto' ? c.naver_cafe !== false : c.naver_cafe === true) ? ` · ☕ ${c.naver_cafe_target === 'all' ? '전체' : c.naver_cafe_target ? '1곳 지정' : '2dayskr'}` : ' · ☕ 끔'}</span>; })()}
                         {s.last_run_at && <span>마지막: {formatRelativeTime(s.last_run_at)}</span>}
                         {s.next_run_at && s.is_active && <span className="text-blue-500">다음: {formatRelativeTime(s.next_run_at)}</span>}
                       </div>
