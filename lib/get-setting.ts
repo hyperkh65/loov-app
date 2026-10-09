@@ -14,17 +14,19 @@ async function loadSettings(): Promise<Record<string, string>> {
 
   try {
     const supabase = await createAdminClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('app_settings')
       .select('settings')
       .eq('id', 1)
       .single();
 
-    const settings = (data?.settings as Record<string, string>) || {};
+    // 조회 실패(DB 지연/장애)는 캐시하지 않음 — 빈 설정이 5분간 굳어 "키 미설정"이 되는 것 방지
+    if (error || !data?.settings) return _cache?.data ?? {};
+    const settings = data.settings as Record<string, string>;
     _cache = { data: settings, exp: now + 5 * 60 * 1000 };
     return settings;
   } catch {
-    return {};
+    return _cache?.data ?? {};
   }
 }
 
