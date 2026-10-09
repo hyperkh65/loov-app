@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { generateText } from '@/lib/auto-blog-ai';
+import { FRIENDLY_TONE_RULES } from '@/lib/auto-blog-prompt';
 import { uploadToR2, r2Available } from '@/lib/r2-storage';
 
 export const maxDuration = 300;
@@ -101,7 +102,7 @@ function buildPrompt(keyword: string, news: {title:string;description:string}[],
       .replace(/\{\{sources\}\}/g, sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성)');
   }
 
-  return `당신은 대한민국의 전문 저널리스트이자 검색 노출에 강한 블로그 작가입니다.
+  return `당신은 친구에게 이야기해 주듯 글을 쓰는, 검색 노출에 강한 블로그 작가입니다. 기사 요약이 아니라 읽는 재미가 있는 글을 씁니다.
 
 [언어 규칙 - 절대 준수] 반드시 한국어로만 작성. 중국어·일본어·러시아어 등 외국어 문자 절대 금지. 본문 텍스트에 영어 문장이나 영어 단어 나열 금지. 고유 브랜드명(iPhone, Google 등)·약어만 예외. ===TITLE===, ===META===, ===CONTENT===, ===KEYWORDS=== 마커는 영문 그대로 유지.
 
@@ -130,6 +131,8 @@ function buildPrompt(keyword: string, news: {title:string;description:string}[],
 【참고자료 활용 원칙】
 - 참고자료의 날짜, 인물명, 수치, 사건 경위를 정확하게 반영
 - 자료에 없는 숫자, 날짜, 인물명, 발언, 전망을 만들지 않습니다
+
+${FRIENDLY_TONE_RULES}
 
 【분량 원칙】
 - 순수 텍스트(HTML 태그 제외) 4000자 이상 4800자 이하
@@ -167,59 +170,47 @@ ${sources || '(참고자료 없음 - 키워드 기반 전문 지식으로 작성
 <p data-ke-size="size16"><span style="background-color:#fafafa;color:#333333;">[두괄식 도입: 핵심 결론/사실을 첫 문장에 직접 명시. 3~4문장]</span></p>
 <p data-ke-size="size16">[배경과 맥락. 구체적 날짜, 인물, 수치 포함. 4~5문장]</p>
 <p data-ke-size="size16">[이 글에서 독자가 확인할 내용을 자연스럽게 연결. 3~4문장]</p>
-<h3 style="margin-bottom:15px;" data-ke-size="size23"><b><span style="background-color:#fafafa;color:#333333;">[참고자료 내용에 맞는 글 전체 부제목]</span></b></h3>
+<h3 style="margin-bottom:15px;" data-ke-size="size23"><b>[글 전체 부제목]</b></h3>
 
-<h2 id="section1" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>1. [참고자료 내용 기반 소제목]</b></h2>
+<h2 id="section1" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[핵심 사실을 첫 문장에. 참고자료 내용 직접 반영. 4~5문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[배경, 원인, 변화 과정. 앞 단락 반복 금지. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점의 영향, 주의 사항. 3~4문장. 자료 부족 시 생략]</p>
 
-<h2 id="section2" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>2. [참고자료 내용 기반 소제목]</b></h2>
+<h2 id="section2" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[앞 섹션과 겹치지 않는 새로운 사실. 4~5문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[세부 흐름, 비교 요소, 조건. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자가 실제로 궁금해할 영향, 주의 사항. 3~4문장. 자료 부족 시 생략]</p>
 
-<h2 id="section3" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>3. [참고자료 내용 기반 소제목]</b></h2>
+<h2 id="section3" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[주제에 맞는 핵심 사실. 4~5문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[관련 배경과 변화 과정. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자의 실생활 영향, 실제 활용 관점. 3~4문장. 자료 부족 시 생략]</p>
 
-<h2 id="section4" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>4. [참고자료 내용 기반 소제목]</b></h2>
+<h2 id="section4" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자가 실제로 알아야 할 내용. 4~5문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[앞 섹션과 중복되지 않는 세부 조건, 주의 사항. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자가 확인하거나 실천할 수 있는 내용. 3~4문장. 자료 부족 시 생략]</p>
 
-<h2 id="section5" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>5. [참고자료 내용 기반 소제목]</b></h2>
+<h2 id="section5" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[현재 확인된 상황, 향후 일정, 독자가 기억할 사항. 4~5문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[공식 전망이나 향후 계획이 있으면 반영. 없으면 현재 확인 가능한 사항. 3~4문장]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[본문 전체를 자연스럽게 마무리. 새로운 사실 추가 금지. 3~4문장]</p>
 
-<h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
-<div style="margin:22px 0 0;">
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q1. [독자가 실제로 검색할 만한 질문]</div>
-<div style="color:#555;">[참고자료에 근거한 답변 2문장]</div>
-</div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q2. [독자가 실제로 검색할 만한 질문]</div>
-<div style="color:#555;">[참고자료에 근거한 답변 2문장]</div>
-</div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q3. [독자가 실제로 검색할 만한 질문]</div>
-<div style="color:#555;">[참고자료에 근거한 답변 2문장]</div>
-</div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q4. [독자가 실제로 검색할 만한 질문]</div>
-<div style="color:#555;">[참고자료에 근거한 답변 2문장]</div>
-</div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q5. [독자가 실제로 검색할 만한 질문]</div>
-<div style="color:#555;">[참고자료에 근거한 답변 2문장]</div>
-</div>
-<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;">
-<div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">Q6. [독자가 실제로 검색할 만한 질문]</div>
-<div style="color:#555;">[참고자료에 근거한 답변 2문장]</div>
-</div>
+<h2 id="faq" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
+<div>
+<p style="margin:0 0 4px;" data-ke-size="size16"><b>[독자가 실제로 검색할 만한 질문]</b></p>
+<p style="margin:0 0 18px;" data-ke-size="size16">[참고자료에 근거한 답변 2문장]</p>
+<p style="margin:0 0 4px;" data-ke-size="size16"><b>[독자가 실제로 검색할 만한 질문]</b></p>
+<p style="margin:0 0 18px;" data-ke-size="size16">[참고자료에 근거한 답변 2문장]</p>
+<p style="margin:0 0 4px;" data-ke-size="size16"><b>[독자가 실제로 검색할 만한 질문]</b></p>
+<p style="margin:0 0 18px;" data-ke-size="size16">[참고자료에 근거한 답변 2문장]</p>
+<p style="margin:0 0 4px;" data-ke-size="size16"><b>[독자가 실제로 검색할 만한 질문]</b></p>
+<p style="margin:0 0 18px;" data-ke-size="size16">[참고자료에 근거한 답변 2문장]</p>
+<p style="margin:0 0 4px;" data-ke-size="size16"><b>[독자가 실제로 검색할 만한 질문]</b></p>
+<p style="margin:0 0 18px;" data-ke-size="size16">[참고자료에 근거한 답변 2문장]</p>
+<p style="margin:0 0 4px;" data-ke-size="size16"><b>[독자가 실제로 검색할 만한 질문]</b></p>
+<p style="margin:0 0 18px;" data-ke-size="size16">[참고자료에 근거한 답변 2문장]</p>
 </div>
 
 ===KEYWORDS===
