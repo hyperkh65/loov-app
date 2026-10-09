@@ -178,6 +178,9 @@ export default function AutoServicePage() {
   const [naverCafeMenus, setNaverCafeMenus] = useState<{ menuId: number; menuName: string }[]>([]);
   const [naverCafeStatus, setNaverCafeStatus] = useState<{ connected: boolean; oauth_valid: boolean; has_token: boolean } | null>(null);
   const [selNaverCafeMenuId, setSelNaverCafeMenuId] = useState<string>('');
+  const [tistoryCats, setTistoryCats] = useState<{ id: number; label: string }[] | null>(null);
+  const [tistoryCatErr, setTistoryCatErr] = useState('');
+  const [selTistoryCat, setSelTistoryCat] = useState('');
   // 백링크 플랫폼
   const [selBacklink, setSelBacklink] = useState<string[]>([]);
   const [backlinkStatus, setBacklinkStatus] = useState<{ medium: boolean; tumblr: boolean; pinterest: boolean; linkedin: boolean }>({ medium: false, tumblr: false, pinterest: false, linkedin: false });
@@ -258,6 +261,14 @@ export default function AutoServicePage() {
       setModelsLoading(false);
     }
   }, []);
+
+  const tistorySelected = selBlog.includes('tistory');
+  useEffect(() => {
+    if (!tistorySelected || tistoryCats !== null || tistoryCatErr) return;
+    fetch('/api/tistory/categories').then(r => r.json()).then((d: { categories?: { id: number; label: string }[]; error?: string }) => {
+      if (d.error) setTistoryCatErr(d.error); else setTistoryCats(d.categories ?? []);
+    }).catch(() => setTistoryCatErr('카테고리를 불러오지 못했습니다'));
+  }, [tistorySelected, tistoryCats, tistoryCatErr]);
 
   const loadNaverCafeMenus = useCallback(async () => {
     try {
@@ -891,11 +902,29 @@ export default function AutoServicePage() {
   };
 
   const startShortsStream = (payload: { article_id: string; title: string; keyword: string; description: string; blog_url?: string; content?: string }) => {
+    const pollShortsJob = async (id: string, title: string) => {
+      let curId = id;
+      setShortsJobs(prev => prev.map(j => j.id === curId && j.status === 'running' ? { ...j, progress: '연결이 끊겨 서버 진행 상태를 확인하는 중...' } : j));
+      for (let i = 0; i < 100; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const d = await (await fetch('/api/shorts/queue')).json() as { jobs?: { id: string; title: string; status: string; progress: string; video_url?: string; yt_url?: string; error_message?: string }[] };
+          const job = d.jobs?.find(j => j.id === curId) ?? (curId.startsWith('tmp_') ? d.jobs?.find(j => j.title === title) : undefined);
+          if (!job) continue;
+          const st = job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : 'running';
+          const prevId = curId; curId = job.id;
+          setShortsJobs(prev => prev.map(j => j.id === prevId ? { ...j, id: job.id, status: st, progress: job.status === 'pending' ? '서버 대기 중...' : job.progress, video_url: job.video_url ?? j.video_url, yt_url: job.yt_url ?? j.yt_url } : j));
+          if (st !== 'running') return;
+        } catch { /* 다음 주기에 재시도 */ }
+      }
+      setShortsJobs(prev => prev.map(j => j.id === curId && j.status === 'running' ? { ...j, status: 'error', progress: '진행 상태를 확인하지 못했습니다. 다시 시도해주세요.' } : j));
+    };
     const tempId = `tmp_${Date.now()}`;
     setShortsJobs(prev => [{ id: tempId, title: payload.title, status: 'running', progress: '연결 중...' }, ...prev]);
 
     (async () => {
       let jobId = tempId;
+      let finished = false;
       try {
         const res = await fetch('/api/shorts/auto-generate', {
           method: 'POST',
@@ -928,10 +957,12 @@ export default function AutoServicePage() {
                   ? { ...j, status: 'running', progress: evt.msg }
                   : j));
               } else if (evt.type === 'done') {
+                finished = true;
                 setShortsJobs(prev => prev.map(j => j.id === jobId
                   ? { ...j, status: 'done', progress: '완료!', video_url: evt.video_url, yt_url: evt.yt_url }
                   : j));
               } else if (evt.type === 'error') {
+                finished = true;
                 setShortsJobs(prev => prev.map(j => j.id === jobId
                   ? { ...j, status: 'error', progress: evt.msg }
                   : j));
@@ -939,14 +970,10 @@ export default function AutoServicePage() {
             } catch { /* JSON parse 실패 무시 */ }
           }
         }
-        // SSE가 done/error 없이 끊긴 경우 error로 마크
-        setShortsJobs(prev => prev.map(j => j.id === jobId && j.status === 'running'
-          ? { ...j, status: 'error', progress: '연결이 끊겼습니다. 다시 시도해주세요.' }
-          : j));
-      } catch (err) {
-        setShortsJobs(prev => prev.map(j => j.id === jobId
-          ? { ...j, status: 'error', progress: String(err) }
-          : j));
+        // SSE가 done/error 없이 끊겨도 서버 작업은 계속 돌므로 error로 단정하지 않고 DB 상태를 폴링
+        if (!finished) pollShortsJob(jobId, payload.title);
+      } catch {
+        pollShortsJob(jobId, payload.title);
       }
     })();
   };
@@ -966,6 +993,7 @@ export default function AutoServicePage() {
           wp_site_ids: selWpSiteIds,
           backlink_platforms: selBacklink,
           ...(selNaverCafeMenuId ? { naver_cafe_menu_id: selNaverCafeMenuId } : {}),
+          ...(selTistoryCat ? { tistory_category_id: selTistoryCat } : {}),
         }),
       });
       const text = await res.text();
@@ -2303,6 +2331,21 @@ export default function AutoServicePage() {
                         <span>{p.icon} {p.name}</span>
                       </label>
                     ))}
+                    {selBlog.includes('tistory') && (
+                      <div>
+                        <div className="text-xs font-medium text-gray-500 mb-1.5 mt-1">🟠 티스토리 카테고리</div>
+                        {tistoryCatErr ? (
+                          <div className="p-3 bg-orange-50 rounded-lg text-xs text-orange-700 border border-orange-200">⚠️ {tistoryCatErr}</div>
+                        ) : tistoryCats === null ? (
+                          <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-400 border border-gray-200">카테고리 불러오는 중...</div>
+                        ) : (
+                          <select value={selTistoryCat} onChange={e => setSelTistoryCat(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500">
+                            <option value="">— 카테고리 없음(기본) —</option>
+                            {tistoryCats.map(c => <option key={c.id} value={String(c.id)}>{c.label}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    )}
                     {/* WordPress 사이트 목록 */}
                     {wpSites.length > 0 ? (
                       <div>
