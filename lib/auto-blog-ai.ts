@@ -176,6 +176,8 @@ const OPENROUTER_MODELS = [
 const OPENROUTER_FALLBACK_MODELS = ['nvidia/nemotron-3-ultra-550b-a55b:free', 'nvidia/nemotron-3-super-120b-a12b:free'];
 
 const exhaustedOllamaKeys = new Map<string, number>();
+let lastProvider = '';
+export const getLastProvider = () => lastProvider; // 마지막으로 응답에 성공한 AI(provider/model)
 
 async function callOllama(apiKey: string, model: string, prompt: string): Promise<string> {
   const res = await fetch('https://ollama.com/api/chat', {
@@ -530,7 +532,7 @@ async function generateTextRaw(
       }
       for (const model of toTry) {
         if (Date.now() > deadline) break;
-        try { return await callOllama(key, model, prompt); }
+        try { const r = await callOllama(key, model, prompt); lastProvider = 'ollama/' + model; return r; }
         catch (e) {
           // 캡을 3개로 걸어두면 키 하나가 여러 모델에서 실패할 때 로그가 거기서
           // 잘려서 나머지 8개 키가 실제로 시도됐는지조차 알 수 없었음 — 캡 제거
@@ -565,7 +567,7 @@ async function generateTextRaw(
     if (legacyGeminiKey && !geminiKeys.includes(legacyGeminiKey)) geminiKeys.push(legacyGeminiKey);
 
     if (geminiKeys.length === 0) { errors.push('Gemini: API 키 미설정'); return false; }
-    try { return await callGemini(geminiKeys, prompt); }
+    try { const r = await callGemini(geminiKeys, prompt); lastProvider = 'gemini'; return r; }
     catch (e) { errors.push(`Gemini: ${e}`); return false; }
   };
   const tryOpenRouter = async (models: string[] = OPENROUTER_MODELS) => {
@@ -587,7 +589,7 @@ async function generateTextRaw(
     const firstErrors: string[] = [];
     for (const key of orKeys) {
       for (const model of models) {
-        try { return await callOpenRouter(key, model, prompt); }
+        try { const r = await callOpenRouter(key, model, prompt); lastProvider = 'openrouter/' + model; return r; }
         catch (e) {
           const msg = String(e);
           // 429(한도 초과) → 다음 키로, 그 외 오류 → 다음 모델로
@@ -603,7 +605,7 @@ async function generateTextRaw(
   const tryOpenAI = async () => {
     const key = await getSetting('OPENAI_API_KEY');
     if (!key) { errors.push('OpenAI: API 키 미설정'); return false; }
-    try { return await callOpenAI(key, prompt); }
+    try { const r = await callOpenAI(key, prompt); lastProvider = 'openai'; return r; }
     catch (e) { errors.push(`OpenAI: ${e}`); return false; }
   };
   // AI 직원 기본 설정 키 (localStorage → 클라이언트에서 전달)
@@ -616,7 +618,7 @@ async function generateTextRaw(
   const tryClaude = async (model?: string) => {
     const key = await getSetting('CLAUDE_API_KEY');
     if (!key) { errors.push('Claude: API 키 미설정'); return false; }
-    try { return await callClaude(key, prompt, model); }
+    try { const r = await callClaude(key, prompt, model); lastProvider = 'claude'; return r; }
     catch (e) { errors.push(`Claude: ${e}`); return false; }
   };
   const tryGroq = async () => {
@@ -629,7 +631,7 @@ async function generateTextRaw(
       }
     } catch { /* ignore */ }
     if (groqKeys.length === 0) { errors.push('Groq: API 키 미설정'); return false; }
-    try { return await callGroq(groqKeys, prompt); }
+    try { const r = await callGroq(groqKeys, prompt); lastProvider = 'groq/qwen3.8-27b'; return r; }
     catch (e) { errors.push(`Groq: ${e}`); return false; }
   };
 
