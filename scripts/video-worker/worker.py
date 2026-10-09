@@ -5,7 +5,7 @@ env(필수): SUPABASE_URL, SUPABASE_SERVICE_KEY, WORKER_TOKEN
 env(선택): VIDEO_DIR, COOKIES_DIR, BIND(기본 172.17.0.1 = docker 브리지, 외부 비노출), PORT(58100), YTDLP
 쿠키: COOKIES_DIR/<도메인>.txt (예: douyin.com.txt) — URL에 그 도메인이 있으면 --cookies 로 사용.
 """
-import json, os, subprocess, sys, threading, time, urllib.request, urllib.parse
+import hashlib, hmac, json, os, subprocess, sys, threading, time, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SB = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/bossai_video_jobs"
@@ -46,6 +46,7 @@ def download(job):
     url = job["input"]
     cmd = YTDLP + ["--no-playlist", "--restrict-filenames", "--no-warnings", "--print-json", "--no-simulate",
                    "-o", os.path.join(VIDEO_DIR, "%(extractor)s_%(id)s.%(ext)s"),
+                   "-f", "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/b[ext=mp4]/bv*+ba/b",
                    "--merge-output-format", "mp4"]
     ck = cookies_for(url)
     if ck:
@@ -83,10 +84,19 @@ def work_loop():
 
 class Files(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.headers.get("X-Worker-Token") != TOKEN:
+        u = urllib.parse.urlsplit(self.path)
+        q = urllib.parse.parse_qs(u.query)
+        signed = u.path.startswith("/dl/")
+        name = urllib.parse.unquote(u.path).removeprefix("/dl/" if signed else "/files/")
+        if signed:  # 서명 링크: sig = HMAC-SHA256(TOKEN, "<name>.<exp>"), exp = unix초
+            exp, sig = q.get("exp", [""])[0], q.get("sig", [""])[0]
+            good = hmac.new(TOKEN.encode(), f"{name}.{exp}".encode(), hashlib.sha256).hexdigest()
+            if not exp.isdigit() or int(exp) < time.time() or not hmac.compare_digest(sig, good):
+                self.send_error(403)
+                return
+        elif self.headers.get("X-Worker-Token") != TOKEN:
             self.send_error(403)
             return
-        name = urllib.parse.unquote(self.path.split("?")[0]).removeprefix("/files/")
         path = os.path.join(VIDEO_DIR, name)
         if "/" in name or ".." in name or not os.path.isfile(path):
             self.send_error(404)
@@ -94,6 +104,8 @@ class Files(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "video/mp4" if name.endswith(".mp4") else "application/octet-stream")
         self.send_header("Content-Length", str(os.path.getsize(path)))
+        if signed:
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(name))
         self.end_headers()
         with open(path, "rb") as f:
             while chunk := f.read(1 << 20):
