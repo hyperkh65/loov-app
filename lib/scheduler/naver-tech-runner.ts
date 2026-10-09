@@ -17,7 +17,7 @@
  * 같은 기사 자동화 용도로 성공 이력이 있다(status: completed, 실제 post_url
  * 확인됨) — 검증된 경로로 되돌리는 것.
  */
-import { tightTitle } from '@/lib/html-gate';
+import { tightTitle, sanitizeInvisible, assertPublishableHtml, findForeignWords } from '@/lib/html-gate';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
@@ -126,7 +126,7 @@ ${scraped.text}
 ${refBlock}
 [규칙]
 1. 한국어만 사용. 한국어 동의어가 있는 영어 단어 금지(content→콘텐츠, review→리뷰, update→업데이트 등). 고유 제품명·브랜드명만 예외.
-2. 존재하지 않는 회사·보고서·수치를 지어내지 말 것
+2. 존재하지 않는 회사·보고서·수치·인물을 지어내지 말 것(인명·직함은 원문에 적힌 철자 그대로만, 불확실하면 쓰지 말 것)
 3. 전체 분량 4000~5000자(한국어 기준, 공백 포함). 짧게 끝내지 말 것.
 4. 소제목(h2) 5~6개, 각 소제목 아래 단락 2개, 각 단락 6문장 이상
 5. 첫 문단은 핵심 결론부터(서론식 "~에 대해 알아봅니다" 금지), 6문장 이상
@@ -134,7 +134,7 @@ ${refBlock}
 7. 글 마지막에 자주 묻는 질문 3~4개(질문+답변 2~3문장)
 
 [출력 형식 — 순수 HTML만, 다른 설명·코드블록 없이. 첫 줄은 반드시 제목 주석]
-<!--TITLE: (한국 소비자가 검색할 제품명·핵심 키워드로 시작 + 출시일/가격/스펙/비교/후기 같은 검색 의도어 + 얻는 정보 하나, 20~32자. 감성 문장 금지)-->
+<!--TITLE: (한국 소비자가 검색할 제품명·핵심 키워드로 시작 + 출시일/가격/스펙/비교/후기 같은 검색 의도어 + 얻는 정보 하나, 20~32자. 연도 숫자·"살펴보기"·"알아보기" 같은 서술어·감성 문장 금지)-->
 <h2>(소제목1)</h2>
 <p>(단락1)</p>
 <p>(단락2)</p>
@@ -146,8 +146,11 @@ ${refBlock}
   const cleaned = rawOut.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
   const titleMatch = cleaned.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i);
   const title = tightTitle((titleMatch?.[1] || topic.title).trim());
-  let content = cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, '');
+  let content = sanitizeInvisible(cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, ''));
   if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
+  assertPublishableHtml(title, content);
+  const foreign = findForeignWords(content);
+  if (foreign.length) throw new Error(`발행 차단(본문에 외국어 단어): ${foreign.slice(0, 5).join(', ')}`);
 
   // 출처/참고 주소 하단 표기는 제거(사용자 요청 2026-10-03)
   const { displayUrls, thumbUrl } = await searchInlineImages(title, 3, { aiThumb: true, keepExternal: true });

@@ -10,6 +10,8 @@ const ODD_SPACE_RE = /[  -   　]/g;
 export function sanitizeInvisible(s: string): string {
   // 섹션 구분자(===FAQ=== 등) 파싱 잔여물로 '=' 한 글자만 든 문단이 생기던 버그 방어
   return s.replace(INVISIBLE_RE, '').replace(ODD_SPACE_RE, ' ').replace(/<p[^>]*>\s*=+\s*<\/p>\n?/g, '')
+    // 프롬프트의 '단락 N' 번호 라벨이 문단 머리에 그대로 노출되는 것 방지
+    .replace(/(<p[^>]*>)\s*(?:<(?:b|strong|i|em)>)?\s*[(\[]?\s*단락\s*\d+\s*[)\]]?\s*[:：]?\s*(?:<\/(?:b|strong|i|em)>)?\s*/g, '$1')
     // 프롬프트의 '핵심:' 라벨이 문단 머리에 그대로 노출되는 것 방지
     .replace(/(<p[^>]*>)\s*(?:<(?:b|strong)>)?\s*핵심\s*[:：]\s*(?:<\/(?:b|strong)>)?\s*/g, '$1')
     // 문장 중간(같은 줄)에 붙은 '핵심:' 라벨 제거 — 줄 머리는 위 규칙/박스 파서가 처리
@@ -45,7 +47,7 @@ export function findHtmlProblem(title: string, html: string): string | null {
   if (/style\s*=|data-ke-size|background\s*:|linear-gradient|&lt;\/?[a-z]/i.test(text)) return '본문에 태그/스타일 코드가 글자로 노출됨';
 
   // 프롬프트 자리표시자·마커 누출
-  const leak = text.match(/===[A-Z0-9]+===|\(단락\d|\(키워드 포함|\(메타 설명|\[뉴스\d\]|\[블로그\d\]|\b(?:short|long) sentence\s*:/i);
+  const leak = text.match(/===[A-Z0-9]+===|단락\s*\d|\(키워드 포함|\(메타 설명|\[뉴스\d\]|\[블로그\d\]|\b(?:short|long) sentence\s*:/i);
   if (leak) return `프롬프트 지시문/마커가 본문에 남음: ${text.slice(Math.max(0, leak.index! - 20), leak.index! + 40)}`;
 
   // 모델 반복 루프: 같은 단어/구절이 연달아 반복되거나 줄 끝에 구분자 '='만 남은 경우
