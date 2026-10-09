@@ -82,7 +82,8 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   }));
 
   // 네이버 카페 + 텀블러도 공통으로(부분 실패 허용 — rewrite-publish.ts와 동일 패턴)
-  if (opts.cafe !== false) publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl, hook: captions.cafe, cafe: opts.cafeTarget }).catch(() => {});
+  // 네이버 카페는 2days.kr 사이트 글만(사용자 확정)
+  if (opts.cafe !== false && group === 'twodays') publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl, hook: captions.cafe, cafe: opts.cafeTarget }).catch(() => {});
   publishToTumblr({ title, canonical_url: articleUrl }).catch(() => {});
 }
 
