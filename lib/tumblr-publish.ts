@@ -56,10 +56,11 @@ export interface TumblrPublishParams {
   meta_description?: string;
   keyword?: string;
   canonical_url: string;
+  tags?: string[];
 }
 
 export async function publishToTumblr(params: TumblrPublishParams): Promise<{ url?: string }> {
-  const { title, meta_description, keyword, canonical_url } = params;
+  const { title, meta_description, keyword, canonical_url, tags: aiTags } = params;
   if (!title || !canonical_url) throw new Error('title, canonical_url 필요');
 
   const [consumerKey, consumerSecret, accessToken, accessTokenSecret, blogName] = await Promise.all([
@@ -81,7 +82,7 @@ export async function publishToTumblr(params: TumblrPublishParams): Promise<{ ur
     throw new Error(`Tumblr 설정 누락: ${missing}`);
   }
 
-  const tags = [keyword?.split(' ')[0] || 'korea', 'korea', 'korean-blog', 'news'].filter(Boolean);
+  const tags = (aiTags?.length ? aiTags : [keyword?.split(' ')[0] || 'korea', 'korea', 'korean-blog', 'news']).filter(Boolean).slice(0, 10);
 
   // 레거시 API endpoint (form-encoded, OAuth 1.0a 호환성 최고)
   const postUrl = `https://api.tumblr.com/v2/blog/${blogName}/post`;
