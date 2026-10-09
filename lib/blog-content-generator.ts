@@ -3,6 +3,7 @@
  * auto-service/generate 와 scheduler/blog-runner 에서 공유
  */
 import { generateText } from '@/lib/auto-blog-ai';
+import { FRIENDLY_TONE_RULES } from '@/lib/auto-blog-prompt';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { uploadToR2 } from '@/lib/r2-storage';
 import { getSetting } from '@/lib/get-setting';
@@ -254,7 +255,7 @@ export function buildBlogPrompt(
   ].join('\n');
 
   const intro = sourceArticle
-    ? `한국어 SEO 블로그 작가입니다. 아래 원문 기사를 리라이팅해 "${keyword}" 블로그 글을 작성하세요.`
+    ? `한국어 SEO 블로그 작가입니다. 아래 원문 기사를 읽고 친근하게 풀어 쓰는 방식으로 "${keyword}" 블로그 글을 작성하세요.`
     : `한국어 SEO 블로그 작가입니다. 아래 규칙대로 "${keyword}" 블로그 글을 작성하세요.`;
   const sourceBlock = sourceArticle
     ? `\n원문 기사(리라이팅 대상 — 표절 금지, 사실·정보는 유지하되 문장은 완전히 새롭게 재구성):\n제목: ${sourceArticle.title}\n${sourceArticle.content.slice(0, 3000) || '(본문 없음 — 제목 기반으로 작성)'}\n`
@@ -271,8 +272,11 @@ ${sources || '(없음 — 전문 지식으로 작성)'}
 2. 존재하지 않는 회사·보고서·연구 절대 지어내지 말 것
 3. 각 본문 단락은 반드시 6문장 이상 (짧은 단락 금지). 단, 분량은 새 사실·수치·조건·사례·독자 관점의 영향으로 채우고 같은 말을 표현만 바꿔 되풀이하거나 "~궁금해하고 있습니다" 류 군더더기 문장을 쓰지 말 것
 4. 첫 문장에 핵심 결론부터 (서론식 "~에 대해 알아봅니다" 금지)
-5. 친근한 구어체, 독자가 무릎 칠 구체적 사례 포함
+5. 아래 [문체]를 따른다 — 기사 요약이 아니라 친구에게 이야기해 주는 글
 6. 원문 기사의 URL·링크·"출처: ..." 표기를 절대 포함하지 말 것 — 원문 내용을 참고만 하고 링크는 한 글자도 옮기지 말 것 (네이버 블로그는 본문에 URL이 있으면 자동으로 원문 사이트 링크카드가 생성됨)
+
+[문체]
+${FRIENDLY_TONE_RULES}
 
 [추가 지침 — 위 규칙에 더해 반드시 지킬 것]
 A. 주제·사실성
@@ -322,32 +326,26 @@ F. AI 티 나는 문체 금지
 ===S1===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장)
 
 ===S2===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장)
 
 ===S3===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장)
 
 ===S4===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장)
 
 ===S5===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장)
 
 ===S6===소제목
 (6문장 이상의 본문)
 (전망과 독자 행동을 담은 6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장)
 
 ===FAQ===
 Q: (질문1)
@@ -505,10 +503,10 @@ export function markdownToHtml(md: string): string {
       out.push(`<h3 style="margin-bottom:15px;" data-ke-size="size23"><b>${mdInline(line.replace(/^###\s/, ''))}</b></h3>`);
     } else if (/^##\s/.test(line)) {
       closeUl();
-      out.push(`<h2 style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;" data-ke-size="size26"><b>${mdInline(line.replace(/^##\s/, ''))}</b></h2>`);
+      out.push(`<h2 style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>${mdInline(line.replace(/^##\s/, ''))}</b></h2>`);
     } else if (/^#\s/.test(line)) {
       closeUl();
-      out.push(`<h2 style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;" data-ke-size="size26"><b>${mdInline(line.replace(/^#\s/, ''))}</b></h2>`);
+      out.push(`<h2 style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>${mdInline(line.replace(/^#\s/, ''))}</b></h2>`);
     } else if (/^[-*]\s/.test(line)) {
       if (!inUl) { out.push('<ul style="margin:10px 0 10px 20px;">'); inUl = true; }
       out.push(`<li style="margin-bottom:6px;">${mdInline(line.replace(/^[-*]\s/, ''))}</li>`);
@@ -530,11 +528,8 @@ function buildHtmlFromSections(raw: string, title: string): string {
 
   const h2 = (num: number, heading: string) => {
     const clean = heading.replace(/\*+/g, '').replace(/`/g, '').trim();
-    return `<h2 id="section${num}" style="font-size:22px;color:white;background:linear-gradient(to right,#1a73e8,#004d99);margin:30px 0 15px;border-radius:10px;padding:10px 25px;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.1);" data-ke-size="size26"><b>${num}. ${esc(clean)}</b></h2>`;
+    return `<h2 id="section${num}" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>${esc(clean)}</b></h2>`;
   };
-
-  const infoBox = (text: string) =>
-    `<div style="background-color:#e8f4fd;border-left:4px solid #1a73e8;padding:15px;margin:20px 0;border-radius:0 8px 8px 0;"><b>💡 핵심 포인트</b><br/>${mdInline(text)}</div>`;
 
   const parts: string[] = [];
 
@@ -561,7 +556,6 @@ function buildHtmlFromSections(raw: string, title: string): string {
     // 핵심: 줄 분리
     // 모델이 '핵심:' 줄을 여러 번/문장 중간에 써도 본문에 '핵심:' 접두사가 남지 않게 전부 걷어냄(첫 번째만 박스로 사용)
     const CORE_LINE = /^[ \t]*[*_]*핵심[*_]*\s*[:：][*_]*\s*(.+)$/gm;
-    const coreText = [...body.matchAll(CORE_LINE)][0]?.[1]?.trim() || '';
     const bodyWithoutCore = body.replace(CORE_LINE, '').replace(/(^|\n)\s*[*_]*핵심[*_]*\s*[:：]\s*/g, '$1').trim();
 
     // 빈 줄 기준으로 단락 분리
@@ -570,7 +564,6 @@ function buildHtmlFromSections(raw: string, title: string): string {
       parts.push(wrap(p));
     }
 
-    if (coreText) parts.push(infoBox(coreText));
   }
 
   // FAQ
@@ -579,14 +572,14 @@ function buildHtmlFromSections(raw: string, title: string): string {
     return m ? m[1].trim() : '';
   })();
   if (faqRaw) {
-    parts.push(`<h2 id="faq" style="font-size:22px;color:#1a73e8;margin:30px 0 14px;padding-bottom:8px;border-bottom:2px solid #dcdcdc;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>`);
-    parts.push(`<div style="margin:22px 0 0;">`);
+    parts.push(`<h2 id="faq" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>`);
+    parts.push(`<div>`);
     const qaBlocks = faqRaw.split(/\n(?=Q:)/i).filter(Boolean);
     for (const block of qaBlocks) {
       const qm = block.match(/Q:\s*(.+)/i);
       const am = block.match(/A:\s*([\s\S]+)/i);
       if (qm && am) {
-        parts.push(`<div style="margin:0 0 18px;padding:14px;background-color:#f9f9f9;border:1px solid #eee;border-radius:8px;"><div style="font-weight:bold;margin:0 0 6px;color:#1a73e8;">${mdInline(qm[1].trim())}</div><div style="color:#555;">${mdInline(am[1].trim())}</div></div>`);
+        parts.push(`<p style="margin:0 0 4px;" data-ke-size="size16"><b>${mdInline(qm[1].trim())}</b></p><p style="margin:0 0 18px;" data-ke-size="size16">${mdInline(am[1].trim())}</p>`);
       }
     }
     parts.push(`</div>`);
