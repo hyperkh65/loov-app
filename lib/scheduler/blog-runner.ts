@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { tightTitle } from '@/lib/html-gate';
 import { buildHookCaptions } from '@/lib/sns/hook-captions';
+import { getLastProvider } from '@/lib/auto-blog-ai';
 import { notifyPublished } from '@/lib/owner-alert';
 import { withUtm } from '@/lib/utm';
 import { refreshBloggerToken } from '@/lib/blogger-token';
@@ -24,6 +25,7 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
     buildHookCaptions(title, summary),
     new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 60_000)),
   ]).catch(() => ({} as Record<string, string>));
+  console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(captions).length ? getLastProvider() : '실패/60초초과→제목으로 대체'}`);
   const supabase = createAdminClient();
   const { data } = await supabase
     .from('sns_connections')
