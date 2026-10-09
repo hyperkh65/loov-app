@@ -5,7 +5,7 @@ env(필수): SUPABASE_URL, SUPABASE_SERVICE_KEY, WORKER_TOKEN
 env(선택): VIDEO_DIR, COOKIES_DIR, BIND(기본 172.17.0.1 = docker 브리지, 외부 비노출), PORT(58100), YTDLP
 쿠키: COOKIES_DIR/<도메인>.txt (예: douyin.com.txt) — URL에 그 도메인이 있으면 --cookies 로 사용.
 """
-import hashlib, hmac, json, os, subprocess, sys, threading, time, urllib.request, urllib.parse
+import hashlib, hmac, http.cookiejar, json, os, re, subprocess, sys, threading, time, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SB = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/bossai_video_jobs"
@@ -62,11 +62,72 @@ def download(job):
             "duration": info.get("duration"), "size": os.path.getsize(path)}
 
 
-def work_loop():
-    sb("PATCH", "?status=eq.running&kind=eq.download", {"status": "queued"})  # 재시작 시 중단된 작업 복구
+_bili = {"opener": None, "exp": 0}
+
+
+def bili_opener():
+    # 비로그인 방문 쿠키(buvid)가 있어야 412가 안 남. 1시간 캐시.
+    if time.time() > _bili["exp"]:
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        op.addheaders = [("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"),
+                         ("Referer", "https://www.bilibili.com/")]
+        op.open("https://www.bilibili.com/", timeout=20).read(1)
+        op.open("https://api.bilibili.com/x/frontend/finger/spi", timeout=20).read()
+        _bili.update(opener=op, exp=time.time() + 3600)
+    return _bili["opener"]
+
+
+def search_bilibili(q, n):
+    url = "https://api.bilibili.com/x/web-interface/search/type?search_type=video&page=1&keyword=" + urllib.parse.quote(q)
+    j = json.loads(bili_opener().open(url, timeout=20).read())
+    if j.get("code") != 0:
+        raise RuntimeError("bilibili code %s %s" % (j.get("code"), j.get("message")))
+    out = []
+    for r in (j["data"].get("result") or [])[:n]:
+        h, m, sec = ([0, 0] + [int(x) for x in re.findall(r"\d+", r.get("duration", "0"))])[-3:]
+        out.append({"site": "bilibili", "title": re.sub(r"<[^>]+>", "", r["title"]), "url": r["arcurl"].replace("http://", "https://"),
+                    "thumbnail": "https:" + r["pic"] if r["pic"].startswith("//") else r["pic"],
+                    "uploader": r.get("author"), "duration": h * 3600 + m * 60 + sec})
+    return out
+
+
+def search_youtube(q, n):
+    p = subprocess.run(YTDLP + ["--flat-playlist", "--no-warnings", "-j", "ytsearch%d:%s" % (n, q)],
+                       capture_output=True, text=True, timeout=120)
+    if p.returncode != 0:
+        raise RuntimeError((p.stderr.strip().splitlines() or ["youtube 검색 실패"])[-1][:300])
+    out = []
+    for line in p.stdout.splitlines():
+        i = json.loads(line)
+        th = i.get("thumbnails") or []
+        out.append({"site": "youtube", "title": i.get("title"), "url": i.get("url") or i.get("webpage_url"),
+                    "thumbnail": th[-1]["url"] if th else None, "uploader": i.get("channel") or i.get("uploader"),
+                    "duration": i.get("duration")})
+    return out
+
+
+# 사이트 어댑터: name -> fn(query, limit) -> [{site,title,url,thumbnail,uploader,duration}]
+SEARCH = {"bilibili": search_bilibili, "youtube": search_youtube}
+
+
+def search(job):
+    req = json.loads(job["input"])
+    items, errors = [], {}
+    for site in req.get("sites") or list(SEARCH):
+        try:
+            items += SEARCH[site](req["q"], int(req.get("limit", 10)))
+        except Exception as e:
+            errors[site] = str(e)[:200]
+    if not items and errors:
+        raise RuntimeError("; ".join("%s: %s" % kv for kv in errors.items()))
+    return {"items": items, "errors": errors}
+
+
+def work_loop(kind, handler):
+    sb("PATCH", "?status=eq.running&kind=eq." + kind, {"status": "queued"})  # 재시작 시 중단된 작업 복구
     while True:
         try:
-            jobs = sb("GET", "?status=eq.queued&kind=eq.download&order=created_at.asc&limit=1")
+            jobs = sb("GET", "?status=eq.queued&kind=eq.%s&order=created_at.asc&limit=1" % kind)
             if not jobs:
                 time.sleep(5)
                 continue
@@ -74,7 +135,7 @@ def work_loop():
             if not sb("PATCH", "?id=eq.%s&status=eq.queued" % job["id"], {"status": "running"}):
                 continue
             try:
-                patch(job["id"], status="done", result=download(job), error=None)
+                patch(job["id"], status="done", result=handler(job), error=None)
             except Exception as e:  # 한 작업 실패가 워커를 멈추면 안 됨
                 patch(job["id"], status="error", error=str(e)[:500])
         except Exception as e:
@@ -117,4 +178,5 @@ class Files(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     threading.Thread(target=lambda: ThreadingHTTPServer((BIND, PORT), Files).serve_forever(), daemon=True).start()
-    work_loop()
+    threading.Thread(target=work_loop, args=("search", search), daemon=True).start()
+    work_loop("download", download)
