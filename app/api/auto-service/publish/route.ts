@@ -540,9 +540,6 @@ export async function POST(req: NextRequest) {
         }
         // 이미 실패로 마킹된 플랫폼은 발행에서 제외
         const validPlatforms = sns_platforms.filter((p: string) => !results[`sns_${p}`]);
-        if (validPlatforms.length === 0) {
-          return NextResponse.json({ results });
-        }
         // 유효한 플랫폼만으로 계속 진행
         sns_platforms.length = 0;
         sns_platforms.push(...validPlatforms);
@@ -564,7 +561,7 @@ export async function POST(req: NextRequest) {
         if (autoSettings?.sns_caption_model) snsCaptionModel = autoSettings.sns_caption_model;
       }
 
-      const aiCaption = await generateSnsCaption(
+      const aiCaption = sns_platforms.length === 0 ? '' : await generateSnsCaption(
         article.title,
         article.meta_description || '',
         article.keyword || article.focus_keyword || '',
