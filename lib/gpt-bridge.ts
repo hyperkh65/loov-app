@@ -94,6 +94,7 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 
 ## 출처·링크·신뢰성 (필수)
 - 글 끝에 <h2>출처와 참고한 곳</h2> + <ul><li><a href="URL">사이트명</a> — 무엇을 참고했는지 한 줄</li></ul>. 서로 다른 사이트 2곳 이상, 가능하면 공식 사이트·공공기관·원문 위주.
+- 링크는 실제 주소 그대로 쓴다. 저장할 때 시스템이 자동으로 LOOV 이동 페이지(광고 노출)를 거치도록 바꾼다. 본문 중간에도 관련 공식 사이트로 가는 링크를 2~3곳 자연스럽게 건다(“공식 다운로드 페이지” 처럼 무엇이 나오는지 알려 주는 문구).
 - 본문 중 관련 설명이 나오는 자리에도 <a href> 링크로 공식 페이지로 보낸다(독자 이동 편의).
 - 실제로 열어서 확인한 주소만 쓴다. 기억에 의존해 URL을 만들지 않는다. 수치·날짜·법·정책은 확인한 것만 쓰고, 기준 시점을 적는다(예: "2026년 10월 기준").
 - 확신 없는 내용은 빼거나 "확인이 필요해요"라고 솔직하게 쓴다.
@@ -181,5 +182,8 @@ export function normalizeHtml(html: string): string {
     .replace(/<table(?![^>]*\bstyle=)([^>]*)>([\s\S]*?)<\/table>/gi, '<div style="overflow-x:auto;"><table$1 style="width:100%;border-collapse:collapse;margin:18px 0;font-size:15px;">$2</table></div>')
     .replace(/<th(?![^>]*\bstyle=)([^>]*)>/gi, `<th$1 style="${th}">`)
     .replace(/<td(?![^>]*\bstyle=)([^>]*)>/gi, `<td$1 style="${td}">`)
-    .replace(/<a\s+([^>]*href=["']https?:[^>]*)>/gi, (m, a) => /\brel=/i.test(a) ? m : `<a ${a} target="_blank" rel="noopener noreferrer">`);
+    .replace(/<a\s+([^>]*?)href=(["'])(https?:[^"']+)\2([^>]*)>/gi, (_m, pre, q, u, post) => {
+      const href = /^https?:\/\/(www\.)?loov\.co\.kr\//i.test(u) ? u : `https://loov.co.kr/out?u=${encodeURIComponent(u.replace(/&amp;/g, '&'))}`;
+      return `<a ${pre.replace(/\s?(target|rel)=("[^"]*"|'[^']*')/gi, "")}href=${q}${href}${q}${post.replace(/\s(target|rel)=("[^"]*"|'[^']*')/gi, '')} target="_blank" rel="nofollow noopener noreferrer">`;
+    });
 }
