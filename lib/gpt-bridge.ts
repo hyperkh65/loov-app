@@ -172,6 +172,8 @@ export function validateDraft(d: DraftIn) {
 }
 
 // ── 저장 전 정리: 위험 태그 제거 + 블로그 공통 스타일 ───────────────────────
+const LINK_STYLE = 'display:inline-block;padding:3px 12px;margin:0 2px;border-radius:999px;background:linear-gradient(110deg,#1a73e8 30%,#6db3ff 50%,#1a73e8 70%);background-size:200% 100%;color:#fff;font-weight:700;text-decoration:none;box-shadow:0 2px 10px rgba(26,115,232,.45);';
+const LINK_CSS = '<style>@keyframes loovShine{0%{background-position:200% 0}100%{background-position:-200% 0}}@keyframes loovGlow{0%,100%{box-shadow:0 2px 8px rgba(26,115,232,.35)}50%{box-shadow:0 2px 16px rgba(109,179,255,.9)}}a.loov-link{animation:loovShine 2.8s linear infinite,loovGlow 2s ease-in-out infinite}a.loov-link:hover{filter:brightness(1.1);transform:translateY(-1px)}@media(prefers-reduced-motion:reduce){a.loov-link{animation:none}}</style>';
 export function normalizeHtml(html: string): string {
   const th = 'border:1px solid #d0d7de;padding:10px;background:#eaf2ff;text-align:left;', td = 'border:1px solid #d0d7de;padding:10px;';
   return html
@@ -182,5 +184,6 @@ export function normalizeHtml(html: string): string {
     .replace(/<table(?![^>]*\bstyle=)([^>]*)>([\s\S]*?)<\/table>/gi, '<div style="overflow-x:auto;"><table$1 style="width:100%;border-collapse:collapse;margin:18px 0;font-size:15px;">$2</table></div>')
     .replace(/<th(?![^>]*\bstyle=)([^>]*)>/gi, `<th$1 style="${th}">`)
     .replace(/<td(?![^>]*\bstyle=)([^>]*)>/gi, `<td$1 style="${td}">`)
-    .replace(/<a\s+([^>]*href=["']https?:[^>]*)>/gi, (m, a) => /\brel=/i.test(a) ? m : `<a ${a} target="_blank" rel="noopener noreferrer">`);
+    .replace(/<a\s+([^>]*href=["']https?:[^>]*)>/gi, (m, a) => /\bclass=["'][^"']*loov-link/i.test(a) ? m : `<a ${a.replace(/\s?(target|rel|style)=("[^"]*"|'[^']*')/gi, '')} class="loov-link" target="_blank" rel="noopener noreferrer" style="${LINK_STYLE}">`)
+    + LINK_CSS;
 }
