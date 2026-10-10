@@ -184,6 +184,6 @@ export function normalizeHtml(html: string): string {
     .replace(/<table(?![^>]*\bstyle=)([^>]*)>([\s\S]*?)<\/table>/gi, '<div style="overflow-x:auto;"><table$1 style="width:100%;border-collapse:collapse;margin:18px 0;font-size:15px;">$2</table></div>')
     .replace(/<th(?![^>]*\bstyle=)([^>]*)>/gi, `<th$1 style="${th}">`)
     .replace(/<td(?![^>]*\bstyle=)([^>]*)>/gi, `<td$1 style="${td}">`)
-    .replace(/<a\s+([^>]*href=["']https?:[^>]*)>/gi, (m, a) => /\bclass=["'][^"']*loov-link/i.test(a) ? m : `<a ${a.replace(/\s?(target|rel|style)=("[^"]*"|'[^']*')/gi, '')} class="loov-link" target="_blank" rel="noopener noreferrer" style="${LINK_STYLE}">`)
+    .replace(/<a\s+([^>]*href=["']https?:[^>]*)>/gi, (m, a) => /\bclass=["'][^"']*loov-link/i.test(a) ? m : `<a ${a.replace(/\s?(target|rel|style|class)=("[^"]*"|'[^']*')/gi, '')} class="loov-link" target="_blank" rel="noopener noreferrer" style="${LINK_STYLE}">`)
     + LINK_CSS;
 }
