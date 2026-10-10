@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { uploadToR2 } from '@/lib/r2-storage';
 import { createAdminClient } from '@/lib/supabase-server';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
-import { rehostImages, searchStockImages, insertRepresentativeImageIntoContent } from '@/lib/blog-content-generator';
+import { rehostImages, searchStockImages, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { authorized, safeUrl, research, GUIDE, RISK_NOTES, needsRiskNotes, validateDraft, normalizeHtml } from '@/lib/gpt-bridge';
 
 export const maxDuration = 120;
@@ -12,11 +13,34 @@ const draftProps = {
   meta_description: { type: 'string', description: '메타 설명(100~160자)' },
   content_html: { type: 'string', description: '본문 HTML 조각(<h1>/<body> 없이). 표·링크·이미지(합계 3장 이상) 포함. 직접 만든 이미지는 <img src="{{file:2}}">처럼 openaiFileIdRefs 순번으로 넣는다' },
   featured_image_url: { type: 'string', description: '대표이미지 URL (직접 만든 이미지는 openaiFileIdRefs로)' },
+  attachments: { type: 'array', description: '관련 양식/자료 파일(pdf,hwp,docx,xlsx 등). 올려도 되는지 직접 페이지를 열어 판단한 것만', items: { type: 'object', properties: { url: { type: 'string', description: '파일 직접 주소' }, name: { type: 'string' }, source_page_url: { type: 'string', description: '파일이 있던 페이지' }, permission_note: { type: 'string', description: '올려도 되는 근거 한 줄' } } } },
   openaiFileIdRefs: { type: 'array', description: '생성/첨부한 이미지 파일. 첫 번째가 대표이미지', items: { type: 'object', properties: { name: { type: 'string' }, id: { type: 'string' }, mime_type: { type: 'string' }, download_link: { type: 'string' } } } },
 };
 const post = (id: string, summary: string, properties: object, required: string[]) => ({
   post: { operationId: id, summary, 'x-openai-isConsequential': false, requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties, required } } } }, responses: { '200': { description: 'OK' } } },
 });
+const FILE_EXT = /\.(pdf|hwp|hwpx|docx?|xlsx?|pptx?|csv|zip)(?:$|\?)/i;
+const FILE_MIME: Record<string, string> = { pdf: 'application/pdf', csv: 'text/csv', zip: 'application/zip' };
+
+async function saveAttachments(list: Array<{ url?: string; name?: string; source_page_url?: string; permission_note?: string }>) {
+  const ok: string[] = [], skipped: string[] = [];
+  for (const a of list.slice(0, 5)) {
+    try {
+      const ext = a.url?.match(FILE_EXT)?.[1]?.toLowerCase();
+      if (!a.url || !safeUrl(a.url) || !ext) throw new Error('파일 주소/확장자 부적합');
+      if ((a.permission_note || '').trim().length < 10 || !safeUrl(a.source_page_url || '')) throw new Error('permission_note/source_page_url 필요');
+      const res = await fetch(a.url, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (!res.ok || buf.length < 1000 || buf.length > 15_000_000) throw new Error('다운로드 실패/크기 초과');
+      const url = await uploadToR2(`files/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`, buf, FILE_MIME[ext] || 'application/octet-stream');
+      const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      const host = new URL(a.source_page_url!).hostname.replace(/^www\./, '');
+      ok.push(`<li><a href="${url}" download>${esc(a.name || '내려받기')}.${ext}</a> — 출처: <a href="${esc(a.source_page_url!)}" target="_blank" rel="noopener nofollow">${host}</a> (${esc(a.permission_note!.trim())})</li>`);
+    } catch (e) { skipped.push(`${a.name || a.url}: ${(e as Error).message}`); }
+  }
+  return { html: ok.length ? `<h2>양식·자료 내려받기</h2><ul>${ok.join('')}</ul>` : '', skipped };
+}
+
 const SPEC = {
   openapi: '3.1.0',
   info: { title: 'LOOV 블로그 작성 브리지', version: '1.0.0', description: '키워드 리서치, 형태 검사, 초안 저장' },
@@ -65,6 +89,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
 
   const rehost = async (u: string) => (safeUrl(u) ? (await rehostImages([u]))[0] : undefined);
   const r2 = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+  const usedFiles = new Set([...b.content_html.matchAll(/\{\{file:(\d+)\}\}/g)].map(m => Number(m[1])));
   let content = normalizeHtml(b.content_html.replace(/\{\{file:(\d+)\}\}/g, (_: string, n: string) => files[Number(n) - 1] || ''));
   for (const tag of new Set(content.match(/<img\b[^>]*>/gi) || [])) {
     const u = tag.match(/\ssrc=["']([^"']+)["']/i)?.[1];
@@ -73,9 +98,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
     const re = await rehost(u);
     content = content.split(tag).join(re ? tag.replace(u, re) : '');
   }
+  const extra = (await Promise.all(files.map((f, i) => (usedFiles.has(i + 1) || (i === 0 && !b.featured_image_url) ? undefined : rehost(f))))).filter((u): u is string => !!u);
+  if (extra.length) content = insertImagesIntoContent(content, extra, b.keyword);
   const wanted = b.featured_image_url || files[0];
   let featured = wanted ? await rehost(wanted) : undefined;
   if (wanted && !featured) return NextResponse.json({ saved: false, errors: ['대표이미지를 가져오지 못함 — 다른 이미지 URL/파일로 다시 시도'], warnings: v.warnings }, { status: 422 });
+  const att = await saveAttachments(b.attachments || []);
+  if (att.html) { const k = content.search(/<h2[^>]*>(?:(?!<\/h2>)[\s\S])*출처/i); content = k > 0 ? content.slice(0, k) + att.html + content.slice(k) : content + att.html; }
   if (featured) content = insertRepresentativeImageIntoContent(content, featured, b.title);
   else featured = content.match(/<img\b[^>]*\ssrc=["']([^"']+)["']/i)?.[1];
 
@@ -88,5 +117,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   const q = createAdminClient().from('bossai_auto_articles');
   const { data, error } = await (b.article_id ? q.update(row).eq('id', b.article_id).select('id').single() : q.insert(row).select('id').single());
   if (error) return NextResponse.json({ saved: false, errors: [error.message] }, { status: 500 });
-  return NextResponse.json({ saved: true, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, warnings: v.warnings, stats: v.stats });
+  return NextResponse.json({ saved: true, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, warnings: [...v.warnings, ...att.skipped.map(x => `첨부 제외 — ${x}`)], stats: v.stats });
 }

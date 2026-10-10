@@ -29,3 +29,12 @@ export async function pickWpCategory(siteUrl: string, title: string, text = ''):
     return byId.has(id) ? id : ABODA;
   } catch { return ABODA; }
 }
+
+export async function relatedPostsBox(siteUrl: string, catId: number): Promise<string> {
+  try {
+    const r = await fetch(`${siteUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts?categories=${catId}&per_page=3&_fields=link,title`, { signal: AbortSignal.timeout(8000) });
+    const posts = (await r.json()) as Array<{ link: string; title: { rendered: string } }>;
+    if (!Array.isArray(posts) || !posts.length) return '';
+    return `<h2>함께 읽으면 좋은 글</h2><ul>${posts.map(p => `<li><a href="${p.link}">${p.title.rendered.replace(/<[^>]+>/g, '')}</a></li>`).join('')}</ul>`;
+  } catch { return ''; }
+}
