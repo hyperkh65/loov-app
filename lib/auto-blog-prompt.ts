@@ -85,36 +85,25 @@ ${FRIENDLY_TONE_RULES}
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16"><b>[이 섹션의 가장 중요한 사실 1~2문장 — 박스 없이 굵은 글씨 일반 문단]</b></p>
 
 <h2 id="section2" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16"><b>[이 섹션의 가장 중요한 사실 1~2문장 — 박스 없이 굵은 글씨 일반 문단]</b></p>
 
 <h2 id="section3" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16"><b>[이 섹션의 가장 중요한 사실 1~2문장 — 박스 없이 굵은 글씨 일반 문단]</b></p>
 
 <h2 id="section4" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[심화 분석: 배경과 원인 3~4문장. 전문가 시각이나 비교 관점 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점: 이것이 독자에게 미치는 실질적 영향이나 시사점 3문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16"><b>[이 섹션의 가장 중요한 사실 1~2문장 — 박스 없이 굵은 글씨 일반 문단]</b></p>
 
 <h2 id="section5" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>[참고자료 내용 기반 소제목]</b></h2>
 <p style="margin-bottom:15px;" data-ke-size="size16">[두괄식: 첫 문장에 핵심 사실 먼저. 참고자료 내용 직접 반영. 4~5문장 서술. 구체적 수치/사례 포함]</p>
 <p style="margin-bottom:15px;" data-ke-size="size16">[독자 관점 + 향후 전망: 앞으로 어떻게 될지, 독자가 어떻게 대응해야 할지 3~4문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16"><b>[이 섹션의 가장 중요한 사실 1~2문장 — 박스 없이 굵은 글씨 일반 문단]</b></p>
-
-<h2 id="summary" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>한눈에 정리</b></h2>
-<p style="margin-bottom:10px;" data-ke-size="size16">[섹션1 핵심 사실 1문장]</p>
-<p style="margin-bottom:10px;" data-ke-size="size16">[섹션2-3 핵심 사실 1문장]</p>
-<p style="margin-bottom:10px;" data-ke-size="size16">[섹션4-5 핵심 사실 1문장]</p>
-<p style="margin-bottom:15px;" data-ke-size="size16">[독자가 바로 해볼 수 있는 행동 1문장]</p>
 
 <h2 id="faq" style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26"><b>자주 묻는 질문</b></h2>
 <div>

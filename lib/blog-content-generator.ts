@@ -326,32 +326,26 @@ F. AI 티 나는 문체 금지
 ===S1===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장 — 박스 없이 굵은 글씨 한 문단으로 들어감)
 
 ===S2===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장 — 박스 없이 굵은 글씨 한 문단으로 들어감)
 
 ===S3===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장 — 박스 없이 굵은 글씨 한 문단으로 들어감)
 
 ===S4===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장 — 박스 없이 굵은 글씨 한 문단으로 들어감)
 
 ===S5===소제목
 (6문장 이상의 본문)
 (6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장 — 박스 없이 굵은 글씨 한 문단으로 들어감)
 
 ===S6===소제목
 (6문장 이상의 본문)
 (전망과 독자 행동을 담은 6문장 이상의 본문)
-핵심: (이 섹션 핵심 1-2문장 — 박스 없이 굵은 글씨 한 문단으로 들어감)
 
 ===FAQ===
 Q: (질문1)
@@ -562,7 +556,6 @@ function buildHtmlFromSections(raw: string, title: string): string {
     // 핵심: 줄 분리
     // 모델이 '핵심:' 줄을 여러 번/문장 중간에 써도 본문에 '핵심:' 접두사가 남지 않게 전부 걷어냄(첫 번째만 박스로 사용)
     const CORE_LINE = /^[ \t]*[*_]*핵심[*_]*\s*[:：][*_]*\s*(.+)$/gm;
-    const coreText = [...body.matchAll(CORE_LINE)][0]?.[1]?.trim() || '';
     const bodyWithoutCore = body.replace(CORE_LINE, '').replace(/(^|\n)\s*[*_]*핵심[*_]*\s*[:：]\s*/g, '$1').trim();
 
     // 빈 줄 기준으로 단락 분리
@@ -570,7 +563,6 @@ function buildHtmlFromSections(raw: string, title: string): string {
     for (const p of paragraphs) {
       parts.push(wrap(p));
     }
-    if (coreText) parts.push(`<p style="margin-bottom:15px;" data-ke-size="size16"><b>${mdInline(coreText)}</b></p>`);
 
   }
 
