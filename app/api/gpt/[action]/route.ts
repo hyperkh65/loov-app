@@ -10,7 +10,7 @@ const draftProps = {
   keyword: { type: 'string', description: '메인 키워드' },
   title: { type: 'string', description: '글 제목(20~32자)' },
   meta_description: { type: 'string', description: '메타 설명(100~160자)' },
-  content_html: { type: 'string', description: '본문 HTML 조각(<h1>/<body> 없이). 표·링크·이미지 포함' },
+  content_html: { type: 'string', description: '본문 HTML 조각(<h1>/<body> 없이). 표·링크·이미지(합계 3장 이상) 포함. 직접 만든 이미지는 <img src="{{file:2}}">처럼 openaiFileIdRefs 순번으로 넣는다' },
   featured_image_url: { type: 'string', description: '대표이미지 URL (직접 만든 이미지는 openaiFileIdRefs로)' },
   openaiFileIdRefs: { type: 'array', description: '생성/첨부한 이미지 파일. 첫 번째가 대표이미지', items: { type: 'object', properties: { name: { type: 'string' }, id: { type: 'string' }, mime_type: { type: 'string' }, download_link: { type: 'string' } } } },
 };
@@ -58,17 +58,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   }
 
   const files: string[] = (b.openaiFileIdRefs || []).map((f: { download_link?: string }) => f.download_link).filter(Boolean);
-  const v = validateDraft({ ...b, hasFileImages: files.length > 0 });
+  const v = validateDraft({ ...b, hasFileImages: files.length > 0, fileCount: files.length });
   if (action === 'validate') return NextResponse.json(v);
   if (action !== 'draft') return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (!v.pass) return NextResponse.json({ saved: false, ...v }, { status: 422 });
 
   const rehost = async (u: string) => (safeUrl(u) ? (await rehostImages([u]))[0] : undefined);
   const r2 = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
-  let content = normalizeHtml(b.content_html);
+  let content = normalizeHtml(b.content_html.replace(/\{\{file:(\d+)\}\}/g, (_: string, n: string) => files[Number(n) - 1] || ''));
   for (const tag of new Set(content.match(/<img\b[^>]*>/gi) || [])) {
     const u = tag.match(/\ssrc=["']([^"']+)["']/i)?.[1];
-    if (!u || (r2 && u.startsWith(r2))) continue;
+    if (!u) { content = content.split(tag).join(''); continue; }
+    if (r2 && u.startsWith(r2)) continue;
     const re = await rehost(u);
     content = content.split(tag).join(re ? tag.replace(u, re) : '');
   }

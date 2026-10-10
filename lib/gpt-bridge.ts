@@ -100,7 +100,9 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - 확신 없는 내용은 빼거나 "확인이 필요해요"라고 솔직하게 쓴다.
 
 ## 이미지
-- 대표이미지 1장 필수 (featured_image_url 또는 직접 만든 이미지 파일). 본문 이미지는 2~4장 권장, 모두 alt 텍스트 필수.
+- 이미지는 대표 1장 + 본문 2~4장, 합계 최소 3장(권장 4~5장). 모두 alt 텍스트 필수. 장면이 겹치지 않게 각기 다른 설명 이미지(설치 화면 흐름, 위험 구별 예시, 비교 도표 등)를 만든다.
+- 직접 그린 이미지는 openaiFileIdRefs에 순서대로 담는다. 첫 번째가 대표이미지. 두 번째부터는 본문 넣을 자리에 <img src="{{file:2}}" alt="설명">, 세 번째는 {{file:3}} 처럼 번호로 적는다(대표이미지 {{file:1}}는 본문에 따로 쓰지 않는다).
+- 관련 사이트에서 가져올 이미지는 공식 사이트 이미지 주소를 <img src="https://...">로 직접 쓴다(저장 시 우리 서버로 옮겨진다). 글 내용과 맞는지 보고 고른다.
 - 저작권: 남의 블로그/커뮤니티 사진은 쓰지 않는다. 직접 생성한 그림, 공식 사이트가 배포한 화면/로고, 라이선스가 확실한 무료 이미지(Pexels/Pixabay/Wikimedia Commons)를 쓴다. researchKeyword의 image_query_en 에 영어 검색어를 주면 스톡 후보를 준다.
 - 이미지를 쓰기 전에 글 내용과 맞는지 직접 보고 판단한다. 안 맞으면 쓰지 않고 새로 그린다.
 - 직접 그릴 때는 글자(텍스트)가 들어가지 않는 장면 위주로.
@@ -121,7 +123,7 @@ ${FRIENDLY_TONE_RULES}
 "이 글 하나만 읽고 다른 탭을 안 열어도 되는가? 상위 글보다 확실히 나은 점이 있는가? 틀린 정보·지어낸 URL은 없는가?" 셋 중 하나라도 아니면 고쳐서 다시 검사한다.`;
 
 // ── 형태 검사 ────────────────────────────────────────────────────────────
-export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean }
+export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean; fileCount?: number }
 
 export function validateDraft(d: DraftIn) {
   const errors: string[] = [], warnings: string[] = [];
@@ -145,7 +147,11 @@ export function validateDraft(d: DraftIn) {
   if (h2 < 4) errors.push(`H2 소제목 ${h2}개 — 최소 4개(권장 5~8)`);
   if (!tables) errors.push('표(<table>)가 최소 1개 필요');
   else if (!/<th\b/i.test(html)) warnings.push('표에 제목 행(<th>) 권장');
-  if (!d.featured_image_url && !d.hasFileImages && !imgs.length) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
+  const fileCount = d.fileCount || 0, placed = imgs.filter(i => /\{\{file:\d+\}\}/.test(i));
+  const total = imgs.length + (d.featured_image_url ? 1 : 0) + Math.max(0, fileCount - placed.length);
+  if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
+  else if (total < 3) errors.push(`이미지 ${total}장 — 대표 1장 + 본문 2장 이상(합계 3장 이상) 필요`);
+  if (placed.some(i => Number(i.match(/\{\{file:(\d+)\}\}/)![1]) > fileCount)) errors.push('{{file:N}} 번호가 openaiFileIdRefs 개수보다 큼');
   if (imgs.some(i => !/\balt=["'][^"']+/i.test(i))) warnings.push('alt 없는 이미지가 있음');
   if (hosts.size < 1) errors.push('외부 링크(<a href>)가 필요 — 출처/공식 사이트 2곳 이상'); else if (hosts.size < 2) warnings.push('서로 다른 사이트 링크 2곳 이상 권장');
   if (!/출처|참고\s?자료|참고한 곳|참조/.test(text)) errors.push('"출처와 참고한 곳" 섹션이 필요');
