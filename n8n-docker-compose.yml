@@ -1,0 +1,64 @@
+version: '3.8'
+
+# LOOV n8n 자동화 서버
+# 사용법:
+#   docker-compose -f n8n-docker-compose.yml up -d
+#   접속: http://localhost:5678
+#
+# 환경변수 설정:
+#   - N8N_WEBHOOK_SECRET: LOOV에서 설정한 시크릿과 동일하게 설정
+#   - N8N_WEBHOOK_URL: 배포 환경에서는 실제 URL로 변경
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: loov-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - ~/.n8n:/home/node/.n8n
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # 기본 설정
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+
+      # Webhook URL (배포 환경에서 변경)
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678}
+
+      # 보안
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-loov-n8n-secret-key-change-in-production}
+
+      # LOOV 연동을 위한 환경변수
+      - LOOV_WEBHOOK_URL=${LOOV_WEBHOOK_URL:-https://loov.co.kr/api/n8n/webhook}
+      - LOOV_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
+
+      # 이메일 발송 (선택)
+      - N8N_EMAIL_MODE=${N8N_EMAIL_MODE:-smtp}
+      - N8N_SMTP_HOST=${N8N_SMTP_HOST:-}
+      - N8N_SMTP_PORT=${N8N_SMTP_PORT:-587}
+      - N8N_SMTP_USER=${N8N_SMTP_USER:-}
+      - N8N_SMTP_PASS=${N8N_SMTP_PASS:-}
+
+      # 시간대 (한국 시간)
+      - GENERIC_TIMEZONE=Asia/Seoul
+      - TZ=Asia/Seoul
+
+      # 기본 사용자 (초기 설정)
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-false}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-loov1234}
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# LOOV 사전 정의 워크플로우는 n8n 접속 후 아래 템플릿을 가져오세요:
+# 1. SNS 자동 포스팅: LOOV → n8n → 소셜미디어
+# 2. 매일 AI 인사이트 생성: 매일 오전 9시 → POST /api/insights/generate
+# 3. 주간 ERP 보고서: 매주 월요일 → 회계/영업 데이터 집계 → 이메일 발송

@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  supertonic-api:
+    image: python:3.11-slim
+    container_name: supertonic-api
+    restart: unless-stopped
+    ports:
+      - "5051:5051"
+    environment:
+      - API_SECRET=loov_tts_secret   # 바꾸세요
+      - HF_HOME=/app/.cache/huggingface
+    volumes:
+      - ./app:/app
+      - supertonic-models:/app/.cache
+    working_dir: /app
+    command: >
+      bash -c "pip install supertonic soundfile fastapi uvicorn python-multipart --quiet &&
+               uvicorn main:app --host 0.0.0.0 --port 5051"
+
+volumes:
+  supertonic-models:

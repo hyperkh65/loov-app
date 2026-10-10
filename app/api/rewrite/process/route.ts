@@ -1,0 +1,273 @@
+/**
+ * POST /api/rewrite/process
+ * 리라이팅 처리: pending 기사 1개를 AI로 리라이팅
+ * Auth: Bearer CRON_SECRET
+ * Body: { article_id?: string, ai_model?: string }
+ *   - article_id 없으면 oldest pending 자동 선택
+ *
+ * 프롬프트/파싱은 "블로그 자동화"(generateBlogContent)와 동일한 검증된
+ * 파이프라인(buildBlogPrompt + parseAiOutput)을 재사용한다 — 원래 이 라우트만
+ * 쓰던 별도의 인라인 HTML 프롬프트는 출력 토큰이 훨씬 많아 자주 중간에
+ * 끊기거나(본문 누락) 시간이 오래 걸렸음.
+ */
+import { NextRequest, NextResponse } from 'next/server';
+import { createAdminClient, createClient } from '@/lib/supabase-server';
+import { generateText } from '@/lib/auto-blog-ai';
+import { cleanWatermarks } from '@/lib/ai-watermark';
+import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
+import { rehostImages, searchInlineImages, searchNaver, buildBlogPrompt, parseAiOutput, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
+import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
+import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
+import { PRIORITY_SOURCE_IDS } from '@/lib/rewrite-priority-sources';
+
+const INFOLIFE_SOURCE_ID = '627b59b2-01f5-4537-ab7d-4f4a2c401573';
+
+export const maxDuration = 300;
+
+async function authOk(req: NextRequest): Promise<boolean> {
+  const secret = process.env.CRON_SECRET || process.env.BOT_SECRET;
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!user;
+  } catch { return false; }
+}
+
+function err(msg: string, status = 400) {
+  return NextResponse.json({ ok: false, error: msg }, { status });
+}
+
+// 돈 되는 키워드 발굴 목적에 맞게, 같은 소스 내에서는 오래된 순서보다 이런
+// 단어가 제목에 들어간 글(지원금/신청 대상/가격 변동/할인·혜택 등 수익성
+// 높은 이슈)을 먼저 처리 — 소스 간 공정성(라운드로빈)은 그대로 유지하고,
+// 한 소스 안에서 "어떤 글부터"만 우선순위를 매김
+const MONEY_KEYWORDS = [
+  '지원금', '신청', '대상', '환급', '가격', '출시', '할인', '보조금', '대출',
+  '청약', '보험', '비교', '추천', '후기', '리콜', '변경', '무료', '혜택',
+];
+function moneyScore(title: string): number {
+  let score = 0;
+  for (const kw of MONEY_KEYWORDS) if (title.includes(kw)) score++;
+  return score;
+}
+
+export async function POST(req: NextRequest) {
+  if (!await authOk(req)) return err('인증 실패', 401);
+
+  const body = await req.json().catch(() => ({}));
+  const { article_id, ai_model = 'qwen3' } = body as { article_id?: string; ai_model?: string };
+  const ownerId = process.env.OWNER_USER_ID!;
+
+  const supabase = await createAdminClient();
+
+  // maxDuration(300s)을 넘겨 함수가 강제 종료되면 catch 블록까지 못 가고
+  // 'rewriting' 상태에서 영영 멈추는 문제가 실사용 중 확인됨(위즈데이터센터
+  // 소스에서 최대 3일 이상 방치된 사례 다수) — 10분 이상 rewriting인 건 죽은
+  // 시도로 보고 pending으로 되돌려 다음 라운드에 재시도되게 함
+  const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await supabase
+    .from('bossai_rewrite_articles')
+    .update({ status: 'pending', updated_at: new Date().toISOString() })
+    .eq('status', 'rewriting')
+    .lt('updated_at', staleThreshold);
+
+  // 처리할 기사 선택
+  type ArticleRow = {
+    id: string; title: string; original_content: string;
+    source_id: string | null; source_url: string | null; representative_image_url: string | null; image_urls: string[] | null;
+  };
+  const SELECT_COLS = 'id, title, original_content, source_id, source_url, representative_image_url, image_urls';
+  let article: ArticleRow | null = null;
+
+  if (article_id) {
+    const { data } = await supabase
+      .from('bossai_rewrite_articles')
+      .select(SELECT_COLS)
+      .eq('id', article_id)
+      .eq('user_id', ownerId)
+      .single();
+    article = data;
+  } else {
+    // 전체 통틀어 가장 오래된 pending 하나만 뽑으면, 백로그가 큰 소스(예:
+    // 수십 개씩 쌓인 소스)가 큐를 계속 독점해서 다른 소스의 새 글이 몇 시간이고
+    // 뒤로 밀리는 문제가 실사용 중 확인됨 — 소스별로 "가장 최근에 처리된 시각"이
+    // 오래된(=한동안 순서를 못 받은) 소스부터 우선 배정하는 라운드로빈으로 변경
+    const { data: pendingBySource } = await supabase
+      .from('bossai_rewrite_articles')
+      .select('source_id, created_at')
+      .eq('user_id', ownerId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+
+    if (pendingBySource?.length) {
+      const oldestPendingBySource = new Map<string, string>(); // source_id(또는 'null') -> article created_at(최고참)
+      for (const row of pendingBySource) {
+        const key = row.source_id ?? 'null';
+        if (!oldestPendingBySource.has(key)) oldestPendingBySource.set(key, row.created_at);
+      }
+
+      // one.yoosol/yoonfree(PRIORITY_SOURCE_IDS)는 다른 소스와 공정 라운드로빈을
+      // 돌리면 소스 수(19개+)에 밀려 적체가 수백 건까지 쌓이는 게 실사용 중
+      // 확인됨(2026-10-01, 사용자 확정) — 대기 글이 있으면 항상 이 소스부터.
+      const pendingKeys = [...oldestPendingBySource.keys()];
+      const priorityPendingKeys = pendingKeys.filter((k) => PRIORITY_SOURCE_IDS.has(k));
+      const candidateKeys = priorityPendingKeys.length ? priorityPendingKeys : pendingKeys;
+
+      let bestSourceKey = 'null';
+      let bestLastServedAt = '9999-12-31'; // 이 소스가 최근에 처리된 적이 있는지 — 없으면 최우선(가장 옛날 취급)
+      for (const sourceKey of candidateKeys) {
+        let lastServedAt = '0000-01-01';
+        if (sourceKey !== 'null') {
+          const { data: lastServed } = await supabase
+            .from('bossai_rewrite_articles')
+            .select('updated_at')
+            .eq('user_id', ownerId)
+            .eq('source_id', sourceKey)
+            .neq('status', 'pending')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .single();
+          lastServedAt = lastServed?.updated_at || '0000-01-01';
+        }
+        if (lastServedAt < bestLastServedAt) {
+          bestLastServedAt = lastServedAt;
+          bestSourceKey = sourceKey;
+        }
+      }
+
+      // 오래된 순으로 최대 15개만 후보로 뽑아서, 그 안에서 돈 되는
+      // 키워드 점수가 가장 높은 글을 우선 처리(동점이면 더 오래된 글)
+      let query = supabase
+        .from('bossai_rewrite_articles')
+        .select(SELECT_COLS)
+        .eq('user_id', ownerId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(15);
+      query = bestSourceKey === 'null' ? query.is('source_id', null) : query.eq('source_id', bestSourceKey);
+      const { data: candidates } = await query;
+      if (candidates?.length) {
+        article = candidates.reduce((best, cur) =>
+          moneyScore(cur.title) > moneyScore(best.title) ? cur : best
+        );
+      }
+    }
+  }
+
+  if (!article) {
+    return NextResponse.json({ ok: true, message: '처리할 기사 없음', processed: 0 });
+  }
+
+  // 상태를 rewriting으로 변경
+  await supabase
+    .from('bossai_rewrite_articles')
+    .update({ status: 'rewriting', updated_at: new Date().toISOString() })
+    .eq('id', article.id);
+
+  try {
+    // 다른 뉴스/블로그도 곁들여 맥락 보강 (블로그 자동화와 동일)
+    const [news, blogs] = await Promise.all([
+      searchNaver('news', article.title),
+      searchNaver('blog', article.title),
+    ]);
+
+    const prompt = buildBlogPrompt(article.title, news, blogs, {
+      title: article.title,
+      content: article.original_content,
+    });
+    const raw = await generateText(prompt, ai_model, undefined, undefined, undefined, undefined, { ollamaOnly: true });
+    const cleaned = sanitizeInvisible(cleanWatermarks(raw));
+    const { title, meta_description: meta, content: rawContent } = parseAiOutput(cleaned);
+
+    if (!title || !rawContent) {
+      throw new Error('AI 출력 파싱 실패 (제목/본문 없음) — 모델 응답이 중간에 끊겼을 수 있음');
+    }
+
+    // 소스에 따라 스크랩 이미지 대신 항상 자체 썸네일을 생성 (예: 실제 사진이
+    // 아니라 사이트 자체의 범용 미리보기 템플릿 배너를 대표이미지로 쓰는 소스)
+    let useOwnThumbnail = false;
+    if (article.source_id) {
+      const { data: source } = await supabase
+        .from('bossai_rewrite_sources')
+        .select('use_generated_thumbnail')
+        .eq('id', article.source_id)
+        .single();
+      useOwnThumbnail = !!source?.use_generated_thumbnail;
+    }
+
+    // 이미지 규칙(2days.kr 자동발행, 사용자 확정 2026-10-03):
+    //  - 원문에 대표+본문 사진이 다 있으면: 대표는 원문 대표사진을 배경으로 대표이미지툴에 넣어 제작, 본문 사진은 가져와 재호스팅
+    //  - 한쪽만 있으면: 있는 사진을 배경으로 대표이미지만 제작(본문 사진 임의 삽입 금지)
+    //  - 둘 다 없으면: 네이버 이미지 검색 1장 → 없으면 AI 이미지를 배경으로 제작 (infolife는 AI만)
+    // 우선순위(사용자 확정 2026-10-04): 원문 본문 이미지 → 네이버 이미지 검색 → AI 생성. 자체 블로그 원문(yoosol 등)의 사진도 그대로 쓴다.
+    const plainBgOnly = article.source_id === INFOLIFE_SOURCE_ID;
+    const needScrape = !plainBgOnly && !!article.source_url;
+    const scraped = needScrape ? await scrapeArticleFull(article.source_url as string).catch(() => null) : null;
+    const srcRep: string | null = plainBgOnly || useOwnThumbnail ? null : (article.representative_image_url || scraped?.images[0] || null);
+    const srcBody: string[] = plainBgOnly ? [] : (scraped?.bodyImages || []);
+
+    let content: string = rawContent;
+    let bgUrl: string | undefined;
+    if (srcRep && srcBody.length) {
+      const inlineImages = await rehostImages(srcBody);
+      if (inlineImages.length) content = insertImagesIntoContent(content, inlineImages, title);
+      bgUrl = srcRep;
+    } else {
+      bgUrl = srcRep || srcBody[0];
+    }
+    if (!bgUrl) {
+      bgUrl = (await searchInlineImages(title, 1, { aiThumb: true, hq: plainBgOnly, noInline: plainBgOnly }).catch(() => ({ thumbUrl: undefined as string | undefined }))).thumbUrl;
+    }
+
+    let representativeImageUrl: string | null = null;
+    {
+      const shortTitle = title.split(/[,，·|:]/)[0].trim().split(' ').slice(0, 3).join(' ');
+      try {
+        representativeImageUrl = await generateAndUploadThumbnail(title, plainBgOnly ? shortTitle : article.title, 'blue', bgUrl);
+      } catch {
+        try { representativeImageUrl = await generateAndUploadThumbnail(title, article.title, 'blue'); } catch { /* 썸네일은 선택사항 */ }
+      }
+      if (representativeImageUrl) content = insertRepresentativeImageIntoContent(content, representativeImageUrl, title);
+    }
+
+    content = sanitizeInvisible(content);
+    assertPublishableHtml(title, content);
+
+    const wordCount = content.replace(/<[^>]+>/g, '').length;
+
+    await supabase
+      .from('bossai_rewrite_articles')
+      .update({
+        rewritten_title: title,
+        rewritten_meta: meta,
+        rewritten_content: content,
+        representative_image_url: representativeImageUrl,
+        ai_model,
+        status: 'ready',
+        word_count: wordCount,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', article.id);
+
+    return NextResponse.json({
+      ok: true,
+      processed: 1,
+      data: { id: article.id, title, word_count: wordCount },
+    });
+  } catch (e) {
+    await supabase
+      .from('bossai_rewrite_articles')
+      .update({
+        status: 'failed',
+        // 500자는 Ollama 9키 폴백 실패 사유를 다 담기엔 너무 짧아서 항상 key2
+        // 근처에서 잘려 나머지 키가 시도됐는지조차 진단이 안 됐음 — 확장
+        error_message: String(e).slice(0, 3000),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', article.id);
+
+    return NextResponse.json({ ok: false, error: String(e), processed: 0 }, { status: 500 });
+  }
+}

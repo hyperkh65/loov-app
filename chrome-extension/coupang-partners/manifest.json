@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "쿠팡파트너스 자동화",
+  "version": "1.0.0",
+  "description": "쿠팡 상품 정보 수집, 파트너스 링크 생성, 노션 저장",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://www.coupang.com/*",
+    "https://partners.coupang.com/*",
+    "https://api-gateway.coupang.com/*",
+    "https://api.notion.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.coupang.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://partners.coupang.com/*"],
+      "js": ["partners-content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

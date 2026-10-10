@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  edge-tts-api:
+    image: python:3.11-slim
+    container_name: edge-tts-api
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    environment:
+      - API_SECRET=loov_tts_secret   # 바꾸세요
+    volumes:
+      - ./app:/app
+    working_dir: /app
+    command: >
+      bash -c "pip install edge-tts fastapi uvicorn python-multipart --quiet &&
+               uvicorn main:app --host 0.0.0.0 --port 5050"

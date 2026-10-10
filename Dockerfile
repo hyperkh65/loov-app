@@ -1,0 +1,58 @@
+FROM node:20-alpine AS base
+
+# 의존성 설치
+FROM base AS deps
+RUN apk add --no-cache libc6-compat python3 make g++
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install --frozen-lockfile || npm install
+
+# 빌드
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+
+# 빌드 타임 환경변수 (NEXT_PUBLIC_* 는 번들에 포함됨)
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_MAIN_DOMAIN
+ARG NEXT_PUBLIC_OWNER_DOMAIN
+ARG NEXT_PUBLIC_SERVICE_DOMAIN
+ARG NEXT_PUBLIC_OWNER_USER_ID
+ARG NEXT_PUBLIC_OWNER_EMAIL
+ARG NEXT_PUBLIC_KAKAO_CHANNEL_URL
+ARG CACHEBUST=1
+
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_MAIN_DOMAIN=$NEXT_PUBLIC_MAIN_DOMAIN
+ENV NEXT_PUBLIC_OWNER_DOMAIN=$NEXT_PUBLIC_OWNER_DOMAIN
+ENV NEXT_PUBLIC_SERVICE_DOMAIN=$NEXT_PUBLIC_SERVICE_DOMAIN
+ENV NEXT_PUBLIC_OWNER_USER_ID=$NEXT_PUBLIC_OWNER_USER_ID
+ENV NEXT_PUBLIC_OWNER_EMAIL=$NEXT_PUBLIC_OWNER_EMAIL
+ENV NEXT_PUBLIC_KAKAO_CHANNEL_URL=$NEXT_PUBLIC_KAKAO_CHANNEL_URL
+
+RUN echo "Build SHA: $CACHEBUST"
+COPY . .
+RUN npm run build
+
+# 실행
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --chown=nextjs:nodejs server-start.js ./
+
+USER nextjs
+EXPOSE 3000
+
+CMD ["node", "server-start.js"]

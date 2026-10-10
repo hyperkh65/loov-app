@@ -1,0 +1,31 @@
+name: NAS xmedia 영상 목록 스캔
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: pip install paramiko boto3
+
+      - name: NAS 스캔 → R2 업로드
+        env:
+          NAS_SSH_HOST: ${{ secrets.NAS_SSH_HOST }}
+          NAS_SSH_PORT: ${{ secrets.NAS_SSH_PORT }}
+          NAS_SSH_USER: ${{ secrets.NAS_SSH_USER }}
+          NAS_SSH_PASSWORD: ${{ secrets.NAS_SSH_PASSWORD }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: python scripts/nas_xmedia_scan.py
