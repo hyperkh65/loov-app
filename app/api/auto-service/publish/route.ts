@@ -1,4 +1,4 @@
-import { isTwoDays, pickWpCategory } from '@/lib/wp-category';
+import { isTwoDays, pickWpCategory, relatedPostsBox } from '@/lib/wp-category';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
@@ -77,6 +77,7 @@ async function uploadImageToWordpress(
   siteUrl: string,
   auth: string,
   slug?: string,
+  alt?: string,
 ): Promise<{ id: number; url: string } | null> {
   try {
     const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) });
@@ -98,6 +99,12 @@ async function uploadImageToWordpress(
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (alt) await fetch(`${siteUrl}/wp-json/wp/v2/media/${data.id}`, {
+      method: 'POST',
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alt_text: alt, title: alt }),
+      signal: AbortSignal.timeout(15_000),
+    }).catch(() => {});
     return { id: data.id, url: data.source_url };
   } catch { return null; }
 }
@@ -277,12 +284,13 @@ async function uploadContentImages(
   const matches = [...content.matchAll(imgRegex)];
   const urlsToUpload = [...new Set(
     matches.map(m => m[2]).filter(u => u.startsWith('http'))
-  )].slice(0, 5); // 최대 5개만 업로드
+  )].slice(0, 12); // 최대 12개만 업로드
+  const altOf = (u: string) => matches.find(m => m[2] === u)?.[0].match(/\balt=["']([^"']+)/i)?.[1];
 
   if (urlsToUpload.length === 0) return content;
 
   const results = await Promise.all(
-    urlsToUpload.map((url, i) => uploadImageToWordpress(url, siteUrl, auth, titleSlug ? `${titleSlug}-${i + 1}` : undefined))
+    urlsToUpload.map((url, i) => uploadImageToWordpress(url, siteUrl, auth, titleSlug ? `${titleSlug}-${i + 1}` : undefined, altOf(url)))
   );
 
   let processed = content;
@@ -424,17 +432,19 @@ export async function POST(req: NextRequest) {
             // 1. 대표이미지(SVG 썸네일)를 WP 미디어로 먼저 업로드
             let featuredMediaId: number | undefined;
             if (article.representative_image_url) {
-              const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth, titleSlug);
+              const thumb = await uploadImageToWordpress(article.representative_image_url, site.site_url, auth, titleSlug, pubTitle);
               if (thumb) featuredMediaId = thumb.id;
             }
 
             // 2. 본문 내 이미지를 WP 미디어로 업로드 + URL 교체
-            const wpContent = await uploadContentImages(pubContent, site.site_url, auth, titleSlug);
+            let wpContent = await uploadContentImages(pubContent, site.site_url, auth, titleSlug);
 
             // 3. 카테고리 "Aboda" 조회 또는 생성
             const catId = isTwoDays(site.site_url)
               ? (Number(wp_category_id) || await pickWpCategory(site.site_url, pubTitle, pubContent))
               : await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
+
+            if (isTwoDays(site.site_url) && catId) wpContent += await relatedPostsBox(site.site_url, catId);
 
             // 4. 포스트 발행
             // slug: focus_keyword 기반으로 생성 (WordPress 자동 slug 잘림 방지)
