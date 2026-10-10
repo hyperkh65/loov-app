@@ -1,3 +1,4 @@
+import { isTwoDays, pickWpCategory } from '@/lib/wp-category';
 import { createAdminClient } from '@/lib/supabase-server';
 import { tightTitle } from '@/lib/html-gate';
 import { buildHookCaptions } from '@/lib/sns/hook-captions';
@@ -261,7 +262,7 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
 
   const body: Record<string, unknown> = { title, content, status };
   if (featuredMediaId) body.featured_media = featuredMediaId;
-  const safeCategories = opts.categories || getSafeCategoryFor(wpUrl);
+  const safeCategories = opts.categories || (isTwoDays(wpUrl) ? [await pickWpCategory(wpUrl, title, content)] : getSafeCategoryFor(wpUrl));
   if (safeCategories) body.categories = safeCategories;
 
   const res = await fetch(apiUrl, {

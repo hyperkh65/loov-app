@@ -1,3 +1,4 @@
+import { isTwoDays, pickWpCategory } from '@/lib/wp-category';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
@@ -307,9 +308,9 @@ export async function POST(req: NextRequest) {
   }
   // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
-  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string; tistory_category_id?: number | string };
+  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string; tistory_category_id?: number | string; wp_category_id?: number | string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y', tistory_category_id } = body;
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y', tistory_category_id, wp_category_id } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -431,7 +432,9 @@ export async function POST(req: NextRequest) {
             const wpContent = await uploadContentImages(pubContent, site.site_url, auth, titleSlug);
 
             // 3. 카테고리 "Aboda" 조회 또는 생성
-            const catId = await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
+            const catId = isTwoDays(site.site_url)
+              ? (Number(wp_category_id) || await pickWpCategory(site.site_url, pubTitle, pubContent))
+              : await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
 
             // 4. 포스트 발행
             // slug: focus_keyword 기반으로 생성 (WordPress 자동 slug 잘림 방지)

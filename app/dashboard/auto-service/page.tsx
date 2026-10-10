@@ -190,6 +190,14 @@ export default function AutoServicePage() {
   // WordPress 사이트 목록
   const [wpSites, setWpSites] = useState<{ id: string; site_name: string; site_url: string }[]>([]);
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
+  const [wpCats, setWpCats] = useState<{ id: number; name: string; parent: number }[]>([]);
+  const [selWpCat, setSelWpCat] = useState('');
+  const twoDaysSel = wpSites.some(s => selWpSiteIds.includes(s.id) && s.site_url.includes('2days.kr'));
+  useEffect(() => {
+    if (!twoDaysSel || !publishArticle) return;
+    setSelWpCat('');
+    fetch('/api/auto-service/wp-categories?article_id=' + publishArticle.id).then(r => r.json()).then(d => { setWpCats(d.categories || []); if (d.suggested) setSelWpCat(String(d.suggested)); }).catch(() => {});
+  }, [twoDaysSel, publishArticle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 예약 발행 모달
   const [scheduleArticle, setScheduleArticle] = useState<Article | null>(null);
@@ -991,6 +999,7 @@ export default function AutoServicePage() {
           blog_platforms: selBlog,
           sns_platforms: selSns,
           wp_site_ids: selWpSiteIds,
+          ...(twoDaysSel && selWpCat ? { wp_category_id: Number(selWpCat) } : {}),
           backlink_platforms: selBacklink,
           ...(selNaverCafeMenuId ? { naver_cafe_menu_id: selNaverCafeMenuId } : {}),
           ...(selTistoryCat ? { tistory_category_id: selTistoryCat } : {}),
@@ -2373,6 +2382,15 @@ export default function AutoServicePage() {
                             </div>
                           </label>
                         ))}
+                        {twoDaysSel && (
+                          <div className="mt-1.5">
+                            <div className="text-xs font-medium text-gray-500 mb-1">2days.kr 카테고리 (주제 맞춤 자동 선택, 변경 가능)</div>
+                            <select value={selWpCat} onChange={e => setSelWpCat(e.target.value)} className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                              <option value="">{wpCats.length ? '자동' : '불러오는 중...'}</option>
+                              {wpCats.map(c => <option key={c.id} value={String(c.id)}>{c.parent ? '└ ' : ''}{c.name}</option>)}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 border border-gray-200">
