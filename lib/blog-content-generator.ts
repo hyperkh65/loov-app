@@ -174,7 +174,7 @@ async function searchNaverImages(query: string, count: number): Promise<string[]
   } catch { return []; }
 }
 
-async function searchStockImages(query: string, count: number): Promise<string[]> {
+export async function searchStockImages(query: string, count: number): Promise<string[]> {
   const q = await toEnglishImageQuery(query);
   const urls: string[] = [];
   const pexelsKey = await getSetting('PEXELS_API_KEY');
