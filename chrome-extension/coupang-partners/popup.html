@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 300px; font-family: 'Apple SD Gothic Neo', sans-serif; background: #f5f5f5; }
+    .header { background: #e51c23; color: white; padding: 16px; font-size: 15px; font-weight: 700; text-align: center; }
+    .collect-section { margin: 8px; background: white; border-radius: 10px; padding: 14px; }
+    .collect-btn {
+      width: 100%; padding: 14px; background: #e51c23; color: white;
+      border: none; border-radius: 10px; font-size: 15px; font-weight: 800;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .collect-btn:hover { background: #c41018; }
+    .collect-btn:disabled { background: #aaa; cursor: not-allowed; }
+    .stop-btn {
+      width: 100%; padding: 10px; background: #555; color: white;
+      border: none; border-radius: 10px; font-size: 14px; font-weight: 700;
+      cursor: pointer; display: none; margin-top: 8px;
+    }
+    .stop-btn:hover { background: #333; }
+    .progress { display: none; margin-top: 12px; }
+    .progress-bar-wrap { background: #eee; border-radius: 99px; height: 8px; overflow: hidden; }
+    .progress-bar { background: #e51c23; height: 100%; border-radius: 99px; transition: width 0.3s; width: 0%; }
+    .progress-text { font-size: 12px; color: #555; margin-top: 6px; text-align: center; }
+    .log { margin-top: 8px; max-height: 120px; overflow-y: auto; font-size: 11px; color: #444; background: #f8f8f8; border-radius: 6px; padding: 8px; display: none; }
+    .log div { padding: 2px 0; border-bottom: 1px solid #eee; }
+    .log .ok { color: #27ae60; }
+    .log .err { color: #e74c3c; }
+    .section { background: white; margin: 8px; border-radius: 10px; padding: 14px; }
+    .section h3 { font-size: 11px; color: #999; margin-bottom: 10px; text-transform: uppercase; }
+    .field { margin-bottom: 8px; }
+    label { font-size: 12px; color: #555; display: block; margin-bottom: 3px; font-weight: 600; }
+    input { width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; }
+    input:focus { outline: none; border-color: #e51c23; }
+    .save-btn { width: 100%; padding: 9px; background: #333; color: white; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 4px; }
+    .saved-msg { font-size: 11px; color: #2ecc71; text-align: center; margin-top: 6px; display: none; }
+    .notice { margin: 0 8px 8px; padding: 8px 12px; background: #fff8e1; border-radius: 8px; font-size: 11px; color: #7a6a00; border-left: 3px solid #ffc107; }
+  </style>
+</head>
+<body>
+  <div class="header">🛒 쿠팡파트너스 자동 수집</div>
+
+  <!-- 파트너스 페이지 수집 (메인) -->
+  <div class="collect-section">
+    <div style="font-size:11px;color:#888;margin-bottom:8px;">partners.coupang.com 탭을 열어두고 실행하세요</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <label style="font-size:12px;color:#555;font-weight:600;white-space:nowrap;">수집 상품 수</label>
+      <input type="number" id="maxItems" value="20" min="1" max="200"
+        style="width:60px;padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;text-align:center;" />
+      <span style="font-size:11px;color:#999;">개 (최대 200)</span>
+    </div>
+    <button class="collect-btn" id="partnersCollectBtn" style="background:#e87722;">
+      <span>🔗</span> 파트너스 페이지에서 수집
+    </button>
+    <button class="stop-btn" id="partnersStopBtn">⏹ 수집 중단</button>
+    <div class="progress" id="partnersProgress">
+      <div class="progress-bar-wrap"><div class="progress-bar" id="partnersProgressBar" style="background:#e87722;"></div></div>
+      <div class="progress-text" id="partnersProgressText">준비중...</div>
+    </div>
+    <div class="log" id="partnersLog"></div>
+  </div>
+
+  <div class="notice" id="partnersNotice" style="display:none">
+    ⚠️ partners.coupang.com 탭을 먼저 열어주세요
+  </div>
+
+  <!-- 쿠팡 일반 페이지 수집 (보조) -->
+  <div class="collect-section" style="margin-top:0;">
+    <div style="font-size:11px;color:#888;margin-bottom:8px;">coupang.com 탭을 열어두고 실행하세요</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <label style="font-size:12px;color:#555;font-weight:600;white-space:nowrap;">수집 페이지 수</label>
+      <input type="number" id="maxPages" value="5" min="1" max="50"
+        style="width:60px;padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;text-align:center;" />
+      <span style="font-size:11px;color:#999;">페이지 (최대 50)</span>
+    </div>
+    <button class="collect-btn" id="collectBtn">
+      <span>🚀</span> 쿠팡에서 수집
+    </button>
+    <button class="stop-btn" id="stopBtn">⏹ 수집 중단</button>
+    <div class="progress" id="progress">
+      <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-text" id="progressText">준비중...</div>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="notice" id="notice" style="display:none">
+    ⚠️ coupang.com 페이지에서 실행해주세요
+  </div>
+
+  <div class="section">
+    <h3>⚙️ 설정</h3>
+    <div class="field">
+      <label>Notion API Key</label>
+      <input type="password" id="notionApiKey" placeholder="secret_..." />
+    </div>
+    <div class="field">
+      <label>Database ID</label>
+      <input type="text" id="notionDatabaseId" placeholder="32자리" />
+    </div>
+    <div class="field">
+      <label>파트너스 비밀번호</label>
+      <input type="password" id="partnersPassword" placeholder="링크생성 비밀번호 (선택)" />
+    </div>
+    <button class="save-btn" id="saveBtn">💾 저장</button>
+    <div class="saved-msg" id="savedMsg">✅ 저장됨</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

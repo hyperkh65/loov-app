@@ -1,0 +1,496 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
+
+const NAV_GROUPS = [
+  {
+    label: '홈',
+    items: [
+      { href: '/dashboard',           icon: '🏠', label: '대시보드' },
+      { href: '/dashboard/memo',      icon: '📓', label: '세컨드 브레인' },
+      { href: '/dashboard/directives', icon: '📋', label: '대표 지시사항' },
+      { href: '/dashboard/chat',       icon: '💬', label: '채팅 센터' },
+      { href: '/dashboard/free-ai',    icon: '🆓', label: '무료AI 체험하기' },
+      { href: '/dashboard/schedule',   icon: '📅', label: '스케줄' },
+      { href: '/dashboard/email',      icon: '✉️', label: '이메일' },
+    ],
+  },
+  {
+    label: '직원 관리',
+    items: [
+      { href: '/dashboard/employees',  icon: '👥', label: 'AI 직원 관리' },
+    ],
+  },
+  {
+    label: 'ERP 시스템',
+    items: [
+      { href: '/dashboard/erp/accounting',      icon: '💰', label: '회계/영업 ERP' },
+      { href: '/dashboard/accounting',           icon: '📒', label: '자동 회계장부' },
+      { href: '/dashboard/erp/quotes',          icon: '📋', label: '견적 관리' },
+      { href: '/dashboard/erp/purchase-orders', icon: '🛒', label: '발주 관리' },
+      { href: '/dashboard/erp/imports',         icon: '🚢', label: '수입 관리' },
+      { href: '/dashboard/container-sim',       icon: '🏗️', label: '컨테이너 적재 시뮬레이터' },
+      { href: '/dashboard/erp/clients',         icon: '🤝', label: '거래처 관리' },
+      { href: '/dashboard/erp/crm',             icon: '📊', label: 'CRM 영업관리' },
+      { href: '/dashboard/erp/products',        icon: '📦', label: '제품 DB' },
+      { href: '/dashboard/erp/inventory',       icon: '🏭', label: '재고 관리' },
+      { href: '/dashboard/erp/scm',             icon: '🔗', label: 'SCM 공급망' },
+      { href: '/dashboard/erp/hr',              icon: '👥', label: '인사 관리' },
+      { href: '/dashboard/erp/settings',        icon: '⚙️', label: 'ERP 설정' },
+      { href: '/dashboard/marketing',           icon: '📣', label: '마케팅 허브' },
+    ],
+  },
+  {
+    label: '온라인',
+    items: [
+      { href: '/dashboard/keyword',          icon: '🔑', label: '키워드 도구' },
+      { href: '/dashboard/keyword/advanced', icon: '⚡', label: '고급 키워드 분석' },
+      { href: '/dashboard/sns',        icon: '🌐', label: 'SNS 관리' },
+      { href: '/dashboard/shorts',             icon: '🎬', label: '숏폼 제작 1' },
+      { href: '/dashboard/shorts2',            icon: '🎞',  label: '숏폼 제작 2 (Remotion)' },
+      { href: '/dashboard/shorts/remove-text', icon: '✂️', label: '동영상 텍스트 제거' },
+      { href: '/dashboard/shorts/studio', icon: '🎥', label: '숏폼 제작 3 (스튜디오)' },
+      { href: '/dashboard/shorts/thumbnail', icon: '🖼️', label: '썸네일 제작' },
+      { href: '/dashboard/shorts/english', icon: '🇺🇸', label: '영어 숏폼 (yarn.co)' },
+      { href: '/dashboard/coupang/hub',   icon: '💰', label: '쿠팡 수익 허브' },
+      { href: '/dashboard/revenue',      icon: '📈', label: '블로그 수익표' },
+      { href: '/dashboard/coupang',   icon: '🛒', label: '쿠팡파트너스 (URL)' },
+      { href: '/dashboard/coupang/notion', icon: '🗂️', label: '쿠팡 Notion DB' },
+      { href: '/dashboard/wordpress', icon: '📝', label: 'WordPress 발행' },
+      { href: '/dashboard/wordpress/wp-to-sns', icon: '📤', label: 'WP글→SNS 발행' },
+      { href: '/dashboard/blogger',   icon: '📝', label: 'Google 블로거' },
+      { href: '/dashboard/naver',     icon: '🟢', label: '네이버 블로그' },
+      { href: '/dashboard/naver-cafe', icon: '☕', label: '네이버 카페' },
+      { href: '/dashboard/tistory',   icon: '🟠', label: '티스토리 블로그' },
+      { href: '/dashboard/website',        icon: '🏢', label: '홈페이지 관리' },
+      { href: '/dashboard/product-detail', icon: '📱', label: '상품 상세페이지' },
+    ],
+  },
+  {
+    label: '투자',
+    items: [
+      { href: '/dashboard/stocks', icon: '📈', label: '주식 투자' },
+    ],
+  },
+  {
+    label: '성장',
+    items: [
+      { href: '/dashboard/insights',  icon: '🧠', label: 'AI 인사이트' },
+      { href: '/dashboard/courses',   icon: '🎓', label: '강의' },
+      { href: '/dashboard/community', icon: '🤝', label: '커뮤니티' },
+      { href: '/dashboard/language',  icon: '🌍', label: '외국어 학습' },
+      { href: '/dashboard/chinese',   icon: '🇨🇳', label: '중국어 학습센터' },
+      { href: '/dashboard/translate', icon: '🎙️', label: '실시간 번역기' },
+      { href: '/dashboard/sme',       icon: '🏢', label: '지원사업 검색' },
+      { href: '/dashboard/notion',        icon: '📔', label: 'Notion 연동' },
+      { href: '/dashboard/notion-mirror', icon: '🔗', label: 'Notion 미러' },
+      { href: '/dashboard/gallery',   icon: '🖼️', label: '갤러리' },
+    ],
+  },
+  {
+    label: '쇼핑몰',
+    items: [
+      { href: '/dashboard/shop', icon: '🛍️', label: '쇼핑몰 관리' },
+      { href: '/shops',          icon: '🏪', label: '쇼핑몰 바로가기' },
+    ],
+  },
+  {
+    label: 'LED 인텔리전스',
+    items: [
+      { href: '/dashboard/led/market',      icon: '📊', label: 'LED 시장 분석' },
+      { href: '/dashboard/led/intel',       icon: '💡', label: 'LED 제품 인텔' },
+      { href: '/dashboard/led/procurement', icon: '🏛️', label: 'LED 조달 인텔' },
+    ],
+  },
+  {
+    label: '자동화서비스',
+    items: [
+      { href: '/dashboard/scheduler',    icon: '⏰', label: '발행 스케줄러' },
+      { href: '/dashboard/auto-service', icon: '🤖', label: '블로그 자동화' },
+      { href: '/dashboard/auto-service2', icon: '🚀', label: '블로그 자동화 2' },
+      { href: '/dashboard/rewrite',      icon: '✍️', label: '리라이팅' },
+      { href: '/dashboard/insta-service', icon: '📸', label: '인스타그램 자동화' },
+    ],
+  },
+  {
+    label: '제휴 엔진',
+    items: [
+      { href: '/dashboard/affiliate-engine',          icon: '🧭', label: '대시보드' },
+      { href: '/dashboard/affiliate-engine/discover', icon: '🔎', label: '발굴' },
+      { href: '/dashboard/affiliate-engine/products', icon: '📦', label: '상품' },
+      { href: '/dashboard/affiliate-engine/sources',  icon: '🔌', label: '소스 레지스트리' },
+    ],
+  },
+  {
+    label: '자동화',
+    items: [
+      { href: '/dashboard/x-collect',  icon: '🐦', label: 'X 수집 / SNS 발행' },
+      { href: '/dashboard/automation', icon: '🤖', label: 'n8n 자동화 관리' },
+      { href: '/dashboard/nas',        icon: '🖥️', label: '시놀로지 NAS' },
+      { href: '/dashboard/videos',     icon: '🎬', label: '동영상 보관함' },
+      { href: '/dashboard/cctv',       icon: '📷', label: 'CCTV 뷰어' },
+      { href: '/dashboard/wp-auto',    icon: '🌐', label: 'WordPress 자동세팅' },
+      { href: '/dashboard/nas-recovery', icon: '🔧', label: 'NAS 복구/컨테이너 재시작' },
+      { href: '/dashboard/downloader',  icon: '🎥', label: '다운로더' },
+      { href: '/dashboard/video-search', icon: '🎬', label: '영상 수집' },
+      { href: '/dashboard/deploy',     icon: '🚀', label: '배포 현황' },
+    ],
+  },
+  {
+    label: 'mode 사이트',
+    items: [
+      { href: 'https://mode.loov.co.kr', icon: '🟣', label: 'mode.loov.co.kr', external: true },
+      { href: '/dashboard/mode-settings', icon: '⚙️', label: 'mode 설정' },
+    ],
+  },
+  {
+    label: '위챗',
+    items: [
+      { href: '/dashboard/wechat',  icon: '💬', label: '위챗 백업 히스토리' },
+      { href: '/dashboard/settings', icon: '⚙️', label: '위챗 백업 설정' },
+    ],
+  },
+  {
+    label: '모바일',
+    items: [
+      { href: '/dashboard/camera',         icon: '📷', label: '스마트 카메라' },
+      { href: '/dashboard/camera/gallery', icon: '🖼️', label: '일반사진첩' },
+      { href: '/dashboard/camera/secret',  icon: '🔒', label: '특수사진첩' },
+      { href: '/dashboard/tracking',       icon: '📍', label: '위치 트래킹' },
+      { href: '/dashboard/backup',         icon: '💾', label: '백업 관리' },
+    ],
+  },
+  {
+    label: '설정',
+    items: [
+      { href: '/dashboard/billing',  icon: '💳', label: '플랜 & 결제' },
+      { href: '/dashboard/settings', icon: '⚙️', label: 'AI 설정' },
+    ],
+  },
+];
+
+// 전체 메뉴 아이템 플랫 목록 (즐겨찾기 조회용)
+const ALL_ITEMS = NAV_GROUPS.flatMap(g => g.items);
+
+interface SidebarProps {
+  collapsed: boolean;
+  onToggle: () => void;
+  isMobile?: boolean;
+  onMobileClose?: () => void;
+}
+
+export default function Sidebar({ collapsed, onToggle, isMobile, onMobileClose }: SidebarProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { employees, companySettings, directives } = useStore();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isOwnerUser, setIsOwnerUser] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const email = session?.user.email ?? null;
+      setUserEmail(email);
+      const ownerEmail = process.env.NEXT_PUBLIC_OWNER_EMAIL || '2days.kr@gmail.com';
+      const ownerId = process.env.NEXT_PUBLIC_OWNER_USER_ID || '0a7e3d43-0159-411e-b171-0aebb70a4893';
+      setIsOwnerUser(email === ownerEmail || session?.user.id === ownerId);
+    });
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('loov_sidebar_favorites');
+      if (saved) setFavorites(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  const toggleFavorite = useCallback((href: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFavorites(prev => {
+      const next = prev.includes(href)
+        ? prev.filter(h => h !== href)
+        : [...prev, href];
+      localStorage.setItem('loov_sidebar_favorites', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  const pendingDirectives = directives.filter((d) => d.status === 'pending').length;
+  const activeEmployees = employees.filter((e) => e.status === 'active').length;
+
+  const getBadge = (href: string): number | null => {
+    if (href === '/dashboard/directives') return pendingDirectives || null;
+    return null;
+  };
+
+  const handleNavClick = () => {
+    if (isMobile && onMobileClose) {
+      onMobileClose();
+    }
+  };
+
+  // 즐겨찾기 순서 유지하여 아이템 목록 구성
+  const favoriteItems = favorites
+    .map(href => ALL_ITEMS.find(item => item.href === href))
+    .filter((item): item is typeof ALL_ITEMS[0] => !!item);
+
+  // 네비게이션 아이템 렌더링 헬퍼
+  const renderNavItem = (item: typeof ALL_ITEMS[0], isFavSection = false) => {
+    const isActive = item.href === '/dashboard'
+      ? pathname === '/dashboard'
+      : pathname.startsWith(item.href);
+    const badge = getBadge(item.href);
+    const isFav = favorites.includes(item.href);
+
+    const navClassName = `relative flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm font-medium transition-all group ${
+      isActive
+        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+        : isFavSection
+          ? 'text-yellow-300/80 hover:text-white hover:bg-slate-700/50'
+          : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+    }`;
+
+    const navContent = (
+      <>
+        <span className={`text-base flex-shrink-0 ${collapsed && !isMobile ? 'mx-auto' : ''}`}>
+          {item.icon}
+        </span>
+        {(!collapsed || isMobile) && (
+          <span className="flex-1 truncate min-w-0">{item.label}</span>
+        )}
+        {(!collapsed || isMobile) && badge !== null && badge > 0 && (
+          <span className={`flex-shrink-0 text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+            isActive ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
+          }`}>
+            {badge}
+          </span>
+        )}
+        {(!collapsed || isMobile) && (
+          <button
+            onClick={(e) => toggleFavorite(item.href, e)}
+            className={`flex-shrink-0 text-sm leading-none transition-all rounded px-0.5 hover:scale-110 ${
+              isFav
+                ? 'text-yellow-400 hover:text-yellow-300'
+                : 'text-slate-600 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-yellow-400'
+            }`}
+            title={isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+          >
+            {isFav ? '★' : '☆'}
+          </button>
+        )}
+      </>
+    );
+
+    return 'external' in item && item.external ? (
+      <a
+        key={`${isFavSection ? 'fav-' : ''}${item.href}`}
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={collapsed && !isMobile ? item.label : undefined}
+        className={navClassName}
+      >
+        {navContent}
+      </a>
+    ) : (
+      <Link
+        key={`${isFavSection ? 'fav-' : ''}${item.href}`}
+        href={item.href}
+        onClick={handleNavClick}
+        title={collapsed && !isMobile ? item.label : undefined}
+        className={navClassName}
+      >
+        {navContent}
+      </Link>
+    );
+  };
+
+  return (
+    <aside
+      className={`flex flex-col h-full bg-slate-900 border-r border-slate-700/50 transition-all duration-300 ${
+        isMobile ? 'w-72' : collapsed ? 'w-16' : 'w-60'
+      }`}
+    >
+      {/* 로고 + 토글 */}
+      <div className="flex items-center justify-between px-4 py-4 border-b border-slate-700/50 flex-shrink-0">
+        {(!collapsed || isMobile) && (
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-black text-white flex-shrink-0">
+              L
+            </div>
+            <div className="min-w-0">
+              <div className="font-black text-white text-sm leading-none">LOOV</div>
+              <div className="text-[10px] text-slate-400 truncate mt-0.5">{companySettings.companyName}</div>
+            </div>
+          </div>
+        )}
+        {collapsed && !isMobile && (
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-black text-white mx-auto">
+            L
+          </div>
+        )}
+
+        {/* 모바일 닫기 버튼 */}
+        {isMobile && onMobileClose && (
+          <button
+            onClick={onMobileClose}
+            className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-700/50"
+            aria-label="메뉴 닫기"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+
+        {/* 데스크탑 접기/펼치기 버튼 */}
+        {!isMobile && !collapsed && (
+          <button onClick={onToggle} className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-700/50">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            </svg>
+          </button>
+        )}
+        {!isMobile && collapsed && (
+          <button onClick={onToggle} className="absolute -right-3 top-5 w-6 h-6 bg-slate-700 border border-slate-600 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-600 transition-all z-10">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* 대표 정보 */}
+      {(!collapsed || isMobile) && (
+        <div className="px-3 py-3 border-b border-slate-700/50 flex-shrink-0">
+          <div className="flex items-center gap-2.5 bg-slate-800/60 rounded-xl px-3 py-2.5">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-sm font-black text-white flex-shrink-0">
+              {companySettings.ceoName ? companySettings.ceoName[0] : '대'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-white truncate">
+                {companySettings.ceoName || '대표님'}
+              </div>
+              <div className="text-[10px] text-amber-400 font-medium">CEO · 대표</div>
+            </div>
+            <div className="w-2 h-2 bg-emerald-400 rounded-full flex-shrink-0" />
+          </div>
+        </div>
+      )}
+
+      {/* 직원 요약 */}
+      {(!collapsed || isMobile) && employees.length > 0 && (
+        <div className="px-3 py-2 border-b border-slate-700/50 flex-shrink-0">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>AI 직원 {employees.length}명</span>
+            <span className="text-emerald-400">{activeEmployees}명 활동 중</span>
+          </div>
+        </div>
+      )}
+
+      {/* 네비게이션 */}
+      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-4">
+
+        {/* ── 즐겨찾기 섹션 ── */}
+        {favoriteItems.length > 0 && (
+          <div>
+            {(!collapsed || isMobile) && (
+              <div className="px-2 mb-1 flex items-center gap-1">
+                <span className="text-yellow-400 text-[11px]">★</span>
+                <span className="text-[10px] font-semibold text-yellow-500 uppercase tracking-widest">즐겨찾기</span>
+              </div>
+            )}
+            {collapsed && !isMobile && (
+              <div className="px-2 mb-1 flex justify-center">
+                <span className="text-yellow-400 text-[11px]">★</span>
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {favoriteItems.map(item => renderNavItem(item, true))}
+            </div>
+            {/* 구분선 */}
+            <div className="mt-3 mx-2 border-t border-slate-700/50" />
+          </div>
+        )}
+
+        {/* ── 전체 메뉴 ── */}
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label}>
+            {(!collapsed || isMobile) && (
+              <div className="px-2 mb-1">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">{group.label}</span>
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {group.items.map((item) => renderNavItem(item, false))}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* 관리자 메뉴 (대표님 전용) */}
+      {isOwnerUser && (
+        <div className="px-2 pb-2 border-b border-slate-700/50">
+          {(!collapsed || isMobile) && (
+            <div className="px-2 mb-1">
+              <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-widest">관리자</span>
+            </div>
+          )}
+          <Link
+            href="/dashboard/admin/users"
+            onClick={handleNavClick}
+            title={collapsed && !isMobile ? '회원 관리' : undefined}
+            className={`flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm font-medium transition-all ${
+              pathname.startsWith('/dashboard/admin')
+                ? 'bg-amber-600 text-white'
+                : 'text-amber-400 hover:text-white hover:bg-amber-600/20'
+            }`}
+          >
+            <span className="text-base flex-shrink-0">👥</span>
+            {(!collapsed || isMobile) && <span className="truncate">회원 관리</span>}
+          </Link>
+        </div>
+      )}
+
+      {/* 하단 */}
+      <div className="p-2 border-t border-slate-700/50 flex-shrink-0 space-y-0.5">
+        {(!collapsed || isMobile) && userEmail && (
+          <div className="px-2.5 py-1.5">
+            <div className="text-[10px] text-slate-500 truncate">{userEmail}</div>
+          </div>
+        )}
+        <Link
+          href="/"
+          onClick={handleNavClick}
+          className={`flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-700/30 transition-all ${
+            collapsed && !isMobile ? 'justify-center' : ''
+          }`}
+          title={collapsed && !isMobile ? '서비스 소개' : undefined}
+        >
+          <span className="text-base flex-shrink-0">🏠</span>
+          {(!collapsed || isMobile) && <span className="text-xs">서비스 소개</span>}
+        </Link>
+        <button
+          onClick={handleLogout}
+          title={collapsed && !isMobile ? '로그아웃' : undefined}
+          className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all ${
+            collapsed && !isMobile ? 'justify-center' : ''
+          }`}
+        >
+          <span className="text-base flex-shrink-0">🚪</span>
+          {(!collapsed || isMobile) && <span className="text-xs">로그아웃</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}

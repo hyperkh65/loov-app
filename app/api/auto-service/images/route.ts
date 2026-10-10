@@ -1,0 +1,239 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient, createAdminClient } from '@/lib/supabase-server';
+import { getSetting } from '@/lib/get-setting';
+import { uploadToR2 } from '@/lib/r2-storage';
+
+// Google Custom Search 이미지 검색 (설정 페이지 DB 키 사용)
+async function searchGoogle(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
+  const [apiKey, cx] = await Promise.all([
+    getSetting('GOOGLE_SEARCH_API_KEY'),
+    getSetting('GOOGLE_SEARCH_CX'),
+  ]);
+  if (!apiKey || !cx) return [];
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}&searchType=image&num=${Math.min(count, 10)}&safe=active&imgSize=large`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.items || []).map((item: { link: string; image?: { thumbnailLink: string }; displayLink: string }) => ({
+      url: item.link,
+      thumb: item.image?.thumbnailLink || item.link,
+      author: item.displayLink,
+    }));
+  } catch { return []; }
+}
+
+// Pixabay 이미지 검색 (설정 페이지 DB 키 사용)
+async function searchPixabay(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
+  const apiKey = await getSetting('PIXABAY_API_KEY');
+  if (!apiKey) return [];
+  try {
+    const res = await fetch(
+      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&image_type=photo&per_page=${count}&safesearch=true&min_width=600`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.hits || []).map((h: { webformatURL: string; previewURL: string; user: string }) => ({
+      url: h.webformatURL,
+      thumb: h.previewURL,
+      author: h.user,
+    }));
+  } catch { return []; }
+}
+
+// X.com 수집 이미지 검색 (bossai_x_videos 중 이미지 확장자, 키워드로 본문/계정 검색)
+async function searchSnsImages(query: string, limit = 12) {
+  const supabase = createAdminClient();
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+  let q = supabase
+    .from('bossai_x_videos')
+    .select('id, username, video_url, tweet_url, tweet_text, collected_at')
+    .order('collected_at', { ascending: false })
+    .limit(limit * 5);
+
+  if (query) {
+    q = q.or(`tweet_text.ilike.%${query}%,username.ilike.%${query}%`);
+  }
+
+  const { data } = await q;
+  if (!data) return [];
+
+  const filtered = data
+    .filter(item => {
+      const ext = item.video_url?.split('.').pop()?.toLowerCase().split('?')[0];
+      return imageExts.includes(ext || '');
+    })
+    .slice(0, limit);
+
+  if (filtered.length === 0 && query) {
+    const { data: fallback } = await supabase
+      .from('bossai_x_videos')
+      .select('id, username, video_url, tweet_url, tweet_text, collected_at')
+      .order('collected_at', { ascending: false })
+      .limit(limit * 3);
+
+    return (fallback || [])
+      .filter(item => {
+        const ext = item.video_url?.split('.').pop()?.toLowerCase().split('?')[0];
+        return imageExts.includes(ext || '');
+      })
+      .slice(0, limit)
+      .map(item => ({
+        url: item.video_url,
+        thumb: item.video_url,
+        author: `@${item.username}`,
+        source: 'x.com',
+        tweet_url: item.tweet_url,
+        caption: item.tweet_text?.slice(0, 60),
+      }));
+  }
+
+  return filtered.map(item => ({
+    url: item.video_url,
+    thumb: item.video_url,
+    author: `@${item.username}`,
+    source: 'x.com',
+    tweet_url: item.tweet_url,
+    caption: item.tweet_text?.slice(0, 60),
+  }));
+}
+
+// 네이버 이미지 검색
+async function searchNaver(query: string, count = 9): Promise<{ url: string; thumb: string; author: string }[]> {
+  const [clientId, clientSecret] = await Promise.all([
+    getSetting('NAVER_CLIENT_ID'),
+    getSetting('NAVER_CLIENT_SECRET'),
+  ]);
+  if (!clientId || !clientSecret) throw new Error('NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 키가 없습니다 (AI 설정에서 입력하세요)');
+  const res = await fetch(
+    `https://openapi.naver.com/v1/search/image.json?query=${encodeURIComponent(query)}&display=${count}&sort=sim`,
+    { headers: { 'X-Naver-Client-Id': clientId, 'X-Naver-Client-Secret': clientSecret } }
+  );
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`네이버 API 오류 ${res.status}: ${errText}`);
+  }
+  const data = await res.json();
+  return (data.items || [])
+    .filter((item: { link: string }) => item.link?.startsWith('http'))
+    .map((item: { link: string; thumbnail: string; title: string }) => ({
+      url: item.link,
+      thumb: item.thumbnail || item.link,
+      author: item.title?.replace(/<[^>]+>/g, '') || '네이버',
+    }));
+}
+
+export async function GET(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+
+  const action = req.nextUrl.searchParams.get('action');
+  const q = req.nextUrl.searchParams.get('q') || '';
+
+  if (action === 'naver') {
+    try {
+      const images = await searchNaver(q);
+      return NextResponse.json({ images });
+    } catch (err) {
+      console.error('[Naver image]', err);
+      return NextResponse.json({ images: [], error: String(err) });
+    }
+  }
+
+  if (action === 'google') {
+    try {
+      const images = await searchGoogle(q);
+      if (images.length === 0) {
+        try {
+          const fallback = await searchNaver(q);
+          return NextResponse.json({ images: fallback, fallback: true });
+        } catch (naverErr) {
+          return NextResponse.json({ images: [], error: `Google: 결과없음, Naver: ${String(naverErr)}` });
+        }
+      }
+      return NextResponse.json({ images });
+    } catch (err) {
+      console.error('[Google image]', err);
+      return NextResponse.json({ images: [], error: String(err) });
+    }
+  }
+
+  if (action === 'pixabay') {
+    try {
+      const images = await searchPixabay(q);
+      return NextResponse.json({ images });
+    } catch (err) {
+      return NextResponse.json({ images: [], error: String(err) });
+    }
+  }
+
+  if (action === 'sns') {
+    const images = await searchSnsImages(q);
+    return NextResponse.json({ images });
+  }
+
+  return NextResponse.json({ error: 'action 필요 (naver|google|pixabay|sns)' }, { status: 400 });
+}
+
+// 사용자 파일 업로드 OR 외부 URL 다운로드 → R2
+export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+
+  const contentType = req.headers.get('content-type') || '';
+
+  // 외부 URL 다운로드 방식 (JSON body: { url })
+  if (contentType.includes('application/json')) {
+    const { url } = await req.json();
+    if (!url) return NextResponse.json({ error: 'url 필요' }, { status: 400 });
+
+    let origin = '';
+    try { origin = new URL(url).origin; } catch { /* skip */ }
+
+    const imgRes = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': origin ? origin + '/' : 'https://www.google.com/',
+        'sec-fetch-dest': 'image',
+        'sec-fetch-mode': 'no-cors',
+        'sec-fetch-site': 'cross-site',
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!imgRes.ok) return NextResponse.json({ error: `이미지 다운로드 실패 (${imgRes.status}) — 원본 사이트에서 직접 다운로드 후 업로드 탭을 이용하세요` }, { status: 400 });
+
+    const ct = imgRes.headers.get('content-type') || 'image/jpeg';
+    const ext = ct.split('/')[1]?.split(';')[0]?.replace('jpeg', 'jpg') || 'jpg';
+    const key = `auto-blog/uploads/${user.id}/${Date.now()}.${ext}`;
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+
+    try {
+      const publicUrl = await uploadToR2(key, buffer, ct);
+      return NextResponse.json({ url: publicUrl });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  // 파일 업로드 방식 (FormData)
+  const formData = await req.formData();
+  const file = formData.get('file') as File | null;
+  if (!file) return NextResponse.json({ error: '파일 없음' }, { status: 400 });
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const ext = file.name.split('.').pop() || 'jpg';
+  const key = `auto-blog/uploads/${user.id}/${Date.now()}.${ext}`;
+
+  try {
+    const publicUrl = await uploadToR2(key, buffer, file.type);
+    return NextResponse.json({ url: publicUrl });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}

@@ -1,0 +1,393 @@
+import { isTwoDays, pickWpCategory } from '@/lib/wp-category';
+import { createAdminClient } from '@/lib/supabase-server';
+import { tightTitle } from '@/lib/html-gate';
+import { buildHookCaptions } from '@/lib/sns/hook-captions';
+import { getLastProvider } from '@/lib/auto-blog-ai';
+import { notifyPublished } from '@/lib/owner-alert';
+import { withUtm } from '@/lib/utm';
+import { refreshBloggerToken } from '@/lib/blogger-token';
+import { pickKeywordForUser, pickFromKeywordList, pickDynamicKeywordByCategory, pickSeedByCategory } from './keyword-picker';
+import { generateBlogContent } from '@/lib/blog-content-generator';
+import { submitToIndexNow } from '@/lib/indexnow';
+import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
+import { publishToWordpressCom } from '@/lib/wordpress-com';
+import { publishToGithubPages } from '@/lib/github-pages-blog';
+import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { publishToNaverCafe } from '@/lib/naver-cafe';
+import { publishToTumblr } from '@/lib/tumblr-publish';
+import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
+import type { Platform } from '@/lib/sns/platforms';
+import type { Schedule, BlogAutoConfig } from './index';
+
+export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = '', opts: { accountIds?: string[]; cafe?: boolean; cafeTarget?: string } = {}): Promise<void> {
+  // 제목만 캡션으로 올리면 AI 티 나고 클릭할 이유가 없음 — 채널별 훅 캡션 생성(60초 넘으면 제목으로 폴백)
+  const summary = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const captions = await Promise.race([
+    buildHookCaptions(title, summary),
+    new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 60_000)),
+  ]).catch(() => ({} as Record<string, string>));
+  console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(captions).length ? getLastProvider() : '실패/60초초과→제목으로 대체'}`);
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from('sns_connections')
+    .select('platform, platform_user_id, platform_username, access_token')
+    .eq('user_id', userId)
+    .eq('is_active', true);
+  const connections = data || [];
+
+  // 예전엔 Threads만 사이트별 전용 계정으로 라우팅하고 Instagram/Facebook/
+  // Twitter는 필터 없이 연결된 계정 전부에 뿌렸음 — 그 결과 미라클/아보다처럼
+  // 무관한 사이트 글이 쿠팡/무신사 전용 인스타그램 계정에도 섞여 올라가고
+  // 있었음(사용자 확인, 실사용 중 확인). Instagram도 Threads와 동일하게
+  // 사이트별 계정 로테이션 적용 — 같은 "2dayskr 계열" 안에서도 여러 자매
+  // 계정에 분산시켜 계정당 최소 간격을 확보(lib/sns/account-rotation.ts).
+  const group = snsGroupFor(siteUrl);
+  let targets: Array<{ platform: string; platform_user_id: string; access_token: string }>;
+  if (opts.accountIds) {
+    // 사용자가 지정한 채널 블록 그대로 발행(자동 라우팅·간격 로테이션 우회)
+    targets = connections.filter(c => opts.accountIds!.includes(c.platform_user_id));
+  } else {
+    const [threadsTarget, instagramTarget] = await Promise.all([
+      pickRotatedAccount(supabase, group, 'threads', connections),
+      pickRotatedAccount(supabase, group, 'instagram', connections),
+    ]);
+    // 본문에 링크를 넣으면 SNS 알고리즘이 외부링크 게시물로 판단해 노출을 줄이는
+    // 페널티가 있음(사용자 확정) — rewrite-publish.ts와 동일하게 링크는 댓글로 분리.
+    const rotatedTargets = [threadsTarget, instagramTarget]
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .map(c => ({ ...c, platform: c.platform as 'threads' | 'instagram' }));
+    const otherTargets = connections.filter(c => ['twitter', 'facebook'].includes(c.platform)); // 현행 유지 — 전부 발행
+    targets = [...rotatedTargets, ...otherTargets];
+  }
+
+  await Promise.all(targets.map(async (conn) => {
+    try {
+      const linkUrl = withUtm(articleUrl, `${conn.platform}_${connections.find(c => c.platform_user_id === conn.platform_user_id)?.platform_username || ''}`);
+      const isFb = conn.platform === 'facebook'; // 페이스북은 댓글 권한이 없어 링크를 본문에
+      const caption = (captions[conn.platform] || title).slice(0, 500);
+      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, isFb ? `${caption}\n\n${linkUrl}` : caption, imageUrl ? [imageUrl] : undefined);
+      if (conn.platform === 'threads' || conn.platform === 'instagram') {
+        logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
+      }
+      // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
+      // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
+      // (rewrite-publish.ts와 동일하게 짧은 대기 + 1회 재시도로 보강)
+      if (!isFb) try {
+        await new Promise(r => setTimeout(r, 4000));
+        await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
+      } catch {
+        try {
+          await new Promise(r => setTimeout(r, 5000));
+          await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
+        } catch { /* 재시도까지 실패 — 본문 발행은 이미 성공이라 전체는 실패 처리 안 함 */ }
+      }
+    } catch { /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
+  }));
+
+  // 네이버 카페 + 텀블러도 공통으로(부분 실패 허용 — rewrite-publish.ts와 동일 패턴)
+  // 모든 글을 카페에 올리되 기본은 등록 카페 중 2dayskr 카페 한 곳만(사용자 확정)
+  if (opts.cafe !== false) publishToNaverCafe(supabase, { userId, title, content: `<p>${title}</p>`, blogUrl: articleUrl, hook: captions.cafe, cafe: opts.cafeTarget ?? '2dayskr' }).catch(() => {});
+  publishToTumblr({ title, meta_description: captions.tumblr, tags: captions.tumblr_tags?.split(',').map(t => t.replace(/^#/, '').trim()).filter(Boolean), canonical_url: articleUrl }).catch(() => {});
+}
+
+async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
+  const supabase = createAdminClient();
+  const { data: tokenRow } = await supabase
+    .from('bossai_blogger_tokens')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (!tokenRow) return null;
+
+  const expiresAt = new Date(tokenRow.expires_at).getTime();
+  if (expiresAt > Date.now() + 5 * 60 * 1000) return tokenRow.access_token;
+
+  if (!tokenRow.refresh_token) return null;
+  const refreshed = await refreshBloggerToken(tokenRow.refresh_token);
+  if (!refreshed) return null;
+
+  await supabase
+    .from('bossai_blogger_tokens')
+    .update({ access_token: refreshed.access_token, expires_at: refreshed.expires_at, updated_at: new Date().toISOString() })
+    .eq('user_id', userId);
+
+  return refreshed.access_token;
+}
+
+async function publishToBlogger(accessToken: string, blogId: string, title: string, content: string, labels: string[]): Promise<string> {
+  title = tightTitle(title);
+  // Blogger는 라벨 합계가 200바이트(UTF-8, 한글 3바이트)를 넘으면 "invalid argument"로 거부(실측) — 190바이트 안에서만 사용
+  const safeLabels: string[] = [];
+  let labelLen = 0;
+  for (const l of [...new Set(labels.map(x => x.replace(/[<>",]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))]) {
+    if (safeLabels.length >= 8 || labelLen + Buffer.byteLength(l) > 190) break;
+    safeLabels.push(l); labelLen += Buffer.byteLength(l);
+  }
+  const res = await fetch(`https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, content, labels: safeLabels, kind: 'blogger#post' }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(`${err.error?.message || `Blogger API 오류 ${res.status}`} (title=${title.length}자, content=${content.length}자, labels=${JSON.stringify(safeLabels)})`);
+  }
+  const data = await res.json();
+  if (data.url) notifyPublished('블로그스팟', title, data.url);
+  return data.url || data.id || '';
+}
+
+export interface WordPressPublishResult {
+  link: string;
+  /** 워드프레스 미디어 라이브러리에 실제 업로드된 대표이미지 URL — R2/원본 URL이
+   * 메타(스레드/인스타) 크롤러에 막혀도 이건 실제 서비스 도메인이라 SNS 발행에
+   * 재사용 가능(lib/rewrite-publish.ts 참고). 업로드 실패/이미지 없으면 null. */
+  featuredImageUrl: string | null;
+}
+
+// 2days.kr 계열(메인+서브도메인)은 테마/플러그인이 헤더/사이드바에만 광고를 넣고 글 본문
+// 안에는 광고가 없거나 적어서, 발행하는 본문에 직접 광고 코드를 삽입한다(9/26~27 수익이
+// 좋았던 기준 상태로 복원 + 본문 광고 3곳으로 확대). aboda.kr/miracool.co.kr은 이미 본문 광고가 충분해 건드리지 않는다.
+// 슬롯은 같은 계정(ca-pub-8940400388075870)에서 이미 검증된 기존 슬롯만 재사용.
+const BODY_ADS_ENABLED = false;
+const TWODAYS_BODY_AD_SLOTS = ['4238744126', '1739739148', '4238744126'];
+function injectAdSenseForSite(wpUrl: string, content: string): string {
+  let host: string;
+  try { host = new URL(wpUrl).host; } catch { return content; }
+  if (host !== '2days.kr' && !host.endsWith('.2days.kr')) return content;
+  // 본문 광고 끔(사용자 확정 2026-10-03): 테마가 맨 위/본문 위/본문 아래/사이드바 4곳을 넣으므로 본문 삽입은 중복
+  if (!BODY_ADS_ENABLED) return content;
+  const ad = (slot: string, first: boolean) => `<div class="loov-ad" style="margin:20px auto;text-align:center;clear:both;">
+${first ? '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8940400388075870" crossorigin="anonymous"></script>\n' : ''}<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-8940400388075870" data-ad-slot="${slot}" data-ad-format="auto" data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>`;
+  const parts = content.split('</p>');
+  const n = parts.length - 1; // 문단 수
+  if (n < 1) return ad(TWODAYS_BODY_AD_SLOTS[0], true) + content;
+  // 1번째 문단 뒤 / 중간 / 마지막 직전 — 짧은 글은 앞쪽 광고만
+  const at = new Map<number, string>();
+  at.set(1, ad(TWODAYS_BODY_AD_SLOTS[0], true));
+  if (n >= 5) at.set(Math.floor(n / 2), ad(TWODAYS_BODY_AD_SLOTS[1], false));
+  if (n >= 9) at.set(n - 1, ad(TWODAYS_BODY_AD_SLOTS[2], false));
+  return parts.map((part, i) => (i < n ? part + '</p>' + (at.get(i + 1) || '') : part)).join('');
+}
+
+// 2days.kr는 카테고리를 안 정해주면 기본값인 "미분류"(id 1)로 들어가는데,
+// 이 사이트에 "/category/미분류/ → /category/aboda/" 301 리다이렉트 규칙이
+// 있고 그게 글 개별 URL(퍼머링크에 카테고리 슬러그가 들어가는 구조)에도
+// 걸려서 글 URL이 "미분류"↔"aboda" 사이를 무한 리다이렉트하는 버그를
+// 실사용 중 발견함(방문자가 글을 아예 못 봄). 미분류 카테고리를 아예 안
+// 쓰도록 발행 시 명시적으로 다른 카테고리를 지정해서 회피.
+function getSafeCategoryFor(wpUrl: string): number[] | undefined {
+  let host: string;
+  try { host = new URL(wpUrl).host; } catch { return undefined; }
+  return host === '2days.kr' ? [968] : undefined; // 968 = economic
+}
+
+// 콘텐츠 사이트 발행을 시간축에 고르게 분산(사용자 확정 2026-10-03): 여러 사이트가 한꺼번에
+// 올라가지 않게 전체 통틀어 10분에 1건, 같은 사이트는 30분 간격.
+// ponytail: 프로세스 메모리 기준 — 앱 인스턴스가 여러 개로 늘면 DB 예약 테이블로 옮길 것
+const STAGGER_HOSTS = new Set(['2days.kr', 'aboda.kr', 'miracool.co.kr', 'money.2days.kr', 'finance.2days.kr', 'yellow.2days.kr']);
+const GLOBAL_GAP_MS = 10 * 60e3;
+// 크론이 정확히 30분 주기라 30분으로 두면 몇 초 차이로 한 회차씩 밀려 실제 1시간 간격이 됨 + 발행 처리 1~5분 → 20분 판정 = 실질 30분 단위
+const SITE_GAP_MS = 20 * 60e3;
+export const SLOT_WAIT_ERROR = '발행 슬롯 대기';
+export const TREND_CATEGORY_2DAYS = 21338; // 2days.kr '트렌드' 카테고리
+let lastGlobalAt = 0;
+const lastSiteAt = new Map<string, number>();
+
+async function latestPostAt(base: string): Promise<number> {
+  try {
+    // 2days.kr 트렌드 글(로컬 Claude, 별도 카테고리)은 정규 30분 발행 간격 계산에서 제외 — 서로 끼어들지 않게
+    const exclude = base.endsWith('//2days.kr') ? `&categories_exclude=${TREND_CATEGORY_2DAYS}` : '';
+    const r = await fetch(`${base}/wp-json/wp/v2/posts?per_page=1&_fields=date_gmt${exclude}`, { signal: AbortSignal.timeout(8000) });
+    const d = (await r.json() as Array<{ date_gmt?: string }>)[0]?.date_gmt;
+    return d ? new Date(`${d}Z`).getTime() : 0;
+  } catch { return 0; }
+}
+
+/** 생성 전에 미리 확인(예약 안 함) — 슬롯이 없으면 AI 생성을 건너뛰어 토큰 절약 */
+export async function publishSlotFree(wpUrl: string): Promise<boolean> {
+  const base = wpUrl.replace(/\/$/, '');
+  const host = new URL(base).host;
+  if (!STAGGER_HOSTS.has(host)) return true;
+  const now = Date.now();
+  // 2days.kr(핵심 소스)은 30분마다 한 번뿐인 발행 크론이 다른 사이트 발행에 밀리지 않게 전체 간격 면제
+  if (host !== '2days.kr' && now - lastGlobalAt < GLOBAL_GAP_MS) return false;
+  const last = Math.max(lastSiteAt.get(host) || 0, await latestPostAt(base));
+  lastSiteAt.set(host, last);
+  return now - last >= SITE_GAP_MS;
+}
+
+export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish', opts: { bypassSlot?: boolean; categories?: number[] } = {}): Promise<WordPressPublishResult> {
+  if (status === 'publish' && !opts.bypassSlot) {
+    if (!await publishSlotFree(wpUrl)) throw new Error(`${SLOT_WAIT_ERROR}(${wpUrl})`);
+    lastGlobalAt = Date.now();
+    lastSiteAt.set(new URL(wpUrl.replace(/\/$/, '')).host, lastGlobalAt);
+  }
+  content = injectAdSenseForSite(wpUrl, content);
+  title = tightTitle(title);
+  const creds = Buffer.from(`${username}:${appPassword}`).toString('base64');
+  const apiUrl = `${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
+
+  // 대표 이미지를 Featured Image로 등록
+  let featuredMediaId: number | undefined;
+  let uploadedImageUrl: string | null = null;
+  if (featuredImageUrl) {
+    try {
+      const imgRes = await fetch(featuredImageUrl, { signal: AbortSignal.timeout(15000) });
+      if (imgRes.ok) {
+        const imgBuffer = await imgRes.arrayBuffer();
+        const ext = featuredImageUrl.split('.').pop()?.split('?')[0] || 'png';
+        const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+        const mime = mimeMap[ext] || 'image/png';
+        const uploadRes = await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/media`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${creds}`,
+            'Content-Type': mime,
+            'Content-Disposition': `attachment; filename="thumbnail.${ext}"`,
+          },
+          body: imgBuffer,
+        });
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          featuredMediaId = uploadData.id;
+          uploadedImageUrl = uploadData.source_url || null;
+        }
+      }
+    } catch { /* featured image optional */ }
+  }
+
+  const body: Record<string, unknown> = { title, content, status };
+  if (featuredMediaId) body.featured_media = featuredMediaId;
+  const safeCategories = opts.categories || (isTwoDays(wpUrl) ? [await pickWpCategory(wpUrl, title, content)] : getSafeCategoryFor(wpUrl));
+  if (safeCategories) body.categories = safeCategories;
+
+  const res = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`WordPress API 오류 ${res.status}: ${err.slice(0, 100)}`);
+  }
+  const data = await res.json();
+  const link = data.link || '';
+  // 발행 직후 검색엔진(네이버/빙 등 IndexNow 참여 엔진)에 새 글을 바로 알려서
+  // 크롤링/노출을 앞당김 — 실패해도 발행 자체에는 영향 없음(fire-and-forget)
+  if (link) submitToIndexNow(link).catch(() => {});
+  if (link && status === 'publish') notifyPublished(new URL(wpUrl).host, title, link);
+  return { link, featuredImageUrl: uploadedImageUrl };
+}
+
+export async function getWpCredentials(siteId: string): Promise<{ url: string; username: string; appPassword: string }> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from('wordpress_sites')
+    .select('site_url, wp_username, app_password')
+    .eq('id', siteId)
+    .single();
+  if (!data) throw new Error('등록된 WordPress 사이트를 찾을 수 없습니다');
+  return { url: data.site_url, username: data.wp_username, appPassword: data.app_password };
+}
+
+export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string; rawOutput: string }): Promise<{ keyword: string; url: string; title: string }> {
+  const config = schedule.config as BlogAutoConfig;
+
+  // 키워드 자동 발굴 — config.keywords가 있으면(고CPC 카테고리 시범 등 특정
+  // 주제로 고정하고 싶은 스케줄) 그 목록에서 순환/랜덤 선택하되, dynamic_category가
+  // 같이 설정돼 있으면 그 카테고리의 실시간 발굴 후보를 먼저 시도하고 없을 때만
+  // 정적 목록으로 폴백 — 정적 목록만 쓸 때보다 소재가 더 다양해짐.
+  // config.keywords가 아예 없으면 기존대로 범용 캐시/트렌드 기반 자동 발굴.
+  if (!manual && config.blog_platform === 'wordpress' && config.wp_site_id
+    && !await publishSlotFree((await getWpCredentials(config.wp_site_id)).url)) {
+    throw new Error(`[스킵] ${SLOT_WAIT_ERROR}`);
+  }
+
+  let keyword: string;
+  try {
+    if (manual) {
+      keyword = manual.keyword;
+    } else if (config.keywords?.length) {
+      const dynamic = config.dynamic_category
+        ? await pickDynamicKeywordByCategory(schedule, config.dynamic_category)
+        : null;
+      keyword = dynamic || await pickFromKeywordList(schedule, config.keywords, config.keyword_mode || 'rotate') || (config.dynamic_category ? await pickSeedByCategory(config.dynamic_category) : null) || await pickKeywordForUser(schedule.user_id);
+    } else {
+      keyword = await pickKeywordForUser(schedule.user_id);
+    }
+  } catch (e) {
+    throw new Error(`[키워드 발굴 실패] ${(e as Error).message}`);
+  }
+
+  // 콘텐츠 생성
+  let title: string, content: string, keywords: string[], imageUrl: string | null;
+  try {
+    const targetUrl = config.wp_site_id ? (await getWpCredentials(config.wp_site_id).catch(() => null))?.url || '' : config.wp_url || '';
+    const result = await generateBlogContent(keyword, config.ai_model, manual?.rawOutput, undefined, { noInlineImages: !manual && targetUrl.includes('2days.kr') });
+    title = result.title; content = result.content; keywords = result.keywords; imageUrl = result.imageUrl;
+    if (!title || !content) throw new Error('AI 출력 파싱 오류 (title/content 없음)');
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg.startsWith('[키워드')) throw e;
+    throw new Error(`[AI 생성 실패] ${msg}`);
+  }
+
+  // 발행
+  let publishedUrl = '';
+  let publishedSiteUrl = ''; // SNS 계정 매칭용(사이트별 전용 스레드/인스타 계정 라우팅)
+  try {
+    if (config.blog_platform === 'blogger') {
+      const accessToken = await getBloggerTokenAdmin(schedule.user_id);
+      if (!accessToken) throw new Error('Blogger 계정이 연결되지 않았습니다');
+      const blogId = config.blogger_blog_id || '7951763866955162015';
+      publishedUrl = await publishToBlogger(accessToken, blogId, title, content, keywords);
+    } else if (config.blog_platform === 'wordpress') {
+      let wpUrl: string, wpUser: string, wpPass: string;
+      if (config.wp_site_id) {
+        const creds = await getWpCredentials(config.wp_site_id);
+        wpUrl = creds.url; wpUser = creds.username; wpPass = creds.appPassword;
+      } else if (config.wp_url && config.wp_username && config.wp_app_password) {
+        wpUrl = config.wp_url; wpUser = config.wp_username; wpPass = config.wp_app_password;
+      } else {
+        throw new Error('WordPress 사이트를 선택하거나 직접 입력해주세요');
+      }
+      publishedSiteUrl = wpUrl;
+      // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
+      // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행은 진행
+      const crossLink = await findCrossSiteLink(wpUrl, keyword).catch(() => null);
+      const contentWithLink = appendCrossLink(content, crossLink);
+      publishedUrl = (await publishToWordPress(wpUrl, wpUser, wpPass, title, contentWithLink, imageUrl)).link;
+    }
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg.startsWith('[')) throw e;
+    throw new Error(`[발행 실패] ${msg}`);
+  }
+
+  // 블로거/워드프레스 어느 쪽으로 발행했든 워드프레스닷컴 위성 블로그에도
+  // 요약+링크를 올려 백링크/유입 경로 확보 — 실패해도 본 발행에는 영향 없음
+  if (publishedUrl) {
+    publishToWordpressCom({ title, content, articleUrl: publishedUrl }).catch(() => {});
+    publishToGithubPages({ title, content, articleUrl: publishedUrl }).catch(() => {});
+    // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
+    // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
+    // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
+    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl, content, { accountIds: config.sns_account_ids, cafe: config.naver_cafe, cafeTarget: config.naver_cafe_target }).catch(() => {});
+  }
+
+  return { keyword, url: publishedUrl, title };
+}
+
+// 상품·호텔처럼 SNS는 자주, 블로그 글은 드물게 내는 러너용(사용자 확정 2026-10-03: blog.2days.kr 6시간마다)
+export function wpDue(schedule: Schedule, hours: number): boolean {
+  const last = Number((schedule.config as { last_wp_at?: number } | null)?.last_wp_at || 0);
+  return Date.now() - last >= hours * 3600e3;
+}
+export async function markWpPublished(schedule: Schedule): Promise<void> {
+  const config = { ...((schedule.config as object) || {}), last_wp_at: Date.now() };
+  await createAdminClient().from('bossai_schedules').update({ config }).eq('id', schedule.id);
+}

@@ -1,0 +1,27 @@
+name: Blog Auto-Run
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'   # 3시간마다 실행
+  workflow_dispatch:
+    inputs:
+      max:
+        description: '최대 생성 수'
+        default: '3'
+      ai_model:
+        description: 'AI 모델 (qwen3 / gemini / claude)'
+        default: 'qwen3'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+
+    steps:
+      - name: 블로그 자동 글 생성
+        run: |
+          MAX="${{ github.event.inputs.max || '3' }}"
+          MODEL="${{ github.event.inputs.ai_model || 'qwen3' }}"
+          curl -s -X GET "${{ secrets.APP_URL }}/api/auto-service/auto-run" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 540 --fail-with-body
