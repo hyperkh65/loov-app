@@ -551,8 +551,10 @@ export default function AutoServicePage() {
     setImgSearchTab('naver');
     setReplacingImgSrc(null);
     setImgQuery(article.keyword || '');
-    setThumbTitle(article.title.length > 20 ? article.title.slice(0, Math.ceil(article.title.length * 0.6)) : article.title);
-    setThumbSubTitle(article.title.length > 20 ? article.title.slice(Math.ceil(article.title.length * 0.6)) : (article.keyword || ''));
+    const tt = article.title;
+    const cut = tt.length > 20 ? (() => { const m = Math.ceil(tt.length * 0.6); let best = -1; for (let i = 1; i < tt.length; i++) if (tt[i] === ' ' && (best < 0 || Math.abs(i - m) < Math.abs(best - m))) best = i; return best > 0 ? best : m; })() : 0;
+    setThumbTitle(cut ? tt.slice(0, cut).trim() : tt);
+    setThumbSubTitle(cut ? tt.slice(cut).trim() : (article.keyword || ''));
     setThumbColor('dark');
     setThumbRepUrl(article.representative_image_url);
     setThumbBgQuery(article.keyword || '');

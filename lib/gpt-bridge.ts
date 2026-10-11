@@ -151,6 +151,9 @@ export function validateDraft(d: DraftIn) {
 
   if (title.length < 10 || title.length > 60) errors.push(`제목 길이 ${title.length}자 — 20~32자로`); else if (title.length < 18 || title.length > 36) warnings.push(`제목 ${title.length}자 — 20~32자 권장`);
   if (kwTokens.length && !kwTokens.every(t => title.includes(t))) errors.push('제목에 메인 키워드가 모두 들어가야 함');
+  if (title.length < 20) errors.push(`제목 ${title.length}자 — 너무 짧고 막연함. 20~36자로 구체적인 상황·대상·결과를 넣을 것`);
+  if (!/\d/.test(title)) errors.push('제목에 구체적인 숫자(금액·기간·개수·나이 등) 1개 이상 필요 — 막연한 제목 금지');
+  if (/(정리|총정리|안내|알아보기|알아보자|방법)$/.test(title.replace(/[?!.…\s]+$/, ''))) errors.push('제목이 "정리/안내/방법"으로 끝남 — 결과·상황이 보이는 말투로');
   if (meta.length < 90 || meta.length > 175) warnings.push(`메타 설명 ${meta.length}자 — 100~160자 권장`);
   if (kw && meta && !kwTokens.every(t => meta.includes(t))) warnings.push('메타 설명에 키워드 포함 권장');
   if (text.length < 2500) errors.push(`본문 ${text.length}자 — 최소 2500자(권장 3500~6000)`); else if (text.length < 3500) warnings.push(`본문 ${text.length}자 — 3500자 이상 권장`); else if (text.length > 10000) warnings.push('본문이 너무 김(10000자 초과)');
