@@ -102,7 +102,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   if (extra.length) content = insertImagesIntoContent(content, extra, b.keyword);
   const wanted = b.featured_image_url || files[0];
   let featured = wanted ? await rehost(wanted) : undefined;
-  if (wanted && !featured) return NextResponse.json({ saved: false, errors: ['대표이미지를 가져오지 못함 — 다른 이미지 URL/파일로 다시 시도'], warnings: v.warnings }, { status: 422 });
+  if (wanted && !featured) return NextResponse.json({ saved: false, errors: ['대표이미지를 가져오지 못함 — SVG/data URI/코드로 그린 이미지는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 PNG를 만들어 openaiFileIdRefs로 보낼 것. 다른 URL로 바꿔치기 금지'], warnings: v.warnings }, { status: 422 });
   const att = await saveAttachments(b.attachments || []);
   if (att.html) { const k = content.search(/<h2[^>]*>(?:(?!<\/h2>)[\s\S])*출처/i); content = k > 0 ? content.slice(0, k) + att.html + content.slice(k) : content + att.html; }
   if (featured) content = insertRepresentativeImageIntoContent(content, featured, b.title);
