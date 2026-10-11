@@ -90,16 +90,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   const rehost = async (u: string) => (safeUrl(u) ? (await rehostImages([u]))[0] : undefined);
   const r2 = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
   const usedFiles = new Set([...b.content_html.matchAll(/\{\{file:(\d+)\}\}/g)].map(m => Number(m[1])));
+  const dropped: string[] = [];
   let content = normalizeHtml(b.content_html.replace(/\{\{file:(\d+)\}\}/g, (_: string, n: string) => files[Number(n) - 1] || ''));
   for (const tag of new Set(content.match(/<img\b[^>]*>/gi) || [])) {
     const u = tag.match(/\ssrc=["']([^"']+)["']/i)?.[1];
-    if (!u) { content = content.split(tag).join(''); continue; }
+    if (!u) { dropped.push('src 비어 있는 <img>'); content = content.split(tag).join(''); continue; }
     if (r2 && u.startsWith(r2)) continue;
     const re = await rehost(u);
+    if (!re) dropped.push(u.slice(0, 80));
     content = content.split(tag).join(re ? tag.replace(u, re) : '');
   }
-  const extra = (await Promise.all(files.map((f, i) => (usedFiles.has(i + 1) || (i === 0 && !b.featured_image_url) ? undefined : rehost(f))))).filter((u): u is string => !!u);
+  const extraTry = await Promise.all(files.map(async (f, i) => (usedFiles.has(i + 1) || (i === 0 && !b.featured_image_url) ? undefined : { i, u: await rehost(f) })));
+  for (const x of extraTry) if (x && !x.u) dropped.push(`openaiFileIdRefs[${x.i + 1}]`);
+  const extra = extraTry.map(x => x?.u).filter((u): u is string => !!u);
   if (extra.length) content = insertImagesIntoContent(content, extra, b.keyword);
+  if (dropped.length) return NextResponse.json({ saved: false, errors: [`본문 이미지 ${dropped.length}장을 가져오지 못해 저장 중단: ${dropped.join(', ')} — 같은 이미지를 다시 첨부하거나 이미지를 새로 만들어 다시 saveDraft 할 것. 이미지 빼고 저장 금지`], warnings: v.warnings }, { status: 422 });
   const wanted = b.featured_image_url || files[0];
   let featured = wanted ? await rehost(wanted) : undefined;
   if (wanted && !featured) return NextResponse.json({ saved: false, errors: ['대표이미지를 가져오지 못함 — SVG/data URI/코드로 그린 이미지는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 PNG를 만들어 openaiFileIdRefs로 보낼 것. 다른 URL로 바꿔치기 금지'], warnings: v.warnings }, { status: 422 });
