@@ -53,6 +53,7 @@ export async function GET(
     let platformUsername: string;
     let platformDisplayName: string;
     let platformAvatar: string | null = null;
+    let fbPages: { id: string; name: string; access_token: string; picture?: { data?: { url?: string } } }[] = [];
 
     // DB 설정 → 환경변수 순으로 Twitter 키 읽기
     const [dbTwClientId, dbTwClientSecret] = await Promise.all([
@@ -118,6 +119,12 @@ export async function GET(
         if (!tokenRes.ok || tokenData.error) throw new Error(JSON.stringify(tokenData));
         accessToken = tokenData.access_token;
         expiresIn = tokenData.expires_in || null;
+        // 장기 토큰으로 교환해야 페이지 토큰이 만료되지 않음
+        const longRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${fbId || process.env.FACEBOOK_APP_ID}&client_secret=${fbSec || process.env.FACEBOOK_APP_SECRET}&fb_exchange_token=${accessToken}`);
+        const longData = await longRes.json();
+        if (longRes.ok && longData.access_token) { accessToken = longData.access_token; expiresIn = longData.expires_in || null; }
+        const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&limit=100&access_token=${accessToken}`);
+        if (pagesRes.ok) fbPages = (await pagesRes.json()).data || [];
         const userRes = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`);
         const userData = await userRes.json();
         platformUserId = userData.id;
@@ -203,6 +210,7 @@ export async function GET(
       is_active: boolean; caption_language?: string;
     };
 
+    const saveAccount = async (platformUserId: string, accessToken: string, platformUsername: string, platformDisplayName: string, platformAvatar: string | null, expiresAt: string | null) => {
     // 이 정확한 계정(user_id+platform+platform_user_id)이 이미 있는지 조회
     const { data: exactMatch } = await supabase
       .from('sns_connections')
@@ -262,6 +270,14 @@ export async function GET(
         }).eq('user_id', userId).eq('platform', platform).eq('platform_user_id', mainRow.platform_user_id);
         if (updateErr) throw new Error(`DB저장실패: ${updateErr.message}`);
       }
+    }
+    };
+
+    if (platform === 'facebook' && fbPages.length) {
+      // 페이지별로 1계정 — 페이지 토큰은 만료 없음
+      for (const pg of fbPages) await saveAccount(pg.id, pg.access_token, pg.name, pg.name, pg.picture?.data?.url || null, null);
+    } else {
+      await saveAccount(platformUserId, accessToken, platformUsername, platformDisplayName, platformAvatar, expiresAt);
     }
     return clearReturnCookie(NextResponse.redirect(`${returnUrl}?connected=${platform}`));
   } catch (err: unknown) {
