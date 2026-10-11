@@ -90,7 +90,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   if (action !== 'draft') return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (!v.pass) return NextResponse.json({ saved: false, ...v }, { status: 422 });
 
-  const rehost = async (u: string) => (safeUrl(u) ? (await rehostImages([u]))[0] : undefined);
+  const why: string[] = [];
+  const memo = new Map<string, Promise<string | undefined>>();
+  const rehost = (u: string) => {
+    if (!safeUrl(u)) { why.push(`주소 부적합: ${u.slice(0, 60)}`); return Promise.resolve(undefined); }
+    if (!memo.has(u)) memo.set(u, rehostImages([u], why).then(r => r[0]));
+    return memo.get(u)!;
+  };
   const r2 = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
   const usedFiles = new Set([...b.content_html.matchAll(/\{\{file:(\d+)\}\}/g)].map(m => Number(m[1])));
   const dropped: string[] = [];
@@ -107,10 +113,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   for (const x of extraTry) if (x && !x.u) dropped.push(`openaiFileIdRefs[${x.i + 1}]`);
   const extra = extraTry.map(x => x?.u).filter((u): u is string => !!u);
   if (extra.length) content = insertImagesIntoContent(content, extra, b.keyword);
-  if (dropped.length) return NextResponse.json({ saved: false, errors: [`본문 이미지 ${dropped.length}장을 가져오지 못해 저장 중단: ${dropped.join(', ')} — 같은 이미지를 다시 첨부하거나 이미지를 새로 만들어 다시 saveDraft 할 것. 이미지 빼고 저장 금지`], warnings: v.warnings }, { status: 422 });
-  const wanted = b.featured_image_url || files[0];
-  let featured = wanted ? await rehost(wanted) : undefined;
-  if (wanted && !featured) return NextResponse.json({ saved: false, errors: ['대표이미지를 가져오지 못함 — SVG/data URI/코드로 그린 이미지는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 PNG를 만들어 openaiFileIdRefs로 보낼 것. 다른 URL로 바꿔치기 금지'], warnings: v.warnings }, { status: 422 });
+  if (dropped.length) return NextResponse.json({ saved: false, errors: [`본문 이미지 ${dropped.length}장을 가져오지 못해 저장 중단: ${dropped.join(', ')} — 같은 이미지를 다시 첨부하거나 이미지를 새로 만들어 다시 saveDraft 할 것. 이미지 빼고 저장 금지${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`], warnings: v.warnings }, { status: 422 });
+  let featured: string | undefined;
+  const candidates = [b.featured_image_url, files[0]].filter(Boolean) as string[];
+  for (const w of candidates) { featured = await rehost(w); if (featured) break; }
+  if (candidates.length && !featured) return NextResponse.json({ saved: false, errors: [`대표이미지를 가져오지 못함 — SVG/data URI/코드로 그린 이미지는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 PNG를 만들어 openaiFileIdRefs로 보낼 것. 다른 URL로 바꿔치기 금지${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`], warnings: v.warnings }, { status: 422 });
   const att = await saveAttachments(b.attachments || []);
   if (att.html) { const k = content.search(/<h2[^>]*>(?:(?!<\/h2>)[\s\S])*출처/i); content = k > 0 ? content.slice(0, k) + att.html + content.slice(k) : content + att.html; }
   if (featured) content = insertRepresentativeImageIntoContent(content, featured, b.title);
