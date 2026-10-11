@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { isInternalRequest } from '@/lib/internal-auth';
+import { refreshTwitterToken } from '@/lib/sns/platforms-server';
 
 export const maxDuration = 120;
 
@@ -19,7 +20,8 @@ async function refresh(platform: string, token: string): Promise<{ token: string
   } catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
 }
 
-// 스레드/인스타 장기토큰(60일)을 만료 20일 전부터 갱신. 이미 만료된 토큰은 갱신 불가 → 실패 로그에 남겨 재연결 안내.
+// 스레드/인스타 장기토큰(60일)은 만료 20일 전부터, X(2시간 토큰+회전 refresh_token)는 매 회차 갱신.
+// 이미 만료된 토큰은 갱신 불가 → 실패 로그에 남겨 재연결 안내.
 export async function POST(req: NextRequest) {
   if (!isInternalRequest(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const admin = createAdminClient();
@@ -55,6 +57,14 @@ export async function POST(req: NextRequest) {
       }
       if (changed) await admin.from('sns_connections').update({ extra }).eq('id', c.id);
     }
+  }
+
+  const { data: tw } = await admin.from('sns_connections')
+    .select('user_id, platform_user_id, refresh_token').eq('platform', 'twitter').eq('is_active', true);
+  for (const c of tw || []) {
+    if (!c.refresh_token) { summary.skipped++; continue; }
+    const ok = await refreshTwitterToken(c.platform_user_id, c.refresh_token).catch(() => null);
+    if (ok) summary.refreshed++; else await fail(c.user_id, 'twitter', c.platform_user_id, '갱신 실패');
   }
   return NextResponse.json(summary);
 }

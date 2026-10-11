@@ -4,6 +4,9 @@
 
 export type Platform = 'twitter' | 'threads' | 'facebook' | 'instagram' | 'linkedin';
 
+// OAuth 없이 토큰/비밀번호를 직접 입력해 연결하는 플랫폼
+export type TokenPlatform = 'telegram' | 'bluesky';
+
 export const PLATFORMS: Record<Platform, {
   name: string;
   authUrl: string;
