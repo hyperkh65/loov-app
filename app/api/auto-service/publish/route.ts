@@ -531,10 +531,10 @@ export async function POST(req: NextRequest) {
           .in('platform', sns_platforms);
 
         for (const p of sns_platforms as string[]) {
-          const conn = conns?.find(c => c.platform === p);
-          if (!conn) {
+          const rows = conns?.filter(c => c.platform === p) || [];
+          if (!rows.length) {
             results[`sns_${p}`] = { success: false, error: '연결되지 않은 플랫폼 — SNS 연결 페이지에서 연결하세요' };
-          } else if (!conn.is_active || !conn.access_token) {
+          } else if (!rows.some(c => c.is_active && c.access_token)) {
             results[`sns_${p}`] = { success: false, error: '토큰 만료 또는 비활성 — SNS 연결 페이지에서 재연결하세요' };
           }
         }
