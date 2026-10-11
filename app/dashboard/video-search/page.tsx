@@ -11,6 +11,11 @@ interface Job {
   created_at: string;
 }
 
+interface Hit { site: string; title: string; url: string; thumbnail?: string; uploader?: string; duration?: number }
+
+const fmtDur = (s?: number) => (s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '');
+const SITES = [{ id: 'youtube', label: 'YouTube' }, { id: 'bilibili', label: 'Bilibili' }];
+
 const STATUS: Record<Job['status'], { label: string; cls: string }> = {
   queued: { label: '대기', cls: 'bg-gray-700 text-gray-200' },
   running: { label: '받는 중', cls: 'bg-blue-600 text-white animate-pulse' },
@@ -23,6 +28,12 @@ export default function VideoCollectPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [q, setQ] = useState('');
+  const [sites, setSites] = useState(['youtube', 'bilibili']);
+  const [searching, setSearching] = useState(false);
+  const [hits, setHits] = useState<Hit[] | null>(null);
+  const [siteErrors, setSiteErrors] = useState<Record<string, string>>({});
+  const [searchMsg, setSearchMsg] = useState('');
 
   const load = useCallback(async () => {
     const r = await fetch('/api/video-jobs');
@@ -46,6 +57,40 @@ export default function VideoCollectPage() {
     setBusy(false);
   };
 
+  const search = async () => {
+    setSearching(true); setSearchMsg(''); setHits(null); setSiteErrors({});
+    try {
+      const r = await fetch('/api/video-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q, sites }) });
+      const { id, error } = await r.json();
+      if (!r.ok) throw new Error(error || '검색 등록 실패');
+      for (let i = 0; i < 40; i++) {
+        await new Promise(res => setTimeout(res, 3000));
+        const job = await (await fetch(`/api/video-jobs?id=${id}`)).json();
+        if (job?.status === 'error') throw new Error(job.error || '검색 실패');
+        if (job?.status === 'done') {
+          const by: Record<string, Hit[]> = {};
+          for (const h of job.result.items as Hit[]) (by[h.site] ||= []).push(h);
+          const lists = Object.values(by), merged: Hit[] = [];
+          for (let k = 0; lists.some(l => k < l.length); k++) for (const l of lists) if (l[k]) merged.push(l[k]);
+          setHits(merged); setSiteErrors(job.result.errors || {});
+          fetch('/api/video-jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+          return;
+        }
+      }
+      throw new Error('시간 초과(워커 응답 없음)');
+    } catch (e) {
+      setSearchMsg((e as Error).message);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const grab = async (h: Hit) => {
+    const r = await fetch('/api/video-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: [h.url] }) });
+    setSearchMsg(r.ok ? `"${h.title.slice(0, 30)}" 다운로드 등록됨 — 아래 목록에서 확인` : '등록 실패');
+    if (r.ok) load();
+  };
+
   const remove = async (id: string) => {
     await fetch('/api/video-jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     load();
@@ -55,7 +100,54 @@ export default function VideoCollectPage() {
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 text-gray-100">
       <div>
         <h1 className="text-xl font-bold">🎬 영상 수집</h1>
-        <p className="text-sm text-gray-400 mt-1">도우인·샤오홍슈·Bilibili·TikTok 등 영상 URL을 붙여넣으면 NAS(hy64)가 받아둡니다. 참고·소재 수집용이며 출처 URL이 기록됩니다.</p>
+        <p className="text-sm text-gray-400 mt-1">도우인·샤오홍슈·Bilibili·TikTok 등 영상을 검색하거나 URL을 붙여넣으면 NAS(hy64)가 받아둡니다. 참고·소재 수집용이며 출처 URL이 기록됩니다.</p>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && q.trim() && !searching) search(); }}
+            placeholder="검색어 (예: 제주도 여행)"
+            className="flex-1 min-w-0 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500"
+          />
+          <button onClick={search} disabled={searching || !q.trim() || !sites.length} className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-sm font-semibold shrink-0">
+            {searching ? '검색 중…' : '검색'}
+          </button>
+        </div>
+        <div className="flex gap-4 text-sm text-gray-300">
+          {SITES.map(s => (
+            <label key={s.id} className="flex items-center gap-1.5">
+              <input type="checkbox" checked={sites.includes(s.id)} onChange={e => setSites(p => e.target.checked ? [...p, s.id] : p.filter(x => x !== s.id))} />
+              {s.label}
+            </label>
+          ))}
+        </div>
+        {searchMsg && <div className="text-sm text-gray-400 break-all">{searchMsg}</div>}
+        {Object.entries(siteErrors).map(([k, v]) => <div key={k} className="text-xs text-red-400 break-all">{k}: {v}</div>)}
+        {hits && hits.length === 0 && <div className="text-sm text-gray-500">결과가 없습니다.</div>}
+        {hits && hits.length > 0 && (
+          <ul className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {hits.map(h => (
+              <li key={h.url} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col">
+                <div className="relative aspect-video bg-gray-800">
+                  {h.thumbnail
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={h.thumbnail} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    : null}
+                  <span className="absolute top-1 left-1 text-[10px] px-1.5 py-0.5 rounded bg-black/70">{h.site}</span>
+                  {h.duration ? <span className="absolute bottom-1 right-1 text-[10px] px-1.5 py-0.5 rounded bg-black/70">{fmtDur(h.duration)}</span> : null}
+                </div>
+                <div className="p-2 flex flex-col gap-1 flex-1">
+                  <a href={h.url} target="_blank" rel="noreferrer" className="text-xs font-medium line-clamp-2 hover:underline">{h.title}</a>
+                  <div className="text-[11px] text-gray-500 truncate">{h.uploader}</div>
+                  <button onClick={() => grab(h)} className="mt-auto text-xs py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600">다운로드</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="space-y-2">

@@ -4,7 +4,7 @@ import { getGoldboxProducts, searchProducts, createAffiliateLinks, scrapeProduct
 import { getSetting } from '@/lib/get-setting';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToWordPress, getWpCredentials, wpDue, markWpPublished } from './blog-runner';
-import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
+import { pickContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
@@ -399,16 +399,7 @@ ${PRODUCT_HOOK_GUIDE}
     instagram: getSection(aiText, 'INSTAGRAM', TAGS),
   };
 
-  const commentGoLink = await createGoLink({
-    platform: 'coupang',
-    networkProductId: String(product.productId),
-    productName: product.productName,
-    destinationUrl: snsAffiliateUrl,
-    scheduleId: schedule.id,
-    contentChannel: 'sns_comment',
-    contentAngle,
-  });
-  const comment = `🔗 상품 링크: ${commentGoLink}\n\n${DISCLOSURE}`;
+  const comment = `🔗 상품 링크: ${snsAffiliateUrl}\n\n${DISCLOSURE}`;
 
   // 발행 대상 — 미지정 시 기존 동작(SNS만)과 동일하게 하위호환
   const targets = config.publish_targets?.length ? config.publish_targets : ['sns'];
@@ -465,7 +456,7 @@ ${PRODUCT_HOOK_GUIDE}
 
   if (config.naver_cafe) {
     try {
-      const body = `${textMap.threads}\n\n🔗 상품 링크: ${commentGoLink}\n\n${DISCLOSURE}`;
+      const body = `${textMap.threads}\n\n🔗 상품 링크: ${snsAffiliateUrl}\n\n${DISCLOSURE}`;
       await publishToNaverCafe(createAdminClient(), { userId: schedule.user_id, title: product.productName.slice(0, 80), content: '', hook: body, cafe: config.naver_cafe_target ?? '2dayskr' });
       results.push('naver_cafe: 발행 완료');
     } catch (err) {
@@ -501,16 +492,7 @@ ${PRODUCT_HOOK_GUIDE}
       // 실측: qwen3 기본값이 Ollama 무료 모델로 라우팅되면서 "partout", "questi점" 같은
       // 외국어 단어 혼입이 반복 확인됨. Claude 키가 설정돼 있어 기본값을 claude로 올림
       // (config.ai_model로 언제든 재정의 가능 — 기존 SNS 텍스트 생성은 qwen3 그대로 유지).
-      const ctaGoLink = await createGoLink({
-        platform: 'coupang',
-        networkProductId: String(product.productId),
-        productName: product.productName,
-        destinationUrl: wpAffiliateUrl,
-        scheduleId: schedule.id,
-        contentChannel: 'wordpress_cta',
-        contentAngle,
-      });
-      const { title, content } = await buildProductBlogPost(product, ctaGoLink, config.ai_model || 'claude', scraped, comparisonProducts, priceDropNote);
+      const { title, content } = await buildProductBlogPost(product, wpAffiliateUrl, config.ai_model || 'claude', scraped, comparisonProducts, priceDropNote);
       const { url, username, appPassword } = await getWpCredentials(config.wp_site_id);
       wordpressUrl = (await publishToWordPress(url, username, appPassword, title, content, product.productImage || null)).link;
       results.push(`wordpress: 발행 완료 (${wordpressUrl})`);
