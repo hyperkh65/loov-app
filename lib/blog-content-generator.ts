@@ -226,17 +226,21 @@ export async function searchInlineImages(query: string, count = 3, opts: { aiThu
 
 // 외부 이미지를 우리 R2에 재호스팅 — 핫링크는 FIFU/wp.com 프록시·원본 서버 차단으로 깨짐. 실패한 건 버림.
 const IMG_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+const sniffImage = (b: Buffer): string => (b[0] === 0xff && b[1] === 0xd8 ? 'image/jpeg' : b.subarray(1, 4).toString() === 'PNG' ? 'image/png' : b.subarray(0, 3).toString() === 'GIF' ? 'image/gif' : b.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : '');
 export async function rehostImages(urls: string[]): Promise<string[]> {
   const out = await Promise.all(urls.map(async (u) => {
-    try {
-      const res = await fetch(u, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const type = (res.headers.get('content-type') || '').split(';')[0].trim();
-      const ext = IMG_EXT[type];
-      if (!res.ok || !ext) return null;
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length < 5_000 || buf.length > 8_000_000) return null;
-      return await uploadToR2(`inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`, buf, type);
-    } catch { return null; }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(u, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (!res.ok) { console.error(`[rehost] HTTP ${res.status} ${u.slice(0, 80)}`); if (res.status < 500) return null; continue; }
+        const buf = Buffer.from(await res.arrayBuffer());
+        const type = sniffImage(buf) || (res.headers.get('content-type') || '').split(';')[0].trim();
+        const ext = IMG_EXT[type];
+        if (!ext || buf.length < 5_000 || buf.length > 15_000_000) { console.error(`[rehost] 거부 type=${type} size=${buf.length} ${u.slice(0, 80)}`); return null; }
+        return await uploadToR2(`inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`, buf, type);
+      } catch (e) { console.error(`[rehost] 시도${attempt + 1} 실패: ${(e as Error).message} ${u.slice(0, 80)}`); }
+    }
+    return null;
   }));
   return out.filter((x): x is string => !!x);
 }
