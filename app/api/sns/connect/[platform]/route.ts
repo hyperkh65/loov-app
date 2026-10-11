@@ -96,7 +96,7 @@ export async function GET(
     }
     case 'facebook': {
       authUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth');
-      authUrl.searchParams.set('client_id', process.env.FACEBOOK_APP_ID!);
+      authUrl.searchParams.set('client_id', (fbAppId || process.env.FACEBOOK_APP_ID)!);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', PLATFORMS.facebook.scopes.join(','));
       authUrl.searchParams.set('state', state);
