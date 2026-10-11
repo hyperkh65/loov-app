@@ -112,7 +112,8 @@ export async function GET(
         break;
       }
       case 'facebook': {
-        const tokenRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?client_id=${process.env.FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_APP_SECRET}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`);
+        const [fbId, fbSec] = await Promise.all([getSetting('FACEBOOK_APP_ID'), getSetting('FACEBOOK_APP_SECRET')]);
+        const tokenRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?client_id=${fbId || process.env.FACEBOOK_APP_ID}&client_secret=${fbSec || process.env.FACEBOOK_APP_SECRET}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`);
         const tokenData = await tokenRes.json();
         if (!tokenRes.ok || tokenData.error) throw new Error(JSON.stringify(tokenData));
         accessToken = tokenData.access_token;
