@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   for (const platform of platforms as Platform[]) {
     let connQuery = supabase
       .from('sns_connections')
-      .select('access_token, refresh_token, token_expires_at, platform_user_id, is_active')
+      .select('access_token, refresh_token, token_expires_at, platform_user_id, is_active, updated_at')
       .eq('user_id', user.id)
       .eq('platform', platform)
       .eq('is_active', true);
@@ -56,7 +56,11 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    for (const conn of connList) {
+    // 인스타: 계정 지정이 없으면 오래 안 쓴 계정부터 돌려가며 첫 성공 계정에만 발행 (한도 초과·만료 계정 반복 시도 방지)
+    const rotate = platform === 'instagram' && !account_ids?.length;
+    const ordered = rotate ? [...connList].sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || '')) : connList;
+    for (const conn of ordered) {
+      if (rotate) await supabase.from('sns_connections').update({ updated_at: new Date().toISOString() }).eq('user_id', user.id).eq('platform', platform).eq('platform_user_id', conn.platform_user_id);
       // Twitter OAuth 2.0 토큰 만료 시 자동 갱신
       let activeToken = conn.access_token;
       if (platform === 'twitter' && conn.refresh_token) {
@@ -156,6 +160,7 @@ export async function POST(req: NextRequest) {
             };
           }
         }
+        if (rotate) break;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         results.push({ platform, success: false, error: message });
