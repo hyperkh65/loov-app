@@ -1195,8 +1195,17 @@ async function executeSchedule(schedule: Schedule) {
   }
 }
 
+let lastSnsTokenRefresh = 0;
+
 export async function POST(req: NextRequest) {
   const isInternal = isInternalRequest(req);
+
+  // 스레드/인스타 장기토큰 자동 갱신 — 12시간에 한 번만 트리거(갱신 자체는 만료 20일 전부터만 실행)
+  if (isInternal && Date.now() - lastSnsTokenRefresh > 12 * 3600_000) {
+    lastSnsTokenRefresh = Date.now();
+    const base = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    after(() => fetch(`${base}/api/sns/refresh-all`, { method: 'POST', headers: { authorization: `Bearer ${process.env.CRON_SECRET || ''}`, 'x-internal-key': process.env.TELEGRAM_WEBHOOK_SECRET || '' } }).then(() => {}, () => {}));
+  }
 
   let userId: string | null = null;
 
