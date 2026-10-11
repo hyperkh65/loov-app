@@ -73,10 +73,13 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 3. HTML로 쓴다. validateDraft로 검사하고 errors가 0이 될 때까지 고친다. warnings도 가능한 한 없앤다.
 4. 통과하면 saveDraft로 저장한다. (발행은 사람이 대시보드에서 검토 후 한다)
 
-## 제목 (title)
-- 제목은 네가 판단해서 정한다. 검색한 사람이 "어? 이거 내 얘기네, 뭐지?" 하고 클릭하게 만드는 게 핵심이다. 20~36자, 메인 키워드(롱테일)는 들어가되 앞쪽이면 좋다.
-- 식상한 "~ 정리", "~ 총정리", "~ 방법 안내", "~ 알아보기"로 끝내지 않는다. 실제로 해 본 사람의 결과·상황·숫자가 보이는 말투로 쓴다. 예: "정부지원금 신청했더니 월 12만원 아꼈어요", "토렌트 처음 썼다가 놓친 3가지", "전기요금 줄이려고 이것만 바꿨더니 4만원 절약".
-- 본문이 실제로 뒷받침하는 결과만 쓴다(없는 금액·경험을 지어내지 않는다). 낚시·과장 금지. 후보 3개를 머릿속에서 비교해 가장 궁금한 것을 고른다.
+## 제목 (title) — 가장 중요, 대충 쓰면 저장이 거부된다
+- 24~40자. 메인 키워드는 앞쪽에 두고, 뒤에 **구체적인 롱테일 조건**(누구 / 어떤 상황 / 어느 지역·시기·금액)을 붙인다. 막연한 말("바로 잡기", "먼저 볼 것", "꼭 알아야 할")만으로 끝내지 않는다.
+- 반드시 숫자(금액·기간·개수·나이·%)를 1개 이상 넣고, 클릭하고 싶게 만드는 궁금증 포인트(손해·반전·의외의 결과·빠지기 쉬운 함정) 1개를 넣는다.
+- "~ 정리", "~ 총정리", "~ 방법", "~ 안내", "~ 알아보기"로 끝내지 않는다.
+- 나쁜 예: "춘천가볼만한곳 10개, 동선까지 바로 잡기", "실속보장치아보험, 보험료보다 먼저 볼 것"
+- 좋은 예: "춘천 당일치기 가볼만한곳 10곳, 뚜벅이는 3번째 동선에서 시간 다 날려요", "치아보험 가입 전 확인할 면책기간 90일, 임플란트 보장 못 받는 경우 3가지", "50대 부모님 치아보험 월 3만원대 비교, 보장 줄어드는 갱신 조건"
+- 본문이 실제로 뒷받침하는 내용만 쓴다(없는 금액·경험 지어내지 않기). 낚시·과장 금지. 후보 5개를 머릿속에서 비교해 가장 궁금한 것을 고른다.
 
 ## 메타 설명 (meta_description)
 - 100~160자. 키워드 포함, 읽으면 얻을 것을 한 줄로.
@@ -149,9 +152,9 @@ export function validateDraft(d: DraftIn) {
   const intro = (firstH2 > 0 ? html.slice(0, firstH2) : '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const kwCount = kw ? text.split(kw).length - 1 : 0;
 
-  if (title.length < 10 || title.length > 60) errors.push(`제목 길이 ${title.length}자 — 20~32자로`); else if (title.length < 18 || title.length > 36) warnings.push(`제목 ${title.length}자 — 20~32자 권장`);
+  if (title.length < 10 || title.length > 60) errors.push(`제목 길이 ${title.length}자 — 24~40자로`); else if (title.length > 42) warnings.push(`제목 ${title.length}자 — 24~40자 권장`);
   if (kwTokens.length && !kwTokens.every(t => title.includes(t))) errors.push('제목에 메인 키워드가 모두 들어가야 함');
-  if (title.length < 20) errors.push(`제목 ${title.length}자 — 너무 짧고 막연함. 20~36자로 구체적인 상황·대상·결과를 넣을 것`);
+  if (title.length < 24) errors.push(`제목 ${title.length}자 — 너무 짧고 막연함. 24~40자로 구체적인 상황·대상·결과를 넣을 것`);
   if (!/\d/.test(title)) errors.push('제목에 구체적인 숫자(금액·기간·개수·나이 등) 1개 이상 필요 — 막연한 제목 금지');
   if (/(정리|총정리|안내|알아보기|알아보자|방법)$/.test(title.replace(/[?!.…\s]+$/, ''))) errors.push('제목이 "정리/안내/방법"으로 끝남 — 결과·상황이 보이는 말투로');
   if (meta.length < 90 || meta.length > 175) warnings.push(`메타 설명 ${meta.length}자 — 100~160자 권장`);
@@ -162,7 +165,8 @@ export function validateDraft(d: DraftIn) {
   else if (!/<th\b/i.test(html)) warnings.push('표에 제목 행(<th>) 권장');
   const fileCount = d.fileCount || 0, placed = imgs.filter(i => /\{\{file:\d+\}\}/.test(i));
   const total = imgs.length + (d.featured_image_url ? 1 : 0) + Math.max(0, fileCount - placed.length);
-  if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
+  if (!fileCount) errors.push('직접 그린 이미지가 첨부되지 않음(openaiFileIdRefs 비어 있음) — 웹/검색 이미지 URL로 대체 금지. 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 다시 보낼 것');
+  else if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
   else if (total < 3) errors.push(`이미지 ${total}장 — 대표 1장 + 본문 2장 이상(합계 3장 이상) 필요`);
   if (placed.some(i => Number(i.match(/\{\{file:(\d+)\}\}/)![1]) > fileCount)) errors.push('{{file:N}} 번호가 openaiFileIdRefs 개수보다 큼');
   if (imgs.some(i => !/\balt=["'][^"']+/i.test(i))) warnings.push('alt 없는 이미지가 있음');

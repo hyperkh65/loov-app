@@ -9,7 +9,7 @@ export const maxDuration = 120;
 
 const draftProps = {
   keyword: { type: 'string', description: '메인 키워드' },
-  title: { type: 'string', description: '글 제목(20~32자)' },
+  title: { type: 'string', description: '글 제목(24~40자, 롱테일 키워드 + 구체적 상황 + 숫자 + 궁금증 포인트, 막연한 제목 저장 거부)' },
   meta_description: { type: 'string', description: '메타 설명(100~160자)' },
   content_html: { type: 'string', description: '본문 HTML 조각(<h1>/<body> 없이). 표·링크·이미지(합계 3장 이상) 포함. 직접 만든 이미지는 <img src="{{file:2}}">처럼 openaiFileIdRefs 순번으로 넣는다' },
   featured_image_url: { type: 'string', description: '대표이미지 URL (직접 만든 이미지는 openaiFileIdRefs로)' },
@@ -83,6 +83,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
 
   const files: string[] = (b.openaiFileIdRefs || []).map((f: { download_link?: string }) => f.download_link).filter(Boolean);
   const v = validateDraft({ ...b, hasFileImages: files.length > 0, fileCount: files.length });
+  const refs = Array.isArray(b.openaiFileIdRefs) ? b.openaiFileIdRefs : [];
+  console.log(`[gpt-${action}] openaiFileIdRefs=${refs.length} usable=${files.length} keys=${refs[0] ? Object.keys(refs[0]).join(',') : '-'} mime=${refs.map((f: { mime_type?: string }) => f.mime_type || '?').join(',')}`);
+  if (!files.length && refs.length) { v.errors.push(`openaiFileIdRefs ${refs.length}개를 받았지만 download_link가 없음(받은 키: ${Object.keys(refs[0]).join(',')})`); v.pass = false; }
   if (action === 'validate') return NextResponse.json(v);
   if (action !== 'draft') return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (!v.pass) return NextResponse.json({ saved: false, ...v }, { status: 422 });
