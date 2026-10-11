@@ -15,7 +15,7 @@ import { sanitizeForNaver } from '@/lib/naver-blog';
 import { dispatchNaverPublishJob, insertImages } from '@/lib/scheduler/naver-tech-runner';
 
 const UA = { 'User-Agent': 'Mozilla/5.0' };
-const RELEVANT = /연금|복지|급여|수당|지원금|장려금|금리|대출|예금|적금|이자|물가|세금|세제|세액|연말정산|퇴직|생활비|청약|전세|월세|보험|의료비|환급|소득|근로|실업|최저임금|바우처|감면|공제|돌봄|부양|주거/;
+const RELEVANT = /연금|복지|급여|수당|지원금|장려금|금리|대출|예금|적금|이자|물가|세금|세제|세액|연말정산|퇴직|생활비|청약|전세|월세|보험|의료비|환급|소득|근로|실업|최저임금|바우처|감면|공제|돌봄|부양|주거|노후|노인|퇴직연금|개인연금|연금저축|실손|건강보험|국민연금|기초연금|치매|요양|은퇴|상속|증여|종합부동산|종부세|재산세|자동차세|국세|부가세|고용보험|산재|청년|신혼|출산|육아|아동수당|의료|병원비|통신비|전기요금|가스요금|교통비|주택/;
 const SKIP = /정례브리핑|전체회의|국방부|합참|일일 정례/;
 
 interface Item { url: string; title: string }

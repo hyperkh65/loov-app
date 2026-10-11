@@ -142,15 +142,21 @@ ${refBlock}
 <h2>자주 묻는 질문</h2>
 <p><strong>Q. (질문1)</strong><br/>(답변)</p>`;
 
-  const rawOut = await generateText(prompt, 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true });
-  const cleaned = rawOut.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
-  const titleMatch = cleaned.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i);
-  const title = tightTitle((titleMatch?.[1] || topic.title).trim());
-  let content = sanitizeInvisible(cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, ''));
-  if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
-  assertPublishableHtml(title, content);
-  const foreign = findForeignWords(content);
-  if (foreign.length) throw new Error(`발행 차단(본문에 외국어 단어): ${foreign.slice(0, 5).join(', ')}`);
+  const build = (rawOut: string) => {
+    const cleaned = rawOut.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
+    const titleMatch = cleaned.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i);
+    const title = tightTitle((titleMatch?.[1] || topic.title).trim());
+    const content = sanitizeInvisible(cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, ''));
+    if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
+    assertPublishableHtml(title, content);
+    return { title, content, foreign: findForeignWords(content) };
+  };
+  let out = build(await generateText(prompt, 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true }));
+  // Groq(Qwen)가 외국어를 섞으면 OpenRouter로 1회 재생성
+  if (out.foreign.length) out = build(await generateText(prompt, 'openrouter'));
+  if (out.foreign.length) throw new Error(`발행 차단(본문에 외국어 단어): ${out.foreign.slice(0, 5).join(', ')}`);
+  const { title } = out;
+  let content = out.content;
 
   // 출처/참고 주소 하단 표기는 제거(사용자 요청 2026-10-03)
   const { displayUrls, thumbUrl } = await searchInlineImages(title, 3, { aiThumb: true, keepExternal: true });
