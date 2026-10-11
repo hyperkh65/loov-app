@@ -42,6 +42,8 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   // 사이트별 계정 로테이션 적용 — 같은 "2dayskr 계열" 안에서도 여러 자매
   // 계정에 분산시켜 계정당 최소 간격을 확보(lib/sns/account-rotation.ts).
   const group = snsGroupFor(siteUrl);
+  const slog = (platform: string, status: 'success' | 'failed', note?: string, postId?: string) =>
+    supabase.from('sns_post_logs').insert({ user_id: userId, platform, status, ...(note ? { error_message: `[자동발행 ${siteUrl}] ${note}`.slice(0, 500) } : {}), ...(postId ? { platform_post_id: postId } : {}) }).then(() => {}, () => {});
   let targets: Array<{ platform: string; platform_user_id: string; access_token: string }>;
   if (opts.accountIds) {
     // 사용자가 지정한 채널 블록 그대로 발행(자동 라우팅·간격 로테이션 우회)
@@ -53,6 +55,8 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
     ]);
     // 본문에 링크를 넣으면 SNS 알고리즘이 외부링크 게시물로 판단해 노출을 줄이는
     // 페널티가 있음(사용자 확정) — rewrite-publish.ts와 동일하게 링크는 댓글로 분리.
+    if (!threadsTarget) slog('threads', 'failed', '발행 스킵 — 대상 계정 없음/연결 해제 또는 30분 간격 미달');
+    if (!instagramTarget) slog('instagram', 'failed', '발행 스킵 — 대상 계정 없음/연결 해제 또는 30분 간격 미달');
     const rotatedTargets = [threadsTarget, instagramTarget]
       .filter((c): c is NonNullable<typeof c> => !!c)
       .map(c => ({ ...c, platform: c.platform as 'threads' | 'instagram' }));
@@ -66,6 +70,7 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
       const isFb = conn.platform === 'facebook'; // 페이스북은 댓글 권한이 없어 링크를 본문에
       const caption = (captions[conn.platform] || title).slice(0, 500);
       const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, isFb ? `${caption}\n\n${linkUrl}` : caption, imageUrl ? [imageUrl] : undefined);
+      slog(conn.platform, 'success', undefined, posted.id);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
         logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
       }
@@ -81,7 +86,7 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
           await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
         } catch { /* 재시도까지 실패 — 본문 발행은 이미 성공이라 전체는 실패 처리 안 함 */ }
       }
-    } catch { /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
+    } catch (e) { slog(conn.platform, 'failed', `${conn.platform_user_id}: ${e instanceof Error ? e.message : String(e)}`); /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
   }));
 
   // 네이버 카페 + 텀블러도 공통으로(부분 실패 허용 — rewrite-publish.ts와 동일 패턴)
