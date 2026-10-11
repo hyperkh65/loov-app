@@ -195,7 +195,7 @@ export function validateDraft(d: DraftIn) {
   if (conj > 5) errors.push(`"또한/더불어/아울러" ${conj}회 — 3회 이하로`);
   else if (conj > 3) warnings.push('"또한/더불어/아울러" 과다');
   if (/^\s*#{1,6}\s|\*\*[^*]+\*\*/m.test(html)) errors.push('마크다운(##, **) 금지 — HTML 태그로');
-  if (/\{\{|\[(소제목|제목|내용|키워드)/.test(html)) errors.push('대괄호/템플릿 지시문이 남아 있음');
+  if (/\{\{|\[(소제목|제목|내용|키워드)/.test(html.replace(/\{\{file:\d+\}\}/g, ''))) errors.push('대괄호/템플릿 지시문이 남아 있음');
   if (/[぀-ヿ一-鿿]/.test(text + title)) errors.push('한자/일본어 문자 금지');
   if (/<script|<iframe|\son\w+\s*=|javascript:/i.test(html)) errors.push('script/iframe/이벤트 속성 금지');
   if (/<(html|body|h1)\b/i.test(html)) errors.push('<html>/<body>/<h1> 금지 — 본문 조각만');
