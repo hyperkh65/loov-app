@@ -752,6 +752,10 @@ export async function POST(req: NextRequest) {
             })
           );
 
+          await supabase.from('sns_post_logs').insert(accountResults.map((r, i) => ({
+            user_id: userId, platform: 'threads', status: r.status === 'fulfilled' ? 'success' : 'failed',
+            ...(r.status === 'fulfilled' ? { platform_post_id: r.value } : { error_message: `${allAccounts[i].platform_user_id}: ${String(r.reason).slice(0, 300)}` }),
+          })));
           const anyThreadsSuccess = accountResults.some(r => r.status === 'fulfilled');
           const threadsErrors = accountResults
             .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
