@@ -16,7 +16,7 @@ import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platfor
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
 import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
-import type { Platform } from '@/lib/sns/platforms';
+import type { Platform, TokenPlatform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
 
 export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = '', opts: { accountIds?: string[]; cafe?: boolean; cafeTarget?: string } = {}): Promise<void> {
@@ -60,16 +60,16 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
     const rotatedTargets = [threadsTarget, instagramTarget]
       .filter((c): c is NonNullable<typeof c> => !!c)
       .map(c => ({ ...c, platform: c.platform as 'threads' | 'instagram' }));
-    const otherTargets = connections.filter(c => ['twitter', 'facebook'].includes(c.platform)); // 현행 유지 — 전부 발행
+    const otherTargets = connections.filter(c => ['twitter', 'facebook', 'telegram', 'bluesky'].includes(c.platform)); // 현행 유지 — 전부 발행
     targets = [...rotatedTargets, ...otherTargets];
   }
 
   await Promise.all(targets.map(async (conn) => {
     try {
       const linkUrl = withUtm(articleUrl, `${conn.platform}_${connections.find(c => c.platform_user_id === conn.platform_user_id)?.platform_username || ''}`);
-      const isFb = conn.platform === 'facebook'; // 페이스북은 댓글 권한이 없어 링크를 본문에
-      const caption = (captions[conn.platform] || title).slice(0, 500);
-      const posted = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, isFb ? `${caption}\n\n${linkUrl}` : caption, imageUrl ? [imageUrl] : undefined);
+      const isFb = ['facebook', 'telegram', 'bluesky'].includes(conn.platform); // 댓글 불가/미지원 플랫폼은 링크를 본문에
+      const caption = (captions[conn.platform] || (isFb ? captions.facebook : '') || title).slice(0, 500);
+      const posted = await postToPlatformWithMedia(conn.platform as Platform | TokenPlatform, conn.access_token, conn.platform_user_id, isFb ? `${caption}\n\n${linkUrl}` : caption, imageUrl ? [imageUrl] : undefined);
       slog(conn.platform, 'success', undefined, posted.id);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
         logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});

@@ -2,7 +2,7 @@
  * SNS 플랫폼 서버 전용 함수 (미디어 업로드 · 게시 · 댓글)
  * API Route 에서만 import 해야 함 (Buffer 사용)
  */
-import type { Platform } from './platforms';
+import type { Platform, TokenPlatform } from './platforms';
 import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
 
@@ -12,7 +12,7 @@ import { getSetting } from '@/lib/get-setting';
 // 만료 후엔 모든 발행이 401로 죽는 걸 실사용 중 확인(8시간 넘게 방치).
 // 트위터는 갱신할 때마다 refresh_token도 같이 새로 내려줘서(로테이션)
 // 반드시 같이 저장해야 다음 갱신도 정상 동작함.
-async function refreshTwitterToken(platformUserId: string, refreshToken: string): Promise<string | null> {
+export async function refreshTwitterToken(platformUserId: string, refreshToken: string): Promise<string | null> {
   const [dbClientId, dbClientSecret] = await Promise.all([
     getSetting('TWITTER_CLIENT_ID'),
     getSetting('TWITTER_CLIENT_SECRET'),
@@ -679,8 +679,68 @@ export async function postToLinkedInWithMedia(
   return { id };
 }
 
+// ── 텔레그램 채널 (봇 토큰 + 채널 chat_id) ─────────────────
+async function postToTelegram(botToken: string, chatId: string, content: string, mediaUrls?: string[]): Promise<{ id: string }> {
+  const call = async (method: string, body: Record<string, unknown>) => {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, ...body }), signal: AbortSignal.timeout(20_000),
+    });
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d?.ok) throw new Error(`텔레그램 ${method} 실패: ${d?.description || res.status}`);
+    return d.result as { message_id: number };
+  };
+  const img = mediaUrls?.find(u => !isVideoUrl(u));
+  if (img && content.length <= 1024) return { id: String((await call('sendPhoto', { photo: img, caption: content })).message_id) };
+  if (img) await call('sendPhoto', { photo: img }).catch(() => {});
+  return { id: String((await call('sendMessage', { text: content.slice(0, 4096) })).message_id) };
+}
+
+// ── Bluesky (핸들 + 앱 비밀번호) ──────────────────────────
+// ponytail: 이미지 1장만, 1MB 초과면 텍스트만. 큰 이미지 리사이즈는 필요해지면 추가.
+async function postToBluesky(appPassword: string, identifier: string, content: string, mediaUrls?: string[]): Promise<{ id: string }> {
+  const xrpc = 'https://bsky.social/xrpc';
+  const sRes = await fetch(`${xrpc}/com.atproto.server.createSession`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, password: appPassword }), signal: AbortSignal.timeout(20_000),
+  });
+  const session = await sRes.json().catch(() => null);
+  if (!sRes.ok || !session?.accessJwt) throw new Error(`Bluesky 로그인 실패: ${session?.message || sRes.status}`);
+  const auth = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessJwt}` };
+
+  let text = content.trim();
+  if ([...text].length > 300) {
+    const tail = text.match(/\s(https?:\/\/\S+)\s*$/)?.[1] || '';
+    const head = tail ? text.slice(0, text.lastIndexOf(tail)).trim() : text;
+    text = [...head].slice(0, 299 - [...tail].length - 1).join('') + '…' + (tail ? ` ${tail}` : '');
+    text = [...text].slice(0, 300).join('');
+  }
+  const enc = new TextEncoder();
+  const facets = [...text.matchAll(/https?:\/\/[^\s]+/g)].map(m => ({
+    index: { byteStart: enc.encode(text.slice(0, m.index)).length, byteEnd: enc.encode(text.slice(0, m.index! + m[0].length)).length },
+    features: [{ $type: 'app.bsky.richtext.facet#link', uri: m[0] }],
+  }));
+
+  const record: Record<string, unknown> = { $type: 'app.bsky.feed.post', text, facets, createdAt: new Date().toISOString() };
+  const img = mediaUrls?.find(u => !isVideoUrl(u));
+  if (img) {
+    try {
+      const { buffer, contentType } = await downloadMedia(img);
+      if (buffer.length <= 1_000_000) {
+        const up = await fetch(`${xrpc}/com.atproto.repo.uploadBlob`, { method: 'POST', headers: { 'Content-Type': contentType, Authorization: auth.Authorization }, body: new Uint8Array(buffer) });
+        const blob = (await up.json().catch(() => null))?.blob;
+        if (up.ok && blob) record.embed = { $type: 'app.bsky.embed.images', images: [{ alt: '', image: blob }] };
+      }
+    } catch { /* 이미지 실패 시 텍스트만 */ }
+  }
+  const res = await fetch(`${xrpc}/com.atproto.repo.createRecord`, {
+    method: 'POST', headers: auth, body: JSON.stringify({ repo: session.did, collection: 'app.bsky.feed.post', record }), signal: AbortSignal.timeout(20_000),
+  });
+  const d = await res.json().catch(() => null);
+  if (!res.ok || !d?.uri) throw new Error(`Bluesky 포스팅 실패: ${d?.message || res.status}`);
+  return { id: d.uri };
+}
+
 export async function postToPlatformWithMedia(
-  platform: Platform,
+  platform: Platform | TokenPlatform,
   accessToken: string,
   platformUserId: string,
   content: string,
@@ -694,13 +754,15 @@ export async function postToPlatformWithMedia(
       if (!mediaUrls?.length) throw new Error('Instagram 건너뜀: 이미지가 없습니다 (Instagram은 이미지 필수)');
       return postToInstagramWithMedia(accessToken, content, mediaUrls);
     case 'linkedin':  return postToLinkedInWithMedia(accessToken, platformUserId, content, mediaUrls);
+    case 'telegram':  return postToTelegram(accessToken, platformUserId, content, mediaUrls);
+    case 'bluesky':   return postToBluesky(accessToken, platformUserId, content, mediaUrls);
   }
 }
 
 // ── 자기 게시물에 댓글/스레드 형식 추가 ──────────────────
 
 export async function postCommentOnOwnPost(
-  platform: Platform,
+  platform: Platform | TokenPlatform,
   accessToken: string,
   platformUserId: string,
   postId: string,
@@ -708,6 +770,10 @@ export async function postCommentOnOwnPost(
   mediaUrls?: string[],
 ): Promise<{ id: string }> {
   switch (platform) {
+    case 'telegram':
+    case 'bluesky':
+      throw new Error(`${platform} 은(는) 댓글 미지원`);
+
     case 'twitter':
       // 트위터: 이전 트윗에 답글 (체인 스레드)
       return replyToTwitterComment(accessToken, platformUserId, postId, content, mediaUrls);

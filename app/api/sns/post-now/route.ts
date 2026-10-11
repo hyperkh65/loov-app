@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import { getSetting } from '@/lib/get-setting';
-import type { Platform } from '@/lib/sns/platforms';
+import type { Platform, TokenPlatform } from '@/lib/sns/platforms';
 
 // Threads 댓글 대기(15s) + 재시도(최대 30s) + 영상처리(30s) → 여유있게 설정
 export const maxDuration = 300;
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   const results: { platform: string; success: boolean; error?: string }[] = [];
 
-  for (const platform of platforms as Platform[]) {
+  for (const platform of platforms as (Platform | TokenPlatform)[]) {
     let connQuery = supabase
       .from('sns_connections')
       .select('access_token, refresh_token, token_expires_at, platform_user_id, is_active, updated_at')

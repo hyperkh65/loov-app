@@ -33,6 +33,8 @@ const SNS_PLATFORMS = [
   { id: 'instagram', name: '인스타그램', icon: '📸' },
   { id: 'threads', name: '스레드', icon: '🧵' },
   { id: 'facebook', name: '페이스북', icon: '📘' },
+  { id: 'telegram', name: '텔레그램 채널', icon: '✈️' },
+  { id: 'bluesky', name: '블루스카이', icon: '🦋' },
 ];
 
 const BACKLINK_PLATFORMS = [

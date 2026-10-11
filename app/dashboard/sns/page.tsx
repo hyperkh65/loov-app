@@ -72,7 +72,46 @@ const PLATFORM_INFO: Record<string, { label: string; icon: string; color: string
   facebook:  { label: '페이스북',   icon: '📘', color: 'from-blue-500 to-blue-700' },
   instagram: { label: '인스타그램', icon: '📸', color: 'from-pink-500 to-orange-400' },
   linkedin:  { label: '링크드인',   icon: '💼', color: 'from-blue-600 to-blue-800' },
+  telegram:  { label: '텔레그램 채널', icon: '✈️', color: 'from-sky-400 to-blue-500' },
+  bluesky:   { label: '블루스카이', icon: '🦋', color: 'from-sky-500 to-indigo-500' },
 };
+
+// OAuth 없이 토큰/비밀번호를 직접 입력해 연결하는 플랫폼
+const TOKEN_PLATFORMS: Record<string, { tokenLabel: string; targetLabel: string; targetHint: string; help: string }> = {
+  telegram: { tokenLabel: '봇 토큰', targetLabel: '채널', targetHint: '@채널아이디', help: '@BotFather 에서 봇 생성 → 채널 관리자로 봇 추가(게시 권한)' },
+  bluesky:  { tokenLabel: '앱 비밀번호', targetLabel: '핸들', targetHint: 'name.bsky.social', help: 'Bluesky 설정 → 비밀번호 및 보안 → 앱 비밀번호 추가 (로그인 비밀번호 X)' },
+};
+const ALL_PLATFORMS = [...Object.keys(PLATFORMS), ...Object.keys(TOKEN_PLATFORMS)];
+
+function TokenConnect({ platform, label, color, onDone }: { platform: string; label: string; color: string; onDone: () => void }) {
+  const t = TOKEN_PLATFORMS[platform];
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState('');
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async () => {
+    setBusy(true); setErr('');
+    const res = await fetch('/api/sns/connect-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform, token, target }) });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) return setErr(d.error || '연결 실패');
+    setOpen(false); setTarget(''); setToken(''); onDone();
+  };
+  if (!open) return <button onClick={() => setOpen(true)} className={`block w-full text-center bg-gradient-to-r ${color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90`}>+ {label} 연결</button>;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-gray-400">{t.help}</p>
+      <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={`${t.targetLabel} (${t.targetHint})`} className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5" />
+      <input value={token} onChange={(e) => setToken(e.target.value)} type="password" autoComplete="off" placeholder={t.tokenLabel} className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5" />
+      {err && <p className="text-xs text-red-500">{err}</p>}
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={busy || !target || !token} className={`flex-1 bg-gradient-to-r ${color} text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50`}>{busy ? '확인 중…' : '연결'}</button>
+        <button onClick={() => setOpen(false)} className="text-xs text-gray-400 px-2">취소</button>
+      </div>
+    </div>
+  );
+}
 
 const COMMENT_PLATFORMS = ['twitter', 'facebook', 'instagram'];
 
@@ -396,7 +435,7 @@ export default function SNSPage() {
         {/* ── 연결 관리 ── */}
         {!loading && tab === 'connections' && (
           <div className="grid md:grid-cols-3 gap-4">
-            {(Object.keys(PLATFORMS) as Platform[]).map((platform) => {
+            {(ALL_PLATFORMS as Platform[]).map((platform) => {
               const conns = getConnections(platform);
               const activeConns = conns.filter((c) => c.is_active);
               const info = PLATFORM_INFO[platform];
@@ -443,12 +482,12 @@ export default function SNSPage() {
                             </select>
                           </div>
                         ))}
-                        <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-xs font-bold py-2 rounded-xl hover:opacity-90 transition-opacity`}>
+                        {TOKEN_PLATFORMS[platform] ? <TokenConnect platform={platform} label={info.label} color={info.color} onDone={loadAll} /> : <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-xs font-bold py-2 rounded-xl hover:opacity-90 transition-opacity`}>
                           + 계정 추가
-                        </a>
+                        </a>}
                       </div>
                     ) : (
-                      <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition-opacity`}>
+                      TOKEN_PLATFORMS[platform] ? <TokenConnect platform={platform} label={info.label} color={info.color} onDone={loadAll} /> : <a href={`/api/sns/connect/${platform}`} className={`block w-full text-center bg-gradient-to-r ${info.color} text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition-opacity`}>
                         {info.label} 연결하기
                       </a>
                     )}
@@ -578,7 +617,7 @@ export default function SNSPage() {
               <div className="mt-0">
                 <label className="text-xs font-semibold text-gray-500 mb-2 block">발행 플랫폼</label>
                 <div className="flex flex-wrap gap-2">
-                  {(Object.keys(PLATFORMS) as Platform[]).map((p) => {
+                  {(ALL_PLATFORMS as Platform[]).map((p) => {
                     const conn = getConnection(p);
                     const info = PLATFORM_INFO[p];
                     const selected = composePlatforms.includes(p);
