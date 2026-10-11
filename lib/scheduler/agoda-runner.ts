@@ -278,7 +278,7 @@ ${THREADS_HOOK_GUIDE}
 인스타그램용 텍스트`;
 
     try {
-      const aiText = await generateText(snsPrompt, 'groq');
+      const aiText = await generateText(snsPrompt, 'sns');
       const textMap: Record<string, string> = {
         threads: scrubThreads(getSection(aiText, 'THREADS', TAGS)),
         twitter: getSection(aiText, 'TWITTER', TAGS),

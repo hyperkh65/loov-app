@@ -10,7 +10,7 @@ export async function buildHookCaptions(title: string, summary: string): Promise
 반드시 한국어로만 작성하고, 중국어·일본어 등 외국 문자 절대 사용 금지. 글 제목을 그대로 베끼지 말고 새로 써.
 읽는 사람이 "무슨 얘기인지"는 알 수 있어야 하고(주인공·주제·상황을 분명히), 결론·세부 조건만 남겨서 궁금하게 만들 것.
 고유명사·숫자는 아래 제목·요약에 나온 그대로만 쓰고(오타·변형 금지), 없는 사실은 지어내지 마. 뜻이 안 통하는 문장, 어색한 신조어 금지.
-모든 채널 공통 금지: "블로그", "링크", "확인해보세요", "자세한 내용은", "정리해둠", "전체 기사", "알아보세요" 처럼 어디서 보라고 안내하는 말. URL은 어디에도 넣지 마(내가 따로 붙임).
+모든 채널 공통 금지: "블로그", "링크", "확인해보세요", "자세한 내용은", "정리해둠", "전체 기사", "알아보세요" 처럼 어디서 보라고 안내하는 말. URL은 어디에도 넣지 마(내가 따로 붙임). 괄호 안내문·메모·플레이스홀더(예: "(이미 채워짐)")는 절대 쓰지 말고, 글에 없는 주장(안전·건강·사고 등)은 지어내지 마.
 
 글 제목: ${title}
 글 요약: ${summary.slice(0, 700)}
@@ -43,14 +43,20 @@ ${THREADS_HOOK_GUIDE}
 출력 형식(정확히 두 줄 이상 이 형태로):
 소개: (2~3문장 150~250자. 에디터가 친구에게 "이거 봐봐" 하듯 담백하고 위트 있게. 무슨 내용인지 분명히 쓰고 결론·세부 조건은 남겨 궁금하게)
 태그: (한글 주제어 5~8개 쉼표 구분, # 없이)`;
-  const [raw, tumblrRaw] = await Promise.all([
-    generateText(prompt, 'groq', undefined, undefined, undefined, undefined, { ollamaOnly: true }), // Groq → Gemini만
-    generateText(tumblrPrompt, 'groq', undefined, undefined, undefined, undefined, { ollamaOnly: true }).catch(() => ''),
-  ]);
+  // 품질 우선 체인(OpenRouter ultra → Gemini → Groq), 한국어 아니거나 너무 짧으면 1회 재시도
+  const isGood = (t: string) => {
+    const hangul = (t.match(/[가-힣]/g) || []).length;
+    const latin = (t.match(/[A-Za-z]/g) || []).length;
+    return t.length >= 80 && hangul > 0 && latin <= hangul;
+  };
+  let raw = '';
+  for (let i = 0; i < 2 && !isGood(raw); i++) raw = await generateText(prompt, 'sns').catch(() => '');
+  if (!isGood(raw)) return {};
+  const tumblrRaw = await generateText(tumblrPrompt, 'sns').catch(() => '');
   const tumblr = tumblrRaw.match(/소개\s*[:：]\s*([\s\S]*?)(?=\n\s*태그\s*[:：]|$)/)?.[1]?.trim() || '';
   const tumblrTags = tumblrRaw.match(/태그\s*[:：]\s*(.+)/)?.[1]?.trim() || '';
   // 모델이 금지한 "어디서 보라"는 안내 문구를 어겨도 그 줄은 걷어낸다
-  const BANNED = /블로그|링크|댓글|아래(에|로)|확인해|자세한 내용|전체 (내용|기사)|정리해/;
+  const BANNED = /블로그|링크|댓글|아래(에|로)|확인해|자세한 내용|전체 (내용|기사)|정리해|^\s*[(（\[].*[)）\]]\s*$/;
   const sec = (t: string) => getSection(raw, t, TAGS).split('\n').filter(l => !BANNED.test(l)).join('\n').trim();
   return {
     threads: scrubThreads(sec('THREADS')),

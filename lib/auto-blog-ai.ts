@@ -643,6 +643,13 @@ async function generateTextRaw(
       : replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))))
     ) : false;
 
+  // SNS 문구 전용 — 품질 순: OpenRouter nemotron-ultra → Gemini → Groq(Qwen 27B는 외국어 혼입·지어내기가 잦아 최후 수단). 전부 실패하면 throw
+  if (preferModel === 'sns') {
+    const r = clean(await tryOpenRouter(OPENROUTER_FALLBACK_MODELS.slice(0, 1)) || await tryGemini() || await tryGroq());
+    if (r) return r;
+    throw new Error(`SNS 문구 생성 모두 실패\n${errors.join(' | ')}`);
+  }
+
   // Groq 우선 모드 — 쿠팡/아고다처럼 매시간 도는 제휴 러너는 고갈된 Ollama/Gemini 등을
   // 먼저 두드리며 시간을 낭비하지 않도록 Groq부터 시도한다. 단 Groq가 실패(429/키 문제)하면
   // 예전처럼 나머지 provider로 이어서 폴백(전용 모드일 땐 그대로 발행 실패로 끝나 성공률이 떨어졌음).

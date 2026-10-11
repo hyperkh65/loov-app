@@ -206,7 +206,6 @@ export async function publishRewrittenArticle(
   // 예전엔 카페가 이 캡션 없이 article.meta(딱딱한 SEO 요약문)를 그대로 써서
   // 카페 글이 광고 문구처럼 읽힌다는 피드백이 있었음.
   const plainSummary = article.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  const fallbackCaption = (article.meta || plainSummary || article.title).slice(0, 150);
   let captions: Record<string, string>;
   try {
     // generateText는 provider 폴백 체인이 길어 최악의 경우 수 분 걸릴 수 있음 —
@@ -382,7 +381,8 @@ export async function publishRewrittenArticle(
       sns[label] = 'skip: 이미지 없음';
       continue;
     }
-    const caption = (captions[platform] || fallbackCaption).slice(0, 500);
+    if (!captions[platform]) { sns[label] = 'skip: AI 캡션 없음'; continue; } // SEO 요약문/제목으로 대체 발행하지 않음
+    const caption = captions[platform].slice(0, 500);
     try {
       const comment = commentFor(`${platform}_${conn.platform_username || ''}`);
       const isFb = platform === 'facebook'; // 페이스북은 댓글 권한이 없어 링크를 본문에

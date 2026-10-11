@@ -26,8 +26,13 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
     buildHookCaptions(title, summary),
     new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 60_000)),
   ]).catch(() => ({} as Record<string, string>));
-  console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(captions).length ? getLastProvider() : '실패/60초초과→제목으로 대체'}`);
+  console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(captions).length ? getLastProvider() : '실패→SNS 발행 스킵'}`);
   const supabase = createAdminClient();
+  if (!Object.keys(captions).length) {
+    // 제목만 올라가면 품질이 나빠 노출에 불리 — 문구 생성 실패 시 이번 발행은 건너뜀
+    await supabase.from('sns_post_logs').insert({ user_id: userId, platform: 'all', status: 'failed', error_message: `[자동발행 ${siteUrl}] AI 문구 생성 실패 — SNS 발행 스킵: ${title}`.slice(0, 500) }).then(() => {}, () => {});
+    return;
+  }
   const { data } = await supabase
     .from('sns_connections')
     .select('platform, platform_user_id, platform_username, access_token')
@@ -68,7 +73,8 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
     try {
       const linkUrl = withUtm(articleUrl, `${conn.platform}_${connections.find(c => c.platform_user_id === conn.platform_user_id)?.platform_username || ''}`);
       const isFb = ['facebook', 'telegram', 'bluesky'].includes(conn.platform); // 댓글 불가/미지원 플랫폼은 링크를 본문에
-      const caption = (captions[conn.platform] || (isFb ? captions.facebook : '') || title).slice(0, 500);
+      const caption = (captions[conn.platform] || (isFb ? captions.facebook : '')).slice(0, 500);
+      if (!caption) throw new Error('AI 캡션 없음 — 제목 대체 발행 안 함');
       const posted = await postToPlatformWithMedia(conn.platform as Platform | TokenPlatform, conn.access_token, conn.platform_user_id, isFb ? `${caption}\n\n${linkUrl}` : caption, imageUrl ? [imageUrl] : undefined);
       slog(conn.platform, 'success', undefined, posted.id);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
