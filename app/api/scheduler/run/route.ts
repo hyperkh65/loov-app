@@ -39,6 +39,7 @@ import { upsertCoupangMatch } from '@/lib/affiliate-engine/coupang-match';
 import { searchProducts } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
 import { callAI, callAISimple, getGeminiKeys } from '@/lib/ai-call';
+import { generateText } from '@/lib/auto-blog-ai';
 import { renderShortsVideo } from '@/lib/shorts/render-core';
 import { findFfmpeg, findKoreanFont, escapeDrawtext } from '@/lib/shorts/nas-ffmpeg';
 import { nasExec, nasExecWithStdin } from '@/lib/nas-ssh';
@@ -926,7 +927,7 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
 
   let caption = '';
   try {
-    caption = (await callAISimple(
+    caption = (await generateText(
       `너는 패션 계정을 운영하는 20대 인플루언서다. 아래 무신사 상품을 소개하는 스레드(Threads) 게시물 문구를 써라.\n` +
       `광고 티 나는 딱딱한 카피 금지, 진짜 갖고 싶어서 자랑하듯 반말/구어체로 3~5줄. 이모지는 1~2개만.\n\n` +
       `[클릭을 유도하는 훅 규칙 — 반드시 지킬 것]\n` +
@@ -939,6 +940,7 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
       `할인가: ${picked.finalPrice.toLocaleString()}원 (${picked.finalDiscount}% 할인)\n` +
       `${priceDropNote ? `${priceDropNote}\n` : ''}\n` +
       `${SNS_HOOK_GUIDE}\n\n마지막에 링크나 해시태그는 넣지 마(내가 따로 붙일 거임). 본문만 출력해.`,
+      'sns',
     )).trim();
   } catch (e) {
     console.error('[musinsa_curator_auto] 캡션 생성 실패, 기본 문구로 폴백:', e);

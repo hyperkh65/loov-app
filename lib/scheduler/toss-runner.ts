@@ -10,7 +10,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { toInstagramSafeImage } from '@/lib/rewrite-publish';
 import { fetchTodayDeals, fetchBestSelling, createShareLink, type TossProduct } from '@/lib/toss-sharelink';
-import { callAISimple } from '@/lib/ai-call';
+import { generateText } from '@/lib/auto-blog-ai';
 import { createGoLink, pickContentAngle, type ContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
@@ -40,7 +40,7 @@ async function buildCaption(p: TossProduct, angle: ContentAngle): Promise<string
     : '리뷰 데이터 없음 — 리뷰/평점을 지어내지 마라';
 
   try {
-    const caption = (await callAISimple(
+    const caption = (await generateText(
       `너는 가성비 특가를 소개하는 캐주얼한 SNS 계정을 운영한다. 아래 토스쇼핑 상품으로 짧은 게시물 문구를 써라(3~5줄, 이모지 1~2개).\n\n` +
       `[클릭을 유도하는 훅 규칙 — 반드시 지킬 것]\n` +
       `1. 첫 1~2줄엔 상품명을 절대 넣지 마라. 상황이나 변화만 먼저 던져라.\n` +
@@ -51,6 +51,7 @@ async function buildCaption(p: TossProduct, angle: ContentAngle): Promise<string
       (p.originalPrice > p.displayPrice ? ` (정가 ${p.originalPrice.toLocaleString()}원, ${discount})` : '') + `\n` +
       `${reviewLine}\n${endLine ? `마감: ${endLine}\n` : ''}\n` +
       `${PRODUCT_HOOK_GUIDE}\n\n마지막에 링크/해시태그는 넣지 마(따로 붙일 거임). 본문만 출력해. 반드시 한국어로만.`,
+      'sns',
     )).trim();
     if (caption) return caption;
   } catch { /* 폴백으로 진행 */ }
