@@ -438,8 +438,8 @@ export async function postToFacebookWithMedia(
   linkUrl?: string,
 ): Promise<{ id: string }> {
   const pagesRes = await fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`);
-  if (!pagesRes.ok) throw new Error('Facebook 페이지 목록 조회 실패');
-  const { data: pages } = await pagesRes.json();
+  // 페이지 토큰이면 /me/accounts 가 실패 — 그 토큰의 /me 가 곧 페이지
+  const pages = pagesRes.ok ? (await pagesRes.json()).data : [];
   const pageToken = pages?.[0]?.access_token || accessToken;
   const pageId = pages?.[0]?.id || 'me';
 
