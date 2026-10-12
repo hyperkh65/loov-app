@@ -174,6 +174,8 @@ export function validateDraft(d: DraftIn) {
   if (!fileCount) errors.push('직접 그린 이미지가 첨부되지 않음(openaiFileIdRefs 비어 있음) — 웹/검색 이미지 URL로 대체 금지. 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 다시 보낼 것');
   else if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
   else if (total < 3) errors.push(`이미지 ${total}장 — 대표 1장 + 본문 2장 이상(합계 3장 이상) 필요`);
+  const srcs = imgs.map(i => i.match(/\bsrc=["']([^"']+)/i)?.[1]).filter(Boolean) as string[];
+  if (new Set(srcs).size < srcs.length || (d.featured_image_url && srcs.includes(d.featured_image_url)) || placed.some(i => /\{\{file:1\}\}/.test(i))) errors.push('같은 이미지가 중복됨 — 본문 <img>의 주소는 모두 달라야 하고, 대표이미지({{file:1}}/featured_image_url)는 본문에 다시 쓰지 않는다');
   if (placed.some(i => Number(i.match(/\{\{file:(\d+)\}\}/)![1]) > fileCount)) errors.push('{{file:N}} 번호가 openaiFileIdRefs 개수보다 큼');
   if (imgs.some(i => !/\balt=["'][^"']+/i.test(i))) warnings.push('alt 없는 이미지가 있음');
   if (hosts.size < 1) errors.push('외부 링크(<a href>)가 필요 — 출처/공식 사이트 2곳 이상'); else if (hosts.size < 2) warnings.push('서로 다른 사이트 링크 2곳 이상 권장');
