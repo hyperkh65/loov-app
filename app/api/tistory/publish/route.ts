@@ -90,6 +90,38 @@ for ch in strip_chars:
     slug = slug.replace(ch, '')
 slug = re.sub(r'\\s+', '-', slug.strip())[:80] or 'post'
 
+# 티스토리는 자기 서버(kakaocdn)에 올린 이미지만 목록 썸네일/og:image로 쓴다.
+# 본문 첫 외부 이미지(R2 등)를 attach.json으로 올려 thumbnail에 'kage@<key>?<쿼리>' 로 지정. 실패해도 발행은 계속.
+def make_thumbnail():
+    try:
+        m = re.search(r'<img[^>]+src=["\\']([^"\\']+)["\\']', content)
+        if not m:
+            return None
+        src = m.group(1)
+        if 'kakaocdn.net' in src or 'daumcdn.net' in src:
+            return None
+        req = urllib.request.Request(src, headers={'User-Agent': ua})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            img = r.read()
+            ctype = r.headers.get('Content-Type', 'image/png').split(';')[0]
+        if len(img) < 1000 or len(img) > 10 * 1024 * 1024:
+            return None
+        bd = '----' + secrets.token_hex(12)
+        ext = 'jpg' if 'jpeg' in ctype else ctype.split('/')[-1] or 'png'
+        head = ('--' + bd + '\\r\\nContent-Disposition: form-data; name="file"; filename="thumb.' + ext
+                + '"\\r\\nContent-Type: ' + ctype + '\\r\\n\\r\\n').encode()
+        body = head + img + ('\\r\\n--' + bd + '--\\r\\n').encode()
+        req = urllib.request.Request(blog_url + '/manage/post/attach.json', data=body, method='POST', headers={
+            'User-Agent': ua, 'Content-Type': 'multipart/form-data; boundary=' + bd,
+            'X-Requested-With': 'XMLHttpRequest', 'Origin': blog_url, 'Referer': blog_url + '/manage/newpost/',
+        })
+        with urllib.request.urlopen(req, timeout=30) as r:
+            u = json.loads(r.read().decode('utf-8')).get('url', '')
+        pre = 'https://blog.kakaocdn.net/dna/'
+        return 'kage@' + u[len(pre):] if u.startswith(pre) else None
+    except Exception:
+        return None
+
 # visibility 0=비공개, 15=보호, 20=공개 (3으로 보내면 비공개로 저장됨 — 2026-10-04 확인)
 payload = {
     'title': title,
@@ -105,7 +137,7 @@ payload = {
     'daumLike': None,
     'cclCommercial': 2,
     'cclDerive': 2,
-    'thumbnail': None,
+    'thumbnail': make_thumbnail(),
     'type': 'post',
     'attachments': [],
     'recaptchaValue': '',
