@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import { getSetting } from '@/lib/get-setting';
-import { FRIENDLY_TONE_RULES } from '@/lib/auto-blog-prompt';
 
 export async function authorized(req: Request): Promise<boolean> {
   const key = await getSetting('GPT_ACTION_KEY');
@@ -95,7 +94,8 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - H2 5~8개. 소제목은 독자가 실제로 검색할 법한 말(롱테일)로. 각 H2 아래 단락 2~3개, 단락은 2~4문장(모바일에서 읽기 쉽게).
 - 총 순수 텍스트 3,500~6,000자.
 - 단계가 있으면 <ol>, 체크리스트는 <ul>. 실수/주의는 "이렇게 하면 이런 일이 생겨요"처럼 구체적으로.
-- 키워드는 본문에 5~15회 자연스럽게. 억지 반복 금지.
+- 키워드는 본문에 3~6회. 검색어가 붙여 쓴 형태(예: 남양주가볼만한곳)여도 본문에서는 "남양주 가볼 만한 곳"처럼 띄어 쓰거나 "이 코스", "이곳"으로 바꿔 쓴다. 검색어를 문장에 그대로 끼워 넣지 않는다.
+- 독자가 찾는 사실 정보를 비워 두지 않는다. 장소·여행: 주소, 운영시간, 입장료, 주차, 소요시간, 코스 간 이동 시간, 휴무일. 신청·제도: 대상, 기간, 금액, 신청처. 제품: 가격, 규격, 차이점. 공식 사이트에서 확인한 값만 쓰고 기준일을 적는다. 확인 못 한 항목은 지어내지 말고 "공식 사이트에서 확인한 값이 없어요"라고 한 번만 쓴다. "확인하세요"로 끝나는 문장은 글 전체에서 2번 이하, 쓸 때는 어디서 확인하는지 링크나 이름을 붙인다.
 
 ## 표 (필수, 1개 이상)
 - 비교·요약·체크표 중 독자에게 진짜 도움이 되는 표 1~2개. <table><thead><tr><th>…</th></tr></thead><tbody>…</tbody></table>. 스타일은 서버가 입혀 준다.
@@ -111,13 +111,15 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - 이미지는 대표 1장 + 본문 2~4장, 합계 최소 3장(권장 4~5장). 모두 alt 텍스트 필수. 장면이 겹치지 않게 각기 다른 설명 이미지(설치 화면 흐름, 위험 구별 예시, 비교 도표 등)를 만든다.
 - 직접 그린 이미지는 openaiFileIdRefs에 순서대로 담는다. 첫 번째가 대표이미지. 두 번째부터는 본문 넣을 자리에 <img src="{{file:2}}" alt="설명">, 세 번째는 {{file:3}} 처럼 번호로 적는다(대표이미지 {{file:1}}는 본문에 따로 쓰지 않는다).
 - 관련 사이트에서 가져올 이미지는 공식 사이트 이미지 주소를 <img src="https://...">로 직접 쓴다(저장 시 우리 서버로 옮겨진다). 글 내용과 맞는지 보고 고른다.
-- 이미지는 직접 그리는 것이 기본이다(이미지 생성 사용). 대표이미지와 본문 이미지 모두 이 글의 내용을 설명하는 그림으로 각각 따로 그린다(예: 설치 순서 도식, 위험 구별 예시, 비교 인포그래픽). 한글 글씨가 필요한 도식은 글자를 최소화하고 번호·아이콘 위주로 그린다.
+- 이미지는 직접 그리는 것이 기본이다(이미지 생성 사용). 대표이미지와 본문 이미지 모두 이 글의 내용을 설명하는 그림으로 각각 따로 그린다(예: 설치 순서 도식, 위험 구별 예시, 비교 장면).
+- 그림 안에는 글자·숫자·주소·운영시간·가격·상호를 넣지 않는다(AI가 틀리게 그리고, 틀려도 독자가 믿는다). 정보는 본문 텍스트와 표로 전한다.
+- 실제 장소·상품·인물을 소개하는 글에서 AI 그림을 "그 장소의 사진"처럼 쓰지 않는다. 그런 글은 공식 기관이 배포한 실제 사진을 우선 쓰고, 그림은 분위기를 보여주는 한 장면으로만 쓴다. 장소마다 비슷한 풍경을 반복해 그리지 않는다.
+- 그림은 가로 3:2 한 장면, 핵심은 가운데에 둔다(가장자리는 잘릴 수 있다). 세로로 긴 인포그래픽·여러 칸으로 나눈 그림은 만들지 않는다.
 - 스톡 사진(Pixabay/Pexels)은 내용과 상관없는 분위기 사진이라 쓰지 않는다. 직접 그릴 수 없을 때만, 글 내용을 정확히 보여주는 것에 한해 마지막 수단으로 쓴다. 공식 사이트가 배포한 화면/로고는 내용이 맞으면 써도 된다.
 - 저작권: 남의 블로그/커뮤니티 사진은 쓰지 않는다. researchKeyword의 stock_image_candidates는 참고용이며 기본값으로 고르지 않는다.
 - SVG·data URI·코드(파이썬 등)로 그린 이미지는 서버가 받지 못한다. 반드시 이미지 생성 도구로 만든 PNG/JPG 파일을 openaiFileIdRefs에 넣는다. 저장이 이미지 오류로 실패하면 다른 URL 이미지로 몰래 바꿔치지 말고, 이미지 생성을 다시 시도하거나 실패 사실을 사용자에게 그대로 알린다.
 - 이미지 오류로 저장이 실패하면 이전에 만든 파일 참조·링크를 재사용하지 않는다(몇 분 뒤 만료됨). 이미지를 새로 생성한 직후 그 결과의 openaiFileIdRefs를 그대로 담아 saveDraft를 다시 호출한다. 경로 문자열(sandbox:/mnt/data/...)이나 파일 이름만 보내지 않는다.
 - 이미지를 쓰기 전에 글 내용과 맞는지 직접 보고 판단한다. 안 맞으면 쓰지 않고 새로 그린다. 그린 이미지는 반드시 openaiFileIdRefs로 보낸다.
-- 직접 그릴 때는 글자(텍스트)가 들어가지 않는 장면 위주로.
 
 ## 양식·자료 파일 (있으면 꼭 챙긴다)
 - 주제와 관련된 신청서·서식·체크리스트·공식 안내문 같은 내려받을 파일(PDF, HWP, DOCX, XLSX 등)이 있으면 찾아서 saveDraft의 attachments로 보낸다(파일당 15MB 이하). 독자에게 큰 도움이 된다.
@@ -125,16 +127,26 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - 각 파일마다 permission_note에 "어디서 확인했고(예: 공공누리 1유형, 기관 배포 서식) 왜 올려도 되는지"를 한 줄로 쓰고, source_page_url에 파일이 있던 페이지 주소를 넣는다. 본문에 "양식 내려받기" 섹션은 서버가 자동으로 붙인다.
 
 ## 차별점
-- 상위 글이 안 다룬 것 1가지 이상: 흔한 실수, 최신 변경점, 비교표, 직접 해 본 순서, 상황별 선택 가이드 등. 본문 안에 분명히 드러나게 쓴다.
+- 상위 글이 안 다룬 것 1가지 이상: 흔한 실수, 최신 변경점, 비교표, 코스·옵션 비교표, 상황별 선택 가이드 등. 직접 가 보거나 써 본 것처럼 쓰지 않는다(경험담·"제가 가 보니" 금지). 근거는 공식 자료와 확인한 사실로 댄다. 본문 안에 분명히 드러나게 쓴다.
 
 ## FAQ
 - 끝부분에 <h2>자주 묻는 질문</h2> + 질문 3~5개. 질문은 <p><b>Q. …</b></p>, 답은 <p>…</p> 일반 문단. 박스/카드 금지.
 
 ## 형식 규칙
 - 결과물은 HTML 조각만. <html>/<body>/<h1> 없음(제목은 title 필드). 마크다운(**, ##) 금지. [대괄호 지시문] 남기지 않기. <script>/<iframe> 금지. 한국어만(한자·일본어 금지).
+- 모든 문단은 <p>…</p>로 감싼다. <br>로 문단을 나누거나 <p> 없이 글을 이어 쓰지 않는다.
 - <h2>는 소제목, 필요하면 <h3>. 번호·박스 없이 자연스러운 문장형.
 
-${FRIENDLY_TONE_RULES}
+## 문체 (사람이 쓴 글처럼, 읽기 편하게)
+- 목소리: 그 주제를 잘 아는 사람이 차분하게 설명하는 톤. 호들갑·친한 척·감탄 없이 바로 말한다. 판단에는 이유를 붙인다. (예: "물의정원은 건너뛰어도 돼요. 걷는 구간이 길어서 아이가 먼저 지치거든요.")
+- 해요체 하나로 통일한다. "~습니다"를 섞지 않는다. 문장은 짧게(40자 안팎), 한 문장에 한 가지만 말한다.
+- 독자에게 던지는 질문은 글 전체에서 2~3번만. 단락마다 넣지 않는다.
+- 구체적으로 쓴다. "중요합니다", "도움이 됩니다" 대신 무엇이 어떻게 되는지(숫자, 시간, 거리, 이름)를 쓴다.
+- 단락마다 구조가 같지 않게 한다(주장-설명-당부 반복 금지). 길이도 들쭉날쭉하게. 한 단락에는 한 가지 이야기만.
+- 모르는 건 한 번만 솔직하게 쓴다. "달라질 수 있으니 확인하세요" 같은 면책 문장을 반복하지 않는다.
+- 쓰지 않는 말: "~하는 것이 중요합니다", "~하는 편이 좋습니다", "~할 수 있어요"를 연달아, "~기도 해요", "과감히", "꼭", "참고자료에 따르면", "보도에 따르면", "~로 알려졌다", "시사하는 바", "주목할 만", "결론적으로", "정리하자면", "~를 통해", "~에 있어서", "첫째/둘째", "또한/더불어/아울러/뿐만 아니라"(글 전체 1회 이하).
+- 이모지·느낌표·말줄임표를 쓰지 않는다.
+- 다 쓴 뒤 소리 내어 읽는다고 생각하고, 걸리는 문장은 더 짧고 쉬운 말로 고친다.
 
 ## 최종 자기 점검
 "이 글 하나만 읽고 다른 탭을 안 열어도 되는가? 상위 글보다 확실히 나은 점이 있는가? 틀린 정보·지어낸 URL은 없는가?" 셋 중 하나라도 아니면 고쳐서 다시 검사한다.`;
@@ -147,6 +159,7 @@ export function validateDraft(d: DraftIn) {
   const html = d.content_html || '', title = (d.title || '').trim(), meta = (d.meta_description || '').trim();
   const text = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   const kw = (d.keyword || '').trim(), kwTokens = kw.split(/\s+/).filter(Boolean);
+  const nospace = (x: string) => x.replace(/\s+/g, '');
   const h2 = (html.match(/<h2\b/gi) || []).length;
   const tables = (html.match(/<table\b/gi) || []).length;
   const imgs = [...html.matchAll(/<img\b[^>]*>/gi)].map(m => m[0]);
@@ -154,7 +167,7 @@ export function validateDraft(d: DraftIn) {
   for (const m of html.matchAll(/<a\s[^>]*href=["'](https?:\/\/[^"']+)["']/gi)) { try { hosts.add(new URL(m[1]).hostname.replace(/^www\./, '')); } catch { /* skip */ } }
   const firstH2 = html.search(/<h2\b/i);
   const intro = (firstH2 > 0 ? html.slice(0, firstH2) : '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  const kwCount = kw ? text.split(kw).length - 1 : 0;
+  const kwCount = kw ? nospace(text).split(nospace(kw)).length - 1 : 0;
 
   if (title.length < 10 || title.length > 60) errors.push(`제목 길이 ${title.length}자 — 24~40자로`); else if (title.length > 42) warnings.push(`제목 ${title.length}자 — 24~40자 권장`);
   if (kwTokens.length && !kwTokens.every(t => title.includes(t))) errors.push('제목에 메인 키워드가 모두 들어가야 함');
@@ -164,7 +177,7 @@ export function validateDraft(d: DraftIn) {
   if (badNums.length) errors.push(`제목의 숫자 ${badNums.join(', ')}이(가) 본문에 없음 — 본문에 나온 값만 쓸 것(합산·추정 금지)`);
   if (/(정리|총정리|안내|알아보기|알아보자|방법)$/.test(title.replace(/[?!.…\s]+$/, ''))) errors.push('제목이 "정리/안내/방법"으로 끝남 — 결과·상황이 보이는 말투로');
   if (meta.length < 90 || meta.length > 175) warnings.push(`메타 설명 ${meta.length}자 — 100~160자 권장`);
-  if (kw && meta && !kwTokens.every(t => meta.includes(t))) warnings.push('메타 설명에 키워드 포함 권장');
+  if (kw && meta && !nospace(meta).includes(nospace(kw))) warnings.push('메타 설명에 키워드 포함 권장');
   if (text.length < 2500) errors.push(`본문 ${text.length}자 — 최소 2500자(권장 3500~6000)`); else if (text.length < 3500) warnings.push(`본문 ${text.length}자 — 3500자 이상 권장`); else if (text.length > 10000) warnings.push('본문이 너무 김(10000자 초과)');
   if (h2 < 4) errors.push(`H2 소제목 ${h2}개 — 최소 4개(권장 5~8)`);
   if (!tables) errors.push('표(<table>)가 최소 1개 필요');
@@ -183,10 +196,11 @@ export function validateDraft(d: DraftIn) {
   if (!/20\d\d년|기준|업데이트/.test(text)) warnings.push('기준 시점(예: 2026년 10월 기준) 표기 권장');
   if (!/자주 묻는|FAQ|Q\./i.test(text)) warnings.push('FAQ 섹션 권장 (질문 3~5개)');
   if (intro.length < 60) warnings.push('도입부(첫 H2 이전)가 너무 짧거나 없음 — 3~5문장'); else if (intro.length > 600) warnings.push('도입부가 너무 김 — 3~5문장');
-  if (kw && intro && !kwTokens.some(t => intro.includes(t))) warnings.push('도입부에 키워드가 자연스럽게 들어가면 좋음');
-  if (!/직접|제가|저는|해보니|써보니|실제로|경험|흔한 실수|많이 하는 실수/.test(text)) warnings.push('차별점/경험 신호(직접 해 본 순서, 흔한 실수 등)가 안 보임');
+  if (kw && intro && !nospace(intro).includes(nospace(kw))) warnings.push('도입부에 키워드가 자연스럽게 들어가면 좋음');
+  if (!/흔한 실수|많이 하는 실수|비교|차이|상황별|추천/.test(text)) warnings.push('차별점(흔한 실수, 비교, 상황별 선택 등)이 안 보임');
+  if (/제가 (직접 )?(가|써|해|먹|사용)\S*\s?보니|직접 (가|써|해) ?봤|다녀왔|다녀와 보니/.test(text)) errors.push('직접 경험한 것처럼 쓴 표현 금지(경험담 지어내기)');
   if (!/<(ul|ol)\b/i.test(html)) warnings.push('목록(<ul>/<ol>) 없음 — 체크리스트/단계 권장');
-  if (kw && kwCount < 3) warnings.push(`키워드 "${kw}" ${kwCount}회 — 5~15회 권장`); else if (kwCount > 25) warnings.push(`키워드 ${kwCount}회 — 과다(스터핑)`);
+  if (kw && kwCount < 2) warnings.push(`키워드 "${kw}" ${kwCount}회 — 3~6회 권장`); else if (kwCount > 10) warnings.push(`키워드 ${kwCount}회 — 과다(검색어를 문장에 그대로 끼우지 말고 바꿔 쓰기)`);
   if ([...html.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)].some(m => m[1].replace(/<[^>]+>/g, '').length > 450)) warnings.push('450자 넘는 긴 단락이 있음 — 2~4문장으로 쪼개기');
   const bad = ['참고자료에 따르면', '보도에 따르면', '자료에 따르면', '로 알려졌다', '것으로 전해진다', '로 확인됐다'].filter(p => text.includes(p));
   if (bad.length) errors.push(`출처 말투 금지 표현: ${bad.join(', ')}`);
@@ -196,6 +210,12 @@ export function validateDraft(d: DraftIn) {
   const conj = (text.match(/또한|더불어|아울러|뿐만 아니라/g) || []).length;
   if (conj > 5) errors.push(`"또한/더불어/아울러" ${conj}회 — 3회 이하로`);
   else if (conj > 3) warnings.push('"또한/더불어/아울러" 과다');
+  const formal = (text.match(/(습니다|합니다|입니다)[.\s]/g) || []).length, polite = (text.match(/(어요|아요|예요|이에요|해요|죠|네요)[.\s?]/g) || []).length;
+  if (formal > 3 && polite > 3) warnings.push(`말투가 섞임(~습니다 ${formal}회, ~요 ${polite}회) — 해요체 하나로`);
+  if ((text.match(/중요(합니다|해요|하죠)|좋습니다|편이 좋/g) || []).length > 3) warnings.push('"중요합니다/편이 좋습니다" 같은 추상 문장이 많음 — 구체적인 숫자·이유로');
+  if ((text.match(/확인(하세요|해 보세요|해야 해요|하는 것)/g) || []).length > 2) warnings.push('"확인하세요" 반복 — 어디서 확인하는지 링크와 함께 2번 이하로');
+  if ((text.match(/\?/g) || []).length > 5) warnings.push('질문형 문장이 많음 — 2~3번만')
+  if (/<br\s*\/?>\s*<br\s*\/?>/i.test(html) || (html.match(/<p\b/gi) || []).length < 8) warnings.push('문단이 <p>로 나뉘지 않았거나 너무 적음 — 모든 문단을 <p>로')
   if (/^\s*#{1,6}\s|\*\*[^*]+\*\*/m.test(html)) errors.push('마크다운(##, **) 금지 — HTML 태그로');
   if (/\{\{|\[(소제목|제목|내용|키워드)/.test(html.replace(/\{\{file:\d+\}\}/g, ''))) errors.push('대괄호/템플릿 지시문이 남아 있음');
   if (/[぀-ヿ一-鿿]/.test(text + title)) errors.push('한자/일본어 문자 금지');
