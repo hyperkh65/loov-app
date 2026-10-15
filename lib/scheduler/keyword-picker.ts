@@ -104,7 +104,7 @@ async function fetchGoogleDailyTrends(): Promise<string[]> {
 }
 
 // ── Naver Ad API (검색량 + 경쟁도) ────────────────────────────────────────
-async function fetchNaverAdData(keywords: string[]): Promise<Array<{
+export async function fetchNaverAdData(keywords: string[]): Promise<Array<{
   keyword: string; monthlyTotal: number; competition: string;
 }>> {
   const [apiKey, secret, customerId] = await Promise.all([

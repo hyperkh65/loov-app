@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getSetting } from '@/lib/get-setting';
+import { fetchNaverAdData } from '@/lib/scheduler/keyword-picker';
 
 export async function authorized(req: Request): Promise<boolean> {
   const key = await getSetting('GPT_ACTION_KEY');
@@ -43,12 +44,16 @@ async function suggest(q: string): Promise<string[]> {
 }
 
 export async function research(keyword: string) {
-  const [web, blog, news, kin, ...sug] = await Promise.all([
+  const [web, blog, news, kin, ad, ...sug] = await Promise.all([
     naver('webkr', keyword), naver('blog', keyword), naver('news', keyword, 'date'), naver('kin', keyword),
+    fetchNaverAdData([keyword.replace(/\s+/g, '')]),
     ...['', ' 방법', ' 주의', ' 오류', ' 추천'].map(s => suggest(keyword + s)),
   ]);
   const related = [...new Set(sug.flat())].filter(k => k !== keyword).slice(0, 40);
-  return { keyword, related_keywords: related, naver_web: web, naver_blog: blog, naver_news: news, naver_kin: kin };
+  const comp: Record<string, string> = { 높음: '높음(경쟁 센 편)', 중간: '중간', 낮음: '낮음(노리기 쉬움)' };
+  const keyword_stats = ad.filter(a => a.monthlyTotal >= 50).sort((a, b) => b.monthlyTotal - a.monthlyTotal).slice(0, 30)
+    .map(a => ({ keyword: a.keyword, monthly_searches: a.monthlyTotal, competition: comp[a.competition] || a.competition }));
+  return { keyword, keyword_stats, related_keywords: related, naver_web: web, naver_blog: blog, naver_news: news, naver_kin: kin };
 }
 
 // ── 키워드별 안전 메모 ───────────────────────────────────────────────────
@@ -76,7 +81,7 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 
 ## 작업 순서
 1. researchKeyword로 연관·롱테일 키워드와 현재 상위 글을 본다. 직접 웹 검색/브라우징이 되면 그것도 쓴다. 막히면 readPage로 상위 글·공식 사이트를 읽는다. 어떤 사이트를 참고할지는 스스로 판단한다.
-2. 메인 키워드 1개 + 롱테일 3~5개를 정하고, 상위 글에 없는 것(빠진 정보, 오래된 정보, 실수하기 쉬운 부분)을 찾는다. 이게 차별점이다.
+2. researchKeyword의 keyword_stats(네이버 월간 검색량·경쟁도)가 있으면 그 수치를 보고 메인 키워드 1개 + 롱테일 3~5개를 고른다. 검색량이 충분하면서 경쟁이 낮거나 중간인 것을 우선하고, 제목 앞쪽에는 검색량이 가장 큰 핵심어를 둔다. (수치가 없으면 상위 글과 연관어로 판단하고, 수치를 지어내지 않는다.) 그리고 상위 글에 없는 것(빠진 정보, 오래된 정보, 실수하기 쉬운 부분)을 찾는다. 이게 차별점이다.
 3. HTML로 쓴다. validateDraft로 검사하고 errors가 0이 될 때까지 고친다. warnings도 가능한 한 없앤다.
 4. 통과하면 saveDraft로 저장한다. (발행은 사람이 대시보드에서 검토 후 한다)
 

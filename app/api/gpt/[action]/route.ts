@@ -47,7 +47,7 @@ const SPEC = {
   servers: [{ url: 'https://loov.co.kr' }],
   paths: {
     '/api/gpt/guide': { get: { operationId: 'getWritingGuide', summary: '작성 지침 받기. 글 시작 전에 반드시 호출', 'x-openai-isConsequential': false, parameters: [{ name: 'keyword', in: 'query', required: false, schema: { type: 'string' } }], responses: { '200': { description: 'OK' } } } },
-    '/api/gpt/research': post('researchKeyword', '연관·롱테일 키워드, 네이버 상위 글/블로그/뉴스/지식인 주소, 스톡 이미지 후보', { keyword: { type: 'string' }, image_query_en: { type: 'string', description: '스톡 이미지 후보가 필요할 때 영어 검색어' } }, ['keyword']),
+    '/api/gpt/research': post('researchKeyword', '연관·롱테일 키워드와 월간 검색량·경쟁도, 네이버 상위 글/블로그/뉴스/지식인 주소, 스톡 이미지 후보', { keyword: { type: 'string' }, image_query_en: { type: 'string', description: '스톡 이미지 후보가 필요할 때 영어 검색어' } }, ['keyword']),
     '/api/gpt/page': post('readPage', '웹페이지 본문 텍스트와 이미지 주소 읽기(직접 브라우징이 막힐 때 백업)', { url: { type: 'string' } }, ['url']),
     '/api/gpt/validate': post('validateDraft', '초안의 형태 검사. errors가 비어야 저장 가능', draftProps, ['title', 'content_html']),
     '/api/gpt/draft': post('saveDraft', '검사 통과한 글을 초안으로 저장(이미지 재호스팅 포함). article_id를 주면 그 초안을 수정', { ...draftProps, article_id: { type: 'string' } }, ['keyword', 'title', 'meta_description', 'content_html']),

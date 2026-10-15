@@ -16,7 +16,7 @@ const draft = {
 };
 const TOOLS = [
   { name: 'getWritingGuide', action: 'guide', description: '작성 지침 받기. 글 시작 전에 반드시 호출', readOnly: true, props: { keyword: str('주제 키워드') }, required: [] as string[] },
-  { name: 'researchKeyword', action: 'research', description: '연관·롱테일 키워드, 네이버 상위 글/블로그/뉴스/지식인 주소, 스톡 이미지 후보', readOnly: true, props: { keyword: str('키워드'), image_query_en: str('스톡 이미지 후보용 영어 검색어') }, required: ['keyword'] },
+  { name: 'researchKeyword', action: 'research', description: '연관·롱테일 키워드와 월간 검색량·경쟁도, 네이버 상위 글/블로그/뉴스/지식인 주소, 스톡 이미지 후보', readOnly: true, props: { keyword: str('키워드'), image_query_en: str('스톡 이미지 후보용 영어 검색어') }, required: ['keyword'] },
   { name: 'readPage', action: 'page', description: '웹페이지 본문 텍스트와 이미지 주소 읽기', readOnly: true, props: { url: str('주소') }, required: ['url'] },
   { name: 'validateDraft', action: 'validate', description: '초안의 형태 검사. errors가 비어야 저장 가능', readOnly: true, props: draft, required: ['title', 'content_html'] },
   { name: 'saveDraft', action: 'draft', description: '검사 통과한 글을 초안으로 저장(이미지 재호스팅 포함). article_id를 주면 그 초안을 수정', readOnly: false, props: { ...draft, article_id: str('수정할 초안 id') }, required: ['keyword', 'title', 'meta_description', 'content_html'] },
