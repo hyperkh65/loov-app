@@ -62,7 +62,8 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
 const MIN_GAP_MS: Record<SnsGroup, number> = {
   // 2026-10-03 사용자 확정: 모든 계정 30분 단위
   default: 30 * 60 * 1000,
-  ads_default: 30 * 60 * 1000,
+  // 쿠팡·토스가 같은 계정을 번갈아 쓰려고 60분 주기를 30분 어긋나게 돌림 — 실행 지터로 29분대에 걸려도 통과하도록 25분 (2026-10-15)
+  ads_default: 25 * 60 * 1000,
   aboda_miracool: 30 * 60 * 1000,
   aboda: 30 * 60 * 1000,
   twodays: 30 * 60 * 1000,

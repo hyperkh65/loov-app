@@ -154,6 +154,10 @@ ${refBlock}
   let out = build(await generateText(prompt, 'qwen3', undefined, undefined, undefined, undefined, { ollamaOnly: true }));
   // Groq(Qwen)가 외국어를 섞으면 OpenRouter로 1회 재생성
   if (out.foreign.length) out = build(await generateText(prompt, 'openrouter'));
+  // 그래도 남으면 걸린 단어만 지목해서 한국어로 고쳐 쓰게 1회 수선 (같은 프롬프트 재생성은 같은 단어를 또 흘림)
+  if (out.foreign.length) {
+    out = build(await generateText(`아래 HTML 블로그 글에 외국어(영어 등) 단어가 섞여 있습니다. 다음 단어를 모두 자연스러운 한국어로 바꾸거나(고유명사는 한글 표기) 문장을 고쳐 쓰세요: ${out.foreign.join(', ')}\n나머지 내용과 HTML 태그 구조는 그대로 두고, 첫 줄 <!--TITLE: ...--> 주석을 포함한 HTML 전체만 출력하세요. 설명·코드블록 금지.\n\n<!--TITLE: ${out.title}-->\n${out.content}`, 'openrouter'));
+  }
   if (out.foreign.length) throw new Error(`발행 차단(본문에 외국어 단어): ${out.foreign.slice(0, 5).join(', ')}`);
   const { title } = out;
   let content = out.content;
