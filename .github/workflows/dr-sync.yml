@@ -1,0 +1,75 @@
+name: DR Sync (cloud -> hy65 self-hosted)
+
+on:
+  push:
+    branches: [dr-sync]
+  workflow_dispatch:
+
+env:
+  BACKUP_DIR: /volume1/docker/supabase-backup
+  DB_HOST: aws-1-ap-southeast-1.pooler.supabase.com
+  DB_USER: postgres.uhxkmprscovrnfigasia
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgres 17 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gnupg curl lsb-release
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Dump cloud DB (full backup + auth data + public schema)
+        run: |
+          export PATH=/usr/lib/postgresql/17/bin:$PATH
+          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+          CONN="host=${{ env.DB_HOST }} port=5432 dbname=postgres user=${{ env.DB_USER }} sslmode=require"
+          TS=$(date +%Y%m%d_%H%M%S)
+          mkdir out
+          pg_dump "$CONN" --no-owner --no-privileges --clean --if-exists -n public -n auth -n storage | gzip > out/supabase_backup_$TS.sql.gz
+          pg_dump "$CONN" --no-owner --no-privileges --data-only --column-inserts -t auth.users -t auth.identities > out/sync_auth.sql
+          pg_dump "$CONN" --no-owner --no-privileges --clean --if-exists -n public | gzip > out/sync_public.sql.gz
+          echo "cloud auth.users: $(psql "$CONN" -Atc 'select count(*) from auth.users')"
+          echo "cloud auth.identities: $(psql "$CONN" -Atc 'select count(*) from auth.identities')"
+          psql "$CONN" -Atc "select count(*) from information_schema.tables where table_schema='public'"
+          ls -lh out
+
+      - name: Upload to hy65
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          source: "out/*"
+          target: ${{ env.BACKUP_DIR }}
+          strip_components: 1
+
+      - name: Restore into self-hosted Supabase (auth first, then public)
+        uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          command_timeout: 30m
+          envs: NAS2_PASS
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            B=/volume1/docker/supabase-backup
+            PSQL="/usr/local/bin/docker exec -i supabase-db psql -U postgres -d postgres"
+            echo "== auth restore (single transaction)"
+            echo "$NAS2_PASS" | sudo -S sh -c "(echo 'truncate auth.users cascade;'; cat $B/sync_auth.sql) | $PSQL -v ON_ERROR_STOP=1 -1 -q 2>&1 | tail -15"
+            echo "== public restore"
+            echo "$NAS2_PASS" | sudo -S sh -c "gzip -dc $B/sync_public.sql.gz | $PSQL -q 2>&1 | grep -iE 'error|fatal' | head -15"
+            echo "== self-hosted counts"
+            echo "$NAS2_PASS" | sudo -S sh -c "$PSQL -Atc \"select 'auth.users', count(*) from auth.users union all select 'auth.identities', count(*) from auth.identities union all select 'public tables', count(*) from information_schema.tables where table_schema='public'\" 2>&1"
+            rm -f $B/sync_auth.sql $B/sync_public.sql.gz
+            find $B -name 'supabase_backup_*.sql.gz' -mtime +30 -delete
+            ls -lh $B | tail -4
