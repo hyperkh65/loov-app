@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
   if (!inboxAuthed(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const admin = createAdminClient();
   try {
-    const conn = await youtubeAccess(admin);
     const f = await req.formData();
+    const conn = await youtubeAccess(admin, undefined, String(f.get('channel') || ''));
     const video = f.get('video') as File | null;
     if (!video || typeof video === 'string') return NextResponse.json({ error: 'video 없음' }, { status: 400 });
     const str = (k: string) => String(f.get(k) || '');
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       status: r.scheduled ? 'scheduled' : 'uploaded', scheduled_at: r.scheduled, uploaded_at: new Date().toISOString(),
       video_id: r.videoId, video_url: r.url, error: null, updated_at: new Date().toISOString(),
     });
-    return NextResponse.json({ ok: true, videoId: r.videoId, url: r.url, scheduled: r.scheduled });
+    return NextResponse.json({ ok: true, videoId: r.videoId, url: r.url, scheduled: r.scheduled, channel: conn.channelName });
   } catch (e) {
     if (e instanceof ShortsError) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json({ error: String((e as Error).message || e) }, { status: 500 });
