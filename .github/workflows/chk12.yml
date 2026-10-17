@@ -1,0 +1,28 @@
+name: chk12
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk12.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 79
+          timeout: 20s
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            IMG=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(alpine|busybox|ubuntu|debian)' | head -1)
+            [ -z "$IMG" ] && IMG=$(docker inspect loov-app --format '{{.Config.Image}}')
+            timeout 90 docker run --rm --pull=never -v /usr/syno/etc/www:/w:ro -v /var/log/nginx:/l:ro --entrypoint sh "$IMG" -c '
+              D=/w/certificate/ReverseProxy_f98c40f9-3242-4fae-89a5-9c6649bbd6a5
+              echo "=== RESULT"; ls -la --time-style=long-iso $D
+              echo "=== PUBLIC CERT f454ff3a"; cat $D/f454ff3a-0823-49ec-849c-c6f5d8d06a6b.pem
+              echo "=== PUBLIC CERT 0204a85c"; cat $D/0204a85c-14ce-462c-84f3-637bdf2d64c7.pem
+              echo "=== nginx error log"; ls -la --time-style=long-iso /l | head; grep -hiE "emerg|ssl|cert|alert|crit" /l/error.log 2>/dev/null | tail -30
+            '
