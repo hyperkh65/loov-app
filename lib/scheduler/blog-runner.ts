@@ -20,11 +20,11 @@ import type { Platform, TokenPlatform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
 
 export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = '', opts: { accountIds?: string[]; cafe?: boolean; cafeTarget?: string } = {}): Promise<void> {
-  // 제목만 캡션으로 올리면 AI 티 나고 클릭할 이유가 없음 — 채널별 훅 캡션 생성(60초 넘으면 제목으로 폴백)
+  // 제목만 캡션으로 올리면 AI 티 나고 클릭할 이유가 없음 — 채널별 훅 캡션 생성(120초 넘으면 스킵)
   const summary = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const captions = await Promise.race([
     buildHookCaptions(title, summary),
-    new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 60_000)),
+    new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 120_000)),
   ]).catch(() => ({} as Record<string, string>));
   console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(captions).length ? getLastProvider() : '실패→SNS 발행 스킵'}`);
   const supabase = createAdminClient();

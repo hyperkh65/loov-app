@@ -30,8 +30,8 @@ export const AI_PROVIDER_INFO: Record<AIProvider, { label: string; models: strin
       'deepseek/deepseek-r1',                       // DeepSeek R1 · 추론 특화
       'microsoft/phi-4',                            // Phi 4 · 초경량
       // ── FREE (무료) ──────────────────────────────────
-      'qwen/qwen3-235b-a22b:free',                  // Qwen 3 235B FREE
-      'meta-llama/llama-3.3-70b-instruct:free',     // Llama 3.3 70B FREE
+      'nvidia/nemotron-3-super-120b-a12b:free',     // Nemotron Super 120B FREE
+      'google/gemma-4-31b-it:free',                 // Gemma 4 31B FREE
       'deepseek/deepseek-r1:free',                  // DeepSeek R1 FREE
       'google/gemma-3-27b-it:free',                 // Gemma 3 27B FREE
       'mistralai/mistral-7b-instruct:free',         // Mistral 7B FREE

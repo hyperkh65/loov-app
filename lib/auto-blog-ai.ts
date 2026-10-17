@@ -228,7 +228,7 @@ async function callNvidia(apiKey: string, prompt: string): Promise<string> {
 
 
 
-async function callOpenRouter(apiKey: string, model: string, prompt: string): Promise<string> {
+async function callOpenRouter(apiKey: string, model: string, prompt: string, timeoutMs = 90_000): Promise<string> {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -243,7 +243,7 @@ async function callOpenRouter(apiKey: string, model: string, prompt: string): Pr
       stream: false,
       max_tokens: 8192,
     }),
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
   const data = await res.json();
@@ -570,7 +570,7 @@ async function generateTextRaw(
     try { const r = await callGemini(geminiKeys, prompt); lastProvider = 'gemini'; return r; }
     catch (e) { errors.push(`Gemini: ${e}`); return false; }
   };
-  const tryOpenRouter = async (models: string[] = OPENROUTER_MODELS) => {
+  const tryOpenRouter = async (models: string[] = OPENROUTER_MODELS, timeoutMs?: number) => {
     // 다중 키 수집 (OPENROUTER_API_KEYS 배열 + 레거시 단일 키)
     const orKeys: string[] = [];
     if (clientOpenrouterKey) orKeys.push(clientOpenrouterKey);
@@ -589,7 +589,7 @@ async function generateTextRaw(
     const firstErrors: string[] = [];
     for (const key of orKeys) {
       for (const model of models) {
-        try { const r = await callOpenRouter(key, model, prompt); lastProvider = 'openrouter/' + model; return r; }
+        try { const r = await callOpenRouter(key, model, prompt, timeoutMs); lastProvider = 'openrouter/' + model; return r; }
         catch (e) {
           const msg = String(e);
           // 429(한도 초과) → 다음 키로, 그 외 오류 → 다음 모델로
@@ -645,7 +645,7 @@ async function generateTextRaw(
 
   // SNS 문구 전용 — 품질 순: OpenRouter nemotron-ultra → Gemini → Groq(Qwen 27B는 외국어 혼입·지어내기가 잦아 최후 수단). 전부 실패하면 throw
   if (preferModel === 'sns') {
-    const r = clean(await tryOpenRouter(OPENROUTER_FALLBACK_MODELS.slice(0, 1)) || await tryGemini() || await tryGroq());
+    const r = clean(await tryOpenRouter(OPENROUTER_FALLBACK_MODELS.slice(0, 1), 35_000) || await tryGemini() || await tryGroq());
     if (r) return r;
     throw new Error(`SNS 문구 생성 모두 실패\n${errors.join(' | ')}`);
   }

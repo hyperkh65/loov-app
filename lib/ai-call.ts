@@ -33,8 +33,8 @@ interface FallbackEntry {
 
 const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
   { provider: 'groq',       model: 'qwen/qwen3.8-27b' },
-  { provider: 'openrouter', model: 'qwen/qwen3-235b-a22b:free' },
-  { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free' },
+  { provider: 'openrouter', model: 'google/gemma-4-31b-it:free' },
   { provider: 'gemini',     model: 'gemini-flash-latest' },
   { provider: 'claude',     model: 'claude-haiku-4-5-20251001' },
   { provider: 'gpt4o',      model: 'gpt-4o-mini' },
@@ -155,7 +155,7 @@ function defaultModel(provider: string): string {
     case 'gpt4o':       return 'gpt-4o';
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
-    case 'openrouter':  return 'qwen/qwen3-235b-a22b:free';
+    case 'openrouter':  return 'nvidia/nemotron-3-super-120b-a12b:free';
     case 'groq':        return 'qwen/qwen3.8-27b';
     case 'ollama':      return 'qwen3.5';
     default:            return 'qwen3.5';
