@@ -17,14 +17,7 @@ jobs:
           command_timeout: 2m
           script: |
             export PATH=/usr/syno/sbin:/usr/syno/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin:$PATH
-            echo "uptime: $(uptime)"
-            echo "--- local 443 SNI"
-            for h in loov.co.kr gw.ynk2014.com; do echo "$h: $(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername $h 2>/dev/null | openssl x509 -noout -subject 2>&1)"; done
-            echo "--- listeners 80/443"
-            (netstat -tln 2>/dev/null || ss -tln) | grep -E ":(80|443|5001) " 
-            echo "--- nginx conf (readable parts)"
-            ls -la /etc/nginx/ /etc/nginx/conf.d 2>&1 | head -30
-            grep -rn "ssl_certificate\b\|ssl_certificate " /etc/nginx/ 2>/dev/null | head -10
-            grep -rln "loov.co.kr" /etc/nginx/ /usr/local/etc/nginx 2>/dev/null | head
-            echo "--- docker proxies"
-            docker ps --format '{{.Names}} {{.Ports}}' | grep -E "80|443" | head
+            ls -la --time-style=full-iso /usr/local/etc/nginx/conf.d/ 2>&1 | head -20
+            echo "=== loov.co.kr.conf"; cat /usr/local/etc/nginx/conf.d/loov.co.kr.conf 2>&1 | head -60
+            echo "=== w3conf"; cat /usr/local/etc/nginx/sites-available/42df4b5e-02bd-4bf6-a5ae-202848823f16.w3conf 2>&1 | head -40
+            echo "=== ssl lines in nginx.conf"; grep -nE "ssl|server_name|include|default_server" /etc/nginx/nginx.conf | head -40
