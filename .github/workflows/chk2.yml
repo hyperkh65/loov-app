@@ -24,5 +24,5 @@ jobs:
             select to_char(max(posted_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last_any, count(*) from public.sns_post_logs;
             select enabled from public.bossai_auto_settings;
             SQL
-            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/chk2.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off"
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/chk2.sql | /usr/local/bin/docker exec -i supabase-db psql -U postgres -d postgres -P pager=off"
             rm -f /tmp/chk2.sql
