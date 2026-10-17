@@ -1,0 +1,28 @@
+name: chk2
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk2.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          port: 79
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          envs: NAS2_PASS
+          script: |
+            cat > /tmp/chk2.sql <<'SQL'
+            select to_char(posted_at at time zone 'Asia/Seoul','MM-DD HH24:MI') as at, platform, status, left(coalesce(error_message,''),100) as note from public.sns_post_logs where posted_at > now() - interval '14 hours' order by posted_at desc limit 40;
+            select platform, is_active, platform_username, to_char(updated_at at time zone 'Asia/Seoul','MM-DD HH24:MI') as upd from public.sns_connections order by platform, platform_username;
+            select to_char(max(posted_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last_any, count(*) from public.sns_post_logs;
+            select enabled from public.bossai_auto_settings;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/chk2.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off"
+            rm -f /tmp/chk2.sql
