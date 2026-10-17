@@ -8,16 +8,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
         with:
-          host: hy64.synology.me
-          username: urjent
-          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          host: 2days.kr
           port: 79
-          timeout: 20s
-          command_timeout: 3m
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          envs: NAS2_PASS
           script: |
-            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
-            echo START
-            timeout 40 docker exec loov-app node -e "fetch('https://loov.co.kr/api/sns/post-now',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(async r=>console.log('SELF',r.status,(await r.text()).slice(0,120))).catch(e=>console.log('SELFERR',e.message,e.cause&&e.cause.code))" 2>&1 | head -5
-            timeout 40 docker exec loov-app node -e "fetch('https://sb.2days.kr/auth/v1/health').then(r=>console.log('SB',r.status)).catch(e=>console.log('SBERR',e.message,e.cause&&e.cause.code))" 2>&1 | head -3
-            echo END
+            cat > /tmp/chk3.sql <<'SQL'
+            select platform, platform_username, (access_token is not null and length(access_token)>10) as has_token, (refresh_token is not null) as has_refresh, token_expires_at at time zone 'Asia/Seoul' as exp from public.sns_connections order by platform, platform_username;
+            select c.relname, c.relrowsecurity as rls, (select count(*) from pg_policy p where p.polrelid=c.oid) as policies from pg_class c where c.relname in ('sns_connections','sns_post_logs','bossai_auto_articles','backlink_settings') and c.relkind='r';
+            select id, status, to_char(updated_at at time zone 'Asia/Seoul','MM-DD HH24:MI') upd, sns_platforms::text, left(published_urls::text,200) urls from public.bossai_auto_articles where updated_at > now() - interval '14 hours' order by updated_at desc limit 8;
+            select table_name from information_schema.tables where table_schema='public' and (table_name like '%backlink%' or table_name like '%tumblr%' or table_name like '%pinterest%');
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/chk3.sql | /usr/local/bin/docker exec -i supabase-db psql -U postgres -d postgres -P pager=off"
+            rm -f /tmp/chk3.sql
