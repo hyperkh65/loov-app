@@ -1,0 +1,18 @@
+name: chk3
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk3.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 79
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            docker logs --since 180m loov-app 2>&1 | grep -iE "post-now|sns|instagram|telegram|bluesky|tumblr|pinterest|backlink|publish|fetch failed|ECONN|permission|401|error" | cut -c1-300 | tail -60
