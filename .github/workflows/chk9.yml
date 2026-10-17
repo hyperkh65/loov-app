@@ -1,0 +1,26 @@
+name: chk9
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk9.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 79
+          timeout: 20s
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            IMG=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(alpine|busybox|ubuntu|debian)' | head -1)
+            [ -z "$IMG" ] && IMG=$(docker inspect loov-app --format '{{.Config.Image}}')
+            timeout 90 docker run --rm --pull=never -v /usr/syno/etc/www:/w:ro -v /usr/local/etc/nginx:/n:ro --entrypoint sh "$IMG" -c '
+              echo "=== SYS cert.conf"; cat /w/certificate/system_default/cert.conf
+              echo "=== loov block"; sed -n "505,560p" /n/sites-available/42df4b5e-02bd-4bf6-a5ae-202848823f16.w3conf
+              echo "=== ReverseProxy cert.conf"; for d in /w/certificate/ReverseProxy_*; do echo "-- $d"; cat $d/cert.conf; done
+            '
