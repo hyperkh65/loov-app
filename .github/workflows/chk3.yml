@@ -13,6 +13,10 @@ jobs:
           username: urjent
           key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
           port: 79
+          timeout: 20s
+          command_timeout: 2m
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
-            docker logs --since 180m loov-app 2>&1 | grep -iE "post-now|sns|instagram|telegram|bluesky|tumblr|pinterest|backlink|publish|fetch failed|ECONN|permission|401|error" | cut -c1-300 | tail -60
+            echo START
+            timeout 60 docker logs --since 120m --tail 3000 loov-app 2>&1 | grep -iE "post-now|sns|instagram|telegram|bluesky|tumblr|pinterest|backlink|fetch failed|ECONN|permission|401" | cut -c1-300 | tail -50
+            echo END
