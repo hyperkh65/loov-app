@@ -1,0 +1,26 @@
+name: autoon
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/autoon.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/ao.sql <<'SQL'
+            update public.bossai_auto_settings set enabled = true where user_id = '0a7e3d43-0159-411e-b171-0aebb70a4893';
+            select 'AUTO' k, user_id, enabled from public.bossai_auto_settings;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/ao.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            rm -f /tmp/ao.sql
