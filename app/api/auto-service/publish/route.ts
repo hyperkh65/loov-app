@@ -335,7 +335,9 @@ export async function POST(req: NextRequest) {
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get('host')}`;
   const results: Record<string, { success: boolean; url?: string; error?: string }> = {};
-  const cookieHeader = req.headers.get('cookie') || '';
+  // 내부 호출엔 현재 Supabase 프로젝트의 인증 쿠키만 전달 — 브라우저에 남은 옛 프로젝트 쿠키까지 넘기면 헤더가 ~8KB를 넘어 프록시가 400을 냄
+  const sbPrefix = `sb-${new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://x').hostname.split('.')[0]}-`;
+  const cookieHeader = (req.headers.get('cookie') || '').split(/;\s*/).filter(c => c.startsWith(sbPrefix)).join('; ');
 
   for (const platform of blog_platforms) {
     try {
@@ -605,7 +607,7 @@ export async function POST(req: NextRequest) {
               results['sns_instagram'] = { success: false, error: data.error || `HTTP ${res.status}` };
             }
           } catch {
-            results['sns_instagram'] = { success: false, error: `서버 오류 (${res.status})` };
+            results['sns_instagram'] = { success: false, error: `서버 오류 (${res.status}) ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)}` };
           }
         } catch (err) {
           results['sns_instagram'] = { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -640,7 +642,7 @@ export async function POST(req: NextRequest) {
             }
           } catch {
             for (const p of otherPlatforms) {
-              results[`sns_${p}`] = { success: false, error: `서버 오류 (${res.status})` };
+              results[`sns_${p}`] = { success: false, error: `서버 오류 (${res.status}) ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)}` };
             }
           }
         } catch (err) {
