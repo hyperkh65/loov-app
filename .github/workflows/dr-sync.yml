@@ -1,8 +1,6 @@
 name: DR Sync (cloud -> hy65 self-hosted)
 
 on:
-  push:
-    branches: [dr-sync]
   workflow_dispatch:
 
 env:
