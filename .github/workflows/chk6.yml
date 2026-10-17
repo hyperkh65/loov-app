@@ -17,10 +17,8 @@ jobs:
           command_timeout: 2m
           script: |
             export PATH=/usr/syno/sbin:/usr/syno/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin:$PATH
-            cd /usr/local/etc/nginx
-            echo "=== files mentioning loov.co.kr (follow symlinks)"
-            grep -Rl "loov.co.kr" conf.d conf.d-available sites-available sites-enabled 2>/dev/null | head -10
-            f=$(grep -Rl "server_name.*loov.co.kr" conf.d conf.d-available sites-available 2>/dev/null | grep -v "^conf.d/loov.co.kr.conf" | head -1)
-            echo "=== 443 block file: $f"; [ -n "$f" ] && ls -la --time-style=full-iso "$f" && cat "$f" | head -50
-            echo "=== cert references"; grep -Rhn "ssl_certificate" conf.d conf.d-available sites-available 2>/dev/null | sort | uniq -c | sort -rn | head -10
-            echo "=== conf.d recent changes"; find conf.d conf.d-available sites-available -maxdepth 1 -newermt "2026-10-17 20:00" 2>/dev/null | head -10
+            cd /usr/local/etc/nginx/sites-enabled
+            ls -la --time-style=full-iso server.ReverseProxy.conf
+            echo "=== summary"; grep -cE "^\s*server \{" server.ReverseProxy.conf; grep -nE "listen .*443" server.ReverseProxy.conf | wc -l
+            echo "=== loov block"; awk '/^server \{/{b=""; keep=0} {b=b"\n"$0} /server_name.*loov\.co\.kr/{keep=1} /^}/{if(keep) print b; keep=0}' server.ReverseProxy.conf | head -60
+            echo "=== all server_name + listen 443 lines (first 25)"; grep -nE "server_name|listen .*443|ssl_certificate|include .*cert" server.ReverseProxy.conf | head -30
