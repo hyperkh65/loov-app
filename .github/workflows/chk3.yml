@@ -18,10 +18,6 @@ jobs:
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             echo START
-            docker ps --format '{{.Names}} {{.Status}}' | grep -i loov
-            timeout 90 docker logs --tail 1500 loov-app > /tmp/l.txt 2>&1; wc -l /tmp/l.txt
-            grep -iE "post-now|sns|instagram|telegram|bluesky|tumblr|pinterest|backlink|fetch failed|ECONN|permission|401" /tmp/l.txt | cut -c1-300 | tail -40
-            echo ---LASTLINES
-            tail -8 /tmp/l.txt | cut -c1-200
-            rm -f /tmp/l.txt
+            timeout 40 docker exec loov-app node -e "fetch('https://loov.co.kr/api/sns/post-now',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(async r=>console.log('SELF',r.status,(await r.text()).slice(0,120))).catch(e=>console.log('SELFERR',e.message,e.cause&&e.cause.code))" 2>&1 | head -5
+            timeout 40 docker exec loov-app node -e "fetch('https://sb.2days.kr/auth/v1/health').then(r=>console.log('SB',r.status)).catch(e=>console.log('SBERR',e.message,e.cause&&e.cause.code))" 2>&1 | head -3
             echo END
