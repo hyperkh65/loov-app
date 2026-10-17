@@ -1,0 +1,31 @@
+name: chk10
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk10.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 79
+          timeout: 20s
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            IMG=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(alpine|busybox|ubuntu|debian)' | head -1)
+            [ -z "$IMG" ] && IMG=$(docker inspect loov-app --format '{{.Config.Image}}')
+            timeout 90 docker run --rm --pull=never -v /usr/local/etc/nginx:/n:ro --entrypoint sh "$IMG" -c '
+              echo "=== RESULT"
+              ls -la --time-style=long-iso /n/sites-available /n/sites-enabled /n/conf.d 2>&1 | head -60
+              echo "=== blocks: file|listen|server_name|cert-include"
+              for f in $(find -L /n -type f \( -name "*.conf" -o -name "*.w3conf" -o -name "webservice_*" \) 2>/dev/null); do
+                awk -v F="$f" "/^[[:space:]]*server[[:space:]]*\\{/{L=\"\";N=\"\";C=\"\"} /listen /{L=L\$0\";\"} /server_name/{N=\$0} /include .*certificate/{C=\$2} /^}/{ if(N!=\"\") print F\"|\"L\"|\"N\"|\"C; N=\"\"}" "$f"
+              done | sed -E "s/[[:space:]]+/ /g" | grep -E "443" | head -80
+              echo "=== loov.co.kr anywhere"; grep -rln "loov.co.kr" /n 2>/dev/null
+              echo "=== default 443 server"; grep -rn "default_server" /n 2>/dev/null | head
+            '
