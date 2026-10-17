@@ -1,0 +1,28 @@
+name: audit3
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/audit3.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/au3.sql <<'SQL'
+            \echo == naver pending
+            select id, status, job_type, left(title,40) title, to_char(created_at at time zone 'Asia/Seoul','MM-DD HH24:MI') at from public.naver_publish_jobs where status in ('pending','failed') order by created_at desc limit 8;
+            select id, left(coalesce(error_message,''),160) err from public.naver_publish_jobs where status='failed' order by created_at desc limit 5;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/au3.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            rm -f /tmp/au3.sql
