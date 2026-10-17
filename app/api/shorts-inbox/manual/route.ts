@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
   const admin = createAdminClient();
   try {
-    const conn = await youtubeAccess(admin, user.id);
     const f = await req.formData();
+    const conn = await youtubeAccess(admin, user.id, String(f.get('channel') || ''));
     const video = f.get('video') as File | null;
     if (!video || typeof video === 'string') return NextResponse.json({ error: '영상 파일을 선택하세요' }, { status: 400 });
     const str = (k: string) => String(f.get(k) || '');

@@ -3,17 +3,20 @@ import type { NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 
 type Admin = ReturnType<typeof createAdminClient>;
-export type ShortsConn = { user_id: string; accessToken: string };
+export type ShortsConn = { user_id: string; accessToken: string; channelId: string; channelName: string };
 export class ShortsError extends Error { constructor(msg: string, public status = 502) { super(msg); } }
 
 // LOOV에 연결된 YouTube(userId 지정 시 그 사용자의 것, 없으면 OWNER_USER_ID/가장 최근 것)의 액세스 토큰. 만료 시 갱신.
-export async function youtubeAccess(admin: Admin, userId?: string): Promise<ShortsConn> {
-  let q = admin.from('sns_connections').select('user_id, access_token, refresh_token, extra')
+// channel: 채널 ID(UC…) 또는 채널 이름. 채널이 여러 개 연결돼 있을 때 지정(미지정이면 가장 최근 연결).
+export async function youtubeAccess(admin: Admin, userId?: string, channel?: string): Promise<ShortsConn> {
+  let q = admin.from('sns_connections').select('user_id, access_token, refresh_token, extra, platform_user_id, platform_username')
     .eq('platform', 'youtube').eq('is_active', true).order('updated_at', { ascending: false }).limit(1);
   const uid = userId || process.env.OWNER_USER_ID;
   if (uid) q = q.eq('user_id', uid);
+  const ch = (channel || '').trim();
+  if (ch) q = ch.startsWith('UC') ? q.eq('platform_user_id', ch) : q.ilike('platform_username', ch);
   const { data: conn } = await q.maybeSingle();
-  if (!conn) throw new ShortsError('LOOV에 YouTube가 연결돼 있지 않아요', 400);
+  if (!conn) throw new ShortsError(ch ? `LOOV에 '${ch}' 채널이 연결돼 있지 않아요` : 'LOOV에 YouTube가 연결돼 있지 않아요', 400);
 
   let accessToken = conn.access_token as string;
   const exp = conn.extra?.expires_at ? new Date(conn.extra.expires_at) : null;
@@ -26,9 +29,9 @@ export async function youtubeAccess(admin: Admin, userId?: string): Promise<Shor
     if (!r.ok) throw new ShortsError('토큰 갱신 실패: ' + (d.error_description || d.error));
     accessToken = d.access_token;
     await admin.from('sns_connections').update({ access_token: accessToken, extra: { ...conn.extra, expires_at: new Date(Date.now() + 3500_000).toISOString() } })
-      .eq('user_id', conn.user_id).eq('platform', 'youtube');
+      .eq('user_id', conn.user_id).eq('platform', 'youtube').eq('platform_user_id', conn.platform_user_id);
   }
-  return { user_id: conn.user_id, accessToken };
+  return { user_id: conn.user_id, accessToken, channelId: conn.platform_user_id || '', channelName: conn.platform_username || '' };
 }
 
 // publishAt(ISO)이 1분 이상 미래면 비공개로 올리고 YouTube가 그 시각에 공개(예약).
