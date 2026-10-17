@@ -64,5 +64,8 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify({ snippet: { videoId: vid, topLevelComment: { snippet: { textOriginal: comment } } } }),
   }).catch(() => {}); // 댓글 권한(force-ssl)이 없어도 업로드는 성공 처리
 
+  // 목록용 기록: 별도 테이블 없이 sns_post_logs 재사용 (error_message에 제목/예약 메타 JSON)
+  await admin.from('sns_post_logs').insert({ user_id: conn.user_id, platform: 'shorts-inbox', status: 'success', platform_post_id: vid, error_message: JSON.stringify({ title, scheduled: when || null }) });
+
   return NextResponse.json({ ok: true, videoId: vid, url: `https://youtube.com/shorts/${vid}`, scheduled: when || null });
 }
