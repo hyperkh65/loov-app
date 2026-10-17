@@ -64,6 +64,7 @@ jobs:
           envs: NAS2_PASS
           script: |
             B=/volume1/docker/supabase-backup
+            echo "$NAS2_PASS" | sudo -S /usr/local/bin/docker logs --tail 15 supabase-storage 2>&1 | cut -c1-400
             rm -rf $B/storage_in && mkdir $B/storage_in && tar xzf $B/storage.tgz -C $B/storage_in
             cat > $B/storage_load.py <<'PY'
             import json,os,re,sys,urllib.parse,urllib.request
@@ -76,9 +77,10 @@ jobs:
                 r=urllib.request.Request(u,data=open(f"{d}/files/{m['i']}",'rb').read(),method='POST',
                     headers={'Authorization':'Bearer '+key,'apikey':key,'Content-Type':m['type'],'x-upsert':'true'})
                 try: urllib.request.urlopen(r,timeout=300); ok+=1
-                except Exception as e: bad+=1; print('FAIL',m['bucket'],m['name'],e)
+                except Exception as e: bad+=1; print('FAIL',m['bucket'],m['name'],e,getattr(e,'read',lambda:b'')()[:300])
             print('uploaded',ok,'failed',bad)
             PY
             echo "$NAS2_PASS" | sudo -S python3 $B/storage_load.py 2>&1 | tail -30
             echo "$NAS2_PASS" | sudo -S /usr/local/bin/docker exec -i supabase-db psql -U postgres -d postgres -Atc "select bucket_id, count(*) from storage.objects group by 1" 2>&1
+            echo "$NAS2_PASS" | sudo -S /usr/local/bin/docker logs --tail 15 supabase-storage 2>&1 | cut -c1-400
             rm -rf $B/storage_in $B/storage.tgz $B/storage_load.py
