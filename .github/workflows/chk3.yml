@@ -14,9 +14,14 @@ jobs:
           key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
           port: 79
           timeout: 20s
-          command_timeout: 2m
+          command_timeout: 3m
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             echo START
-            timeout 60 docker logs --since 120m --tail 3000 loov-app 2>&1 | grep -iE "post-now|sns|instagram|telegram|bluesky|tumblr|pinterest|backlink|fetch failed|ECONN|permission|401" | cut -c1-300 | tail -50
+            docker ps --format '{{.Names}} {{.Status}}' | grep -i loov
+            timeout 90 docker logs --tail 1500 loov-app > /tmp/l.txt 2>&1; wc -l /tmp/l.txt
+            grep -iE "post-now|sns|instagram|telegram|bluesky|tumblr|pinterest|backlink|fetch failed|ECONN|permission|401" /tmp/l.txt | cut -c1-300 | tail -40
+            echo ---LASTLINES
+            tail -8 /tmp/l.txt | cut -c1-200
+            rm -f /tmp/l.txt
             echo END
