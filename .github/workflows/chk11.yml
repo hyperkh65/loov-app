@@ -1,0 +1,29 @@
+name: chk11
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk11.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 79
+          timeout: 20s
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            IMG=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(alpine|busybox|ubuntu|debian)' | head -1)
+            [ -z "$IMG" ] && IMG=$(docker inspect loov-app --format '{{.Config.Image}}')
+            timeout 90 docker run --rm --pull=never -v /usr/syno/etc/www:/w:ro -v /var/log/nginx:/l:ro --entrypoint sh "$IMG" -c '
+              D=/w/certificate/ReverseProxy_f98c40f9-3242-4fae-89a5-9c6649bbd6a5
+              echo "=== RESULT"; ls -la --time-style=long-iso $D
+              echo "=== CERT loov f454ff3a"; cat $D/f454ff3a-0823-49ec-849c-c6f5d8d06a6b.pem | head -60
+              echo "=== CERT loov 0204a85c"; head -c 3000 $D/0204a85c-14ce-462c-84f3-637bdf2d64c7.pem | grep -c BEGIN
+              echo "=== key files first line only"; head -1 $D/a7c5a0ee-1894-4f70-839f-420730a41a1e.pem; head -1 $D/0ec55ccf-66f2-48b5-929d-8fc2543f38b7.pem
+              echo "=== nginx error log tail"; ls -la --time-style=long-iso /l | head; grep -hiE "emerg|ssl|cert|alert|crit" /l/error.log 2>/dev/null | tail -30
+            '
