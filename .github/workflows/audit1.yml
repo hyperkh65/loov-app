@@ -1,0 +1,49 @@
+name: audit1
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/audit1.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/au.sql <<'SQL'
+            \echo == SNS 48h
+            select platform, status, count(*) n, to_char(max(posted_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last from public.sns_post_logs where posted_at > now() - interval '48 hours' group by 1,2 order by 1,2;
+            \echo == SNS 최근 실패
+            select platform, to_char(posted_at at time zone 'Asia/Seoul','MM-DD HH24:MI') at, left(error_message,150) note from public.sns_post_logs where status='failed' order by posted_at desc limit 12;
+            \echo == SNS 연결
+            select platform, is_active, platform_username, to_char(updated_at at time zone 'Asia/Seoul','MM-DD HH24:MI') upd from public.sns_connections order by 1,3;
+            \echo == 네이버 연결
+            select to_char(updated_at at time zone 'Asia/Seoul','MM-DD HH24:MI') upd, length(nid_aut) aut_len, length(nid_ses) ses_len from public.naver_connections;
+            \echo == 티스토리 연결
+            select to_char(updated_at at time zone 'Asia/Seoul','MM-DD HH24:MI') upd, length(tssession) len from public.tistory_connections;
+            \echo == 설정 키(길이만)
+            select k, length(v) len from public.app_settings, jsonb_each_text(settings) j(k,v) where k ~* '(KEY|TOKEN|NAVER|COOKIE|SECRET)' order by k;
+            \echo == 네이버 발행 작업
+            select status, count(*) n, to_char(max(created_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last from public.naver_publish_jobs group by 1;
+            select status, to_char(created_at at time zone 'Asia/Seoul','MM-DD HH24:MI') at, left(coalesce(error,''),120) err from public.naver_publish_jobs order by created_at desc limit 6;
+            \echo == 블로그 글 상태
+            select status, ai_model, count(*) n, to_char(max(created_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last from public.bossai_auto_articles where created_at > now() - interval '7 days' group by 1,2 order by 4 desc;
+            \echo == 스케줄/자동설정
+            select 'schedules' k, count(*) n, count(*) filter (where enabled) en from public.bossai_schedules;
+            select 'sched_logs' k, status, count(*) n, to_char(max(created_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last from public.bossai_schedule_logs where created_at > now()-interval '3 days' group by 2;
+            select 'sns_auto_jobs' k, status, count(*) n from public.bossai_sns_auto_jobs group by 2;
+            \echo == 카페/기타
+            select 'cafe_hist' k, count(*) n, to_char(max(created_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last from public.naver_cafe_history;
+            select 'shorts_jobs' k, count(*) n, to_char(max(updated_at) at time zone 'Asia/Seoul','MM-DD HH24:MI') last from public.shorts_jobs;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/au.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            rm -f /tmp/au.sql
