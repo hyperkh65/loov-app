@@ -1,0 +1,33 @@
+name: fixgrants
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/fixgrants.yml"]
+jobs:
+  g:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/fixgrants.sql <<'SQL'
+            GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+            GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+            GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+            GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated, service_role;
+            SELECT 'tables', count(*) FROM information_schema.tables WHERE table_schema='public';
+            SELECT 'youtube', platform_username FROM public.sns_connections WHERE platform='youtube';
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/fixgrants.sql | docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 2>&1 | tail -20"
+            rm -f /tmp/fixgrants.sql
