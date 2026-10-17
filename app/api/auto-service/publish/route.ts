@@ -976,6 +976,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const failedPosts = Object.entries(results).filter(([k, v]) => !v.success && (k.startsWith('sns_') || k.startsWith('backlink_')));
+  if (userId && failedPosts.length > 0) {
+    await supabase.from('sns_post_logs').insert(failedPosts.map(([k, v]) => ({
+      user_id: userId, platform: k.replace(/^sns_/, ''), status: 'failed', error_message: `[수동발행] ${v.error || '실패'}`.slice(0, 500),
+    })));
+  }
+
   const anySuccess = Object.values(results).some(r => r.success);
   const publishedUrls: Record<string, string> = {};
   for (const [k, v] of Object.entries(results)) {
