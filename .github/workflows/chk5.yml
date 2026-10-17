@@ -1,0 +1,24 @@
+name: chk5
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk5.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: hy64.synology.me
+          username: urjent
+          key: ${{ secrets.NAS_SSH_PRIVATE_KEY }}
+          port: 79
+          timeout: 20s
+          command_timeout: 2m
+          script: |
+            export PATH=/usr/syno/sbin:/usr/syno/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin:$PATH
+            echo "whoami=$(whoami)"; sudo -n true 2>&1 | head -1 && echo SUDO_OK
+            echo "--- nginx"; ps aux | grep -c "[n]ginx"; (synosystemctl get-active-status nginx 2>&1 || true) | head -3
+            echo "--- default cert"; ls -la /usr/syno/etc/certificate/_archive/ 2>&1 | head -5; cat /usr/syno/etc/certificate/_archive/DEFAULT 2>&1 | head -2
+            echo "--- nginx err log"; tail -15 /var/log/nginx/error.log 2>&1 | cut -c1-250
+            echo "--- nginx test"; (nginx -t 2>&1 || true) | head -5
