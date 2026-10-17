@@ -1,0 +1,84 @@
+name: Storage Sync (cloud -> hy65 self-hosted)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dr-sync]
+    paths: ['.github/workflows/storage-sync.yml']
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all storage objects from cloud
+        env:
+          CLOUD_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          CLOUD_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          mkdir -p out/files
+          psql "host=aws-1-ap-southeast-1.pooler.supabase.com port=5432 dbname=postgres user=postgres.uhxkmprscovrnfigasia sslmode=require" \
+            -Atc "select coalesce(json_agg(json_build_object('bucket',bucket_id,'name',name)),'[]') from storage.objects where name not like '%/.emptyFolderPlaceholder'" > out/list.json
+          python3 - <<'PY'
+          import json,os,urllib.parse,urllib.request
+          items=json.load(open('out/list.json'))
+          base=os.environ['CLOUD_URL'].rstrip('/'); key=os.environ['CLOUD_KEY']
+          man=[]; fail=0; total=0
+          for i,it in enumerate(items):
+              u=f"{base}/storage/v1/object/{it['bucket']}/{urllib.parse.quote(it['name'],safe='/')}"
+              r=urllib.request.Request(u,headers={'Authorization':'Bearer '+key,'apikey':key})
+              try:
+                  with urllib.request.urlopen(r,timeout=120) as resp:
+                      data=resp.read(); ct=resp.headers.get('Content-Type','application/octet-stream')
+                  open(f'out/files/{i}','wb').write(data); total+=len(data)
+                  man.append({'i':i,'bucket':it['bucket'],'name':it['name'],'type':ct})
+              except Exception as e:
+                  fail+=1; print('FAIL',it,e)
+          json.dump(man,open('out/manifest.json','w'))
+          print(f'objects listed={len(items)} downloaded={len(man)} failed={fail} bytes={total}')
+          PY
+          tar czf storage.tgz -C out .
+          ls -lh storage.tgz
+
+      - name: Upload tarball to hy65
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          source: storage.tgz
+          target: /volume1/docker/supabase-backup
+
+      - name: Load into self-hosted storage
+        uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          command_timeout: 30m
+          envs: NAS2_PASS
+          script: |
+            B=/volume1/docker/supabase-backup
+            rm -rf $B/storage_in && mkdir $B/storage_in && tar xzf $B/storage.tgz -C $B/storage_in
+            cat > $B/storage_load.py <<'PY'
+            import json,os,re,sys,urllib.parse,urllib.request
+            env=open('/volume1/docker/supabase-selfhost/.env').read()
+            key=re.search(r'^SERVICE_ROLE_KEY=(.+)$',env,re.M).group(1).strip().strip('"\'')
+            d='/volume1/docker/supabase-backup/storage_in'
+            ok=bad=0
+            for m in json.load(open(d+'/manifest.json')):
+                u=f"http://127.0.0.1:8000/storage/v1/object/{m['bucket']}/{urllib.parse.quote(m['name'],safe='/')}"
+                r=urllib.request.Request(u,data=open(f"{d}/files/{m['i']}",'rb').read(),method='POST',
+                    headers={'Authorization':'Bearer '+key,'apikey':key,'Content-Type':m['type'],'x-upsert':'true'})
+                try: urllib.request.urlopen(r,timeout=300); ok+=1
+                except Exception as e: bad+=1; print('FAIL',m['bucket'],m['name'],e)
+            print('uploaded',ok,'failed',bad)
+            PY
+            echo "$NAS2_PASS" | sudo -S python3 $B/storage_load.py 2>&1 | tail -30
+            echo "$NAS2_PASS" | sudo -S /usr/local/bin/docker exec -i supabase-db psql -U postgres -d postgres -Atc "select bucket_id, count(*) from storage.objects group by 1" 2>&1
+            rm -rf $B/storage_in $B/storage.tgz $B/storage_load.py
