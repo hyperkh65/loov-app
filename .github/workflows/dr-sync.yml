@@ -29,7 +29,7 @@ jobs:
           TS=$(date +%Y%m%d_%H%M%S)
           mkdir out
           pg_dump "$CONN" --no-owner --no-privileges --clean --if-exists -n public -n auth -n storage | gzip > out/supabase_backup_$TS.sql.gz
-          pg_dump "$CONN" --no-owner --no-privileges --data-only --column-inserts -t auth.users -t auth.identities > out/sync_auth.sql
+          pg_dump "$CONN" --no-owner --no-privileges --data-only --column-inserts --on-conflict-do-nothing -t auth.users -t auth.identities > out/sync_auth.sql
           pg_dump "$CONN" --no-owner --no-privileges --clean --if-exists -n public | gzip > out/sync_public.sql.gz
           echo "cloud auth.users: $(psql "$CONN" -Atc 'select count(*) from auth.users')"
           echo "cloud auth.identities: $(psql "$CONN" -Atc 'select count(*) from auth.identities')"
@@ -56,16 +56,17 @@ jobs:
           username: urjent
           password: ${{ secrets.NAS2_SSH_PASSWORD }}
           port: 79
-          command_timeout: 30m
+          command_timeout: 90m
           envs: NAS2_PASS
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             B=/volume1/docker/supabase-backup
             PSQL="/usr/local/bin/docker exec -i supabase-db psql -U postgres -d postgres"
-            echo "== auth restore (single transaction)"
-            echo "$NAS2_PASS" | sudo -S sh -c "(echo 'truncate auth.users cascade;'; cat $B/sync_auth.sql) | $PSQL -v ON_ERROR_STOP=1 -1 -q 2>&1 | tail -15"
+            F="grep -v -e '^.restrict' -e '^.unrestrict' -e '^SET transaction_timeout'"
+            echo "== auth restore (insert missing users only, no truncate)"
+            echo "$NAS2_PASS" | sudo -S sh -c "cat $B/sync_auth.sql | $F | $PSQL -v ON_ERROR_STOP=1 -1 -q 2>&1 | tail -15"
             echo "== public restore"
-            echo "$NAS2_PASS" | sudo -S sh -c "gzip -dc $B/sync_public.sql.gz | $PSQL -q 2>&1 | grep -iE 'error|fatal' | head -15"
+            echo "$NAS2_PASS" | sudo -S sh -c "gzip -dc $B/sync_public.sql.gz | $F | $PSQL -q 2>&1 | grep -iE 'error|fatal' | head -15"
             echo "== self-hosted counts"
             echo "$NAS2_PASS" | sudo -S sh -c "$PSQL -Atc \"select 'auth.users', count(*) from auth.users union all select 'auth.identities', count(*) from auth.identities union all select 'public tables', count(*) from information_schema.tables where table_schema='public'\" 2>&1"
             rm -f $B/sync_auth.sql $B/sync_public.sql.gz
