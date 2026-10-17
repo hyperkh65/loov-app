@@ -1,0 +1,34 @@
+name: audit2
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/audit2.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/au2.sql <<'SQL'
+            \echo == 코드가 쓰는데 hy65에 없는 테이블
+            select t from unnest(array['affiliate_automation_jobs','affiliate_listings','affiliate_product_aliases','affiliate_product_matches','affiliate_product_scores','affiliate_products','affiliate_publication_jobs','affiliate_publications','affiliate_renders','affiliate_scripts','affiliate_source_items','affiliate_sources','affiliate_video_projects','affiliate_video_variants','app_settings','bossai_accounting_entries','bossai_affiliate_click_events','bossai_affiliate_go_links','bossai_affiliate_price_snapshots','bossai_ai_usage','bossai_auto_articles','bossai_auto_settings','bossai_blogger_history','bossai_blogger_settings','bossai_blogger_tokens','bossai_company_settings','bossai_course_enrollments','bossai_courses','bossai_deploy_log','bossai_email_accounts','bossai_figma_connections','bossai_google_tokens','bossai_insights','bossai_keyword_auto_posts','bossai_keyword_opportunities','bossai_keyword_rank_history','bossai_keyword_tracking','bossai_marketing_campaigns','bossai_memos','bossai_naver_tech_posts','bossai_notion_blocks','bossai_notion_database_items','bossai_notion_databases','bossai_notion_jobs','bossai_notion_page_raw','bossai_notion_pages','bossai_notion_uploads','bossai_pageviews','bossai_post_comments','bossai_post_likes','bossai_posts','bossai_product_detail_projects','bossai_profiles','bossai_rewrite_articles','bossai_rewrite_sources','bossai_sales_leads','bossai_schedule_events','bossai_schedule_logs','bossai_schedules','bossai_shorts_queue','bossai_sns_auto_job_logs','bossai_sns_auto_jobs','bossai_sns_post_log','bossai_stock_journal','bossai_stock_predictions','bossai_stock_watchlist','bossai_toss_posts','bossai_tracking_locations','bossai_tracking_voice_memos','bossai_video_jobs','bossai_website_config','bossai_x_videos','camera_photos','coupang_post_history','gallery_items','language_vocabulary','led_market_data','naver_cafe_connections','naver_cafe_history','naver_connections','naver_publish_history','naver_publish_jobs','notion_connections','shop_banners','shop_categories','shop_order_items','shop_orders','shop_product_images','shop_products','shop_reviews','shorts_jobs','sns_connections','sns_oauth_state','sns_post_logs','sns_post_templates','sns_schedules','tistory_connections','tistory_history','user_settings','wordpress_post_history','wordpress_sites']) t where not exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) order by 1;
+            \echo == AI 전역설정
+            select k, left(v,80) v from public.app_settings, jsonb_each_text(settings) j(k,v) where k in ('AI_GLOBAL_PROVIDER','AI_GLOBAL_MODEL');
+            \echo == naver_publish_jobs 컬럼
+            select string_agg(column_name,',') from information_schema.columns where table_name='naver_publish_jobs';
+            select status, count(*) from public.naver_publish_jobs group by 1;
+            \echo == SNS 최근 로그 30
+            select platform,status,to_char(posted_at at time zone 'Asia/Seoul','MM-DD HH24:MI') at,left(error_message,100) from public.sns_post_logs order by posted_at desc limit 15;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/au2.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            rm -f /tmp/au2.sql
