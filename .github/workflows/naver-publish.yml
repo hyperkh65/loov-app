@@ -19,8 +19,8 @@ jobs:
           npx playwright install chromium --with-deps
       - name: Publish to Naver
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           JOB_ID: ${{ github.event.client_payload.job_id }}
         run: node .github/scripts/publish-naver.js
       - name: Upload debug screenshot
