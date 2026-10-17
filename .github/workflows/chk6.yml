@@ -17,7 +17,10 @@ jobs:
           command_timeout: 2m
           script: |
             export PATH=/usr/syno/sbin:/usr/syno/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin:$PATH
-            ls -la --time-style=full-iso /usr/local/etc/nginx/conf.d/ 2>&1 | head -20
-            echo "=== loov.co.kr.conf"; cat /usr/local/etc/nginx/conf.d/loov.co.kr.conf 2>&1 | head -60
-            echo "=== w3conf"; cat /usr/local/etc/nginx/sites-available/42df4b5e-02bd-4bf6-a5ae-202848823f16.w3conf 2>&1 | head -40
-            echo "=== ssl lines in nginx.conf"; grep -nE "ssl|server_name|include|default_server" /etc/nginx/nginx.conf | head -40
+            cd /usr/local/etc/nginx
+            echo "=== files mentioning loov.co.kr (follow symlinks)"
+            grep -Rl "loov.co.kr" conf.d conf.d-available sites-available sites-enabled 2>/dev/null | head -10
+            f=$(grep -Rl "server_name.*loov.co.kr" conf.d conf.d-available sites-available 2>/dev/null | grep -v "^conf.d/loov.co.kr.conf" | head -1)
+            echo "=== 443 block file: $f"; [ -n "$f" ] && ls -la --time-style=full-iso "$f" && cat "$f" | head -50
+            echo "=== cert references"; grep -Rhn "ssl_certificate" conf.d conf.d-available sites-available 2>/dev/null | sort | uniq -c | sort -rn | head -10
+            echo "=== conf.d recent changes"; find conf.d conf.d-available sites-available -maxdepth 1 -newermt "2026-10-17 20:00" 2>/dev/null | head -10
