@@ -1,0 +1,54 @@
+name: tblcopy
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/tblcopy.yml"]
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgres 17 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gnupg curl lsb-release
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-17
+      - name: Dump two tables
+        run: |
+          export PATH=/usr/lib/postgresql/17/bin:$PATH
+          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+          CONN="host=aws-1-ap-southeast-1.pooler.supabase.com port=5432 dbname=postgres user=postgres.uhxkmprscovrnfigasia sslmode=require"
+          mkdir out
+          pg_dump "$CONN" --no-owner --no-privileges --clean --if-exists -t public.shorts_jobs -t public.bossai_video_jobs > out/tbl.sql
+          grep -cE "^COPY|^INSERT" out/tbl.sql; ls -l out
+      - uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          source: "out/tbl.sql"
+          target: /volume1/docker/supabase-backup
+          strip_components: 1
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 5m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            B=/volume1/docker/supabase-backup
+            cat > $B/tbl_grant.sql <<'SQL'
+            GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+            GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+            select 'shorts_jobs' t, count(*) from public.shorts_jobs union all select 'bossai_video_jobs', count(*) from public.bossai_video_jobs;
+            SQL
+            echo "$NAS2_PASS" | sudo -S sh -c "grep -v -e '^.restrict' -e '^.unrestrict' -e '^SET transaction_timeout' $B/tbl.sql | docker exec -i supabase-db psql -U postgres -d postgres -q 2>&1 | tail -15; cat $B/tbl_grant.sql | docker exec -i supabase-db psql -U postgres -d postgres 2>&1 | tail -8"
+            rm -f $B/tbl.sql $B/tbl_grant.sql
