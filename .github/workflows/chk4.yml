@@ -1,0 +1,14 @@
+name: chk4
+on:
+  push:
+    branches: [dr-sync]
+    paths: [.github/workflows/chk4.yml]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for h in loov.co.kr www.loov.co.kr loov.2days.kr; do
+            echo "== $h"; echo | openssl s_client -connect $h:443 -servername $h 2>/dev/null | openssl x509 -noout -subject -enddate
+            curl -s -o /dev/null -m 20 -w "http %{http_code}\n" https://$h/ || echo "curl fail $?"
+          done
