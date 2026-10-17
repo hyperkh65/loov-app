@@ -50,5 +50,8 @@ jobs:
             GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
             select 'shorts_jobs' t, count(*) from public.shorts_jobs union all select 'bossai_video_jobs', count(*) from public.bossai_video_jobs;
             SQL
-            echo "$NAS2_PASS" | sudo -S sh -c "grep -v -e '^.restrict' -e '^.unrestrict' -e '^SET transaction_timeout' $B/tbl.sql | docker exec -i supabase-db psql -U postgres -d postgres -q 2>&1 | tail -15; cat $B/tbl_grant.sql | docker exec -i supabase-db psql -U postgres -d postgres 2>&1 | tail -8"
+            ls -l $B | tail -5
+            echo "$NAS2_PASS" | sudo -S sh -c "grep -E '^(CREATE|COPY|DROP|ALTER)' $B/tbl.sql | cut -c1-90 | head -12"
+            echo "$NAS2_PASS" | sudo -S sh -c "grep -v -e '^.restrict' -e '^.unrestrict' -e '^SET transaction_timeout' $B/tbl.sql | docker exec -i supabase-db psql -U postgres -d postgres 2>&1 | grep -vE '^(SET|DROP|COPY [0-9]|ALTER|CREATE)' | tail -15; cat $B/tbl_grant.sql | docker exec -i supabase-db psql -U postgres -d postgres 2>&1 | tail -8"
             rm -f $B/tbl.sql $B/tbl_grant.sql
+# v2
