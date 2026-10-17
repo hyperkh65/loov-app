@@ -37,6 +37,8 @@ export interface CreateGoLinkParams {
 /** go-link row를 만들고 짧은 추적 URL을 반환한다. 실패하면 원본 URL로 폴백해서
  * (테이블이 아직 없거나 DB 오류가 나도) 발행 자체는 막히지 않게 한다. */
 export async function createGoLink(params: CreateGoLinkParams): Promise<string> {
+  // 무신사·토스는 각 플랫폼의 제휴 링크를 그대로 노출해야 수익이 잡힌다 (/go 경유 안 함).
+  if (params.platform === 'musinsa' || params.platform === 'toss') return params.destinationUrl;
   try {
     const admin = createAdminClient();
     const id = randomId();
