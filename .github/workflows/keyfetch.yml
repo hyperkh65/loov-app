@@ -1,5 +1,8 @@
 name: keyfetch
-on: workflow_dispatch
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/keyfetch.yml"]
 jobs:
   k:
     runs-on: ubuntu-latest
