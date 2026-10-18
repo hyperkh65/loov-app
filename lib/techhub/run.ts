@@ -18,7 +18,7 @@ import type { Schedule } from '@/lib/scheduler';
 import { collectCandidates, dropUsed, type Candidate } from './sources';
 import { judge, writeArticle, writeCaptions, type Article } from './write';
 import { renderAll } from './render';
-import { TECHHUB_PROFILES, TECHHUB_BLOGS } from './accounts';
+import { TECHHUB_PROFILES, TECHHUB_BLOGS, TECHHUB_CHANNELS } from './accounts';
 
 export interface TechHubConfig {
   dry_run?: boolean;
@@ -81,6 +81,9 @@ function buildHtml(a: Article, cover: string, photos: Photo[], cards: string[], 
     a.faq.forEach(f => parts.push(`<p><strong>Q. ${esc(strip(f.q))}</strong><br/>${esc(strip(f.a))}</p>`));
   }
   parts.push(`<p>참고: ${esc(src.name)} — ${esc(src.title)}</p>`);
+  parts.push('<h2>다음 신기술 소식도 놓치지 마세요</h2>');
+  parts.push('<p>어렵게만 느껴지던 과학·AI·전자제품 이야기를 매일 쉽고 재밌게 풀어드려요. 저장하고 팔로우하면 내일 더 신기한 소식이 옵니다.</p>');
+  TECHHUB_CHANNELS.forEach(c => parts.push(`<p><strong>${c.tag}</strong> → <a href="${c.url}">${esc(c.text)}</a></p>`));
   return parts.join('\n');
 }
 
@@ -138,7 +141,7 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
   const brand = profiles[0].brand;
   const { wideCover, cards } = await renderAll({
     slides: a.cards.slice(0, 7), hook: a.hook, kicker: a.kicker, brand, handle: profiles[0].handle,
-    coverPhotoUrl: photos[0].url, source: { name: c.source, title: c.title, imageUrl: images[0] || null }, slug,
+    coverPhotoUrl: photos[0].url, channels: TECHHUB_CHANNELS, source: { name: c.source, title: c.title, imageUrl: images[0] || null }, slug,
   });
   lap(`렌더 카드 ${cards.length}장`);
 

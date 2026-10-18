@@ -41,3 +41,10 @@ export const TECHHUB_BLOGS: BlogTarget = {
   blogger: { url: 'https://whasubun.blogspot.com' },
   naver: { categoryNo: 18 },
 };
+
+/** 글·카드뉴스 맨 끝에 노출되는 채널 안내 */
+export const TECHHUB_CHANNELS = [
+  { tag: 'THREADS', text: '@2days.kr', url: 'https://www.threads.com/@2days.kr' },
+  { tag: 'NAVER', text: 'blog.naver.com/brook-pd', url: 'https://blog.naver.com/brook-pd' },
+  { tag: 'BLOG', text: 'whasubun.blogspot.com', url: 'https://whasubun.blogspot.com' },
+];

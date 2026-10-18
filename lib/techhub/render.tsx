@@ -189,13 +189,21 @@ function sourceEl(photo: string | null, source: string, title: string, page: str
   );
 }
 
-function ctaEl(brand: string, handle: string, total: number): ReactElement {
+function ctaEl(brand: string, handle: string, total: number, channels: Array<{ tag: string; text: string }>): ReactElement {
   return (
     <Frame dark label="FOLLOW" page={`${String(total).padStart(2, '0')} / ${String(total).padStart(2, '0')}`} brand={brand}>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <Rich text="매일 **가장 핫한** 과학·AI·전자제품 소식을 쉽게" size={80} color="#fff" />
-        <div style={{ display: 'flex', marginTop: 44, fontSize: 54, fontWeight: 900, color: YEL }}>{handle}</div>
-        <div style={{ display: 'flex', marginTop: 20, fontSize: 36, fontWeight: 700, color: '#bdbdbd' }}>팔로우하고 놓치지 마세요</div>
+        <Rich text="내일은 또 **어떤 신기한** 게 나올까?" size={74} color="#fff" lh={1.25} />
+        <div style={{ display: 'flex', marginTop: 26, fontSize: 36, fontWeight: 700, color: '#bdbdbd' }}>놓치지 않게 여기서 만나요</div>
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 52 }}>
+          {[{ tag: 'INSTAGRAM', text: handle }, ...channels].map((c, k) => (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', marginBottom: 20, padding: '18px 24px', borderRadius: 20, border: '2px solid #3a3a3a', background: '#161616' }}>
+              <div style={{ display: 'flex', padding: '8px 16px', borderRadius: 12, background: YEL, color: '#111', fontSize: 26, fontWeight: 900, marginRight: 24, width: 190, justifyContent: 'center' }}>{c.tag}</div>
+              <div style={{ display: 'flex', fontSize: c.text.length > 20 ? 34 : 40, fontWeight: 900, color: '#fff' }}>{c.text}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', marginTop: 20, fontSize: 32, fontWeight: 700, color: YEL }}>저장 · 팔로우 · 공유가 큰 힘이 돼요</div>
       </div>
     </Frame>
   );
@@ -219,7 +227,7 @@ export async function photoData(url: string | null | undefined, w: number, h: nu
 
 const put = (key: string, buf: Buffer) => uploadToR2(`techhub/${key}.jpg`, buf, 'image/jpeg');
 
-export interface CardInput { slides: Slide[]; hook: string; kicker: string; brand: string; handle: string; coverPhotoUrl: string | null; source: { name: string; title: string; imageUrl: string | null }; slug: string }
+export interface CardInput { slides: Slide[]; hook: string; kicker: string; brand: string; handle: string; coverPhotoUrl: string | null; source: { name: string; title: string; imageUrl: string | null }; slug: string; channels: Array<{ tag: string; text: string }> }
 
 /** 반환: 와이드 대표(블로그), 카드뉴스 전체 URL(표지→본문→출처→CTA). 개별 카드 실패는 건너뜀 */
 export async function renderAll(i: CardInput): Promise<{ wideCover: string; cards: string[] }> {
@@ -232,7 +240,7 @@ export async function renderAll(i: CardInput): Promise<{ wideCover: string; card
     ['c01', coverEl({ photo: tallBg, hook: i.hook, kicker: i.kicker, brand: i.brand, w: 1080, h: 1350 })],
     ...i.slides.map((s, k): [string, ReactElement] => [`c${String(k + 2).padStart(2, '0')}`, cardEl(s, k, total, i.brand)]),
     [`c${String(total - 1).padStart(2, '0')}`, sourceEl(srcPhoto, i.source.name, i.source.title, `${String(total - 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`, i.brand)],
-    [`c${String(total).padStart(2, '0')}`, ctaEl(i.brand, i.handle, total)],
+    [`c${String(total).padStart(2, '0')}`, ctaEl(i.brand, i.handle, total, i.channels)],
   ];
   const cards: string[] = [];
   for (const [name, el] of jobs) {
