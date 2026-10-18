@@ -21,9 +21,7 @@ jobs:
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             cat > /tmp/th2.sql <<'EOS'
             select 1;
-            select type||' | '||coalesce(name,'')||' | '||coalesce(interval_minutes::text,'')||' | en='||coalesce(is_active::text,'?')||' | '||coalesce(left(config::text,160),'') from public.bossai_schedules where config::text ilike '%2days.kr%' or type like 'blog%' order by type limit 40;
-            select site_url||' | '||id from public.wordpress_sites where site_url ilike '%2days.kr%';
-            select platform||' | '||platform_user_id||' | '||coalesce(platform_username,'')||' | active='||is_active||' | exp='||coalesce(token_expires_at::text,'-') from public.sns_connections where platform_user_id in ('25203934249239577','34489947500650071','27198401606479414','25873039292318366');
+            select left(row_to_json(s)::text,420) from public.bossai_schedules s where s.type like 'blog%' order by s.type limit 40;
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
@@ -33,3 +31,4 @@ jobs:
 # r5
 # r9
 # r10
+# r11
