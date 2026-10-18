@@ -201,7 +201,8 @@ export async function POST(req: NextRequest) {
     //  - 한쪽만 있으면: 있는 사진을 배경으로 대표이미지만 제작(본문 사진 임의 삽입 금지)
     //  - 둘 다 없으면: 네이버 이미지 검색 1장 → 없으면 AI 이미지를 배경으로 제작 (infolife는 AI만)
     // 우선순위(사용자 확정 2026-10-04): 원문 본문 이미지 → 네이버 이미지 검색 → AI 생성. 자체 블로그 원문(yoosol 등)의 사진도 그대로 쓴다.
-    const plainBgOnly = article.source_id === INFOLIFE_SOURCE_ID;
+    // infodemic.kr(남의 인물정보 블로그)은 원문·검색 사진(인물 사진 저작권/초상권)을 쓰지 않고 AI 배경만 사용(사용자 확정 2026-10-18)
+    const plainBgOnly = article.source_id === INFOLIFE_SOURCE_ID || !!article.source_url?.includes('infodemic.kr');
     const needScrape = !plainBgOnly && !!article.source_url;
     const scraped = needScrape ? await scrapeArticleFull(article.source_url as string).catch(() => null) : null;
     const srcRep: string | null = plainBgOnly || useOwnThumbnail ? null : (article.representative_image_url || scraped?.images[0] || null);
