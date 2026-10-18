@@ -40,7 +40,7 @@ const CAPTION_TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
 // 도움이 안 돼서 2026-09-24 원래대로(스왑 이전) 되돌림 — 정부/정책+경제신문
 // 23개 소스는 SNS_ACCOUNT_ROUTING_BY_SOURCE에서 다시 @2dayskr로, 그 외 나머지
 // (라우팅에 없는 소스) 기본값은 @aboda_miracool+@2dayskr_korea로.
-const DEFAULT_SNS_ACCOUNTS = ['@aboda_miracool']; // 라우팅에 없는 소스(그 외 일반 리라이트글)
+const DEFAULT_SNS_ACCOUNTS = ['@2dayskr_korea']; // 2026-10-18: @aboda_miracool은 aboda.kr 전용, 기본값은 @2dayskr_korea(미라쿨) // 라우팅에 없는 소스(그 외 일반 리라이트글)
 const ACCOUNT_ROUTED_PLATFORMS: Platform[] = ['threads', 'instagram'];
 
 export async function getSnsAccountRouting(sourceId: string | null | undefined): Promise<string[]> {
@@ -341,8 +341,10 @@ export async function publishRewrittenArticle(
   // 기존처럼 전부 발행 유지.
   // 2days.kr·서브도메인으로 발행된 글은 소스 라우팅과 무관하게 @2dayskr로 통합(2026-10-18 사용자 확정)
   // aboda.kr 발행글은 소스 라우팅과 무관하게 @aboda_miracool 전용(2026-10-18 사용자 확정)
-  const rotGroup: 'twodays' | 'aboda' | null = isTwodaysUrl(wordpressUrl) ? 'twodays'
+  // miracool.co.kr 발행글은 @2dayskr_korea 전용(2026-10-18 사용자 확정)
+  const rotGroup: 'twodays' | 'aboda' | 'aboda_miracool' | null = isTwodaysUrl(wordpressUrl) ? 'twodays'
     : (wordpressUrl || '').includes('aboda.kr') ? 'aboda'
+    : (wordpressUrl || '').includes('miracool.co.kr') ? 'aboda_miracool'
     : allowedAccounts.length === 1 && allowedAccounts[0] === '@2dayskr' ? 'twodays' : null;
   const useRotation = rotGroup !== null;
   const relevantConns = (conns || []).filter(c => {
@@ -381,7 +383,7 @@ export async function publishRewrittenArticle(
   }
 
   // @2dayskr로 나가는 자동 발행은 블루 브랜드 카드뉴스(인스타/스레드) — 실패하면 null → 기존 단일 이미지
-  const cards = rotGroup
+  const cards = rotGroup === 'twodays' || rotGroup === 'aboda'
     ? await Promise.race([buildBrandCards(article.title, article.content, Date.now().toString(36), { theme: rotGroup === 'aboda' ? 'green' : 'blue', imageUrl: snsImageUrl }), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
     : null;
 
