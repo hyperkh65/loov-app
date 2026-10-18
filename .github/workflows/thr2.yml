@@ -1,0 +1,37 @@
+name: thr2
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/thr2.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/t2.sql <<'SQL'
+            \echo == 최근 SNS 로그
+            select platform, status, to_char(posted_at at time zone 'Asia/Seoul','HH24:MI:SS') at, left(coalesce(error_message,''),250) note from public.sns_post_logs where posted_at > now() - interval '30 minutes' order by posted_at desc limit 25;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/t2.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            cat > /tmp/t2.sh <<'EOS'
+            Q="select platform_username||'|'||access_token from public.sns_connections where platform='threads' and is_active order by platform_username"
+            docker exec supabase-db psql -U postgres -d postgres -Atc "$Q" | while IFS='|' read -r uname tok; do
+              R=$(curl -s "https://graph.threads.net/v1.0/me/threads?fields=id,timestamp&limit=1&access_token=$tok")
+              PID=$(echo "$R" | sed -n 's/.*"data":\[{"id":"\([0-9]*\)".*/\1/p')
+              TS=$(echo "$R" | sed -n 's/.*"timestamp":"\([^"]*\)".*/\1/p')
+              echo "@$uname latest=$TS replies: $(curl -s "https://graph.threads.net/v1.0/$PID/replies?fields=id,text&access_token=$tok" | cut -c1-200)"
+            done
+            EOS
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "sh /tmp/t2.sh 2>&1"
+            rm -f /tmp/t2.sql /tmp/t2.sh
