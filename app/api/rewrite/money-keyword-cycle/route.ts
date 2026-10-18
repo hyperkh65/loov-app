@@ -13,6 +13,19 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { generateBlogContent } from '@/lib/blog-content-generator';
 import { publishRewrittenArticle } from '@/lib/rewrite-publish';
 import { publishSlotFree } from '@/lib/scheduler/blog-runner';
+import { SOFTWARE_GUIDE_TOPICS } from '@/lib/software-guide-topics';
+
+// miracool.co.kr은 금융 키워드 풀 대신 소프트웨어·툴 가이드 주제를 순서대로 씀(사용자 확정 2026-10-18).
+// 이미 같은 주제 글이 있는지는 사이트 wp-json 검색으로 확인
+async function nextToolTopic(siteUrl: string): Promise<string | null> {
+  for (const t of SOFTWARE_GUIDE_TOPICS) {
+    try {
+      const r = await fetch(`${siteUrl}/wp-json/wp/v2/posts?per_page=1&_fields=id&search=${encodeURIComponent(t)}`, { signal: AbortSignal.timeout(10_000) });
+      if (r.ok && (await r.json()).length === 0) return t;
+    } catch { /* 확인 실패한 주제는 건너뜀 */ }
+  }
+  return null;
+}
 
 // 사이트별 "발행 설정 캐리어" — bossai_rewrite_sources의 비활성 소스 행. RSS가 없는
 // 키워드 발행 사이트도 publishRewrittenArticle의 카페/텀블러/SNS 크로스포스팅을
@@ -50,6 +63,18 @@ export async function POST(req: NextRequest) {
 
   if (!await publishSlotFree(SITE_URL)) {
     return NextResponse.json({ ok: true, message: '발행 슬롯 대기(분산 발행) — 건너뜀' });
+  }
+
+  if (SITE_URL === 'https://miracool.co.kr') {
+    const topic = await nextToolTopic(SITE_URL);
+    if (!topic) return NextResponse.json({ ok: true, message: '남은 툴 가이드 주제 없음 — 건너뜀' });
+    try {
+      const { title, content, meta_description, imageUrl } = await generateBlogContent(topic, ai_model, undefined, undefined, { noInlineImages: true });
+      const result = await publishRewrittenArticle({ title, content, representative_image_url: imageUrl, meta: meta_description }, ownerId, cfg.sourceId);
+      return NextResponse.json({ ok: true, keyword: topic, title, ...result });
+    } catch (e) {
+      return NextResponse.json({ ok: false, keyword: topic, error: String(e) }, { status: 500 });
+    }
   }
 
   const since = new Date(Date.now() - FRESH_MS).toISOString();

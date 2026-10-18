@@ -207,7 +207,11 @@ export async function POST(req: NextRequest) {
   // 키워드를 정면으로 노리는 오리지널 글 전용 사이클. 라우트 내부에서 4시간
   // 최소 간격을 자체 체크하니 매 크론 불러도 됨.
   const moneyCycleResult: Record<string, unknown> = {};
-  for (const site_url of ['https://money.2days.kr', 'https://finance.2days.kr']) {
+  // miracool.co.kr 툴 가이드는 3시간에 1번만(크론 20분 간격이라 정각대 첫 회차에만)
+  const now = new Date();
+  const sites = ['https://money.2days.kr', 'https://finance.2days.kr'];
+  if (now.getHours() % 3 === 0 && now.getMinutes() < 20) sites.push('https://miracool.co.kr');
+  for (const site_url of sites) {
     try {
       const res = await fetch(`${BASE}/api/rewrite/money-keyword-cycle`, {
         method: 'POST', headers,
