@@ -1,0 +1,26 @@
+name: th3
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/th3.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/th3.sql <<'EOS'
+            update public.bossai_schedules set next_run_at=now() where type='techhub_auto' returning id, next_run_at;
+            EOS
+            echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th3.sql 2>&1"
+            rm -f /tmp/th3.sql
