@@ -8,7 +8,7 @@ import { pickContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
-import { PRODUCT_HOOK_GUIDE, SEAN_KEYWORDS_LIVING, SEAN_MAX_PRICE, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
+import { PRODUCT_HOOK_GUIDE, SEAN_KEYWORDS_LIVING, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, CoupangAutoConfig } from './index';
 
@@ -302,8 +302,7 @@ export async function runCoupangAuto(
   const demandKeywords = await fetchDemandKeywords();
   const rankScore = (p: CoupangProduct) => (p.discountRate || 1) * (matchesDemand(p.productName, demandKeywords) ? 1.5 : 1);
   const base = pool.length ? pool : products;
-  const cheap = base.filter(p => p.productPrice <= SEAN_MAX_PRICE);
-  const ranked = [...(cheap.length ? cheap : base)].sort((a, b) => rankScore(b) - rankScore(a));
+  const ranked = [...base].sort((a, b) => rankScore(b) - rankScore(a));
   let candidates = ranked.filter(p => !recentProductIds.includes(String(p.productId)));
 
   // 골드박스는 하루 몇 번 안 바뀌는 소규모 목록이라, 발행 주기를 짧게(매시간

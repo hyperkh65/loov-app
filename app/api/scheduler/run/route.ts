@@ -8,7 +8,7 @@
  * 또는 대시보드에서 수동 실행 (로그인 세션 사용)
  */
 
-import { SNS_HOOK_GUIDE, SEAN_KEYWORDS_FASHION, SEAN_MAX_PRICE } from '@/lib/sns/hook-style';
+import { SNS_HOOK_GUIDE, SEAN_KEYWORDS_FASHION } from '@/lib/sns/hook-style';
 import { alertOwner, isAuthError } from '@/lib/owner-alert';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
@@ -894,10 +894,8 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
 
   const demandKeywords = await fetchDemandKeywords();
   const musinsaRankScore = (p: MusinsaProduct) => p.expectedEarnings * (matchesDemand(p.goodsName, demandKeywords) ? 1.5 : 1);
-  // 극가성비 계정 — 3만원 이하 우선, 없으면 전체에서
-  const fresh = list.filter(p => !p.isSoldOut && !recentGoodsNo.has(p.goodsNo));
-  const cheap = fresh.filter(p => p.finalPrice <= SEAN_MAX_PRICE);
-  const picked = (cheap.length ? cheap : fresh)
+  const picked = list
+    .filter(p => !p.isSoldOut && !recentGoodsNo.has(p.goodsNo))
     .sort((a, b) => musinsaRankScore(b) - musinsaRankScore(a))[0];
 
   if (!picked) return { posted: 0, results: [`"${keyword}" 후보 없음(품절 제외/이미 게시된 상품만 있음)`] };

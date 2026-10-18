@@ -5,7 +5,7 @@
  * 바로 주기 때문에 이미지 포스트로 충분하고, 영상 파이프라인(스크립트/TTS/렌더)을
  * 새로 만드는 건 별도 요청 시 확장.
  */
-import { PRODUCT_HOOK_GUIDE, SEAN_MAX_PRICE } from '@/lib/sns/hook-style';
+import { PRODUCT_HOOK_GUIDE } from '@/lib/sns/hook-style';
 import { createAdminClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { toInstagramSafeImage } from '@/lib/rewrite-publish';
@@ -98,10 +98,7 @@ export async function runTossAuto(userId: string, scheduleId?: string): Promise<
   if (!rawCandidates.length) return { summary: '토스 상품 후보 없음', results: [] };
   // 베스트셀링/오늘특가 순서(공급 신호)보다 실제 구매의도 키워드와 겹치는 상품을 우선.
   const demandKeywords = await fetchDemandKeywords();
-  // 극가성비 계정 — 3만원 이하만(없으면 오늘은 건너뜀)
-  const cheapCandidates = rawCandidates.filter(p => p.displayPrice <= SEAN_MAX_PRICE);
-  if (!cheapCandidates.length) return { summary: `토스 ${SEAN_MAX_PRICE.toLocaleString()}원 이하 후보 없음`, results: [] };
-  const candidates = [...cheapCandidates].sort((a, b) =>
+  const candidates = [...rawCandidates].sort((a, b) =>
     Number(matchesDemand(b.displayName, demandKeywords)) - Number(matchesDemand(a.displayName, demandKeywords))
   );
 
