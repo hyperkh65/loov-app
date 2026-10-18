@@ -22,6 +22,7 @@ jobs:
             cat > /tmp/th2.sql <<'EOS'
             select 1;
             select row_to_json(l)::text from public.bossai_schedule_logs l where l.schedule_id=(select id from public.bossai_schedules where type='techhub_auto') order by l.ctid desc limit 1;
+            select left(row_to_json(s)::text,400) from (select * from public.sns_post_logs order by ctid desc limit 8) s;
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
@@ -29,3 +30,4 @@ jobs:
 # r3
 # r4
 # r5
+# r9
