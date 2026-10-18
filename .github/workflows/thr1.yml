@@ -1,0 +1,33 @@
+name: thr1
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/thr1.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/thr.sh <<'EOS'
+            Q="select platform_user_id||'|'||platform_username||'|'||access_token from public.sns_connections where platform='threads' and is_active order by platform_username"
+            docker exec supabase-db psql -U postgres -d postgres -Atc "$Q" | while IFS='|' read -r uid uname tok; do
+              echo "== @$uname"
+              R=$(curl -s "https://graph.threads.net/v1.0/me/threads?fields=id,timestamp,text&limit=1&access_token=$tok")
+              echo "latest: $(echo "$R" | cut -c1-220)"
+              PID=$(echo "$R" | sed -n 's/.*"data":\[{"id":"\([0-9]*\)".*/\1/p')
+              [ -n "$PID" ] && echo "reply-container: $(curl -s -X POST "https://graph.threads.net/v1.0/$uid/threads" -d media_type=TEXT -d "text=test" -d "reply_to_id=$PID" -d "access_token=$tok" | cut -c1-300)"
+            done
+            EOS
+            echo "$NAS2_PASS" | sudo -S sh -c "sh /tmp/thr.sh 2>&1"
+            rm -f /tmp/thr.sh
