@@ -45,9 +45,9 @@ function slides(plan: BrandPlan): ReactElement[] {
   const body = plan.points.map((p, k) => (
     <Shell key={k} dark={false} page={pg(k + 2)}>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', width: 96, height: 96, borderRadius: 48, background: BLUE, color: '#fff', fontSize: 52, fontWeight: 900, alignItems: 'center', justifyContent: 'center', marginBottom: 44 }}>{k + 1}</div>
-        <Rich text={p.title} size={72} color={NAVY} lh={1.25} hl={SKY} hlFg={NAVY} />
-        <div style={{ display: 'flex', marginTop: 40 }}><Rich text={p.body} size={44} color="#3A4A86" weight={700} lh={1.5} hl={SKY} hlFg={NAVY} /></div>
+        <div style={{ display: 'flex', width: 110, height: 110, borderRadius: 55, background: BLUE, color: '#fff', fontSize: 60, fontWeight: 900, alignItems: 'center', justifyContent: 'center', marginBottom: 40 }}>{k + 1}</div>
+        <Rich text={p.title} size={80} color={NAVY} lh={1.25} hl={SKY} hlFg={NAVY} />
+        <div style={{ display: 'flex', marginTop: 36, paddingLeft: 28, borderLeft: `8px solid ${BLUE}` }}><Rich text={p.body} size={50} color="#3A4A86" weight={700} lh={1.5} hl={SKY} hlFg={NAVY} /></div>
       </div>
     </Shell>
   ));
@@ -77,11 +77,11 @@ export async function makeBrandCards(title: string, contentHtml: string, slug: s
   {
     const text = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
     const plan = await askJson<BrandPlan>(
-      `블로그 글을 인스타·스레드용 카드뉴스로 압축하세요. 글에 없는 사실·수치는 지어내지 말 것. 이모지 금지.\n\n[제목] ${title}\n[본문] ${text}\n\nJSON만 출력: {"hook":"표지 헤드라인 12~22자, 핵심어 1~2개를 **이렇게** 감싸 강조","kicker":"표지 상단 라벨 2~8자","points":[{"title":"핵심 포인트 제목 12~24자(핵심어 **강조**)","body":"쉬운 설명 2문장 70~110자"} ×정확히 4개]}`,
+      `블로그 글을 인스타·스레드용 카드뉴스로 압축하세요. 글에 없는 사실·수치는 지어내지 말 것. 이모지 금지.\n\n[제목] ${title}\n[본문] ${text}\n\nJSON만 출력: {"hook":"표지 헤드라인 12~22자, 핵심어 1~2개를 **이렇게** 감싸 강조","kicker":"표지 상단 라벨 2~8자","points":[{"title":"핵심 포인트 제목 12~24자(핵심어 **강조**)","body":"쉬운 설명 2문장 60~100자"} ×정확히 4개]}`,
       v => (v?.hook && v?.kicker && Array.isArray(v.points) && v.points.filter(p => p?.title && p?.body).length >= 3 ? null : '카드 구성 부족'),
     );
     plan.hook = strip(plan.hook).slice(0, 40); plan.kicker = strip(plan.kicker).slice(0, 12);
-    plan.points = plan.points.filter(p => p?.title && p?.body).slice(0, 4).map(p => ({ title: strip(p.title).slice(0, 50), body: strip(p.body).slice(0, 160) }));
+    plan.points = plan.points.filter(p => p?.title && p?.body).slice(0, 4).map(p => ({ title: strip(p.title).slice(0, 50), body: strip(p.body).slice(0, 120) }));
     const urls: string[] = [];
     const els = slides(plan);
     for (let i = 0; i < els.length; i++) {

@@ -349,24 +349,25 @@ export async function postToThreadsWithMedia(
     // 게 실사용 중 확인됨 — 영상뿐 아니라 미디어가 있으면 항상 대기
     needsWait = true;
   } else if (mediaUrls && mediaUrls.length > 1) {
-    const childIds: string[] = [];
-    for (const url of mediaUrls.slice(0, 10)) {
+    const thKids = await Promise.all(mediaUrls.slice(0, 10).map(async (url) => {
       const isVideo = isVideoUrl(url);
-      const cr = await fetch(`https://graph.threads.net/v1.0/${userId}/threads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          media_type: isVideo ? 'VIDEO' : 'IMAGE',
-          [isVideo ? 'video_url' : 'image_url']: url,
-          is_carousel_item: true,
-          access_token: accessToken,
-        }),
-      });
-      if (!cr.ok) continue;
-      const { id: childId } = await cr.json();
-      const ready = await waitThreadsContainerFinished(childId, accessToken);
-      if (ready) childIds.push(childId);
-    }
+      for (let t = 0; t < 3; t++) {
+        try {
+          const cr = await fetch(`https://graph.threads.net/v1.0/${userId}/threads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_type: isVideo ? 'VIDEO' : 'IMAGE', [isVideo ? 'video_url' : 'image_url']: url, is_carousel_item: true, access_token: accessToken }),
+          });
+          if (cr.ok) {
+            const { id: childId } = await cr.json();
+            if (await waitThreadsContainerFinished(childId, accessToken)) return childId as string;
+          }
+        } catch { /* 재시도 */ }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      return null;
+    }));
+    const childIds = thKids.filter((x): x is string => !!x);
     if (childIds.length === 0) {
       containerBody = { media_type: 'TEXT', text: content.substring(0, 500), access_token: accessToken };
     } else if (childIds.length === 1) {
@@ -594,22 +595,28 @@ export async function postToInstagramWithMedia(
 
   } else {
     // 캐러셀: child 컨테이너 생성 후 각각 FINISHED 대기
-    const childIds: string[] = [];
-    for (const url of mediaUrls.slice(0, 10)) {
-      const cr = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ media_type: 'IMAGE', image_url: url, is_carousel_item: true, access_token: accessToken }),
-      });
-      if (!cr.ok) {
-        console.warn('Instagram child container 생성 실패:', await cr.text());
-        continue;
+    // 각 장을 병렬로, 실패하면 3회까지 재시도(조용히 누락되면 6장이 3장이 됨) — 순서 유지
+    const igKids = await Promise.all(mediaUrls.slice(0, 10).map(async (url) => {
+      for (let t = 0; t < 3; t++) {
+        try {
+          const cr = await fetch(`https://graph.instagram.com/v21.0/${igUserId}/media`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_type: 'IMAGE', image_url: url, is_carousel_item: true, access_token: accessToken }),
+          });
+          if (!cr.ok) throw new Error(await cr.text());
+          const { id: childId } = await cr.json();
+          await waitInstagramVideoReady(childId, accessToken, 30000);
+          return childId as string;
+        } catch (e) {
+          console.warn(`Instagram child 실패(${t + 1}/3):`, e instanceof Error ? e.message : e);
+          await new Promise(r => setTimeout(r, 3000));
+        }
       }
-      const { id: childId } = await cr.json();
-      // 각 child 컨테이너가 FINISHED 될 때까지 대기 (최대 30초)
-      await waitInstagramVideoReady(childId, accessToken, 30000).catch(() => { /* 이미지는 빠르게 완료되므로 타임아웃 무시 */ });
-      childIds.push(childId);
-    }
+      return null;
+    }));
+    const childIds = igKids.filter((x): x is string => !!x);
+    if (childIds.length < Math.min(mediaUrls.length, 10)) console.warn(`Instagram 캐러셀 일부 누락: ${childIds.length}/${Math.min(mediaUrls.length, 10)}`);
     if (!childIds.length) throw new Error('Instagram 캐러셀: 이미지 컨테이너 생성 실패');
 
     // 캐러셀 컨테이너 생성
