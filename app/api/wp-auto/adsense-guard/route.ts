@@ -23,20 +23,26 @@ export async function GET(req: Request) {
   return NextResponse.json({ sites: (await targets()).map(s => s.site_url) });
 }
 
+// 미라쿨 서브도메인 WP는 wordpress_sites에 없고 hy64의 /volume1/web/{sub}.wordpress 에 있음(?ls=1로 확인)
+const SUBS = ['ai', 'av', 'blog', 'china', 'eco', 'edu', 'iot', 'it', 'know', 'kstar', 'life', 'music', 'os', 'spt', 'tech'];
+
 export async function POST() {
   const code = adsenseGuardMuPlugin();
   const results: { site: string; ok: boolean; error?: string }[] = [];
-  for (const s of await targets()) {
-    const dir = s.web_dir || s.subdomain;
-    if (!dir) { results.push({ site: s.site_url, ok: false, error: 'NAS 사이트 아님(건너뜀)' }); continue; }
-    const target = NAS_TARGETS[(s.nas as NasKey) || 'hy64'];
-    const wpDir = dir.startsWith('/') ? dir : `${WEB_ROOT}/${dir}`;
+  const list = [
+    ...(await targets()).map(s => ({ site: s.site_url as string, dir: (s.web_dir || s.subdomain) as string | null, nas: ((s.nas as NasKey) || 'hy64') })),
+    ...SUBS.map(x => ({ site: `https://${x}.miracool.co.kr`, dir: `${x}.wordpress` as string | null, nas: 'hy64' as NasKey })),
+  ];
+  for (const s of list) {
+    if (!s.dir) { results.push({ site: s.site, ok: false, error: 'NAS 사이트 아님(건너뜀)' }); continue; }
+    const target = NAS_TARGETS[s.nas];
+    const wpDir = s.dir.startsWith('/') ? s.dir : `${WEB_ROOT}/${s.dir}`;
     try {
       await target.exec(`mkdir -p ${wpDir}/wp-content/mu-plugins`);
       const w = await target.execWithStdin(`cat > ${wpDir}/wp-content/mu-plugins/loov-adsense-guard.php`, code);
       if (w.code) throw new Error(w.stderr || `exit ${w.code}`);
-      results.push({ site: s.site_url, ok: true });
-    } catch (e) { results.push({ site: s.site_url, ok: false, error: String(e).slice(0, 120) }); }
+      results.push({ site: s.site, ok: true });
+    } catch (e) { results.push({ site: s.site, ok: false, error: String(e).slice(0, 120) }); }
   }
   return NextResponse.json({ results });
 }
