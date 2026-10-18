@@ -20,10 +20,11 @@ jobs:
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             cat > /tmp/th3.sql <<'EOS'
-            update public.bossai_schedules set next_run_at=now() where type='techhub_auto' returning id, next_run_at;
+            update public.bossai_schedules set next_run_at=now() where id='debb4a1c-790f-4635-815e-55ef9ef6057e' returning id, next_run_at;
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th3.sql 2>&1"
             rm -f /tmp/th3.sql
 # r2
 # r3
 # r4
+# r5
