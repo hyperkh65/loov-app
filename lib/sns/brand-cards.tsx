@@ -64,7 +64,15 @@ function summaryCover(plan: BrandPlan, T: Theme, photo: string | null, page: str
 export function slides(plan: BrandPlan, T: Theme, photo: string | null): ReactElement[] {
   const n = plan.points.length + 2;
   const pg = (i: number) => `${String(i).padStart(2, '0')} / ${String(n).padStart(2, '0')}`;
-  const cover = summaryCover(plan, T, photo, pg(1));
+  // 요약형 표지는 aboda(초록)만 — 2dayskr(파랑)은 기존 표지 유지(사용자 확정 2026-10-18)
+  const cover = T === THEMES.green ? summaryCover(plan, T, photo, pg(1)) : (
+    <Shell T={T} dark page={pg(1)}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignSelf: 'flex-start', fontSize: 34, fontWeight: 900, color: T.A, background: '#fff', borderRadius: 40, padding: '10px 30px', marginBottom: 44 }}>{plan.kicker}</div>
+        <Rich text={plan.hook} size={112} color="#fff" lh={1.2} hl={T.S} hlFg={T.N} />
+      </div>
+    </Shell>
+  );
   const body = plan.points.map((p, k) => (
     <Shell key={k} T={T} dark={false} page={pg(k + 2)}>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -107,7 +115,7 @@ export async function makeBrandCards(title: string, contentHtml: string, slug: s
     plan.points = plan.points.filter(p => p?.title && p?.body).slice(0, 4).map(p => ({ title: strip(p.title).slice(0, 50), body: strip(p.body).slice(0, 120) }));
     plan.bullets = (Array.isArray(plan.bullets) ? plan.bullets : []).map(b => strip(b).slice(0, 40)).filter(Boolean).slice(0, 3);
     const T = THEMES[opts.theme || 'blue'];
-    const photo = await photoData(opts.imageUrl, 960, 470);
+    const photo = T === THEMES.green ? await photoData(opts.imageUrl, 960, 470) : null;
     const urls: string[] = [];
     const els = slides(plan, T, photo);
     for (let i = 0; i < els.length; i++) {
