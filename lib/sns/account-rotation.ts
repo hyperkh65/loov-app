@@ -34,11 +34,11 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
     threads: ['25873039292318366', '25203934249239577'], // @2days.kr(주 타겟) → @2dayskr (@2dayskr_korea는 aboda 전용으로 분리, 2026-10-01)
     instagram: ['34489947500650071'], // @2dayskr
   },
-  // 쿠팡/토스 상품광고 전용 — @2days.kr 하나만, 로테이션 없이 간격만 체크
-  // (@2dayskr_korea/@aboda_miracool에 광고 섞임 방지, 위 코멘트 참고)
+  // 쿠팡/토스 상품광고 전용 — @seanonthemail 하나만, 로테이션 없이 간격만 체크
+  // (2026-10-18 사용자 확정: Whasubun(@whasubun.kr)은 과학·테크·AI 전용으로 분리, 상품광고는 무신사와 같은 seanonthemail로)
   ads_default: {
-    threads: ['25873039292318366'], // @2days.kr
-    instagram: ['27475655598789002'], // @2days.kr 인스타(2026-10-01 연결) — 스레드 @2days.kr과 짝
+    threads: ['28733238669628153'], // @seanonthemail 스레드
+    instagram: ['29046724018350449'], // @seanonthemail 인스타
   },
   // 2days.kr 사이트 전용(사용자 확정 2026-10-01) — @2dayskr 스레드/인스타 고정, 로테이션 없음.
   // 이 계정이 메인이라 간격 체크도 면제(MIN_GAP 0) — 같은 계정을 쓰는 다른 그룹이 로그를 보고 양보함.

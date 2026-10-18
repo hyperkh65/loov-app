@@ -105,7 +105,7 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   publishToTumblr({ title, meta_description: captions.tumblr, tags: captions.tumblr_tags?.split(',').map(t => t.replace(/^#/, '').trim()).filter(Boolean), canonical_url: articleUrl }).catch(() => {});
 }
 
-async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
+export async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
   const supabase = createAdminClient();
   const { data: tokenRow } = await supabase
     .from('bossai_blogger_tokens')
@@ -130,7 +130,7 @@ async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
   return refreshed.access_token;
 }
 
-async function publishToBlogger(accessToken: string, blogId: string, title: string, content: string, labels: string[]): Promise<string> {
+export async function publishToBlogger(accessToken: string, blogId: string, title: string, content: string, labels: string[]): Promise<string> {
   title = tightTitle(title);
   // Blogger는 라벨 합계가 200바이트(UTF-8, 한글 3바이트)를 넘으면 "invalid argument"로 거부(실측) — 190바이트 안에서만 사용
   const safeLabels: string[] = [];
