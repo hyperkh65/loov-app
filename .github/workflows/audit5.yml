@@ -1,0 +1,29 @@
+name: audit5
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/audit5.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/au5.sql <<'SQL'
+            \echo == SNS 플랫폼별 성공 마지막 시각
+            select platform, count(*) filter (where status='success') ok, count(*) filter (where status='failed') fail, to_char(max(posted_at) filter (where status='success') at time zone 'Asia/Seoul','MM-DD HH24:MI') last_ok, to_char(max(posted_at) filter (where status='failed') at time zone 'Asia/Seoul','MM-DD HH24:MI') last_fail from public.sns_post_logs where posted_at > now() - interval '72 hours' group by 1 order by 1;
+            \echo == 최근 실패 사유
+            select platform, to_char(posted_at at time zone 'Asia/Seoul','MM-DD HH24:MI') at, left(error_message,110) from public.sns_post_logs where status='failed' and posted_at > now() - interval '36 hours' order by posted_at desc limit 12;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/au5.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            rm -f /tmp/au5.sql
