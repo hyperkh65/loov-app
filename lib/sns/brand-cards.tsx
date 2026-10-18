@@ -18,7 +18,7 @@ interface BrandPlan { hook: string; kicker: string; points: Array<{ title: strin
 
 const Shell = ({ dark, page, children }: { dark: boolean; page: string; children: ReactNode }) => (
   <div style={{ display: 'flex', flexDirection: 'column', width: 1080, height: 1350, padding: '84px 80px', fontFamily: 'P', justifyContent: 'space-between',
-    background: dark ? BLUE : '#F3F7FF', backgroundImage: dark ? 'linear-gradient(160deg, #2F63FF 0%, #1747FF 45%, #0A1B6B 100%)' : undefined }}>
+    backgroundImage: dark ? 'linear-gradient(160deg, #2F63FF 0%, #1747FF 45%, #0A1B6B 100%)' : 'linear-gradient(160deg, #F3F7FF 0%, #E6EEFF 100%)' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div style={{ display: 'flex', fontSize: 30, fontWeight: 900, letterSpacing: 4, color: dark ? '#fff' : BLUE }}>{BRAND}</div>
       <div style={{ display: 'flex', fontSize: 30, fontWeight: 700, color: dark ? '#BCD0FF' : '#8AA0D8' }}>{page}</div>
