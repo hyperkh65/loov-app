@@ -60,7 +60,10 @@ export async function writeArticle(c: Candidate, text: string, topics: string): 
   return askJson<Article>(prompt, v => {
     if (!v.title || !v.hook || !v.coverPrompt) return '필수 필드 누락';
     if (!Array.isArray(v.sections) || v.sections.length < 3 || v.sections.some(s => !s.h2 || !s.paras?.length || !s.photoPrompt)) return 'sections 부족';
-    if (!Array.isArray(v.cards) || v.cards.length < 5 || v.cards.some(k => !k.title)) return 'cards 부족';
+    if (!Array.isArray(v.cards)) return 'cards 부족';
+    for (const k of v.cards) if (k?.type === 'compare' && (k.rows?.length || 0) < 2) k.type = 'point';
+    v.cards = v.cards.filter(k => k?.title && (k.body || k.items?.length || k.rows?.length));
+    if (v.cards.length < 5) return 'cards 부족';
     if (!Array.isArray(v.summary) || !v.summary.length) return 'summary 없음';
     v.faq = Array.isArray(v.faq) ? v.faq.filter(f => f?.q && f?.a) : [];
     v.tags = Array.isArray(v.tags) ? v.tags : [];

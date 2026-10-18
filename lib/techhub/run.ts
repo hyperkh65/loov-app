@@ -104,10 +104,10 @@ async function pickAndScrape(topics: string, notes: string[]): Promise<{ c: Cand
   const fresh = await dropUsed(list);
   if (!fresh.length) throw new Error('[스킵] 새로 쓸 후보가 없음');
   const ranked = await judge(fresh, topics);
-  for (const [i, c] of ranked.slice(0, 8).entries()) {
+  for (const [i, c] of ranked.filter(x => !/techmeme\.com/.test(x.link)).slice(0, 8).entries()) { // 테크밈은 모음 페이지라 원문이 아님(화제성 신호로만 사용)
     let s = { text: '', images: [] as string[], bodyImages: [] as string[] };
     try { s = await scrapeArticleFull(c.link); } catch { /* 요약으로 대체 시도 */ }
-    const text = s.text.length >= 400 ? s.text : (c.summary.length >= 150 ? `${c.title}\n${c.summary}` : '');
+    const text = s.text.length >= 800 ? s.text : (c.summary.length >= 150 ? `${c.title}\n${c.summary}` : '');
     if (text) return { c, text, images: s.images, bodyImages: s.bodyImages, ranked: i };
   }
   throw new Error('[스킵] 본문을 가져올 수 있는 후보가 없음');
