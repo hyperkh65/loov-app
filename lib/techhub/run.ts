@@ -16,7 +16,8 @@ import { getBloggerTokenAdmin, publishToBlogger } from '@/lib/scheduler/blog-run
 import { dispatchNaverPublishJob } from '@/lib/scheduler/naver-tech-runner';
 import type { Schedule } from '@/lib/scheduler';
 import { collectCandidates, dropUsed, type Candidate } from './sources';
-import { judge, writeArticle, writeCaptions, type Article } from './write';
+import { judge, writeArticle, writeCaptions, captionPrompt, captionOk, trimCaptions, type Article } from './write';
+import { enqueueGpt, waitGpt } from './gpt-queue';
 import { renderAll } from './render';
 import { TECHHUB_PROFILES, TECHHUB_BLOGS, TECHHUB_CHANNELS } from './accounts';
 
@@ -27,6 +28,8 @@ export interface TechHubConfig {
   naver?: boolean;
   sns?: boolean;
   blogger_blog_id?: string;
+  /** false면 맥(Codex) GPT 대표이미지/캡션을 쓰지 않음 */
+  gpt?: boolean;
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -43,7 +46,7 @@ async function rehost(url: string, key: string): Promise<string | null> {
   } catch { return null; }
 }
 
-type Photo = { url: string | null; how: 'ai' | 'original' | 'stock' | 'none' };
+type Photo = { url: string | null; how: 'gpt' | 'ai' | 'original' | 'stock' | 'none' };
 async function photo(prompt: string, stock: string, original: string | undefined, key: string): Promise<Photo> {
   const ai = await withTimeout(generateHqImage(prompt), 110_000).catch(() => null);
   if (ai) return { url: ai, how: 'ai' };
@@ -135,8 +138,17 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
 
   const slug = `${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 7)}`;
   const jobs = [{ p: a.coverPrompt, s: a.coverStock, o: images[0] }, ...a.sections.slice(0, 4).map((s, i) => ({ p: s.photoPrompt, s: s.stock, o: bodyImages[i] || images[i + 1] }))];
-  const photos = await pool(jobs, 2, (j, i) => photo(j.p, j.s, j.o, `${slug}/photo${i}`));
-  lap(`사진 ${photos.map(x => x.how).join('/')}`);
+  // 맥(Codex/ChatGPT 구독)에 대표이미지+계정별 캡션을 맡기고, 그동안 본문 사진을 만든다. 맥이 꺼져 있으면 기존 경로(AI→원본→스톡)로 폴백.
+  const gptId = slug;
+  const gptP = cfg.gpt === false ? Promise.resolve(null) : (async () => {
+    await enqueueGpt({ id: gptId, created: Date.now(), slug, coverPrompt: a.coverPrompt, captionPrompts: Object.fromEntries(profiles.map(p => [p.id, captionPrompt(a, p)])) });
+    return waitGpt(gptId, 170_000);
+  })().catch(() => null);
+  const body = await pool(jobs.slice(1), 2, (j, i) => photo(j.p, j.s, j.o, `${slug}/photo${i + 1}`));
+  const gptRes = await gptP;
+  const cover: Photo = gptRes?.coverUrl ? { url: gptRes.coverUrl, how: 'gpt' } : await photo(jobs[0].p, jobs[0].s, jobs[0].o, `${slug}/photo0`);
+  const photos = [cover, ...body];
+  lap(`사진 ${photos.map(x => x.how).join('/')} (맥GPT ${gptRes ? '응답' : '없음→폴백'})`);
 
   const brand = profiles[0].brand;
   const { wideCover, cards } = await renderAll({
@@ -150,7 +162,7 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
 
   const result: Record<string, unknown> = {
     dry_run: dry, title: a.title, hook: a.hook, source: c.source, sourceUrl: c.link, wideCover, cards,
-    photos: photos.map(p => ({ how: p.how, url: p.url })), notes,
+    photos: photos.map(p => ({ how: p.how, url: p.url })), gptCaptions: Object.keys(gptRes?.captions || {}), notes,
   };
   const admin = createAdminClient();
   const userId = schedule.user_id;
@@ -174,7 +186,10 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
   // 계정별 캡션 (드라이런에서도 생성해서 품질 확인)
   const captions: Record<string, { instagram: string; threads: string }> = {};
   for (const p of profiles) {
-    try { captions[p.id] = await writeCaptions(a, p); } catch (e) { errors.push(`caption ${p.id}: ${e instanceof Error ? e.message : e}`); }
+    try {
+      const g = gptRes?.captions?.[p.id] as { instagram?: string; threads?: string } | undefined;
+      captions[p.id] = g && !captionOk(g) ? trimCaptions(g as { instagram: string; threads: string }) : await writeCaptions(a, p);
+    } catch (e) { errors.push(`caption ${p.id}: ${e instanceof Error ? e.message : e}`); }
   }
   result.captions = captions;
   lap('캡션');

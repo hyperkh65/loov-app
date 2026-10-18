@@ -85,11 +85,13 @@ export async function writeArticle(c: Candidate, text: string, topics: string): 
 }
 
 /** 계정(persona)별 캡션 — 같은 글이라도 계정 성격에 맞게 따로 쓴다 */
-export async function writeCaptions(a: Article, p: TechProfile): Promise<Captions> {
+export function captionPrompt(a: Article, p: TechProfile): string {
   const facts = `${a.title}\n${a.summary.join('\n')}\n${a.cards.map(c => `${c.title}: ${c.body || (c.items || []).join(', ')}`).join('\n')}`;
-  const v = await askJson<Captions>(
-    `당신은 ${p.handle} 계정의 운영자입니다. 주제: ${p.topics}. 말투/성격: ${p.persona}\n아래 내용으로 카드뉴스 게시물 캡션 2종을 쓰세요. 사실은 아래 내용 안에서만, 지어내기 금지. 링크/URL은 넣지 말 것(링크는 댓글로 따로 답니다).\n\n${facts}\n\n- instagram: 첫 줄은 스크롤을 멈추게 하는 한 문장(질문 또는 놀라운 사실), 이어서 핵심 3~4줄(줄바꿈), 마지막에 "저장해두고 나중에 다시 보세요" 류의 행동 유도 한 줄, 그 뒤 빈 줄 후 해시태그 8~10개. 전체 1500자 이내.\n- threads: 대화체, 첫 문장이 후킹, 핵심 2~3개, 마지막은 댓글을 부르는 질문. 해시태그 최대 1개. 400자 이내.\n\nJSON만 출력: {"instagram":"","threads":""}`,
-    v => (v.instagram && v.threads ? null : '캡션 누락'),
-  );
-  return { instagram: v.instagram.trim().slice(0, 2000), threads: v.threads.trim().slice(0, 480) };
+  return `당신은 ${p.handle} 계정의 운영자입니다. 주제: ${p.topics}. 말투/성격: ${p.persona}\n아래 내용으로 카드뉴스 게시물 캡션 2종을 쓰세요. 사실은 아래 내용 안에서만, 지어내기 금지. 링크/URL은 넣지 말 것(링크는 댓글로 따로 답니다).\n\n${facts}\n\n- instagram: 첫 줄은 스크롤을 멈추게 하는 한 문장(질문 또는 놀라운 사실), 이어서 핵심 3~4줄(줄바꿈), 마지막에 "저장해두고 나중에 다시 보세요" 류의 행동 유도 한 줄, 그 뒤 빈 줄 후 해시태그 8~10개. 전체 1500자 이내.\n- threads: 대화체, 첫 문장이 후킹, 핵심 2~3개, 마지막은 댓글을 부르는 질문. 해시태그 최대 1개. 400자 이내.\n\nJSON만 출력: {"instagram":"","threads":""}`;
+}
+export const captionOk = (v: Partial<Captions>) => (v?.instagram && v?.threads ? null : '캡션 누락');
+export const trimCaptions = (v: Captions): Captions => ({ instagram: v.instagram.trim().slice(0, 2000), threads: v.threads.trim().slice(0, 480) });
+
+export async function writeCaptions(a: Article, p: TechProfile): Promise<Captions> {
+  return trimCaptions(await askJson<Captions>(captionPrompt(a, p), captionOk));
 }
