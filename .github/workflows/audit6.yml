@@ -1,0 +1,27 @@
+name: audit6
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/audit6.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/au6.sql <<'SQL'
+            \echo == 최근 SNS 로그
+            select platform, status, to_char(posted_at at time zone 'Asia/Seoul','MM-DD HH24:MI:SS') at, left(coalesce(error_message,''),230) note from public.sns_post_logs where posted_at > now() - interval '40 minutes' order by posted_at desc limit 25;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/au6.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            rm -f /tmp/au6.sql
