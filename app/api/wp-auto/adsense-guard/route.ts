@@ -12,7 +12,14 @@ async function targets() {
   return (data || []).filter(s => (s.site_url || '').includes('miracool.co.kr'));
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  if (new URL(req.url).searchParams.get('ls')) {
+    const out: Record<string, string[]> = {};
+    for (const k of Object.keys(NAS_TARGETS) as NasKey[]) {
+      try { out[k] = (await NAS_TARGETS[k].exec(`ls -d ${WEB_ROOT}/*/wp-config.php ${WEB_ROOT}/*/*/wp-config.php 2>/dev/null`)).stdout.split('\n').filter(Boolean); } catch (e) { out[k] = [String(e).slice(0, 80)]; }
+    }
+    return NextResponse.json(out);
+  }
   return NextResponse.json({ sites: (await targets()).map(s => s.site_url) });
 }
 
