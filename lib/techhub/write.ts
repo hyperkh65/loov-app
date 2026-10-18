@@ -70,7 +70,8 @@ export async function writeArticle(c: Candidate, text: string, topics: string): 
         .filter(r => r.length >= 3 && r[0] && r[1] && r[2]).map(r => [r[0], r[1], r[2]] as [string, string, string]);
       if (k.rows.length >= 2) k.type = 'compare';
       else if (k.type === 'compare' || !['point', 'steps', 'stat', 'warn', 'summary'].includes(k.type)) k.type = 'point';
-      if (!Array.isArray(k.heads) || k.heads.length < 2) k.heads = ['기존', '이번'];
+      const hd = (Array.isArray(k.heads) ? k.heads : []).map(clean).filter(Boolean);
+      k.heads = hd.length >= 2 ? [hd[hd.length - 2], hd[hd.length - 1]] : ['기존', '이번'];
     }
     v.cards = v.cards.filter(k => k?.title && (k.body || k.items?.length || k.rows?.length));
     if (v.cards.length < 5) return 'cards 부족';
