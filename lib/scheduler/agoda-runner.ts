@@ -5,26 +5,27 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToWordPress, getWpCredentials, wpDue, markWpPublished } from './blog-runner';
+import { composeModelScene, AI_IMAGE_NOTE } from '@/lib/travel-model';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, AgodaAutoConfig } from './index';
 
 const AGODA_SITE_ID = (process.env.AGODA_SITE_ID || '1959217').trim();
 const AGODA_API_KEY = (process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30').trim();
-const PERSONA = `[화자] 20~30대 여성 여행 크리에이터. 호텔을 직접 비교해 "가성비 좋은 곳"만 골라주는 친구 같은 톤. 가격·평점은 위 데이터 숫자만 그대로 쓰고, 묵어본 척·후기·경험은 지어내지 마라.
+export const PERSONA = `[화자] 20~30대 여성 여행 크리에이터. 호텔을 직접 비교해 "가성비 좋은 곳"만 골라주는 친구 같은 톤. 가격·평점은 위 데이터 숫자만 그대로 쓰고, 묵어본 척·후기·경험은 지어내지 마라.
 [Threads 추가 규칙] 첫 줄에 "1박 N원" 같은 가격 숫자 또는 "이 돈에 이 평점?" 식 가성비 반전을 넣고, 이 호텔이 어떤 사람(혼행/친구/커플/가족)에게 맞는지 한 줄 넣어라.`;
-const DISCLOSURE = '이 포스팅은 아고다 제휴 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
+export const DISCLOSURE = '이 포스팅은 아고다 제휴 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
 // 스레드/인스타는 계정이 여러 개 연결돼 있어 전부에 발행하면 다른 콘텐츠 계정까지
 // 호텔 광고로 도배돼 계정 전체 도달률이 깎임 — 여행 전용 계정으로 고정.
 // 페이스북/트위터는 계정이 하나뿐이라 그대로 둠(필터 안 함).
-const ACCOUNT_ROUTED_PLATFORMS = ['threads', 'instagram'];
-const AGODA_SNS_ACCOUNTS = ['@armchair_travel_today'];
+export const ACCOUNT_ROUTED_PLATFORMS = ['threads', 'instagram'];
+export const AGODA_SNS_ACCOUNTS = ['@armchair_travel_today'];
 
-function stripMarkerArtifacts(s: string): string {
+export function stripMarkerArtifacts(s: string): string {
   return s.replace(/\[\[\[[^\]]{0,40}\]\]\]/g, '').trim();
 }
 
-async function getSnsConnections(userId: string): Promise<Array<{ platform: string; platform_user_id: string; platform_username: string; access_token: string; is_active: boolean }>> {
+export async function getSnsConnections(userId: string): Promise<Array<{ platform: string; platform_user_id: string; platform_username: string; access_token: string; is_active: boolean }>> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from('sns_connections')
@@ -130,7 +131,7 @@ function buildHotelCard(h: AgodaHotel, formatPrice: (p: number) => string): stri
  * 우리 API 크레덴셜(AGODA_SITE_ID=1959217/AGODA_API_KEY)과 Cid·ApiKey가 일치하는 것만 사용 —
  * 사용자가 같이 준 다른 두 개(Cid=1945810)는 이 계정과 안 맞아서(다른 사이트ID로 보임)
  * 확인 전까지는 넣지 않음. */
-function buildAffiliateWidgetHtml(cityId: number, divSeed: string): string {
+export function buildAffiliateWidgetHtml(cityId: number, divSeed: string): string {
   const divId = `adgshp${divSeed}`;
   return `
 <div id="${divId}"></div>
@@ -201,6 +202,12 @@ HTML 본문 전체`;
   content = stripMarkerArtifacts(content);
 
   if (!content) throw new Error('AI 블로그 생성 실패');
+
+  // 고정 모델이 이 호텔에 투숙한 현장 컷(실패 시 호텔 원본 사진으로 대체)
+  const modelShot = top5[0]?.imageURL
+    ? await composeModelScene('She is a guest enjoying this hotel, relaxed candid pose, smiling or looking away from the camera.', top5[0].imageURL)
+    : null;
+  if (modelShot) content = `<figure style="margin:0 0 20px"><img src="${modelShot}" alt="${city.name} 호텔 현장 컷" style="width:100%;border-radius:12px"/><figcaption style="font-size:12px;color:#888">${AI_IMAGE_NOTE}</figcaption></figure>${content}`;
 
   // 호텔별 이미지·가격 카드 삽입 — id="hotel-N" 우선, 없으면 호텔명 매칭, 그래도 안 되면
   // 마지막에 통째로 이어붙임(카드 자체가 절대 누락되지 않게).
@@ -313,7 +320,7 @@ ${PERSONA}
               conn.access_token,
               conn.platform_user_id,
               platform === 'facebook' ? `${text}\n\n${comment}` : text, // 페이스북은 댓글 권한이 없어 링크를 본문에
-              topHotel.imageURL ? [topHotel.imageURL] : undefined,
+              modelShot ? [modelShot] : topHotel.imageURL ? [topHotel.imageURL] : undefined,
             );
             if (platform !== 'facebook') try {
               await postCommentOnOwnPost(platform as Platform, conn.access_token, conn.platform_user_id, postResult.id, comment);

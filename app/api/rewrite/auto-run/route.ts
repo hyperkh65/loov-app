@@ -224,6 +224,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 8. blog.2days.kr 여행 특집(세계/국내 여행지·맛집) — 6시간에 1번, 이미지 생성이 길어 응답을 기다리지 않음
+  if (now.getHours() % 6 === 4 && now.getMinutes() < 20) {
+    fetch(`${BASE}/api/travel/feature-cycle`, { method: 'POST', headers }).catch(() => {});
+  }
+
   return NextResponse.json({
     ok: true,
     sync: syncResult,
