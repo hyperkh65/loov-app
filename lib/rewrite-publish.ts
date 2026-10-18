@@ -381,8 +381,8 @@ export async function publishRewrittenArticle(
   }
 
   // @2dayskr로 나가는 자동 발행은 블루 브랜드 카드뉴스(인스타/스레드) — 실패하면 null → 기존 단일 이미지
-  const cards = rotGroup === 'twodays'
-    ? await Promise.race([buildBrandCards(article.title, article.content, Date.now().toString(36)), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
+  const cards = rotGroup
+    ? await Promise.race([buildBrandCards(article.title, article.content, Date.now().toString(36), { theme: rotGroup === 'aboda' ? 'green' : 'blue', imageUrl: snsImageUrl }), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
     : null;
 
   for (const conn of relevantConns) {

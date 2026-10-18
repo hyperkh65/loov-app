@@ -26,14 +26,14 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   const summary = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const group = snsGroupFor(isTwodaysUrl(articleUrl) ? articleUrl : siteUrl); // 블로거 등 siteUrl이 빈 경우도 발행 URL로 판별
   // 2days.kr 계열 자동 발행만 블루 브랜드 카드뉴스(인스타/스레드) — 실패하면 null → 기존 단일 이미지
-  const wantCards = group === 'twodays' && !opts.accountIds && opts.cards !== false;
+  const wantCards = (group === 'twodays' || group === 'aboda') && !opts.accountIds && opts.cards !== false;
   const [aiCaptions, cards] = await Promise.all([
     Promise.race([
       buildHookCaptions(title, summary),
       new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 120_000)),
     ]).catch(() => ({} as Record<string, string>)),
     wantCards
-      ? Promise.race([buildBrandCards(title, contentHtml, `${Date.now().toString(36)}`), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
+      ? Promise.race([buildBrandCards(title, contentHtml, `${Date.now().toString(36)}`, { theme: group === 'aboda' ? 'green' : 'blue', imageUrl }), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
       : Promise.resolve(null),
   ]);
   console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(aiCaptions).length ? getLastProvider() : '실패→기본문구'} 카드뉴스=${cards ? cards.length + '장' : wantCards ? '실패→단일이미지' : '미사용'}`);
