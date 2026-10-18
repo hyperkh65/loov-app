@@ -227,6 +227,7 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
     const slog = (platform: string, status: 'success' | 'failed', note?: string, postId?: string) =>
       admin.from('sns_post_logs').insert({ user_id: userId, platform, status, ...(note ? { error_message: `[techhub] ${note}`.slice(0, 500) } : {}), ...(postId ? { platform_post_id: postId } : {}) }).then(() => {}, () => {});
     const sns: Record<string, string> = {};
+    const comments: Record<string, string> = {};
     for (const p of profiles) {
       const cap = captions[p.id];
       if (!cap) continue;
@@ -243,7 +244,12 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
             for (let k = 0; k < 3; k++) {
               try {
                 if (platform === 'threads') await waitThreadsPostAccessible(posted.id, conn.access_token); else await new Promise(r => setTimeout(r, 4000));
-                await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, `자세한 내용은 여기서 👉 ${withUtm(blogUrl, `${platform}_techhub`)}`);
+                const cm = await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, `자세한 내용은 여기서 👉 ${withUtm(blogUrl, `${platform}_techhub`)}`);
+                // 실제로 달렸는지 되읽어 확인(게시물 아래 답글/댓글 목록에 우리 링크가 있어야 성공)
+                const rd = platform === 'threads' ? `https://graph.threads.net/v1.0/${posted.id}/replies?fields=text&access_token=${conn.access_token}` : `https://graph.instagram.com/v21.0/${posted.id}/comments?fields=text&access_token=${conn.access_token}`;
+                const seen = await fetch(rd).then(r => r.text()).catch(() => '');
+                comments[`${p.id}.${platform}`] = cm.id;
+                if (!seen.includes('_techhub')) errors.push(`${p.id} ${platform} 댓글: 게시 응답은 왔으나 목록에서 확인 안 됨(id ${cm.id})`);
                 last = ''; break;
               } catch (ce) { last = ce instanceof Error ? ce.message : String(ce); await new Promise(r => setTimeout(r, 8000)); }
             }
@@ -256,6 +262,7 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
       }
     }
     result.sns = sns;
+    result.comments = comments;
   }
 
   result.errors = errors; result.done = done;
