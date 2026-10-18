@@ -340,7 +340,11 @@ export async function publishRewrittenArticle(
   // 대체. 여러 계정을 명시적으로 화이트리스트한 다른 그룹(@aboda_miracool 등)은
   // 기존처럼 전부 발행 유지.
   // 2days.kr·서브도메인으로 발행된 글은 소스 라우팅과 무관하게 @2dayskr로 통합(2026-10-18 사용자 확정)
-  const useRotation = isTwodaysUrl(wordpressUrl) || (allowedAccounts.length === 1 && allowedAccounts[0] === '@2dayskr');
+  // aboda.kr 발행글은 소스 라우팅과 무관하게 @aboda_miracool 전용(2026-10-18 사용자 확정)
+  const rotGroup: 'twodays' | 'aboda' | null = isTwodaysUrl(wordpressUrl) ? 'twodays'
+    : (wordpressUrl || '').includes('aboda.kr') ? 'aboda'
+    : allowedAccounts.length === 1 && allowedAccounts[0] === '@2dayskr' ? 'twodays' : null;
+  const useRotation = rotGroup !== null;
   const relevantConns = (conns || []).filter(c => {
     if (excludedPlatforms.includes(c.platform)) return false;
     if (!SNS_PLATFORMS.includes(c.platform as Platform)) return false;
@@ -350,8 +354,8 @@ export async function publishRewrittenArticle(
   });
   if (useRotation) {
     const [threadsPick, instagramPick] = await Promise.all([
-      pickRotatedAccount(admin, 'twodays', 'threads', conns || []),
-      pickRotatedAccount(admin, 'twodays', 'instagram', conns || []),
+      pickRotatedAccount(admin, rotGroup!, 'threads', conns || []),
+      pickRotatedAccount(admin, rotGroup!, 'instagram', conns || []),
     ]);
     for (const pick of [threadsPick, instagramPick]) {
       const full = pick && (conns || []).find(c => c.platform_user_id === pick.platform_user_id);
@@ -377,7 +381,7 @@ export async function publishRewrittenArticle(
   }
 
   // @2dayskr로 나가는 자동 발행은 블루 브랜드 카드뉴스(인스타/스레드) — 실패하면 null → 기존 단일 이미지
-  const cards = useRotation
+  const cards = rotGroup === 'twodays'
     ? await Promise.race([buildBrandCards(article.title, article.content, Date.now().toString(36)), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
     : null;
 

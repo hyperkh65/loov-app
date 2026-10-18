@@ -45,10 +45,10 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
     threads: ['25203934249239577'], // @2dayskr
     instagram: ['34489947500650071'], // @2dayskr
   },
-  // aboda.kr 전용 — @2dayskr_korea 고정 (사용자 확정 2026-10-01)
+  // aboda.kr 전용 — @aboda_miracool 고정 (사용자 확정 2026-10-18, 기존 @2dayskr_korea에서 변경)
   aboda: {
-    threads: ['27198401606479414'], // @2dayskr_korea
-    instagram: ['27094702240139938'], // @2dayskr_korea
+    threads: ['27529465156685675'], // @aboda_miracool
+    instagram: ['27282443521390270'], // @aboda_miracool
   },
   aboda_miracool: {
     threads: ['27529465156685675'], // @aboda_miracool — 전용 계정 1개뿐, 사실상 로테이션 없이 이거 하나만
