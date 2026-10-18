@@ -13,7 +13,7 @@ export const THEMES = {
   blue: { A: '#1747FF', N: '#0A1B6B', S: '#CFE0FF', bg: 'linear-gradient(160deg, #2F63FF 0%, #1747FF 45%, #0A1B6B 100%)', light: 'linear-gradient(160deg, #F3F7FF 0%, #E6EEFF 100%)', mute: '#BCD0FF', muteL: '#8AA0D8', sub: '#3A4A86', brand: '2DAYS.KR', handle: '@2dayskr' },
   green: { A: '#16A34A', N: '#053B1B', S: '#CFF5DB', bg: 'linear-gradient(160deg, #2FC25F 0%, #16A34A 45%, #064E24 100%)', light: 'linear-gradient(160deg, #F2FCF5 0%, #E1F7E8 100%)', mute: '#C9F2D6', muteL: '#6FAF86', sub: '#2F6B47', brand: 'ABODA.KR', handle: 'ABODA.KR' },
 } as const;
-type Theme = (typeof THEMES)[BrandTheme];
+type Theme = { [K in keyof (typeof THEMES)['blue']]: string };
 const YEL = '#FFE14D';
 
 interface BrandPlan { hook: string; kicker: string; bullets?: string[]; points: Array<{ title: string; body: string }> }
@@ -65,7 +65,7 @@ export function slides(plan: BrandPlan, T: Theme, photo: string | null): ReactEl
   const n = plan.points.length + 2;
   const pg = (i: number) => `${String(i).padStart(2, '0')} / ${String(n).padStart(2, '0')}`;
   // 요약형 표지는 aboda(초록)만 — 2dayskr(파랑)은 기존 표지 유지(사용자 확정 2026-10-18)
-  const cover = T === THEMES.green ? summaryCover(plan, T, photo, pg(1)) : (
+  const cover = T.A === THEMES.green.A ? summaryCover(plan, T, photo, pg(1)) : (
     <Shell T={T} dark page={pg(1)}>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignSelf: 'flex-start', fontSize: 34, fontWeight: 900, color: T.A, background: '#fff', borderRadius: 40, padding: '10px 30px', marginBottom: 44 }}>{plan.kicker}</div>
@@ -97,14 +97,14 @@ export function slides(plan: BrandPlan, T: Theme, photo: string | null): ReactEl
 const strip = (s: unknown) => String(s ?? '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim();
 
 /** 블로그 글 → 블루 브랜드 카드뉴스 6장 URL. 실패 시 null */
-export async function buildBrandCards(title: string, contentHtml: string, slug: string, opts: { theme?: BrandTheme; imageUrl?: string | null } = {}): Promise<string[] | null> {
+export async function buildBrandCards(title: string, contentHtml: string, slug: string, opts: { theme?: BrandTheme; imageUrl?: string | null; handle?: string } = {}): Promise<string[] | null> {
   try { return await makeBrandCards(title, contentHtml, slug, opts); } catch (e) {
     console.error('[brand-cards] 실패→단일 이미지 폴백:', e instanceof Error ? e.message : e);
     return null;
   }
 }
 
-export async function makeBrandCards(title: string, contentHtml: string, slug: string, opts: { theme?: BrandTheme; imageUrl?: string | null } = {}): Promise<string[]> {
+export async function makeBrandCards(title: string, contentHtml: string, slug: string, opts: { theme?: BrandTheme; imageUrl?: string | null; handle?: string } = {}): Promise<string[]> {
   {
     const text = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
     const plan = await askJson<BrandPlan>(
@@ -114,8 +114,9 @@ export async function makeBrandCards(title: string, contentHtml: string, slug: s
     plan.hook = strip(plan.hook).slice(0, 40); plan.kicker = strip(plan.kicker).slice(0, 12);
     plan.points = plan.points.filter(p => p?.title && p?.body).slice(0, 4).map(p => ({ title: strip(p.title).slice(0, 50), body: strip(p.body).slice(0, 120) }));
     plan.bullets = (Array.isArray(plan.bullets) ? plan.bullets : []).map(b => strip(b).slice(0, 40)).filter(Boolean).slice(0, 3);
-    const T = THEMES[opts.theme || 'blue'];
-    const photo = T === THEMES.green ? await photoData(opts.imageUrl, 960, 470) : null;
+    const base = THEMES[opts.theme || 'blue'];
+    const T = opts.handle ? { ...base, brand: opts.handle.replace(/^@/, '').toUpperCase(), handle: opts.handle } : base;
+    const photo = T.A === THEMES.green.A ? await photoData(opts.imageUrl, 960, 470) : null;
     const urls: string[] = [];
     const els = slides(plan, T, photo);
     for (let i = 0; i < els.length; i++) {

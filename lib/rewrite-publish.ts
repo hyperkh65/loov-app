@@ -382,15 +382,27 @@ export async function publishRewrittenArticle(
     }
   }
 
-  // @2dayskr로 나가는 자동 발행은 블루 브랜드 카드뉴스(인스타/스레드) — 실패하면 null → 기존 단일 이미지
-  const cards = rotGroup === 'twodays' || rotGroup === 'aboda'
-    ? await Promise.race([buildBrandCards(article.title, article.content, Date.now().toString(36), { theme: rotGroup === 'aboda' ? 'green' : 'blue', imageUrl: snsImageUrl }), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
-    : null;
+  // 스레드/인스타 자동 발행은 전부 브랜드 카드뉴스 — 무관·워터마크 사진 위 제목은 안 먹혀서(사용자 확인 2026-10-18).
+  // @2dayskr=블루, aboda=초록, 그 외 계정은 블루 + 계정명 브랜드. 실패하면 null → 기존 단일 이미지
+  const cardCache = new Map<string, Promise<string[] | null>>();
+  const cardsFor = (username: string) => {
+    const key = rotGroup === 'twodays' || rotGroup === 'aboda' ? rotGroup : username;
+    if (!cardCache.has(key)) {
+      cardCache.set(key, Promise.race([
+        buildBrandCards(article.title, article.content, Date.now().toString(36), rotGroup === 'twodays' || rotGroup === 'aboda'
+          ? { theme: rotGroup === 'aboda' ? 'green' : 'blue', imageUrl: snsImageUrl }
+          : { theme: 'blue', handle: username ? `@${username.replace(/^@/, '')}` : undefined }),
+        new Promise<null>(r => setTimeout(() => r(null), 150_000)),
+      ]).catch(() => null));
+    }
+    return cardCache.get(key)!;
+  };
 
   for (const conn of relevantConns) {
     const platform = conn.platform as Platform;
     const label = `${platform}:${conn.platform_username || conn.platform_user_id}`;
-    const useCards = !!cards && (platform === 'instagram' || platform === 'threads');
+    const cards = platform === 'instagram' || platform === 'threads' ? await cardsFor(conn.platform_username || '') : null;
+    const useCards = !!cards;
     const platformImages = useCards ? cards!.slice(0, 10) : platform === 'instagram' ? instagramImages : images;
     if (platform === 'instagram' && !platformImages.length) {
       sns[label] = 'skip: 이미지 없음';
