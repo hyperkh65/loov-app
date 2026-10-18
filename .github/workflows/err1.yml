@@ -1,0 +1,29 @@
+name: err1
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/err1.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/e1.sql <<'SQL'
+            \echo == ERR
+            select distinct on (platform) platform, to_char(posted_at at time zone 'Asia/Seoul','MM-DD HH24:MI') at, left(regexp_replace(coalesce(error_message,''),'access_token=[^&" ]+','access_token=***','g'),300) note from public.sns_post_logs where status='failed' and (platform ilike '%pinterest%' or platform ilike '%tumblr%' or platform ilike '%twitter%' or platform ilike '%linkedin%') order by platform, posted_at desc;
+            \echo == CONN
+            select platform, is_active, platform_username, to_char(updated_at at time zone 'Asia/Seoul','MM-DD HH24:MI') upd, to_char(token_expires_at at time zone 'Asia/Seoul','MM-DD HH24:MI') exp from public.sns_connections where platform in ('pinterest','tumblr','twitter','linkedin') order by platform;
+            SQL
+            echo "$NAS2_PASS" | sudo -S -p '' sh -c "cat /tmp/e1.sql | docker exec -i supabase-db psql -U postgres -d postgres -P pager=off 2>&1"
+            rm -f /tmp/e1.sql
