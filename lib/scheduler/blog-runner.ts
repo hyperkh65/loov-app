@@ -12,7 +12,7 @@ import { submitToIndexNow } from '@/lib/indexnow';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
 import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
-import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
 import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
@@ -83,14 +83,18 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
       // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
       // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
       // (rewrite-publish.ts와 동일하게 짧은 대기 + 1회 재시도로 보강)
-      if (!isFb) try {
-        await new Promise(r => setTimeout(r, 4000));
-        await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
-      } catch {
-        try {
-          await new Promise(r => setTimeout(r, 5000));
-          await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
-        } catch { /* 재시도까지 실패 — 본문 발행은 이미 성공이라 전체는 실패 처리 안 함 */ }
+      if (!isFb) {
+        let lastErr = '';
+        for (let i = 0; i < 3; i++) {
+          try {
+            if (conn.platform === 'threads') await waitThreadsPostAccessible(posted.id, conn.access_token);
+            else await new Promise(r => setTimeout(r, 4000));
+            await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
+            lastErr = '';
+            break;
+          } catch (ce) { lastErr = ce instanceof Error ? ce.message : String(ce); await new Promise(r => setTimeout(r, 8000)); }
+        }
+        if (lastErr) slog(`${conn.platform}_comment`, 'failed', `링크 댓글 실패(3회): ${lastErr}`);
       }
     } catch (e) { slog(conn.platform, 'failed', `${conn.platform_user_id}: ${e instanceof Error ? e.message : String(e)}`); /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
   }));
