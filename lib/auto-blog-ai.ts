@@ -177,6 +177,7 @@ const OPENROUTER_FALLBACK_MODELS = ['nvidia/nemotron-3-ultra-550b-a55b:free', 'n
 
 const exhaustedOllamaKeys = new Map<string, number>();
 let lastProvider = '';
+export const snsChainTrace: string[] = [];
 export const getLastProvider = () => lastProvider; // 마지막으로 응답에 성공한 AI(provider/model)
 
 async function callOllama(apiKey: string, model: string, prompt: string): Promise<string> {
@@ -645,7 +646,10 @@ async function generateTextRaw(
 
   // SNS 문구 전용 — 품질 순: OpenRouter nemotron-ultra → Gemini → Groq(Qwen 27B는 외국어 혼입·지어내기가 잦아 최후 수단). 전부 실패하면 throw
   if (preferModel === 'sns') {
-    const r = clean(await tryOpenRouter(OPENROUTER_FALLBACK_MODELS.slice(0, 1), 35_000) || await tryGemini() || await tryGroq());
+    const timed = async (name: string, fn: () => Promise<string | false>) => {
+      const t0 = Date.now(); const v = await fn(); snsChainTrace.push(`${name} ${Date.now() - t0}ms ${v ? 'ok' : 'fail'}`); return v;
+    };
+    const r = clean(await timed('openrouter', () => tryOpenRouter(OPENROUTER_FALLBACK_MODELS.slice(0, 1), 35_000)) || await timed('gemini', tryGemini) || await timed('groq', tryGroq));
     if (r) return r;
     throw new Error(`SNS 문구 생성 모두 실패\n${errors.join(' | ')}`);
   }

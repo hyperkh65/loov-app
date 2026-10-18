@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { inboxAuthed } from '@/lib/shorts-youtube';
-import { generateText, getLastProvider } from '@/lib/auto-blog-ai';
+import { generateText, getLastProvider, snsChainTrace } from '@/lib/auto-blog-ai';
 import { buildHookCaptions, lastCaptionDiag, captionTrace } from '@/lib/sns/hook-captions';
 
 export const maxDuration = 180;
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const r = await cap(generateText('한국어로 "안녕"만 답해', 'sns').then(x => x.slice(0, 80)).catch(e => `ERR ${String(e?.message || e).slice(0, 1200)}`));
     return NextResponse.json({ ms: Date.now() - t, r, provider: getLastProvider() });
   }
-  if (step === 'status') return NextResponse.json({ trace: captionTrace, diag: lastCaptionDiag, state: g.__capState });
+  if (step === 'status') return NextResponse.json({ trace: captionTrace, chain: snsChainTrace.slice(-12), diag: lastCaptionDiag, state: g.__capState });
   if (step === 'start') {
     captionTrace.length = 0; g.__capState = 'running'; const t1 = Date.now();
     buildHookCaptions(String(title || ''), String(summary || '')).then(c => { g.__capState = `done ${Date.now() - t1}ms keys=${Object.keys(c).join(',')}`; }).catch(e => { g.__capState = `err ${e}`; });
