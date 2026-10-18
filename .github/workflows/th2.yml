@@ -20,7 +20,11 @@ jobs:
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             cat > /tmp/th2.sql <<'EOS'
-            select 'INFO_SRC '||s.id||' | '||coalesce(to_jsonb(s)->>'name','?')||' | '||coalesce(to_jsonb(s)->>'site_url','?')||' | act='||coalesce(to_jsonb(s)->>'is_active','?')||' | wp='||coalesce(w.site_url,'(기본)')||' | thumb='||coalesce(to_jsonb(s)->>'use_generated_thumbnail','?')||' | arts='||(select count(*) from public.bossai_rewrite_articles r where r.source_id=s.id)||' | pub='||(select count(*) from public.bossai_rewrite_articles r where r.source_id=s.id and r.status='published') from public.bossai_rewrite_sources s left join public.wordpress_sites w on w.id=s.publish_wp_site_id where s::text ilike '%infodemic%';
+            select 'KEY '||coalesce(to_jsonb(a)->>'key','?')||' len='||length(coalesce(to_jsonb(a)->>'value','')) from public.app_settings a where to_jsonb(a)->>'key' ~* 'OPENAI|NAVER|CLOUDFLARE|R2_|CRON';
+            select 'ROUTE '||left(to_jsonb(a)->>'value',1500) from public.app_settings a where to_jsonb(a)->>'key'='SNS_ACCOUNT_ROUTING_BY_SOURCE';
+            select 'WP '||id||' | '||site_url||' | nas='||coalesce(nas,'?') from public.wordpress_sites where site_url ilike '%2days.kr%' or site_url ilike '%miracool%';
+            select 'SRC '||s.id||' | '||coalesce(to_jsonb(s)->>'name','?')||' | '||coalesce(to_jsonb(s)->>'site_url','?')||' | wp='||coalesce(w.site_url,'(기본)') from public.bossai_rewrite_sources s left join public.wordpress_sites w on w.id=s.publish_wp_site_id;
+            select 'AGODA '||id||' | user='||user_id||' | '||left(config::text,0)||coalesce(config->>'blog_platform','?')||' wp_site='||coalesce(config->>'wp_site_id','-')||' sns='||coalesce(config->>'sns_platforms','-')||' style='||coalesce(config->>'travel_style','-')||' cities='||coalesce(jsonb_array_length(config->'cities'),0) from public.bossai_schedules where type ilike '%agoda%';
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
@@ -38,3 +42,4 @@ jobs:
 # r18
 # r19
 # r20
+# r21
