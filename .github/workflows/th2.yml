@@ -25,3 +25,4 @@ jobs:
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
+# r2
