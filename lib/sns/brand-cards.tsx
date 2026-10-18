@@ -67,7 +67,14 @@ const strip = (s: unknown) => String(s ?? '').replace(/[\u{1F000}-\u{1FAFF}\u{26
 
 /** 블로그 글 → 블루 브랜드 카드뉴스 6장 URL. 실패 시 null */
 export async function buildBrandCards(title: string, contentHtml: string, slug: string): Promise<string[] | null> {
-  try {
+  try { return await makeBrandCards(title, contentHtml, slug); } catch (e) {
+    console.error('[brand-cards] 실패→단일 이미지 폴백:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+export async function makeBrandCards(title: string, contentHtml: string, slug: string): Promise<string[]> {
+  {
     const text = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000);
     const plan = await askJson<BrandPlan>(
       `블로그 글을 인스타·스레드용 카드뉴스로 압축하세요. 글에 없는 사실·수치는 지어내지 말 것. 이모지 금지.\n\n[제목] ${title}\n[본문] ${text}\n\nJSON만 출력: {"hook":"표지 헤드라인 12~22자, 핵심어 1~2개를 **이렇게** 감싸 강조","kicker":"표지 상단 라벨 2~8자","points":[{"title":"핵심 포인트 제목 12~24자(핵심어 **강조**)","body":"쉬운 설명 2문장 70~110자"} ×정확히 4개]}`,
@@ -80,9 +87,7 @@ export async function buildBrandCards(title: string, contentHtml: string, slug: 
     for (let i = 0; i < els.length; i++) {
       urls.push(await uploadToR2(`brandcards/${slug}/c${String(i + 1).padStart(2, '0')}.jpg`, await toJpeg(els[i], 1080, 1350), 'image/jpeg'));
     }
-    return urls.length >= 3 ? urls : null;
-  } catch (e) {
-    console.error('[brand-cards] 실패→단일 이미지 폴백:', e instanceof Error ? e.message : e);
-    return null;
+    if (urls.length < 3) throw new Error('카드 3장 미만');
+    return urls;
   }
 }

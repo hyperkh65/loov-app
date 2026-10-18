@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { inboxAuthed } from '@/lib/shorts-youtube';
-import { buildBrandCards } from '@/lib/sns/brand-cards';
+import { makeBrandCards } from '@/lib/sns/brand-cards';
 
 export const maxDuration = 120;
 
@@ -8,6 +8,6 @@ export const maxDuration = 120;
 export async function POST(req: NextRequest) {
   if (!inboxAuthed(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { title, content } = await req.json();
-  const cards = await buildBrandCards(String(title || ''), String(content || ''), `test-${Date.now().toString(36)}`);
-  return NextResponse.json({ cards });
+  try { return NextResponse.json({ cards: await makeBrandCards(String(title || ''), String(content || ''), `test-${Date.now().toString(36)}`) }); }
+  catch (e) { return NextResponse.json({ error: e instanceof Error ? `${e.message}\n${e.stack?.split('\n').slice(0, 4).join('\n')}` : String(e) }, { status: 500 }); }
 }
