@@ -211,10 +211,10 @@ export async function publishRewrittenArticle(
   let captions: Record<string, string>;
   try {
     // generateText는 provider 폴백 체인이 길어 최악의 경우 수 분 걸릴 수 있음 —
-    // 캡션은 없어도 요약으로 폴백 가능하니 60초 넘으면 바로 포기하고 진행
+    // 캡션이 없으면 SNS는 스킵되므로 실측(약 61초)보다 넉넉히 120초까지 기다림
     captions = await Promise.race([
       buildHookCaptions(article.title, plainSummary),
-      new Promise<Record<string, string>>((_, reject) => setTimeout(() => reject(new Error('caption timeout')), 60_000)),
+      new Promise<Record<string, string>>((_, reject) => setTimeout(() => reject(new Error('caption timeout')), 120_000)),
     ]);
   } catch {
     captions = {}; // 실패/타임아웃하면 아래에서 요약으로 폴백
