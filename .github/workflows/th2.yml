@@ -20,10 +20,10 @@ jobs:
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             cat > /tmp/th2.sql <<'EOS'
-            select 'SRC '||left(s.id::text,8)||' | '||coalesce(w.site_url,'(기본사이트)')||' | sns='||s.publish_sns||' | tumblr='||s.publish_tumblr||' | excl='||coalesce(s.excluded_platforms::text,'') from public.bossai_rewrite_sources s left join public.wordpress_sites w on w.id=s.publish_wp_site_id where s.id::text in ('1c036b9d-2a2b-449d-9b97-0a12c76dab6f','132c4df6-2a18-4693-8799-342893aa1469','627b59b2-01f5-4537-ab7d-4f4a2c401573');
-            select 'DEFAULTSITE '||coalesce(w.site_url,'?') from public.app_settings a left join public.wordpress_sites w on w.id::text=a.settings->>'REWRITE_PUBLISH_WP_SITE_ID' where a.id=1;
-            select 'ROUTING '||left(coalesce(a.settings->>'SNS_ACCOUNT_ROUTING_BY_SOURCE',''),900) from public.app_settings a where a.id=1;
-            select 'ART '||left(to_jsonb(r)->>'source_id',8)||' | '||coalesce(r.published_at::text,'')||' | '||left(coalesce(r.published_urls::text,''),230) from public.bossai_rewrite_articles r where r.status='published' and to_jsonb(r)->>'source_id' in ('1c036b9d-2a2b-449d-9b97-0a12c76dab6f','132c4df6-2a18-4693-8799-342893aa1469') order by r.published_at desc limit 8;
+            select 'WP '||left(id::text,8)||' | '||site_url from public.wordpress_sites order by site_url;
+            select 'SRC '||left(s.id::text,8)||' | '||coalesce(to_jsonb(s)->>'name',to_jsonb(s)->>'site_name',to_jsonb(s)->>'site_url',to_jsonb(s)->>'url','?')||' | act='||coalesce(to_jsonb(s)->>'is_active','?')||' | wp='||coalesce(w.site_url,'(기본:miracool)')||' | route='||coalesce(((select a.settings->>'SNS_ACCOUNT_ROUTING_BY_SOURCE' from public.app_settings a where a.id=1)::jsonb)->(s.id::text))::text,'(기본:aboda_miracool)') from public.bossai_rewrite_sources s left join public.wordpress_sites w on w.id=s.publish_wp_site_id order by 1;
+            select 'ABODA_ARTS7d '||coalesce(split_part(to_jsonb(r)->'published_urls'->>'wordpress','/',3),'(없음)')||' | src='||left(coalesce(to_jsonb(r)->>'source_id',''),8)||' | n='||count(*) from public.bossai_rewrite_articles r where r.status='published' and r.published_at > now()-interval '7 days' and r.published_urls::text like '%aboda_miracool%' group by 1 order by 1;
+            select 'SCHED '||left(sc.id::text,8)||' | '||coalesce(to_jsonb(sc)->>'name',to_jsonb(sc)->>'type','?')||' | type='||coalesce(to_jsonb(sc)->>'type',to_jsonb(sc)->>'schedule_type','?')||' | act='||coalesce(to_jsonb(sc)->>'is_active',to_jsonb(sc)->>'enabled','?')||' | sns='||coalesce(left((to_jsonb(sc)->'config'->'sns_account_ids')::text,120),'') from public.bossai_schedules sc where sc::text ilike '%aboda%' order by 1;
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
@@ -36,3 +36,4 @@ jobs:
 # r11
 # r12
 # r15
+# r16
