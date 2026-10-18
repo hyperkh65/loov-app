@@ -26,7 +26,7 @@ function parseJson<T>(raw: string): T {
   return JSON.parse(s.slice(a, b + 1)) as T;
 }
 
-async function askJson<T>(prompt: string, check: (v: T) => string | null): Promise<T> {
+export async function askJson<T>(prompt: string, check: (v: T) => string | null): Promise<T> {
   let last = '';
   for (const model of ['gemini', 'openrouter', 'groq']) {
     try {

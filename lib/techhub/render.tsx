@@ -24,7 +24,7 @@ function loadFonts() {
   return fonts;
 }
 
-function Rich({ text, size, color, weight = 900, lh = 1.28 }: { text: string; size: number; color: string; weight?: 700 | 900; lh?: number }) {
+export function Rich({ text, size, color, weight = 900, lh = 1.28, hl: hlBg = YEL, hlFg = '#111' }: { text: string; size: number; color: string; weight?: 700 | 900; lh?: number; hl?: string; hlFg?: string }) {
   // 공백 단위 "단어 그룹" — 형광펜 경계가 단어 중간이면(예: **가능**해졌나) 한 그룹으로 붙여 간격이 벌어지지 않게
   const groups: Array<Array<{ w: string; hl: boolean }>> = [];
   let open = false;
@@ -47,7 +47,7 @@ function Rich({ text, size, color, weight = 900, lh = 1.28 }: { text: string; si
           {g.map((x, k) => (
             <div key={k} style={{
               display: 'flex', fontSize: size, fontWeight: weight, lineHeight: lh, letterSpacing: -size * 0.02,
-              color: x.hl ? '#111' : color, background: x.hl ? YEL : 'transparent',
+              color: x.hl ? hlFg : color, background: x.hl ? hlBg : 'transparent',
               padding: x.hl ? `0 ${size * 0.1}px` : 0, borderRadius: size * 0.1,
             }}>{x.w}</div>
           ))}
@@ -209,7 +209,7 @@ function ctaEl(brand: string, handle: string, total: number, channels: Array<{ t
   );
 }
 
-async function toJpeg(el: ReactElement, w: number, h: number): Promise<Buffer> {
+export async function toJpeg(el: ReactElement, w: number, h: number): Promise<Buffer> {
   const png = await new ImageResponse(el, { width: w, height: h, fonts: loadFonts() }).arrayBuffer();
   return sharp(Buffer.from(png)).jpeg({ quality: 90 }).toBuffer();
 }

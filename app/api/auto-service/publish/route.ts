@@ -2,7 +2,8 @@ import { isTwoDays, pickWpCategory, relatedPostsBox } from '@/lib/wp-category';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
-import { postToThreadsWithMedia, waitThreadsPostAccessible, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { postToThreadsWithMedia } from '@/lib/sns/platforms-server';
+import { postLinkComment } from '@/lib/sns/link-comment';
 import { submitToIndexNow } from '@/lib/indexnow';
 import { translateArticle } from '@/lib/ai-translate';
 import iconv from 'iconv-lite';
@@ -587,68 +588,35 @@ export async function POST(req: NextRequest) {
       const otherPlatforms = sns_platforms.filter((p: string) => p !== 'threads' && p !== 'instagram');
       const defaultMediaUrls = (() => { const img = article.representative_image_url || extractFirstImageUrl(article.content || ''); return img ? [img] : []; })();
 
-      // Instagram: 블로그 대표이미지로 발행
-      if (instagramIncluded) {
+      // 링크 정책(수동·자동 공통): 인스타/트위터는 본문 대신 "댓글"로 링크(본문 링크는 노출 페널티),
+      // 댓글이 어려운 페이스북/텔레그램/블루스카이 등은 본문에 링크. post-now의 thread_items가 댓글(5회 재시도)을 처리.
+      const linkItems = blogUrls.length > 0 ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }] : undefined;
+      const commentPlatforms = otherPlatforms.filter((p: string) => p === 'twitter');
+      const bodyLinkPlatforms = otherPlatforms.filter((p: string) => p !== 'twitter');
+      const groups: Array<{ platforms: string[]; content: string; items?: Array<{ content: string }> }> = [
+        ...(instagramIncluded ? [{ platforms: ['instagram'], content: aiCaption.trim() || blogLinkText.trim(), items: linkItems }] : []),
+        ...(commentPlatforms.length ? [{ platforms: commentPlatforms, content: (aiCaption.trim() || blogLinkText.trim()).slice(0, 240), items: linkItems }] : []),
+        ...(bodyLinkPlatforms.length ? [{ platforms: bodyLinkPlatforms, content: `${aiCaption}${blogLinkText}`.trim() }] : []),
+      ];
+      for (const g of groups) {
+        const fail = (error: string) => { for (const p of g.platforms) results[`sns_${p}`] = { success: false, error }; };
         try {
-          const instagramCaption = `${aiCaption}${blogLinkText}`.trim();
           const res = await fetch(`${baseUrl}/api/sns/post-now`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-            body: JSON.stringify({ content: instagramCaption, platforms: ['instagram'], media_urls: defaultMediaUrls }),
+            body: JSON.stringify({ content: g.content, platforms: g.platforms, media_urls: defaultMediaUrls, ...(g.items ? { thread_items: g.items } : {}) }),
           });
           const text = await res.text();
           try {
             const data = JSON.parse(text);
             if (data.results) {
-              for (const r of data.results) {
-                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
-              }
-            } else if (!res.ok) {
-              results['sns_instagram'] = { success: false, error: data.error || `HTTP ${res.status}` };
-            }
+              for (const r of data.results) results[`sns_${r.platform}`] = { success: r.success, error: r.error };
+            } else if (!res.ok) fail(data.error || `HTTP ${res.status}`);
           } catch {
-            results['sns_instagram'] = { success: false, error: `서버 오류 (${res.status}) ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)}` };
+            fail(`서버 오류 (${res.status}) ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)}`);
           }
         } catch (err) {
-          results['sns_instagram'] = { success: false, error: err instanceof Error ? err.message : String(err) };
-        }
-      }
-
-      // Threads 외 나머지 플랫폼 (Twitter, Facebook 등): AI 캡션 + 블로그 링크
-      if (otherPlatforms.length > 0) {
-        try {
-          // Twitter는 280자 제한 (링크 포함 ~23자 소모) → 캡션 240자 이내로 자름
-          const hasTwitter = otherPlatforms.includes('twitter');
-          const snsContent = hasTwitter && otherPlatforms.length === 1
-            ? aiCaption.slice(0, 200) + blogLinkText
-            : `${aiCaption}${blogLinkText}`.trim();
-
-          const res = await fetch(`${baseUrl}/api/sns/post-now`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-            body: JSON.stringify({ content: snsContent, platforms: otherPlatforms, media_urls: defaultMediaUrls }),
-          });
-          const text = await res.text();
-          try {
-            const data = JSON.parse(text);
-            if (data.results) {
-              for (const r of data.results) {
-                results[`sns_${r.platform}`] = { success: r.success, error: r.error };
-              }
-            } else if (!res.ok) {
-              for (const p of otherPlatforms) {
-                results[`sns_${p}`] = { success: false, error: data.error || `HTTP ${res.status}` };
-              }
-            }
-          } catch {
-            for (const p of otherPlatforms) {
-              results[`sns_${p}`] = { success: false, error: `서버 오류 (${res.status}) ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)}` };
-            }
-          }
-        } catch (err) {
-          for (const p of otherPlatforms) {
-            results[`sns_${p}`] = { success: false, error: err instanceof Error ? err.message : String(err) };
-          }
+          fail(err instanceof Error ? err.message : String(err));
         }
       }
 
@@ -719,36 +687,10 @@ export async function POST(req: NextRequest) {
                 threadsMediaUrls.length > 0 ? threadsMediaUrls : undefined,
               );
 
-              // ③ 댓글: 게시물 접근 가능 확인(최대 20초 폴링) 후 댓글 게시
+              // ③ 링크 댓글: 게시물 반영을 기다리며 최대 4회 재시도
               if (blogLinkComment) {
-                // 최대 20초 폴링 — 게시물이 조회 가능해질 때까지 대기
-                const pollDeadline = Date.now() + 20000;
-                while (Date.now() < pollDeadline) {
-                  await new Promise(r => setTimeout(r, 4000));
-                  try {
-                    const ck = await fetch(
-                      `https://graph.threads.net/v1.0/${postId}?fields=id&access_token=${acc.access_token}`,
-                      { signal: AbortSignal.timeout(4000) },
-                    );
-                    if (ck.ok) { const d = await ck.json(); if (d.id) break; }
-                  } catch { /* 계속 폴링 */ }
-                }
-                // 접근 가능 여부와 무관하게 댓글 시도 (실패 에러 전문 캡처)
-                let commentOk = false;
-                try {
-                  await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
-                  commentOk = true;
-                } catch (e1) {
-                  // 5초 후 1회 재시도
-                  try {
-                    await new Promise(r => setTimeout(r, 5000));
-                    await postCommentOnOwnPost('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
-                    commentOk = true;
-                  } catch (e2) {
-                    commentErrors.push(`[${String(e2).slice(0, 400)}]`);
-                  }
-                }
-                if (commentOk) commentSuccesses.push(1);
+                const cm = await postLinkComment('threads', acc.access_token, acc.platform_user_id, postId, blogLinkComment);
+                if (cm.ok) commentSuccesses.push(1); else commentErrors.push(`[${(cm.error || '').slice(0, 400)}]`);
               }
               return postId;
             })

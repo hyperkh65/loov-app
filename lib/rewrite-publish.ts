@@ -19,7 +19,9 @@ import { publishToWordpressCom } from '@/lib/wordpress-com';
 import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { publishToPinterest } from '@/lib/pinterest-publish';
 import { findCrossSiteLink, appendCrossLink } from '@/lib/internal-crosslink';
-import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
+import { pickRotatedAccount, logSnsPost, isTwodaysUrl } from '@/lib/sns/account-rotation';
+import { buildBrandCards } from '@/lib/sns/brand-cards';
+import { postLinkComment } from '@/lib/sns/link-comment';
 import { sanitizeInvisible, assertPublishableHtml } from '@/lib/html-gate';
 
 const SNS_PLATFORMS: Platform[] = ['twitter', 'threads', 'facebook', 'instagram', 'linkedin'];
@@ -337,7 +339,8 @@ export async function publishRewrittenArticle(
   // (lib/sns/account-rotation.ts)과 동일하게 "주 타겟 우선 + 자매계정 로테이션"으로
   // 대체. 여러 계정을 명시적으로 화이트리스트한 다른 그룹(@aboda_miracool 등)은
   // 기존처럼 전부 발행 유지.
-  const useRotation = allowedAccounts.length === 1 && allowedAccounts[0] === '@2dayskr';
+  // 2days.kr·서브도메인으로 발행된 글은 소스 라우팅과 무관하게 @2dayskr로 통합(2026-10-18 사용자 확정)
+  const useRotation = isTwodaysUrl(wordpressUrl) || (allowedAccounts.length === 1 && allowedAccounts[0] === '@2dayskr');
   const relevantConns = (conns || []).filter(c => {
     if (excludedPlatforms.includes(c.platform)) return false;
     if (!SNS_PLATFORMS.includes(c.platform as Platform)) return false;
@@ -373,10 +376,16 @@ export async function publishRewrittenArticle(
     }
   }
 
+  // @2dayskr로 나가는 자동 발행은 블루 브랜드 카드뉴스(인스타/스레드) — 실패하면 null → 기존 단일 이미지
+  const cards = useRotation
+    ? await Promise.race([buildBrandCards(article.title, article.content, Date.now().toString(36)), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
+    : null;
+
   for (const conn of relevantConns) {
     const platform = conn.platform as Platform;
     const label = `${platform}:${conn.platform_username || conn.platform_user_id}`;
-    const platformImages = platform === 'instagram' ? instagramImages : images;
+    const useCards = !!cards && (platform === 'instagram' || platform === 'threads');
+    const platformImages = useCards ? cards!.slice(0, 10) : platform === 'instagram' ? instagramImages : images;
     if (platform === 'instagram' && !platformImages.length) {
       sns[label] = 'skip: 이미지 없음';
       continue;
@@ -386,23 +395,20 @@ export async function publishRewrittenArticle(
     try {
       const comment = commentFor(`${platform}_${conn.platform_username || ''}`);
       const isFb = platform === 'facebook'; // 페이스북은 댓글 권한이 없어 링크를 본문에
-      const posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, isFb && comment ? `${caption}\n\n${comment}` : caption, platformImages);
-      if (comment && !isFb) {
-        // 게시물 생성 직후 바로 댓글을 달면 플랫폼(특히 Threads)이 아직 게시물을
-        // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
-        // (app/api/auto-service/publish/route.ts의 수동 발행 경로엔 이미 폴링+재시도가
-        // 있었는데 이 자동 경로엔 빠져 있었음) — 짧은 대기 + 1회 재시도로 보강.
-        try {
-          await new Promise(r => setTimeout(r, 4000));
-          await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, comment);
-        } catch {
-          try {
-            await new Promise(r => setTimeout(r, 5000));
-            await postCommentOnOwnPost(platform, conn.access_token, conn.platform_user_id, posted.id, comment);
-          } catch { /* 재시도까지 실패 — 본문 발행은 이미 성공이라 전체는 실패 처리 안 함 */ }
-        }
+      const text = isFb && comment ? `${caption}\n\n${comment}` : caption;
+      let posted: { id: string };
+      try {
+        posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, text, platformImages);
+      } catch (pe) {
+        if (!useCards) throw pe;
+        posted = await postToPlatformWithMedia(platform, conn.access_token, conn.platform_user_id, text, platform === 'instagram' ? instagramImages : images);
       }
-      sns[label] = 'ok';
+      let commentNote = '';
+      if (comment && !isFb) {
+        const cm = await postLinkComment(platform, conn.access_token, conn.platform_user_id, posted.id, comment);
+        if (!cm.ok) commentNote = ` (링크 댓글 실패: ${(cm.error || '').slice(0, 80)})`;
+      }
+      sns[label] = `ok${commentNote}`;
       if (useRotation && (platform === 'threads' || platform === 'instagram')) {
         logSnsPost(admin, platform, conn.platform_user_id).catch(() => {});
       }

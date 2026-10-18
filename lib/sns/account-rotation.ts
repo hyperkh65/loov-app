@@ -40,11 +40,10 @@ const ROTATION_POOL: Record<SnsGroup, Partial<Record<RotatedPlatform, string[]>>
     threads: ['28733238669628153'], // @seanonthemail 스레드
     instagram: ['29046724018350449'], // @seanonthemail 인스타
   },
-  // 2days.kr 사이트 전용(사용자 확정 2026-10-01) — @2dayskr 스레드/인스타 고정, 로테이션 없음.
-  // 이 계정이 메인이라 간격 체크도 면제(MIN_GAP 0) — 같은 계정을 쓰는 다른 그룹이 로그를 보고 양보함.
+  // 2days.kr 및 모든 서브도메인(money./finance./blog. 등) 블로그 전용 — @2dayskr 하나로 통합(사용자 확정 2026-10-18)
   twodays: {
-    threads: ['27198401606479414'], // @2dayskr_korea (2026-10-04 사용자 확정: 2days.kr 블로그 SNS는 전부 @2dayskr_korea로)
-    instagram: ['27094702240139938'], // @2dayskr_korea
+    threads: ['25203934249239577'], // @2dayskr
+    instagram: ['34489947500650071'], // @2dayskr
   },
   // aboda.kr 전용 — @2dayskr_korea 고정 (사용자 확정 2026-10-01)
   aboda: {
@@ -66,11 +65,16 @@ const MIN_GAP_MS: Record<SnsGroup, number> = {
   ads_default: 25 * 60 * 1000,
   aboda_miracool: 30 * 60 * 1000,
   aboda: 30 * 60 * 1000,
-  twodays: 30 * 60 * 1000,
+  // 여러 블로그가 한 계정으로 모이므로 간격을 줄여 스킵(=발행 누락)을 막음
+  twodays: 10 * 60 * 1000,
 };
 
+export function isTwodaysUrl(url: string | null | undefined): boolean {
+  try { const h = new URL(url || '').hostname; return h === '2days.kr' || h.endsWith('.2days.kr'); } catch { return false; }
+}
+
 export function snsGroupFor(siteUrl: string): SnsGroup {
-  if (/\/\/(www\.)?2days\.kr(\/|$)/.test(siteUrl)) return 'twodays';
+  if (isTwodaysUrl(siteUrl)) return 'twodays';
   if (siteUrl.includes('aboda.kr')) return 'aboda';
   return siteUrl.includes('miracool.co.kr') ? 'aboda_miracool' : 'default';
 }

@@ -15,24 +15,35 @@ import { publishToGithubPages } from '@/lib/github-pages-blog';
 import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import { publishToNaverCafe } from '@/lib/naver-cafe';
 import { publishToTumblr } from '@/lib/tumblr-publish';
-import { snsGroupFor, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
+import { snsGroupFor, isTwodaysUrl, pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
+import { buildBrandCards } from '@/lib/sns/brand-cards';
+import { postLinkComment } from '@/lib/sns/link-comment';
 import type { Platform, TokenPlatform } from '@/lib/sns/platforms';
 import type { Schedule, BlogAutoConfig } from './index';
 
-export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = '', opts: { accountIds?: string[]; cafe?: boolean; cafeTarget?: string } = {}): Promise<void> {
+export async function crossPostBlogToSns(userId: string, siteUrl: string, title: string, articleUrl: string, imageUrl: string | null, contentHtml = '', opts: { accountIds?: string[]; cafe?: boolean; cafeTarget?: string; cards?: boolean } = {}): Promise<void> {
   // 제목만 캡션으로 올리면 AI 티 나고 클릭할 이유가 없음 — 채널별 훅 캡션 생성(120초 넘으면 스킵)
   const summary = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  const captions = await Promise.race([
-    buildHookCaptions(title, summary),
-    new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 120_000)),
-  ]).catch(() => ({} as Record<string, string>));
-  console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(captions).length ? getLastProvider() : '실패→SNS 발행 스킵'}`);
+  const group = snsGroupFor(isTwodaysUrl(articleUrl) ? articleUrl : siteUrl); // 블로거 등 siteUrl이 빈 경우도 발행 URL로 판별
+  // 2days.kr 계열 자동 발행만 블루 브랜드 카드뉴스(인스타/스레드) — 실패하면 null → 기존 단일 이미지
+  const wantCards = group === 'twodays' && !opts.accountIds && opts.cards !== false;
+  const [aiCaptions, cards] = await Promise.all([
+    Promise.race([
+      buildHookCaptions(title, summary),
+      new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 120_000)),
+    ]).catch(() => ({} as Record<string, string>)),
+    wantCards
+      ? Promise.race([buildBrandCards(title, contentHtml, `${Date.now().toString(36)}`), new Promise<null>(r => setTimeout(() => r(null), 150_000))]).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  console.log(`[sns-caption] ${siteUrl} AI=${Object.keys(aiCaptions).length ? getLastProvider() : '실패→기본문구'} 카드뉴스=${cards ? cards.length + '장' : wantCards ? '실패→단일이미지' : '미사용'}`);
   const supabase = createAdminClient();
-  if (!Object.keys(captions).length) {
-    // 제목만 올라가면 품질이 나빠 노출에 불리 — 문구 생성 실패 시 이번 발행은 건너뜀
-    await supabase.from('sns_post_logs').insert({ user_id: userId, platform: 'all', status: 'failed', error_message: `[자동발행 ${siteUrl}] AI 문구 생성 실패 — SNS 발행 스킵: ${title}`.slice(0, 500) }).then(() => {}, () => {});
-    return;
-  }
+  // AI 문구가 비거나 일부 플랫폼 키가 없어도 발행은 절대 건너뛰지 않음 — 제목+요약으로 대체
+  const lead = summary.slice(0, 160);
+  const plain = `${title}\n\n${lead}${summary.length > 160 ? '…' : ''}`;
+  const captions: Record<string, string> = { threads: plain, instagram: plain, facebook: plain, telegram: plain, bluesky: plain.slice(0, 200), twitter: title.slice(0, 200), ...aiCaptions };
+  Object.keys(captions).forEach(k => { if (!captions[k]?.trim()) captions[k] = plain; });
+  if (!Object.keys(aiCaptions).length) await supabase.from('sns_post_logs').insert({ user_id: userId, platform: 'all', status: 'failed', error_message: `[자동발행 ${siteUrl}] AI 문구 생성 실패 — 기본 문구로 발행: ${title}`.slice(0, 500) }).then(() => {}, () => {});
   const { data } = await supabase
     .from('sns_connections')
     .select('platform, platform_user_id, platform_username, access_token')
@@ -46,7 +57,6 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
   // 있었음(사용자 확인, 실사용 중 확인). Instagram도 Threads와 동일하게
   // 사이트별 계정 로테이션 적용 — 같은 "2dayskr 계열" 안에서도 여러 자매
   // 계정에 분산시켜 계정당 최소 간격을 확보(lib/sns/account-rotation.ts).
-  const group = snsGroupFor(siteUrl);
   const slog = (platform: string, status: 'success' | 'failed', note?: string, postId?: string) =>
     supabase.from('sns_post_logs').insert({ user_id: userId, platform, status, ...(note ? { error_message: `[자동발행 ${siteUrl}] ${note}`.slice(0, 500) } : {}), ...(postId ? { platform_post_id: postId } : {}) }).then(() => {}, () => {});
   let targets: Array<{ platform: string; platform_user_id: string; access_token: string }>;
@@ -75,7 +85,17 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
       const isFb = ['facebook', 'telegram', 'bluesky'].includes(conn.platform); // 댓글 불가/미지원 플랫폼은 링크를 본문에
       const caption = (captions[conn.platform] || (isFb ? captions.facebook : '')).slice(0, 500);
       if (!caption) throw new Error('AI 캡션 없음 — 제목 대체 발행 안 함');
-      const posted = await postToPlatformWithMedia(conn.platform as Platform | TokenPlatform, conn.access_token, conn.platform_user_id, isFb ? `${caption}\n\n${linkUrl}` : caption, imageUrl ? [imageUrl] : undefined);
+      const text = isFb ? `${caption}\n\n${linkUrl}` : caption;
+      const single = imageUrl ? [imageUrl] : undefined;
+      const useCards = !!cards && (conn.platform === 'threads' || conn.platform === 'instagram');
+      let posted: { id: string };
+      try {
+        posted = await postToPlatformWithMedia(conn.platform as Platform | TokenPlatform, conn.access_token, conn.platform_user_id, text, useCards ? cards!.slice(0, 10) : single);
+      } catch (pe) {
+        if (!useCards) throw pe;
+        slog(conn.platform, 'failed', `카드뉴스 발행 실패→단일 이미지로 재시도: ${pe instanceof Error ? pe.message : String(pe)}`);
+        posted = await postToPlatformWithMedia(conn.platform as Platform | TokenPlatform, conn.access_token, conn.platform_user_id, text, single);
+      }
       slog(conn.platform, 'success', undefined, posted.id);
       if (conn.platform === 'threads' || conn.platform === 'instagram') {
         logSnsPost(supabase, conn.platform, conn.platform_user_id).catch(() => {});
@@ -84,17 +104,8 @@ export async function crossPostBlogToSns(userId: string, siteUrl: string, title:
       // 조회 가능 상태로 반영하기 전이라 실패하는 경우가 실사용 중 확인됨
       // (rewrite-publish.ts와 동일하게 짧은 대기 + 1회 재시도로 보강)
       if (!isFb) {
-        let lastErr = '';
-        for (let i = 0; i < 3; i++) {
-          try {
-            if (conn.platform === 'threads') await waitThreadsPostAccessible(posted.id, conn.access_token);
-            else await new Promise(r => setTimeout(r, 4000));
-            await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
-            lastErr = '';
-            break;
-          } catch (ce) { lastErr = ce instanceof Error ? ce.message : String(ce); await new Promise(r => setTimeout(r, 8000)); }
-        }
-        if (lastErr) slog(`${conn.platform}_comment`, 'failed', `링크 댓글 실패(3회): ${lastErr}`);
+        const cm = await postLinkComment(conn.platform as Platform, conn.access_token, conn.platform_user_id, posted.id, linkUrl);
+        if (!cm.ok) slog(`${conn.platform}_comment`, 'failed', `링크 댓글 실패(4회): ${cm.error}`);
       }
     } catch (e) { slog(conn.platform, 'failed', `${conn.platform_user_id}: ${e instanceof Error ? e.message : String(e)}`); /* 개별 계정 실패해도 나머지/본 발행에는 영향 없음 */ }
   }));
@@ -391,7 +402,7 @@ export async function runBlogAuto(schedule: Schedule, manual?: { keyword: string
     // 사이트 전용 스레드/인스타 계정에 링크 포스팅(미라클/아보다 → @aboda_miracool, 2days.kr → @2dayskr)
     // 블로거는 publishedSiteUrl이 비어있는데, threadsAccountFor('')가 @2dayskr로
     // 떨어져서 자동으로 처리됨(어떤 계정이든 상관없다고 확인됨)
-    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl, content, { accountIds: config.sns_account_ids, cafe: config.naver_cafe, cafeTarget: config.naver_cafe_target }).catch(() => {});
+    crossPostBlogToSns(schedule.user_id, publishedSiteUrl, title, publishedUrl, imageUrl, content, { accountIds: config.sns_account_ids, cafe: config.naver_cafe, cafeTarget: config.naver_cafe_target, cards: !manual }).catch(() => {});
   }
 
   return { keyword, url: publishedUrl, title };
