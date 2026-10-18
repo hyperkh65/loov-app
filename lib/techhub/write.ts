@@ -61,7 +61,15 @@ export async function writeArticle(c: Candidate, text: string, topics: string): 
     if (!v.title || !v.hook || !v.coverPrompt) return '필수 필드 누락';
     if (!Array.isArray(v.sections) || v.sections.length < 3 || v.sections.some(s => !s.h2 || !s.paras?.length || !s.photoPrompt)) return 'sections 부족';
     if (!Array.isArray(v.cards)) return 'cards 부족';
-    for (const k of v.cards) if (k?.type === 'compare' && (k.rows?.length || 0) < 2) k.type = 'point';
+    const clean = (x: unknown) => String(x ?? '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim();
+    for (const k of v.cards) {
+      if (!k) continue;
+      k.items = (Array.isArray(k.items) ? k.items : []).map(clean).filter(Boolean);
+      k.rows = (Array.isArray(k.rows) ? k.rows : [])
+        .map(r => (Array.isArray(r) ? r : r && typeof r === 'object' ? Object.values(r) : []).map(clean))
+        .filter(r => r.length >= 3 && r[0] && r[1] && r[2]).map(r => [r[0], r[1], r[2]] as [string, string, string]);
+      if (k.type === 'compare' && k.rows.length < 2) k.type = 'point';
+    }
     v.cards = v.cards.filter(k => k?.title && (k.body || k.items?.length || k.rows?.length));
     if (v.cards.length < 5) return 'cards 부족';
     if (!Array.isArray(v.summary) || !v.summary.length) return 'summary 없음';
