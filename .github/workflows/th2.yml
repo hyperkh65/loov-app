@@ -21,7 +21,8 @@ jobs:
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             cat > /tmp/th2.sql <<'EOS'
             select 1;
-            select left(row_to_json(s)::text,420) from public.bossai_schedules s where s.type like 'blog%' order by s.type limit 40;
+            select left(row_to_json(l)::text,600) from public.bossai_schedule_logs l where l.schedule_id='debb4a1c-790f-4635-815e-55ef9ef6057e' order by l.ctid desc limit 1;
+            select platform||' | '||status||' | '||coalesce(platform_post_id,'')||' | '||coalesce(left(error_message,230),'') from public.sns_post_logs order by ctid desc limit 12;
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
@@ -32,3 +33,4 @@ jobs:
 # r9
 # r10
 # r11
+# r12
