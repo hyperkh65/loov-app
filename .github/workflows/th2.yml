@@ -20,11 +20,11 @@ jobs:
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             cat > /tmp/th2.sql <<'EOS'
-            select 'WP '||left(id::text,8)||' | '||site_url from public.wordpress_sites order by site_url;
-            select 'SRC '||left(s.id::text,8)||' | '||coalesce(to_jsonb(s)->>'name',to_jsonb(s)->>'site_name',to_jsonb(s)->>'site_url',to_jsonb(s)->>'url','?')||' | act='||coalesce(to_jsonb(s)->>'is_active','?')||' | wp='||coalesce(w.site_url,'(기본:miracool)')||' | route='||coalesce((((select a.settings->>'SNS_ACCOUNT_ROUTING_BY_SOURCE' from public.app_settings a where a.id=1)::jsonb)->(s.id::text))::text,'(기본:aboda_miracool)') from public.bossai_rewrite_sources s left join public.wordpress_sites w on w.id=s.publish_wp_site_id order by 1;
-            select 'ABODA_ARTS7d '||h||' | src='||sid||' | n='||count(*) from (select coalesce(split_part(r.published_urls->>'wordpress','/',3),'(none)') h, left(coalesce(to_jsonb(r)->>'source_id',''),8) sid from public.bossai_rewrite_articles r where r.status='published' and r.published_at > now()-interval '7 days' and r.published_urls::text like '%aboda_miracool%') t group by h, sid order by 1;
-            select 'SCHED '||left(sc.id::text,8)||' | '||coalesce(to_jsonb(sc)->>'name',to_jsonb(sc)->>'type','?')||' | type='||coalesce(to_jsonb(sc)->>'type',to_jsonb(sc)->>'schedule_type','?')||' | act='||coalesce(to_jsonb(sc)->>'is_active',to_jsonb(sc)->>'enabled','?')||' | sns='||coalesce(left((to_jsonb(sc)->'config'->'sns_account_ids')::text,120),'') from public.bossai_schedules sc where sc::text ilike '%aboda%' order by 1;
-            select 'SCHEDCOUNT '||count(*) from public.bossai_schedules;
+            select 'MIRA_SRC '||coalesce(to_jsonb(s)->>'name','?')||' | act='||coalesce(to_jsonb(s)->>'is_active','?')||' | wp='||coalesce(w.site_url,'(기본:miracool)')||' | n14d='||(select count(*) from public.bossai_rewrite_articles r where r.source_id=s.id and r.status='published' and r.published_at>now()-interval '14 days') from public.bossai_rewrite_sources s left join public.wordpress_sites w on w.id=s.publish_wp_site_id where w.site_url is null or w.site_url ilike '%miracool%' order by 1;
+            select 'KOREA_ARTS14d wp='||h||' | src='||sname||' | n='||count(*) from (select coalesce(split_part(r.published_urls->>'wordpress','/',3),'(none)') h, coalesce((select to_jsonb(s)->>'name' from public.bossai_rewrite_sources s where s.id=r.source_id),'?') sname from public.bossai_rewrite_articles r where r.status='published' and r.published_at > now()-interval '14 days' and r.published_urls::text like '%2dayskr_korea%') t group by h, sname order by 4 desc;
+            select 'KOREA_LOG '||d||' | '||platform||' | n='||count(*) from (select platform, to_char(posted_at,'MM-DD') d from public.bossai_sns_post_log where platform_user_id in ('27198401606479414','27094702240139938') and posted_at>now()-interval '14 days') t group by d,platform order by 1;
+            select 'MIRA_SCHED '||left(sc.id::text,8)||' | '||coalesce(to_jsonb(sc)->>'name',to_jsonb(sc)->>'type','?')||' | type='||coalesce(to_jsonb(sc)->>'type',to_jsonb(sc)->>'schedule_type','?')||' | act='||coalesce(to_jsonb(sc)->>'is_active',to_jsonb(sc)->>'enabled','?')||' | '||left(coalesce((to_jsonb(sc)->'config')::text,''),160) from public.bossai_schedules sc where sc::text ilike '%miracool%' order by 1;
+            select 'WPSET '||coalesce(left(value::text,100),'') from public.app_settings, jsonb_each(settings) where key='REWRITE_PUBLISH_WP_SITE_ID';
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
@@ -39,3 +39,4 @@ jobs:
 # r15
 # r16
 # r17
+# r18
