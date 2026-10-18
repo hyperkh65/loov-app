@@ -10,6 +10,8 @@ import type { Schedule, AgodaAutoConfig } from './index';
 
 const AGODA_SITE_ID = (process.env.AGODA_SITE_ID || '1959217').trim();
 const AGODA_API_KEY = (process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30').trim();
+const PERSONA = `[화자] 20~30대 여성 여행 크리에이터. 호텔을 직접 비교해 "가성비 좋은 곳"만 골라주는 친구 같은 톤. 가격·평점은 위 데이터 숫자만 그대로 쓰고, 묵어본 척·후기·경험은 지어내지 마라.
+[Threads 추가 규칙] 첫 줄에 "1박 N원" 같은 가격 숫자 또는 "이 돈에 이 평점?" 식 가성비 반전을 넣고, 이 호텔이 어떤 사람(혼행/친구/커플/가족)에게 맞는지 한 줄 넣어라.`;
 const DISCLOSURE = '이 포스팅은 아고다 제휴 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
 // 스레드/인스타는 계정이 여러 개 연결돼 있어 전부에 발행하면 다른 콘텐츠 계정까지
@@ -156,7 +158,7 @@ export async function runAgodaAuto(schedule: Schedule): Promise<{ city: string; 
     `${i + 1}. ${h.hotelName} — 리뷰 ${h.reviewScore}/10, 1박 ${Math.round(h.dailyRate).toLocaleString('ko-KR')}원${h.discountPercentage > 0 ? ` (-${Math.round(h.discountPercentage)}%)` : ''}\n   예약: ${h.landingURL}`
   ).join('\n');
 
-  const prompt = `너는 여행 블로그 전문 작가야. "${city.name}" ${travelStyle} 여행자를 위한 호텔 추천 블로그 글을 써줘.
+  const prompt = `너는 가성비 호텔만 골라주는 20~30대 여성 여행 블로거야. 친근한 존댓말(~해요)로 "${city.name}" ${travelStyle} 여행자를 위한 호텔 추천 블로그 글을 써줘. 가격 대비 만족도, 위치, 어떤 사람에게 맞는지를 중심으로 쓰고 없는 후기·경험은 지어내지 마라.
 
 [호텔 데이터 — 순서대로 1번부터 ${top5.length}번]
 ${hotelList}
@@ -252,7 +254,7 @@ HTML 본문 전체`;
     results.push('SNS 스킵: 블로그 글이 이번 회차에 발행되지 않아 링크 연결할 곳 없음');
   } else if (snsPlatforms.length && topHotel) {
     const TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM'];
-    const snsPrompt = `너는 SNS 마케팅 전문가야. 아고다 제휴 호텔 추천을 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
+    const snsPrompt = `너는 가성비 호텔 추천 SNS 운영자야. 아고다 제휴 호텔 추천을 각 SNS 플랫폼에 맞는 후킹성 멘트로 작성해줘.
 반드시 한국어로만 작성하고, 중국어·일본어 등 외국 문자 절대 사용 금지.
 
 도시: ${city.name}
@@ -266,6 +268,8 @@ HTML 본문 전체`;
 - INSTAGRAM: 감성적, 이모지 풍부, 해시태그 10개. URL 없이
 
 ${THREADS_HOOK_GUIDE}
+
+${PERSONA}
 
 반드시 아래 구분자 형식으로만 출력 (설명/코드블록 없이):
 [[[THREADS]]]
@@ -288,7 +292,7 @@ ${THREADS_HOOK_GUIDE}
       // 링크는 아고다 직링크가 아니라 블로그 글 주소로 — 후기·가격비교·다른 호텔 정보까지
       // 다 보여준 뒤 그 안의 예약 버튼으로 넘어가게 유도.
       const linkUrl = publishedUrl;
-      const comment = `🔗 자세히 보기: ${linkUrl}\n\n${DISCLOSURE}`;
+      const comment = `💸 오늘 가격·후기 비교 보기 👉 ${linkUrl}\n\n${DISCLOSURE}`;
       const connections = await getSnsConnections(schedule.user_id);
 
       for (const platform of snsPlatforms) {
