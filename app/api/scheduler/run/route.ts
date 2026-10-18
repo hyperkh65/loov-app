@@ -8,7 +8,7 @@
  * 또는 대시보드에서 수동 실행 (로그인 세션 사용)
  */
 
-import { SNS_HOOK_GUIDE } from '@/lib/sns/hook-style';
+import { SNS_HOOK_GUIDE, SEAN_KEYWORDS_FASHION, SEAN_MAX_PRICE } from '@/lib/sns/hook-style';
 import { alertOwner, isAuthError } from '@/lib/owner-alert';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
@@ -815,11 +815,7 @@ const MUSINSA_THREADS_PLATFORM_USER_ID = '28733238669628153'; // @seanonthemail 
 const MUSINSA_INSTAGRAM_PLATFORM_USER_ID = '29046724018350449'; // @seanonthemail
 const MUSINSA_FACEBOOK_PLATFORM_USER_ID = '33857054073943353'; // 김현
 const MUSINSA_DISCLOSURE = '이 포스팅은 무신사 큐레이터 활동의 일환으로, 구매가 발생할 경우 일정 수수료를 제공받습니다.';
-const MUSINSA_KEYWORDS = [
-  '후드티', '맨투맨', '니트', '가디건', '청바지', '슬랙스', '자켓', '코트', '무스탕', '패딩',
-  '원피스', '스커트', '블라우스', '반팔티', '긴팔티', '스니커즈', '로퍼', '부츠', '크로스백',
-  '볼캡', '비니', '머플러', '트레이닝세트', '카고팬츠', '와이드팬츠',
-];
+const MUSINSA_KEYWORDS = SEAN_KEYWORDS_FASHION;
 
 async function musinsaApi(path: string, method: 'GET' | 'POST' = 'GET'): Promise<Record<string, unknown>> {
   // app_atk 단일 쿠키만으로는 401 — musinsa.com 도메인의 세션 관련 쿠키 전체를
@@ -898,8 +894,10 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
 
   const demandKeywords = await fetchDemandKeywords();
   const musinsaRankScore = (p: MusinsaProduct) => p.expectedEarnings * (matchesDemand(p.goodsName, demandKeywords) ? 1.5 : 1);
-  const picked = list
-    .filter(p => !p.isSoldOut && !recentGoodsNo.has(p.goodsNo))
+  // 극가성비 계정 — 3만원 이하 우선, 없으면 전체에서
+  const fresh = list.filter(p => !p.isSoldOut && !recentGoodsNo.has(p.goodsNo));
+  const cheap = fresh.filter(p => p.finalPrice <= SEAN_MAX_PRICE);
+  const picked = (cheap.length ? cheap : fresh)
     .sort((a, b) => musinsaRankScore(b) - musinsaRankScore(a))[0];
 
   if (!picked) return { posted: 0, results: [`"${keyword}" 후보 없음(품절 제외/이미 게시된 상품만 있음)`] };
@@ -929,7 +927,7 @@ async function runMusinsaCuratorAuto(schedule: Schedule): Promise<{ posted: numb
   let caption = '';
   try {
     caption = (await generateText(
-      `너는 패션 계정을 운영하는 20대 인플루언서다. 아래 무신사 상품을 소개하는 스레드(Threads) 게시물 문구를 써라.\n` +
+      `너는 30대 초반 한국 남자, 자취 사회초년생이다. 극가성비 옷·패션템만 소개하는 계정을 운영한다. 아래 무신사 상품을 소개하는 스레드(Threads) 게시물 문구를 써라.\n` +
       `광고 티 나는 딱딱한 카피 금지, 진짜 갖고 싶어서 자랑하듯 반말/구어체로 3~5줄. 이모지는 1~2개만.\n\n` +
       `[클릭을 유도하는 훅 규칙 — 반드시 지킬 것]\n` +
       `1. 첫 1~2줄엔 상품명·브랜드명을 절대 넣지 마라. 상황이나 변화만 먼저 던지고 "이게 뭔지"는 뒤에서 밝혀라.\n` +

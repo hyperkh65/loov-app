@@ -5,7 +5,7 @@
  * 바로 주기 때문에 이미지 포스트로 충분하고, 영상 파이프라인(스크립트/TTS/렌더)을
  * 새로 만드는 건 별도 요청 시 확장.
  */
-import { PRODUCT_HOOK_GUIDE } from '@/lib/sns/hook-style';
+import { PRODUCT_HOOK_GUIDE, SEAN_MAX_PRICE } from '@/lib/sns/hook-style';
 import { createAdminClient } from '@/lib/supabase-server';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { toInstagramSafeImage } from '@/lib/rewrite-publish';
@@ -41,7 +41,7 @@ async function buildCaption(p: TossProduct, angle: ContentAngle): Promise<string
 
   try {
     const caption = (await generateText(
-      `너는 가성비 특가를 소개하는 캐주얼한 SNS 계정을 운영한다. 아래 토스쇼핑 상품으로 짧은 게시물 문구를 써라(3~5줄, 이모지 1~2개).\n\n` +
+      `너는 30대 초반 한국 남자, 자취 사회초년생이다. 자취템·극가성비 아이템만 소개하는 SNS 계정을 운영한다(반말/구어체). 아래 토스쇼핑 상품으로 짧은 게시물 문구를 써라(3~5줄, 이모지 1~2개).\n\n` +
       `[클릭을 유도하는 훅 규칙 — 반드시 지킬 것]\n` +
       `1. 첫 1~2줄엔 상품명을 절대 넣지 마라. 상황이나 변화만 먼저 던져라.\n` +
       `2. 막연한 칭찬 대신 구체적이고 의외인 디테일을 최소 하나 넣어라.\n` +
@@ -98,7 +98,10 @@ export async function runTossAuto(userId: string, scheduleId?: string): Promise<
   if (!rawCandidates.length) return { summary: '토스 상품 후보 없음', results: [] };
   // 베스트셀링/오늘특가 순서(공급 신호)보다 실제 구매의도 키워드와 겹치는 상품을 우선.
   const demandKeywords = await fetchDemandKeywords();
-  const candidates = [...rawCandidates].sort((a, b) =>
+  // 극가성비 계정 — 3만원 이하만(없으면 오늘은 건너뜀)
+  const cheapCandidates = rawCandidates.filter(p => p.displayPrice <= SEAN_MAX_PRICE);
+  if (!cheapCandidates.length) return { summary: `토스 ${SEAN_MAX_PRICE.toLocaleString()}원 이하 후보 없음`, results: [] };
+  const candidates = [...cheapCandidates].sort((a, b) =>
     Number(matchesDemand(b.displayName, demandKeywords)) - Number(matchesDemand(a.displayName, demandKeywords))
   );
 

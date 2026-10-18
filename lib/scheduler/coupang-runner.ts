@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
-import { getGoldboxProducts, searchProducts, createAffiliateLinks, scrapeProductData, type CoupangProduct } from '@/lib/coupang/api';
+import { searchProducts, createAffiliateLinks, scrapeProductData, type CoupangProduct } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToWordPress, getWpCredentials, wpDue, markWpPublished } from './blog-runner';
@@ -8,7 +8,7 @@ import { pickContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
 import { pickRotatedAccount, logSnsPost } from '@/lib/sns/account-rotation';
-import { PRODUCT_HOOK_GUIDE, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
+import { PRODUCT_HOOK_GUIDE, SEAN_KEYWORDS_LIVING, SEAN_MAX_PRICE, scrubThreads, formatHookLines } from '@/lib/sns/hook-style';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, CoupangAutoConfig } from './index';
 
@@ -284,12 +284,9 @@ export async function runCoupangAuto(
 
   // 상품 수집
   let products;
-  if (config.product_source === 'keyword' && config.search_keywords?.length) {
-    const kw = config.search_keywords[Math.floor(Math.random() * config.search_keywords.length)];
-    products = await searchProducts(kw, accessKey, secretKey);
-  } else {
-    products = await getGoldboxProducts(accessKey, secretKey);
-  }
+  // @seanonthemail(자취템·극가성비 전용, 2026-10-18 사용자 확정) — 설정과 무관하게 자취 키워드로만 검색
+  const kw = SEAN_KEYWORDS_LIVING[Math.floor(Math.random() * SEAN_KEYWORDS_LIVING.length)];
+  products = await searchProducts(kw, accessKey, secretKey);
 
   if (!products?.length) throw new Error('상품을 가져오지 못했습니다');
 
@@ -304,7 +301,9 @@ export async function runCoupangAuto(
   // 캐시(구매의도 매칭 포함)와 겹치는 상품에 가점을 줘서 수요 신호를 섞는다.
   const demandKeywords = await fetchDemandKeywords();
   const rankScore = (p: CoupangProduct) => (p.discountRate || 1) * (matchesDemand(p.productName, demandKeywords) ? 1.5 : 1);
-  const ranked = [...(pool.length ? pool : products)].sort((a, b) => rankScore(b) - rankScore(a));
+  const base = pool.length ? pool : products;
+  const cheap = base.filter(p => p.productPrice <= SEAN_MAX_PRICE);
+  const ranked = [...(cheap.length ? cheap : base)].sort((a, b) => rankScore(b) - rankScore(a));
   let candidates = ranked.filter(p => !recentProductIds.includes(String(p.productId)));
 
   // 골드박스는 하루 몇 번 안 바뀌는 소규모 목록이라, 발행 주기를 짧게(매시간
@@ -313,9 +312,8 @@ export async function runCoupangAuto(
   // 원인. 골드박스가 소진됐으면 키워드 검색으로 새 후보를 보충 시도하고,
   // 그래도 없으면 중복을 감수하고 올리는 대신 이번 회차는 건너뛴다.
   if (!candidates.length) {
-    const fallbackKeywords = ['생활용품', '주방용품', '가전', '식품', '뷰티', '패션잡화'];
-    const kw = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
-    const extra = await searchProducts(kw, accessKey, secretKey).catch(() => []);
+    const kw2 = SEAN_KEYWORDS_LIVING[Math.floor(Math.random() * SEAN_KEYWORDS_LIVING.length)];
+    const extra = await searchProducts(kw2, accessKey, secretKey).catch(() => []);
     candidates = extra
       .filter(p => p.productImage && !recentProductIds.includes(String(p.productId)))
       .sort((a, b) => rankScore(b) - rankScore(a));
