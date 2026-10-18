@@ -1,0 +1,33 @@
+name: th1
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/th1.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/th1.sql <<'EOS'
+            select type, name, is_active, interval_hours, run_at_hour, user_id from public.bossai_schedules order by created_at desc limit 5;
+            insert into public.bossai_schedules (user_id, name, type, is_active, interval_hours, config, next_run_at)
+            select user_id, 'Tech Hub 자동 (드라이런)', 'techhub_auto', true, 6, '{"dry_run":true}'::jsonb, now()
+            from public.bossai_schedules
+            where not exists (select 1 from public.bossai_schedules where type='techhub_auto')
+            order by created_at desc limit 1
+            returning id, name, type, is_active, next_run_at;
+            select id, name, type, is_active, config from public.bossai_schedules where type='techhub_auto';
+            EOS
+            echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th1.sql 2>&1"
+            rm -f /tmp/th1.sql
