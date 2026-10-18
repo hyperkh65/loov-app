@@ -78,23 +78,70 @@ function Frame({ dark, label, page, brand, children }: { dark: boolean; label: s
   );
 }
 
+const Bullets = ({ items, fg, size = 42, max = 3 }: { items?: string[]; fg: string; size?: number; max?: number }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44 }}>
+    {(items || []).slice(0, max).map((t, k) => (
+      <div key={k} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 26 }}>
+        <div style={{ display: 'flex', width: 20, height: 20, background: YEL, marginTop: size * 0.5, marginRight: 22, borderRadius: 4 }} />
+        <div style={{ display: 'flex', flex: 1 }}><Rich text={t} size={size} color={fg} weight={700} lh={1.4} /></div>
+      </div>
+    ))}
+  </div>
+);
+
 function cardEl(s: Slide, i: number, total: number, brand: string): ReactElement {
   const dark = i % 2 === 1;
   const fg = dark ? '#fff' : '#111';
-  const mute = dark ? '#bdbdbd' : '#555';
+  const mute = dark ? '#c8c8c8' : '#444';
+  const line = dark ? '#3a3a3a' : '#ddd';
   const page = `${String(i + 2).padStart(2, '0')} / ${String(total).padStart(2, '0')}`;
-  const body = s.body ? <div style={{ display: 'flex', marginTop: 36 }}><Rich text={s.body} size={42} color={mute} weight={700} lh={1.5} /></div> : null;
+  const body = s.body ? <div style={{ display: 'flex', marginTop: 34 }}><Rich text={s.body} size={42} color={mute} weight={700} lh={1.5} /></div> : null;
   let inner: ReactElement;
   if (s.type === 'stat') {
-    inner = <div style={{ display: 'flex', flexDirection: 'column' }}><Rich text={s.title} size={190} color={fg} lh={1.1} />{body}</div>;
+    inner = <div style={{ display: 'flex', flexDirection: 'column' }}><Rich text={s.title} size={170} color={fg} lh={1.1} />{body}<Bullets items={s.items} fg={fg} /></div>;
   } else if (s.type === 'steps' && s.items?.length) {
     inner = (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <Rich text={s.title} size={68} color={fg} />
-        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44 }}>
+        <Rich text={s.title} size={62} color={fg} />
+        {body}
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 40 }}>
           {s.items.slice(0, 4).map((t, k) => (
-            <div key={k} style={{ display: 'flex', alignItems: 'center', marginBottom: 26 }}>
-              <div style={{ display: 'flex', width: 64, height: 64, borderRadius: 32, background: YEL, color: '#111', fontSize: 34, fontWeight: 900, alignItems: 'center', justifyContent: 'center', marginRight: 24 }}>{k + 1}</div>
+            <div key={k} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 30 }}>
+              <div style={{ display: 'flex', width: 68, height: 68, borderRadius: 34, background: YEL, color: '#111', fontSize: 34, fontWeight: 900, alignItems: 'center', justifyContent: 'center', marginRight: 24 }}>{k + 1}</div>
+              <div style={{ display: 'flex', flex: 1, paddingTop: 4 }}><Rich text={t} size={41} color={fg} weight={700} lh={1.4} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  } else if (s.type === 'compare' && s.rows?.length) {
+    const h = s.heads || ['기존', '이번'];
+    const cell = (t: string, w: number, strong = false, hl = false) => (
+      <div style={{ display: 'flex', width: w, fontSize: 38, fontWeight: strong ? 900 : 700, color: hl ? '#111' : fg, background: hl ? YEL : 'transparent', padding: hl ? '10px 14px' : '10px 14px', borderRadius: 8, lineHeight: 1.3 }}>{t.replace(/\*\*/g, '')}</div>
+    );
+    inner = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <Rich text={s.title} size={62} color={fg} />
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44, borderTop: `3px solid ${fg}` }}>
+          <div style={{ display: 'flex', padding: '16px 0', borderBottom: `2px solid ${line}` }}>
+            {cell('', 220)}{cell(h[0], 380, true)}{cell(h[1], 380, true)}
+          </div>
+          {s.rows.slice(0, 4).map((r, k) => (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', padding: '20px 0', borderBottom: `2px solid ${line}` }}>
+              {cell(r[0], 220, true)}{cell(r[1], 380)}{cell(r[2], 380, true, true)}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  } else if (s.type === 'summary') {
+    inner = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <Rich text={s.title} size={74} color={fg} />
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44 }}>
+          {(s.items || []).slice(0, 5).map((t, k) => (
+            <div key={k} style={{ display: 'flex', alignItems: 'flex-start', padding: '24px 0', borderBottom: `2px solid ${line}` }}>
+              <div style={{ display: 'flex', width: 48, height: 48, borderRadius: 24, background: YEL, color: '#111', fontSize: 28, fontWeight: 900, alignItems: 'center', justifyContent: 'center', marginRight: 22, marginTop: 2 }}>✓</div>
               <div style={{ display: 'flex', flex: 1 }}><Rich text={t} size={40} color={fg} weight={700} lh={1.35} /></div>
             </div>
           ))}
@@ -102,9 +149,9 @@ function cardEl(s: Slide, i: number, total: number, brand: string): ReactElement
       </div>
     );
   } else {
-    inner = <div style={{ display: 'flex', flexDirection: 'column' }}><Rich text={s.title} size={s.type === 'warn' ? 76 : 80} color={fg} />{body}</div>;
+    inner = <div style={{ display: 'flex', flexDirection: 'column' }}><Rich text={s.title} size={s.type === 'warn' ? 68 : 72} color={fg} />{body}<Bullets items={s.items} fg={fg} /></div>;
   }
-  return <Frame dark={dark} label={s.type === 'warn' ? `주의 · ${s.label}` : s.label} page={page} brand={brand}>{inner}</Frame>;
+  return <Frame dark={dark} label={s.type === 'warn' && !s.label.includes('주의') ? `주의 · ${s.label}` : s.label} page={page} brand={brand}>{inner}</Frame>;
 }
 
 function coverEl(o: { photo: string | null; hook: string; kicker: string; brand: string; w: number; h: number; page?: string }): ReactElement {

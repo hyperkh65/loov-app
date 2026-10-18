@@ -137,7 +137,7 @@ export async function runTechHub(schedule: Schedule): Promise<{ summary: string;
 
   const brand = profiles[0].brand;
   const { wideCover, cards } = await renderAll({
-    slides: a.cards.slice(0, 6), hook: a.hook, kicker: a.kicker, brand, handle: profiles[0].handle,
+    slides: a.cards.slice(0, 7), hook: a.hook, kicker: a.kicker, brand, handle: profiles[0].handle,
     coverPhotoUrl: photos[0].url, source: { name: c.source, title: c.title, imageUrl: images[0] || null }, slug,
   });
   lap(`렌더 카드 ${cards.length}장`);
