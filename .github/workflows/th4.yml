@@ -1,0 +1,26 @@
+name: th4
+on:
+  push:
+    branches: [dr-sync]
+    paths: [".github/workflows/th4.yml"]
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        env:
+          NAS2_PASS: ${{ secrets.NAS2_SSH_PASSWORD }}
+        with:
+          host: 2days.kr
+          username: urjent
+          password: ${{ secrets.NAS2_SSH_PASSWORD }}
+          port: 79
+          envs: NAS2_PASS
+          command_timeout: 3m
+          script: |
+            export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+            cat > /tmp/th4.sql <<'EOS'
+            update public.bossai_schedules set name='Tech Hub 자동 (화수분)', config='{}'::jsonb, interval_hours=3, is_active=true, next_run_at=now() where type='techhub_auto' returning id, name, interval_hours, config, next_run_at;
+            EOS
+            echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th4.sql 2>&1"
+            rm -f /tmp/th4.sql
