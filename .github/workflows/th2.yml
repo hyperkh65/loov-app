@@ -20,9 +20,10 @@ jobs:
           script: |
             export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
             cat > /tmp/th2.sql <<'EOS'
-            select 1;
-            select left(row_to_json(l)::text,600) from public.bossai_schedule_logs l where l.schedule_id='debb4a1c-790f-4635-815e-55ef9ef6057e' order by l.ctid desc limit 1;
-            select platform||' | '||status||' | '||coalesce(platform_post_id,'')||' | '||coalesce(left(error_message,230),'') from public.sns_post_logs order by ctid desc limit 12;
+            select 'SRC '||left(s.id::text,8)||' | '||coalesce(w.site_url,'(기본사이트)')||' | sns='||s.publish_sns||' | tumblr='||s.publish_tumblr||' | excl='||coalesce(s.excluded_platforms::text,'') from public.bossai_rewrite_sources s left join public.wordpress_sites w on w.id=s.publish_wp_site_id where s.id::text in ('1c036b9d-2a2b-449d-9b97-0a12c76dab6f','132c4df6-2a18-4693-8799-342893aa1469','627b59b2-01f5-4537-ab7d-4f4a2c401573');
+            select 'DEFAULTSITE '||coalesce(w.site_url,'?') from public.app_settings a left join public.wordpress_sites w on w.id::text=a.settings->>'REWRITE_PUBLISH_WP_SITE_ID' where a.id=1;
+            select 'ROUTING '||left(coalesce(a.settings->>'SNS_ACCOUNT_ROUTING_BY_SOURCE',''),900) from public.app_settings a where a.id=1;
+            select 'ART '||left(to_jsonb(r)->>'source_id',8)||' | '||coalesce(r.published_at::text,'')||' | '||left(coalesce(r.published_urls::text,''),230) from public.bossai_rewrite_articles r where r.status='published' and to_jsonb(r)->>'source_id' in ('1c036b9d-2a2b-449d-9b97-0a12c76dab6f','132c4df6-2a18-4693-8799-342893aa1469') order by r.published_at desc limit 8;
             EOS
             echo "$NAS2_PASS" | sudo -S sh -c "docker exec -i supabase-db psql -U postgres -d postgres < /tmp/th2.sql 2>&1"
             rm -f /tmp/th2.sql
@@ -34,3 +35,4 @@ jobs:
 # r10
 # r11
 # r12
+# r15
