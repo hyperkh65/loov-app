@@ -70,6 +70,9 @@ const MIN_GAP_MS: Record<SnsGroup, number> = {
   twodays: 10 * 60 * 1000,
 };
 
+// 수동 발행 기본 대상(@2dayskr) — '전체' 선택 시에만 연결된 모든 인스타/스레드에 발행
+export const MANUAL_DEFAULT_ACCOUNTS = ROTATION_POOL.twodays;
+
 export function isTwodaysUrl(url: string | null | undefined): boolean {
   try { const h = new URL(url || '').hostname; return h === '2days.kr' || h.endsWith('.2days.kr'); } catch { return false; }
 }

@@ -4,6 +4,7 @@ import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { postToThreadsWithMedia } from '@/lib/sns/platforms-server';
 import { postLinkComment } from '@/lib/sns/link-comment';
+import { MANUAL_DEFAULT_ACCOUNTS } from '@/lib/sns/account-rotation';
 import { submitToIndexNow } from '@/lib/indexnow';
 import { translateArticle } from '@/lib/ai-translate';
 import iconv from 'iconv-lite';
@@ -317,9 +318,9 @@ export async function POST(req: NextRequest) {
   }
   // cron의 경우 article에서 user_id 추출 (언어 설정 조회에 필요)
 
-  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string; tistory_category_id?: number | string; wp_category_id?: number | string };
+  let body: { article_id?: string; blog_platforms?: string[]; sns_platforms?: string[]; wp_site_ids?: string[]; backlink_platforms?: string[]; tistory_blog_ids?: string[]; naver_cafe_menu_id?: string; naver_cafe_open_yn?: string; tistory_category_id?: number | string; wp_category_id?: number | string; sns_scope?: 'default' | 'all' };
   try { body = await req.json(); } catch { return NextResponse.json({ error: '요청 파싱 실패' }, { status: 400 }); }
-  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y', tistory_category_id, wp_category_id } = body;
+  const { article_id, blog_platforms = [], sns_platforms = [], wp_site_ids = [], backlink_platforms = [], tistory_blog_ids = [], naver_cafe_menu_id, naver_cafe_open_yn = 'Y', tistory_category_id, wp_category_id, sns_scope } = body;
   if (!article_id) return NextResponse.json({ error: 'article_id 필요' }, { status: 400 });
 
   let articleQuery = supabase
@@ -593,8 +594,15 @@ export async function POST(req: NextRequest) {
       const linkItems = blogUrls.length > 0 ? [{ content: '🔗 ' + blogUrls.join('\n🔗 ') }] : undefined;
       const commentPlatforms = otherPlatforms.filter((p: string) => p === 'twitter');
       const bodyLinkPlatforms = otherPlatforms.filter((p: string) => p !== 'twitter');
-      const groups: Array<{ platforms: string[]; content: string; items?: Array<{ content: string }> }> = [
-        ...(instagramIncluded ? [{ platforms: ['instagram'], content: aiCaption.trim() || blogLinkText.trim(), items: linkItems }] : []),
+      // 인스타/스레드: 기본은 @2dayskr만, sns_scope==='all'이면 연결된 전체 계정
+      const allScope = sns_scope === 'all';
+      let igAccountIds: string[] | undefined = MANUAL_DEFAULT_ACCOUNTS.instagram;
+      if (instagramIncluded && allScope && userId) {
+        const { data: igConns } = await supabase.from('sns_connections').select('platform_user_id').eq('user_id', userId).eq('platform', 'instagram').eq('is_active', true);
+        igAccountIds = (igConns || []).map(c => c.platform_user_id).filter(Boolean);
+      }
+      const groups: Array<{ platforms: string[]; content: string; items?: Array<{ content: string }>; accountIds?: string[] }> = [
+        ...(instagramIncluded ? [{ platforms: ['instagram'], content: aiCaption.trim() || blogLinkText.trim(), items: linkItems, accountIds: igAccountIds }] : []),
         ...(commentPlatforms.length ? [{ platforms: commentPlatforms, content: (aiCaption.trim() || blogLinkText.trim()).slice(0, 240), items: linkItems }] : []),
         ...(bodyLinkPlatforms.length ? [{ platforms: bodyLinkPlatforms, content: `${aiCaption}${blogLinkText}`.trim() }] : []),
       ];
@@ -604,7 +612,7 @@ export async function POST(req: NextRequest) {
           const res = await fetch(`${baseUrl}/api/sns/post-now`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-            body: JSON.stringify({ content: g.content, platforms: g.platforms, media_urls: defaultMediaUrls, ...(g.items ? { thread_items: g.items } : {}) }),
+            body: JSON.stringify({ content: g.content, platforms: g.platforms, media_urls: defaultMediaUrls, ...(g.items ? { thread_items: g.items } : {}), ...(g.accountIds?.length ? { account_ids: g.accountIds } : {}) }),
           });
           const text = await res.text();
           try {
@@ -659,6 +667,7 @@ export async function POST(req: NextRequest) {
             return img ? [img] : [];
           })();
           const blogLinkComment = blogUrls.length > 0 ? '🔗 ' + blogUrls.join('\n🔗 ') : '';
+          if (!allScope) { const keep = new Set(MANUAL_DEFAULT_ACCOUNTS.threads || []); const only = allAccounts.filter(a => keep.has(a.platform_user_id)); allAccounts.length = 0; allAccounts.push(...only); }
 
           // ① 언어별 캡션 병렬 생성 (순차 → 병렬로 변경, 3언어 × 15초 → 15초로 단축)
           const uniqueLangs = [...new Set(allAccounts.map(a => a.caption_language))];

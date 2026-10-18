@@ -167,6 +167,7 @@ export default function AutoService2Page() {
   const [publishArticle, setPublishArticle] = useState<Article | null>(null);
   const [selBlog, setSelBlog] = useState<string[]>([]);
   const [selSns, setSelSns] = useState<string[]>([]);
+  const [snsScope, setSnsScope] = useState<'default' | 'all'>('default');
   const [selBacklink, setSelBacklink] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<Record<string, { success: boolean; url?: string; error?: string }> | null>(null);
@@ -859,6 +860,7 @@ export default function AutoService2Page() {
           article_id: publishArticle.id,
           blog_platforms: selBlog,
           sns_platforms: selSns,
+          sns_scope: snsScope,
           wp_site_ids: selWpSiteIds,
           backlink_platforms: selBacklink,
         }),
@@ -1999,6 +2001,15 @@ export default function AutoService2Page() {
                       </label>
                     ))}
                   </div>
+                  {(selSns.includes('instagram') || selSns.includes('threads')) && (
+                    <div className="mt-2 flex items-center gap-2 text-xs">
+                      <span className="text-gray-500">인스타·스레드 계정</span>
+                      {([['default', '@2dayskr만 (기본)'], ['all', '전체 연결 계정']] as const).map(([v, l]) => (
+                        <button key={v} type="button" onClick={() => setSnsScope(v)}
+                          className={`px-2.5 py-1 rounded-full border font-medium ${snsScope === v ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{l}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* 백링크 플랫폼 */}
