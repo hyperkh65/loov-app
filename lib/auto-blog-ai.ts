@@ -644,12 +644,13 @@ async function generateTextRaw(
       : replaceEnglishWords(removeEuropeanWords(stripForeignChars(unescapeQuotes(stripThinkBlocks(r)))))
     ) : false;
 
+  // OpenRouter는 키마다 35초씩 걸려 전체 200초+까지 늘어지며 120초 제한을 넘겨 기본문구 폴백을 유발 → 전체 40초 상한
   // SNS 문구 전용 — 품질 순: OpenRouter nemotron-ultra → Gemini → Groq(Qwen 27B는 외국어 혼입·지어내기가 잦아 최후 수단). 전부 실패하면 throw
   if (preferModel === 'sns') {
     const timed = async (name: string, fn: () => Promise<string | false>) => {
       const t0 = Date.now(); const v = await fn(); snsChainTrace.push(`${name} ${Date.now() - t0}ms ${v ? 'ok' : 'fail'}`); return v;
     };
-    const r = clean(await timed('openrouter', () => tryOpenRouter(OPENROUTER_FALLBACK_MODELS.slice(0, 1), 35_000)) || await timed('gemini', tryGemini) || await timed('groq', tryGroq));
+    const r = clean(await timed('openrouter', () => Promise.race([tryOpenRouter(OPENROUTER_FALLBACK_MODELS.slice(0, 1), 35_000), new Promise<false>(res => setTimeout(() => res(false), 40_000))])) || await timed('gemini', tryGemini) || await timed('groq', tryGroq));
     if (r) return r;
     throw new Error(`SNS 문구 생성 모두 실패\n${errors.join(' | ')}`);
   }

@@ -51,10 +51,11 @@ ${THREADS_HOOK_GUIDE}
     const latin = (t.match(/[A-Za-z]/g) || []).length;
     return t.length >= 80 && hangul > 0 && latin <= hangul;
   };
+  const tumblrP = generateText(tumblrPrompt, 'sns').catch(() => ''); // 본문 생성과 병렬(직렬이면 +50초)
   let raw = '';
   for (let i = 0; i < 2 && !isGood(raw); i++) { const t0 = Date.now(); raw = await generateText(prompt, 'sns').catch((e) => { lastCaptionDiag = String(e?.message || e).slice(0, 1500); console.error('[sns-caption] 생성 실패:', lastCaptionDiag.slice(0, 600)); return ''; }); captionTrace.push(`시도${i + 1} ${Date.now() - t0}ms len=${raw.length} good=${isGood(raw)}`); }
   if (!isGood(raw)) { if (raw) lastCaptionDiag = `품질검사 실패 len=${raw.length} head=${raw.slice(0, 300)}`; console.error(`[sns-caption] 품질검사 실패 len=${raw.length}`); return {}; }
-  const tumblrRaw = await generateText(tumblrPrompt, 'sns').catch(() => '');
+  const tumblrRaw = await tumblrP;
   const tumblr = tumblrRaw.match(/소개\s*[:：]\s*([\s\S]*?)(?=\n\s*태그\s*[:：]|$)/)?.[1]?.trim() || '';
   const tumblrTags = tumblrRaw.match(/태그\s*[:：]\s*(.+)/)?.[1]?.trim() || '';
   // 모델이 금지한 "어디서 보라"는 안내 문구를 어겨도 그 줄은 걷어낸다
