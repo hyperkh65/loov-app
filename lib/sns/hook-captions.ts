@@ -2,6 +2,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { getSection } from '@/lib/sns/sections';
 import { THREADS_HOOK_GUIDE, scrubThreads, formatHookLines, fitTwitter } from '@/lib/sns/hook-style';
 
+export let lastCaptionDiag = '';
 const CAFE_TAG = 'CAFE';
 const TAGS = ['THREADS', 'TWITTER', 'FACEBOOK', 'INSTAGRAM', CAFE_TAG, 'PINTERESTTITLE', 'PINTEREST'];
 
@@ -50,8 +51,8 @@ ${THREADS_HOOK_GUIDE}
     return t.length >= 80 && hangul > 0 && latin <= hangul;
   };
   let raw = '';
-  for (let i = 0; i < 2 && !isGood(raw); i++) raw = await generateText(prompt, 'sns').catch((e) => { console.error('[sns-caption] 생성 실패:', String(e?.message || e).slice(0, 600)); return ''; });
-  if (!isGood(raw)) { console.error(`[sns-caption] 품질검사 실패 len=${raw.length}`); return {}; }
+  for (let i = 0; i < 2 && !isGood(raw); i++) raw = await generateText(prompt, 'sns').catch((e) => { lastCaptionDiag = String(e?.message || e).slice(0, 1500); console.error('[sns-caption] 생성 실패:', lastCaptionDiag.slice(0, 600)); return ''; });
+  if (!isGood(raw)) { if (raw) lastCaptionDiag = `품질검사 실패 len=${raw.length} head=${raw.slice(0, 300)}`; console.error(`[sns-caption] 품질검사 실패 len=${raw.length}`); return {}; }
   const tumblrRaw = await generateText(tumblrPrompt, 'sns').catch(() => '');
   const tumblr = tumblrRaw.match(/소개\s*[:：]\s*([\s\S]*?)(?=\n\s*태그\s*[:：]|$)/)?.[1]?.trim() || '';
   const tumblrTags = tumblrRaw.match(/태그\s*[:：]\s*(.+)/)?.[1]?.trim() || '';
