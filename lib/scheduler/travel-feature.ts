@@ -4,6 +4,7 @@ import { getSetting } from '@/lib/get-setting';
 import { getSection } from '@/lib/sns/sections';
 import { THREADS_HOOK_GUIDE, scrubThreads } from '@/lib/sns/hook-style';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
+import { buildTravelCards, htmlToText } from '@/lib/sns/travel-cards';
 import { composeModelScene, AI_IMAGE_NOTE } from '@/lib/travel-model';
 import { TRAVEL_TOPICS, TRAVEL_KINDS, type TravelKind } from '@/lib/travel-topics';
 import { publishToWordPress, getWpCredentials } from './blog-runner';
@@ -104,9 +105,10 @@ HTML 본문`;
     const sns = await generateText(`너는 20~30대 여성 여행 크리에이터야. "${title}" (${KIND_LABEL[kind]}, ${topic.place}) 글을 소개하는 Threads 글 1개를 써줘. 한국어만.\n\n${THREADS_HOOK_GUIDE}\n\n${PERSONA}\n- 주어진 정보에 없는 가격·후기·방문 경험은 지어내지 마라.\n\n구분자 형식으로만 출력:\n[[[THREADS]]]\n스레드용 텍스트`, 'sns');
     const text = scrubThreads(getSection(sns, 'THREADS', ['THREADS']));
     const img = hero || inline;
+    const cards = text ? await buildTravelCards({ title, text: htmlToText(content), photos: [hero, inline], slug: Date.now().toString(36) }) : null;
     if (text) for (const conn of (await getSnsConnections(sch.user_id)).filter(x => ['threads', 'instagram'].includes(x.platform) && AGODA_SNS_ACCOUNTS.includes(x.platform_username || ''))) {
       try {
-        const r = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, text, img ? [img] : undefined);
+        const r = await postToPlatformWithMedia(conn.platform as Platform, conn.access_token, conn.platform_user_id, text, cards ? cards.slice(0, 10) : img ? [img] : undefined);
         try { await postCommentOnOwnPost(conn.platform as Platform, conn.access_token, conn.platform_user_id, r.id, `📍 코스·정보 자세히 보기 👉 ${url}`); } catch { /* 댓글 실패 무시 */ }
         results.push(`${conn.platform}(${conn.platform_username}): 발행 완료`);
       } catch (e) { results.push(`${conn.platform}: ${String(e).slice(0, 60)}`); }

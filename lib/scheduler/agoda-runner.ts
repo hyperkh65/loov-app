@@ -5,6 +5,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { refreshBloggerToken } from '@/lib/blogger-token';
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { publishToWordPress, getWpCredentials, wpDue, markWpPublished } from './blog-runner';
+import { buildTravelCards, htmlToText } from '@/lib/sns/travel-cards';
 import { composeModelScene, AI_IMAGE_NOTE } from '@/lib/travel-model';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, AgodaAutoConfig } from './index';
@@ -301,6 +302,12 @@ ${PERSONA}
       const linkUrl = publishedUrl;
       const comment = `💸 오늘 가격·후기 비교 보기 👉 ${linkUrl}\n\n${DISCLOSURE}`;
       const connections = await getSnsConnections(schedule.user_id);
+      const cardTargets = new Set(['threads', 'instagram']);
+      const travelCards = snsPlatforms.some(p => cardTargets.has(p)) ? await buildTravelCards({
+        title, text: `${htmlToText(content)}\n호텔: ${top5.map(h => `${h.hotelName} 리뷰 ${h.reviewScore}/10 1박 ${Math.round(h.dailyRate).toLocaleString('ko-KR')}원`).join(' / ')}`,
+        photos: [modelShot || top5[0].imageURL, ...top5.map(h => h.imageURL)], slug: Date.now().toString(36),
+        hint: `${city.name} 가성비 호텔 TOP5 — points는 호텔 순서대로 1개씩, 제목에 호텔명, 본문엔 위 리뷰 점수·1박 가격 숫자만 사용`,
+      }) : null;
 
       for (const platform of snsPlatforms) {
         const conns = connections.filter(c => {
@@ -320,7 +327,7 @@ ${PERSONA}
               conn.access_token,
               conn.platform_user_id,
               platform === 'facebook' ? `${text}\n\n${comment}` : text, // 페이스북은 댓글 권한이 없어 링크를 본문에
-              modelShot ? [modelShot] : topHotel.imageURL ? [topHotel.imageURL] : undefined,
+              travelCards && cardTargets.has(platform) ? travelCards.slice(0, 10) : modelShot ? [modelShot] : topHotel.imageURL ? [topHotel.imageURL] : undefined,
             );
             if (platform !== 'facebook') try {
               await postCommentOnOwnPost(platform as Platform, conn.access_token, conn.platform_user_id, postResult.id, comment);
