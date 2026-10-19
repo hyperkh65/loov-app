@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { youtubeAccess, uploadShort, ShortsError, inboxAuthed } from '@/lib/shorts-youtube';
+import { r2Available, uploadToR2 } from '@/lib/r2-storage';
 
 export const maxDuration = 300;
 
@@ -15,6 +16,13 @@ export async function POST(req: NextRequest) {
     const video = f.get('video') as File | null;
     if (!video || typeof video === 'string') return NextResponse.json({ error: 'video 없음' }, { status: 400 });
     const str = (k: string) => String(f.get(k) || '');
+    if (str('hold')) { // 발행 대기: R2에 보관만 하고 대시보드에서 [발행]을 누를 때 YouTube·Threads·Instagram에 올린다. phrase=YouTube 채널
+      if (!r2Available()) return NextResponse.json({ error: 'R2 미설정' }, { status: 500 });
+      const id = `hold_${str('job') || Date.now()}_${str('clip') || '0'}`;
+      const url = await uploadToR2(`shorts/${id}.mp4`, Buffer.from(await video.arrayBuffer()), 'video/mp4');
+      await admin.from('shorts_jobs').upsert({ id, user_id: conn.user_id, title: str('title') || '쇼츠', description: str('description'), phrase: str('channel') || null, status: 'created', source: 'hold', video_url: url, error: null, updated_at: new Date().toISOString() });
+      return NextResponse.json({ ok: true, url, hold: true });
+    }
     const r = await uploadShort(conn.accessToken, {
       buf: Buffer.from(await video.arrayBuffer()), title: str('title'), description: str('description'),
       tags: str('tags'), comment: str('comment'), publishAt: str('publish_at'),
