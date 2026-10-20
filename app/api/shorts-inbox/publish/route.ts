@@ -8,6 +8,8 @@ export const maxDuration = 300;
 
 // @2dayskr 계정 (sns_connections.platform_user_id)
 const TARGETS = [{ platform: 'threads', id: '25203934249239577' }, { platform: 'instagram', id: '34489947500650071' }] as const;
+// 딸깍 제휴 상품 영상(hold_prod_…)은 @seanonthemail 스레드로만 (사용자 확정: 인스타 제외)
+const PROD_TARGETS = [{ platform: 'threads', id: '28733238669628153' }] as const;
 
 // 발행 대기(source='hold') 영상을 [발행] 클릭 한 번으로 YouTube + Threads + Instagram에 올린다.
 export async function POST(req: NextRequest) {
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
     } catch (e) { notes.push('YouTube: ' + (e as Error).message); }
 
     const { data: conns } = await admin.from('sns_connections').select('platform, platform_user_id, access_token').eq('user_id', user.id).eq('is_active', true);
-    for (const t of TARGETS) {
+    for (const t of String(job.id).startsWith('hold_prod_') ? PROD_TARGETS : TARGETS) {
       const c = (conns || []).find(x => x.platform === t.platform && x.platform_user_id === t.id);
       if (!c) { notes.push(`${t.platform}: 연결 없음`); continue; }
       try {
@@ -72,4 +74,14 @@ export async function POST(req: NextRequest) {
     ...(ytUrl ? { video_id: ytId, video_url: ytUrl } : {}), updated_at: now(),
   }).eq('id', job.id);
   return NextResponse.json({ ok, youtube: ytUrl, sns: posted, notes });
+}
+
+// 발행 대기 카드 삭제(발행 전·실패한 것만). R2 파일은 남겨도 무해해서 지우지 않는다.
+export async function DELETE(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
+  const id = req.nextUrl.searchParams.get('id') || '';
+  const { data } = await createAdminClient().from('shorts_jobs').delete().eq('id', id).eq('user_id', user.id).eq('source', 'hold').in('status', ['created', 'failed']).select('id');
+  return data?.length ? NextResponse.json({ ok: true }) : NextResponse.json({ error: '지울 수 없는 상태예요' }, { status: 409 });
 }

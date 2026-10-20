@@ -119,6 +119,7 @@ function Publish({ job, onDone }: { job: Job; onDone: () => void }) {
       <button disabled={busy || (job.status === 'uploading' && !stuck)} onClick={go} className="mt-2 w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">{busy || (job.status === 'uploading' && !stuck) ? '발행 중…' : stuck ? '다시 발행 (멈춤)' : '발행'}</button>
       {stuck && !busy && <div className="text-xs text-amber-600 mt-1">10분 넘게 멈춰 있어요. 이미 올라간 곳이 있을 수 있으니 유튜브·스레드·인스타를 먼저 확인하고 다시 발행하세요.</div>}
       {msg && <div className="text-xs text-gray-600 mt-1">{msg}</div>}
+      {['created', 'failed'].includes(job.status) && !busy && <button onClick={async () => { if (!confirm(`"${job.title}" 카드를 지울까요?`)) return; const r = await fetch('/api/shorts-inbox/publish?id=' + encodeURIComponent(job.id), { method: 'DELETE' }); if (r.ok) onDone(); else setMsg('삭제 실패'); }} className="mt-1 w-full px-3 py-1 rounded-lg text-xs text-gray-500 hover:text-red-600">삭제</button>}
     </>
   );
 }

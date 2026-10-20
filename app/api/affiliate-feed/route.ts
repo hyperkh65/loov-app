@@ -35,14 +35,16 @@ export async function GET(req: NextRequest) {
     const { data: p } = await db.from('affiliate_products').select('*').eq('id', s.product_id).maybeSingle();
     if (!p) continue;
     const { data: m } = await db.from('affiliate_product_matches')
-      .select('match_confidence, affiliate_listings(network, network_product_id, product_name, product_url, affiliate_url, current_price, original_price, discount_rate, rating, review_count, image_url)')
+      .select('match_confidence, match_evidence, affiliate_listings(network, network_product_id, product_name, product_url, affiliate_url, current_price, original_price, discount_rate, rating, review_count, image_url)')
       .eq('product_id', p.id).order('match_confidence', { ascending: false }).limit(1).maybeSingle();
     const l = (m?.affiliate_listings || null) as unknown as Record<string, unknown> | null;
     if (!l || !l.affiliate_url) continue; // 제휴 링크가 없는 상품은 영상 만들어도 수익이 없다
     const { data: aliases } = await db.from('affiliate_product_aliases').select('affiliate_source_items(url, thumbnail_url, raw_metrics)').eq('product_id', p.id).limit(5);
-    const videos = (aliases || []).map(a => ((a.affiliate_source_items as unknown as { raw_metrics?: { video_url?: string } } | null)?.raw_metrics?.video_url)).filter(Boolean);
+    const ev = (m?.match_evidence || {}) as { video_url?: string };
+    const videos = [ev.video_url, ...(aliases || []).map(a => ((a.affiliate_source_items as unknown as { raw_metrics?: { video_url?: string } } | null)?.raw_metrics?.video_url))].filter(Boolean);
     const { data: sc } = await db.from('affiliate_scripts').select('hook_text, structure').eq('product_id', p.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
     const network = String(l.network || 'coupang');
+    // 쿠팡만 /go 추적 — 무신사·토스는 각 플랫폼 링크 그대로여야 수익이 잡힌다
     const link = network === 'coupang'
       ? await createGoLink({ platform: 'coupang', networkProductId: String(l.network_product_id || ''), productName: String(l.product_name || p.product_name), destinationUrl: String(l.affiliate_url), contentChannel: 'sns_comment', snsPlatform: 'shorts' })
       : String(l.affiliate_url);
