@@ -49,9 +49,10 @@ export async function POST(req: NextRequest) {
 
     const { data: conns } = await admin.from('sns_connections').select('platform, platform_user_id, access_token').eq('user_id', user.id).eq('is_active', true).order('updated_at', { ascending: false });
     // 상품 영상: 스레드는 @seanonthemail, 그 밖에 연결된 SNS(인스타 제외)는 플랫폼마다 한 계정씩(최근 연결 우선)
-    const prodTargets = [...PROD_TARGETS as readonly { platform: string; id: string }[]];
-    for (const pf of ['facebook', 'twitter', 'bluesky', 'linkedin', 'telegram']) {
-      const c = (conns || []).find(x => x.platform === pf); if (c) prodTargets.push({ platform: pf, id: c.platform_user_id });
+    type Pf = Parameters<typeof postToPlatformWithMedia>[0];
+    const prodTargets = [...PROD_TARGETS as readonly { platform: Pf; id: string }[]];
+    for (const pf of ['facebook', 'twitter', 'bluesky', 'linkedin', 'telegram'] as const) {
+      const c = (conns || []).find(x => x.platform === pf); if (c) prodTargets.push({ platform: pf as Pf, id: c.platform_user_id });
     }
     for (const t of String(job.id).startsWith('hold_prod_') ? prodTargets : TARGETS) {
       const c = (conns || []).find(x => x.platform === t.platform && x.platform_user_id === t.id);
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
           if (comment) await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push('threads 링크 댓글: ' + (e as Error).message));
         } else if (comment && ['twitter', 'facebook'].includes(t.platform)) {
           p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
-          await postCommentOnOwnPost(t.platform as 'twitter', c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push(`${t.platform} 링크 댓글: ${(e as Error).message}`));
+          await postCommentOnOwnPost(t.platform, c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push(`${t.platform} 링크 댓글: ${(e as Error).message}`));
         } else p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, comment ? `${caption}\n\n${comment}` : caption, [job.video_url]);
         posted++;
         await admin.from('sns_post_logs').insert({ user_id: user.id, platform: t.platform, status: 'success', platform_post_id: p.id });
