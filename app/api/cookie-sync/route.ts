@@ -40,10 +40,16 @@ export async function POST(req: NextRequest) {
     }
   }
   if (valid(body.tistory?.tssession)) {
-    const { data } = await admin.from('tistory_connections')
-      .update({ tssession: body.tistory!.tssession, updated_at: now })
-      .eq('user_id', owner).select('id');
-    if (data?.length) updated.push('tistory');
+    // 티스토리 계정이 여러 개라, 이 세션으로 관리 페이지가 열리는(=주인인) 블로그에만 저장한다
+    const ts = body.tistory!.tssession!;
+    const { data: rows } = await admin.from('tistory_connections').select('id, blog_name, blog_url').eq('user_id', owner);
+    for (const r of rows || []) {
+      const url = (r.blog_url || `https://${r.blog_name}.tistory.com`).replace(/\/+$/, '') + '/manage/';
+      const res = await fetch(url, { headers: { Cookie: `TSSESSION=${ts}`, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }, signal: AbortSignal.timeout(10000) }).catch(() => null);
+      if (!res?.ok || /auth\/login|accounts\.kakao\.com/.test(res.url)) continue;
+      await admin.from('tistory_connections').update({ tssession: ts, updated_at: now }).eq('id', r.id);
+      updated.push('tistory:' + r.blog_name);
+    }
   }
   return NextResponse.json({ ok: true, updated }, { headers: CORS });
 }
