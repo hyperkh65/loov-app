@@ -45,8 +45,8 @@ export async function POST(req: NextRequest) {
       try {
         let p: { id: string };
         if (t.platform === 'threads') { // 스레드: 캡션은 본문 글로, 영상(+BGM 출처)은 그 글의 댓글로
-          const credit = caption.split('\n').filter(l => l.startsWith('🎵')).join('\n');
-          const text = caption.split('\n').filter(l => !l.startsWith('🎵')).join('\n').trim();
+          const credit = caption.split('\n').filter(l => (l.startsWith('🎵') || l.startsWith('📷'))).join('\n');
+          const text = caption.split('\n').filter(l => !(l.startsWith('🎵') || l.startsWith('📷'))).join('\n').trim();
           p = await postToPlatformWithMedia('threads', c.access_token, c.platform_user_id, text, []);
           await waitThreadsPostAccessible(p.id, c.access_token);
           await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, credit || '▶ 영상으로 보기', [job.video_url]);
