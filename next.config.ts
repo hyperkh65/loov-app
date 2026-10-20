@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactCompiler: true,
+  // middleware가 /api/* 본문을 버퍼링하는데 기본 10MB라, 딸깍 영상 업로드(shorts-inbox)가 잘려 FormData 파싱 실패하던 문제
+  experimental: { proxyClientMaxBodySize: '100mb' },
   // playwright-extra/stealth 플러그인이 standalone 빌드 트레이서에서 중첩 의존성이
   // 빠진 채로 번들링돼 프로덕션에서 "Cannot find module"로 죽던 문제 — canvas/ssh2와
   // 동일하게 external 처리해서 node_modules 전체가 그대로 복사되도록 함. 최상위
