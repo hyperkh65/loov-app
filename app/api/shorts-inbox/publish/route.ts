@@ -19,8 +19,11 @@ export async function POST(req: NextRequest) {
   const now = () => new Date().toISOString();
 
   // 중복 클릭 방지: 대기/실패 상태일 때만 'uploading'으로 선점
+  // 'uploading'이 10분 넘게 그대로면 서버 재시작 등으로 끊긴 것 → 다시 발행 허용
+  const stale = new Date(Date.now() - 10 * 60_000).toISOString();
   const { data: job } = await admin.from('shorts_jobs').update({ status: 'uploading', updated_at: now() })
-    .eq('id', String(id)).eq('user_id', user.id).eq('source', 'hold').in('status', ['created', 'failed']).select('*').maybeSingle();
+    .eq('id', String(id)).eq('user_id', user.id).eq('source', 'hold')
+    .or(`status.in.(created,failed),and(status.eq.uploading,updated_at.lt.${stale})`).select('*').maybeSingle();
   if (!job) return NextResponse.json({ error: '발행할 수 없는 상태예요(이미 발행했거나 없음)' }, { status: 409 });
 
   const notes: string[] = [];

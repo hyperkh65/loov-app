@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 
 interface Job {
   id: string; title: string | null; phrase: string | null; description: string | null; status: 'created' | 'scheduled' | 'uploading' | 'uploaded' | 'failed';
-  source: string; scheduled_at: string | null; uploaded_at: string | null; video_id: string | null; video_url: string | null; error: string | null; thumb: string | null; created_at: string;
+  source: string; scheduled_at: string | null; uploaded_at: string | null; video_id: string | null; video_url: string | null; error: string | null; thumb: string | null; created_at: string; updated_at?: string | null;
 }
 type Tab = 'hold' | 'created' | 'scheduled' | 'uploaded' | 'manual';
 const TABS: { key: Tab; label: string }[] = [
@@ -102,6 +102,7 @@ function ManualUpload({ onDone }: { onDone: () => void }) {
 function Publish({ job, onDone }: { job: Job; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const stuck = job.status === 'uploading' && !!job.updated_at && Date.now() - new Date(job.updated_at).getTime() > 10 * 60_000;
   async function go() {
     if (!confirm(`"${job.title}"\n\nYouTube · Threads · Instagram(@2dayskr)에 지금 발행할까요?`)) return;
     setBusy(true); setMsg('발행 중… (1~3분)');
@@ -115,7 +116,8 @@ function Publish({ job, onDone }: { job: Job; onDone: () => void }) {
   return (
     <>
       <div className="text-xs text-gray-500 mt-1 whitespace-pre-line line-clamp-6">{job.description}</div>
-      <button disabled={busy || job.status === 'uploading'} onClick={go} className="mt-2 w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">{busy || job.status === 'uploading' ? '발행 중…' : '발행'}</button>
+      <button disabled={busy || (job.status === 'uploading' && !stuck)} onClick={go} className="mt-2 w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">{busy || (job.status === 'uploading' && !stuck) ? '발행 중…' : stuck ? '다시 발행 (멈춤)' : '발행'}</button>
+      {stuck && !busy && <div className="text-xs text-amber-600 mt-1">10분 넘게 멈춰 있어요. 이미 올라간 곳이 있을 수 있으니 유튜브·스레드·인스타를 먼저 확인하고 다시 발행하세요.</div>}
       {msg && <div className="text-xs text-gray-600 mt-1">{msg}</div>}
     </>
   );
