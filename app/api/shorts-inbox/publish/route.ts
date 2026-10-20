@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { youtubeAccess, uploadShort } from '@/lib/shorts-youtube';
-import { postToPlatformWithMedia } from '@/lib/sns/platforms-server';
+import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import { logSnsPost } from '@/lib/sns/account-rotation';
 
 export const maxDuration = 300;
@@ -43,7 +43,14 @@ export async function POST(req: NextRequest) {
       const c = (conns || []).find(x => x.platform === t.platform && x.platform_user_id === t.id);
       if (!c) { notes.push(`${t.platform}: 연결 없음`); continue; }
       try {
-        const p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
+        let p: { id: string };
+        if (t.platform === 'threads') { // 스레드: 캡션은 본문 글로, 영상(+BGM 출처)은 그 글의 댓글로
+          const credit = caption.split('\n').filter(l => l.startsWith('🎵')).join('\n');
+          const text = caption.split('\n').filter(l => !l.startsWith('🎵')).join('\n').trim();
+          p = await postToPlatformWithMedia('threads', c.access_token, c.platform_user_id, text, []);
+          await waitThreadsPostAccessible(p.id, c.access_token);
+          await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, credit || '▶ 영상으로 보기', [job.video_url]);
+        } else p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
         posted++;
         await admin.from('sns_post_logs').insert({ user_id: user.id, platform: t.platform, status: 'success', platform_post_id: p.id });
         logSnsPost(admin, t.platform, c.platform_user_id).catch(() => {});

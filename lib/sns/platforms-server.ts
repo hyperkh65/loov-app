@@ -786,7 +786,8 @@ export async function postCommentOnOwnPost(
       return replyToTwitterComment(accessToken, platformUserId, postId, content, mediaUrls);
 
     case 'threads': {
-      // 스레드: reply_to_id로 답글 (이미지 있으면 함께 첨부)
+      // 스레드: reply_to_id로 답글 (이미지 있으면 함께 첨부). 본문 게시와 같이 Meta가 받을 수 있는 URL로 바꾼다
+      if (mediaUrls) mediaUrls = await Promise.all(mediaUrls.map(toMetaSafeUrl));
       let containerBody: Record<string, unknown>;
       if (mediaUrls && mediaUrls.length > 1) {
         // 다중 이미지: 캐러셀 댓글
