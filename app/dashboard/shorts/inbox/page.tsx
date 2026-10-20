@@ -110,7 +110,7 @@ function Publish({ job, onDone }: { job: Job; onDone: () => void }) {
       const r = await fetch('/api/shorts-inbox/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: job.id }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-      setMsg(d.ok ? `완료 — YouTube ${d.youtube ? 'O' : 'X'} · SNS ${d.sns}/2 ${d.notes?.length ? '· ' + d.notes.join(' | ') : ''}` : '실패: ' + d.notes.join(' | '));
+      setMsg(d.ok ? `완료 — YouTube ${d.youtube ? 'O' : 'X'} · SNS ${d.sns}개 ${d.notes?.length ? '· ' + d.notes.join(' | ') : ''}` : '실패: ' + d.notes.join(' | '));
     } catch (err) { setMsg('실패: ' + (err as Error).message); } finally { setBusy(false); onDone(); }
   }
   return (

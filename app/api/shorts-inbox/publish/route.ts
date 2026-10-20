@@ -43,8 +43,13 @@ export async function POST(req: NextRequest) {
       ytUrl = r.url; ytId = r.videoId;
     } catch (e) { notes.push('YouTube: ' + (e as Error).message); }
 
-    const { data: conns } = await admin.from('sns_connections').select('platform, platform_user_id, access_token').eq('user_id', user.id).eq('is_active', true);
-    for (const t of String(job.id).startsWith('hold_prod_') ? PROD_TARGETS : TARGETS) {
+    const { data: conns } = await admin.from('sns_connections').select('platform, platform_user_id, access_token').eq('user_id', user.id).eq('is_active', true).order('updated_at', { ascending: false });
+    // 상품 영상: 스레드는 @seanonthemail, 그 밖에 연결된 SNS(인스타 제외)는 플랫폼마다 한 계정씩(최근 연결 우선)
+    const prodTargets = [...PROD_TARGETS as readonly { platform: string; id: string }[]];
+    for (const pf of ['facebook', 'twitter', 'bluesky', 'linkedin', 'telegram']) {
+      const c = (conns || []).find(x => x.platform === pf); if (c) prodTargets.push({ platform: pf, id: c.platform_user_id });
+    }
+    for (const t of String(job.id).startsWith('hold_prod_') ? prodTargets : TARGETS) {
       const c = (conns || []).find(x => x.platform === t.platform && x.platform_user_id === t.id);
       if (!c) { notes.push(`${t.platform}: 연결 없음`); continue; }
       try {
