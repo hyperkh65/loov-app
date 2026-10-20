@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
-import { youtubeAccess, uploadShort } from '@/lib/shorts-youtube';
+import { youtubeAccess, uploadShort, inboxAuthed } from '@/lib/shorts-youtube';
 import { postToPlatformWithMedia, postCommentOnOwnPost, waitThreadsPostAccessible } from '@/lib/sns/platforms-server';
 import { logSnsPost } from '@/lib/sns/account-rotation';
 
@@ -13,11 +13,15 @@ const PROD_TARGETS = [{ platform: 'threads', id: '28733238669628153' }] as const
 
 // 발행 대기(source='hold') 영상을 [발행] 클릭 한 번으로 YouTube + Threads + Instagram에 올린다.
 export async function POST(req: NextRequest) {
+  // 대시보드 [발행](로그인) 또는 딸깍 자동 발행(Bearer 딸깍 토큰 → 소유자)
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user: sessionUser } } = await supabase.auth.getUser();
+  const user = sessionUser || (inboxAuthed(req) && process.env.OWNER_USER_ID ? { id: process.env.OWNER_USER_ID } : null);
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
   const admin = createAdminClient();
-  const { id } = await req.json().catch(() => ({}));
+  // comment: 제품 링크 등 — 본문 대신 댓글로 단다(본문 링크는 노출이 줄어서). 댓글을 못 다는 곳은 본문 끝에 붙인다
+  const { id, comment: rawComment } = await req.json().catch(() => ({}));
+  const comment = typeof rawComment === 'string' ? rawComment.slice(0, 480) : '';
   const now = () => new Date().toISOString();
 
   // 중복 클릭 방지: 대기/실패 상태일 때만 'uploading'으로 선점
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const conn = await youtubeAccess(admin, user.id, job.phrase || '');
-      const r = await uploadShort(conn.accessToken, { buf, title: job.title || '쇼츠', description: caption, tags });
+      const r = await uploadShort(conn.accessToken, { buf, title: job.title || '쇼츠', description: comment ? `${caption}\n\n${comment}` : caption, tags, comment }); // 유튜브 댓글은 force-ssl 권한이 있어야 달려서 설명란에도 둔다
       ytUrl = r.url; ytId = r.videoId;
     } catch (e) { notes.push('YouTube: ' + (e as Error).message); }
 
@@ -60,7 +64,11 @@ export async function POST(req: NextRequest) {
           p = await postToPlatformWithMedia('threads', c.access_token, c.platform_user_id, text, []);
           await waitThreadsPostAccessible(p.id, c.access_token);
           await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, credit || '▶ 영상으로 보기', [job.video_url]);
-        } else p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
+          if (comment) await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push('threads 링크 댓글: ' + (e as Error).message));
+        } else if (comment && ['twitter', 'facebook'].includes(t.platform)) {
+          p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
+          await postCommentOnOwnPost(t.platform as 'twitter', c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push(`${t.platform} 링크 댓글: ${(e as Error).message}`));
+        } else p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, comment ? `${caption}\n\n${comment}` : caption, [job.video_url]);
         posted++;
         await admin.from('sns_post_logs').insert({ user_id: user.id, platform: t.platform, status: 'success', platform_post_id: p.id });
         logSnsPost(admin, t.platform, c.platform_user_id).catch(() => {});

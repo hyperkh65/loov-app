@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     scope: [
       'https://www.googleapis.com/auth/youtube.upload',
       'https://www.googleapis.com/auth/youtube.readonly',
+      'https://www.googleapis.com/auth/youtube.force-ssl', // 내 영상에 제품 링크 댓글 달기
       'https://www.googleapis.com/auth/userinfo.profile',
     ].join(' '),
     access_type: 'offline',
