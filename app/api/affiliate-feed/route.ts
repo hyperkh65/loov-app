@@ -8,7 +8,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { inboxAuthed } from '@/lib/shorts-youtube';
 import { createAdminClient } from '@/lib/supabase-server';
 import { uploadToR2, readFromR2 } from '@/lib/r2-storage';
-import { createGoLink } from '@/lib/affiliate-tracking';
 
 export const maxDuration = 60;
 const SENT = 'affiliate/ddalkak-sent.json';
@@ -44,10 +43,7 @@ export async function GET(req: NextRequest) {
     const videos = [ev.video_url, ...(aliases || []).map(a => ((a.affiliate_source_items as unknown as { raw_metrics?: { video_url?: string } } | null)?.raw_metrics?.video_url))].filter(Boolean);
     const { data: sc } = await db.from('affiliate_scripts').select('hook_text, structure').eq('product_id', p.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
     const network = String(l.network || 'coupang');
-    // 쿠팡만 /go 추적 — 무신사·토스는 각 플랫폼 링크 그대로여야 수익이 잡힌다
-    const link = network === 'coupang'
-      ? await createGoLink({ platform: 'coupang', networkProductId: String(l.network_product_id || ''), productName: String(l.product_name || p.product_name), destinationUrl: String(l.affiliate_url), contentChannel: 'sns_comment', snsPlatform: 'shorts' })
-      : String(l.affiliate_url);
+    const link = String(l.affiliate_url); // 각 플랫폼 고유 제휴 링크 그대로(쿠팡 link.coupang.com 등) — 댓글로 달린다
     items.push({
       id: p.id, name: p.product_name, brand: p.brand, type: p.generic_product_type, category: p.category,
       features: p.features || [], problem: p.problem_solved, useCase: p.use_case, visual: p.visual_description,

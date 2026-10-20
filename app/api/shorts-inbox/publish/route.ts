@@ -59,7 +59,14 @@ export async function POST(req: NextRequest) {
       if (!c) { notes.push(`${t.platform}: 연결 없음`); continue; }
       try {
         let p: { id: string };
-        if (t.platform === 'threads') { // 스레드: 캡션은 본문 글로, 영상(+BGM 출처)은 그 글의 댓글로
+        const isProd = String(job.id).startsWith('hold_prod_');
+        if (isProd && ['threads', 'twitter', 'facebook'].includes(t.platform)) { // 상품 영상: 후킹 멘트+영상을 한 글로, 제휴 링크는 댓글로
+          p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
+          if (comment) {
+            if (t.platform === 'threads') await waitThreadsPostAccessible(p.id, c.access_token);
+            await postCommentOnOwnPost(t.platform, c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push(`${t.platform} 링크 댓글: ${(e as Error).message}`));
+          }
+        } else if (t.platform === 'threads') { // 스레드: 캡션은 본문 글로, 영상(+BGM 출처)은 그 글의 댓글로
           const credit = caption.split('\n').filter(l => (l.startsWith('🎵') || l.startsWith('📷'))).join('\n');
           const text = caption.split('\n').filter(l => !(l.startsWith('🎵') || l.startsWith('📷'))).join('\n').trim();
           p = await postToPlatformWithMedia('threads', c.access_token, c.platform_user_id, text, []);
