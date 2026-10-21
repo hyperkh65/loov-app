@@ -26,6 +26,11 @@ export async function POST(req: NextRequest) {
     }
     const buf = Buffer.from(await video.arrayBuffer());
     let r;
+    if (str('nasq')) { // 딸깍이 이미 한도를 알고 있음 → YouTube 시도 없이 바로 NAS로
+      const id = `${str('job') || Date.now()}_${str('clip') || '0'}`;
+      await saveToNasq({ id, userId: conn.user_id, buf, title: str('title') || '쇼츠', description: str('description'), tags: str('tags'), channel: str('channel'), publishAt: str('publish_at'), error: '딸깍: 오늘 한도 도달' });
+      return NextResponse.json({ ok: true, nasq: true, url: 'nasq:' + id });
+    }
     try {
       r = await uploadShort(conn.accessToken, { buf, title: str('title'), description: str('description'), tags: str('tags'), comment: str('comment'), publishAt: str('publish_at') });
     } catch (e) { // YouTube 한도 → NAS에 보관, 스케줄러가 하루 2개씩 올린다(딸깍은 성공으로 보고 넘어감)
