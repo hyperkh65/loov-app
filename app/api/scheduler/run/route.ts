@@ -37,6 +37,7 @@ import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-his
 import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platforms-server';
 import { searchAliExpressItems, getAliExpressItemDetail } from '@/lib/affiliate-engine/aliexpress-datahub';
 import { upsertCoupangMatch } from '@/lib/affiliate-engine/coupang-match';
+import { drainNasq } from '@/lib/shorts-nasq';
 import { searchProducts } from '@/lib/coupang/api';
 import { getSetting } from '@/lib/get-setting';
 import { callAI, callAISimple, getGeminiKeys } from '@/lib/ai-call';
@@ -1211,6 +1212,9 @@ export async function POST(req: NextRequest) {
     const base = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
     after(() => fetch(`${base}/api/sns/refresh-all`, { method: 'POST', headers: { authorization: `Bearer ${process.env.CRON_SECRET || ''}`, 'x-internal-key': process.env.TELEGRAM_WEBHOOK_SECRET || '' } }).then(() => {}, () => {}));
   }
+
+  // YouTube 한도로 NAS에 쌓인 딸깍 영상: 30분마다 확인해 하루 2개씩 올린다
+  if (isInternal) after(() => drainNasq().then(l => { if (l.length) console.log('[nasq]', l.join(' | ')); }, e => console.error('[nasq]', e)));
 
   let userId: string | null = null;
 

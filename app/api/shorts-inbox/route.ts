@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { youtubeAccess, uploadShort, ShortsError, inboxAuthed } from '@/lib/shorts-youtube';
 import { r2Available, uploadToR2 } from '@/lib/r2-storage';
+import { saveToNasq, isLimit } from '@/lib/shorts-nasq';
 
 export const maxDuration = 300;
 
@@ -23,10 +24,17 @@ export async function POST(req: NextRequest) {
       await admin.from('shorts_jobs').upsert({ id, user_id: conn.user_id, title: str('title') || '쇼츠', description: str('description'), phrase: str('channel') || null, status: 'created', source: 'hold', video_url: url, error: null, updated_at: new Date().toISOString() });
       return NextResponse.json({ ok: true, url, hold: true });
     }
-    const r = await uploadShort(conn.accessToken, {
-      buf: Buffer.from(await video.arrayBuffer()), title: str('title'), description: str('description'),
-      tags: str('tags'), comment: str('comment'), publishAt: str('publish_at'),
-    });
+    const buf = Buffer.from(await video.arrayBuffer());
+    let r;
+    try {
+      r = await uploadShort(conn.accessToken, { buf, title: str('title'), description: str('description'), tags: str('tags'), comment: str('comment'), publishAt: str('publish_at') });
+    } catch (e) { // YouTube 한도 → NAS에 보관, 스케줄러가 하루 2개씩 올린다(딸깍은 성공으로 보고 넘어감)
+      const msg = String((e as Error).message || e);
+      if (!isLimit(msg)) throw e;
+      const id = `${str('job') || Date.now()}_${str('clip') || '0'}`;
+      await saveToNasq({ id, userId: conn.user_id, buf, title: str('title') || '쇼츠', description: str('description'), tags: str('tags'), channel: str('channel'), publishAt: str('publish_at'), error: msg });
+      return NextResponse.json({ ok: true, nasq: true, url: 'nasq:' + id });
+    }
     const id = str('job') ? `${str('job')}_${str('clip') || '0'}` : `yt_${r.videoId}`;
     await admin.from('shorts_jobs').upsert({
       id, user_id: conn.user_id, title: str('title') || '쇼츠', description: str('description'),
