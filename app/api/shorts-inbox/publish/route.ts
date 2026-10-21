@@ -10,6 +10,7 @@ export const maxDuration = 300;
 const TARGETS = [{ platform: 'threads', id: '25203934249239577' }, { platform: 'instagram', id: '34489947500650071' }] as const;
 // 딸깍 제휴 상품 영상(hold_prod_…)은 @seanonthemail 스레드로만 (사용자 확정: 인스타 제외)
 const PROD_TARGETS = [{ platform: 'threads', id: '28733238669628153' }] as const;
+const MONGLE_IG = '@mongle.by.2days';
 
 // 발행 대기(source='hold') 영상을 [발행] 클릭 한 번으로 YouTube + Threads + Instagram에 올린다.
 export async function POST(req: NextRequest) {
@@ -43,20 +44,24 @@ export async function POST(req: NextRequest) {
       const caption: string = job.description || '';
       const tags = (caption.match(/#[^\s#]+/g) || []).map((t: string) => t.slice(1)).join(',');
 
-      try {
+      const isMongle = String(job.id).startsWith('hold_mongle_'); // 몽글 꿀팁 릴스: 유튜브 없이 @mongle.by.2days 인스타로만
+      if (!isMongle) try {
         const conn = await youtubeAccess(admin, user.id, job.phrase || '');
         const r = await uploadShort(conn.accessToken, { buf, title: job.title || '쇼츠', description: comment ? `${caption}\n\n${comment}` : caption, tags, comment }); // 유튜브 댓글은 force-ssl 권한이 있어야 달려서 설명란에도 둔다
         ytUrl = r.url; ytId = r.videoId;
       } catch (e) { notes.push('YouTube: ' + (e as Error).message); }
 
-      const { data: conns } = await admin.from('sns_connections').select('platform, platform_user_id, access_token').eq('user_id', user.id).eq('is_active', true).order('updated_at', { ascending: false });
+      const { data: conns } = await admin.from('sns_connections').select('platform, platform_user_id, platform_username, access_token').eq('user_id', user.id).eq('is_active', true).order('updated_at', { ascending: false });
       // 상품 영상: 스레드는 @seanonthemail, 그 밖에 연결된 SNS(인스타 제외)는 플랫폼마다 한 계정씩(최근 연결 우선)
       type Pf = Parameters<typeof postToPlatformWithMedia>[0];
       const prodTargets = [...PROD_TARGETS as readonly { platform: Pf; id: string }[]];
       for (const pf of ['facebook', 'twitter', 'bluesky', 'linkedin', 'telegram'] as const) {
         const c = (conns || []).find(x => x.platform === pf); if (c) prodTargets.push({ platform: pf as Pf, id: c.platform_user_id });
       }
-      for (const t of String(job.id).startsWith('hold_prod_') ? prodTargets : TARGETS) {
+      const mongle = (conns || []).find(x => x.platform === 'instagram' && x.platform_username === MONGLE_IG);
+      const mongleTargets = mongle ? [{ platform: 'instagram' as Pf, id: mongle.platform_user_id }] : [];
+      if (isMongle && !mongle) notes.push(`instagram: ${MONGLE_IG} 연결 없음`);
+      for (const t of isMongle ? mongleTargets : String(job.id).startsWith('hold_prod_') ? prodTargets : TARGETS) {
         const c = (conns || []).find(x => x.platform === t.platform && x.platform_user_id === t.id);
         if (!c) { notes.push(`${t.platform}: 연결 없음`); continue; }
         try {
