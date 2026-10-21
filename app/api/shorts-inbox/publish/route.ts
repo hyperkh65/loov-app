@@ -67,7 +67,10 @@ export async function POST(req: NextRequest) {
         try {
           let p: { id: string };
           const isProd = String(job.id).startsWith('hold_prod_');
-          if (isProd && ['threads', 'twitter', 'facebook'].includes(t.platform)) { // 상품 영상: 후킹 멘트+영상을 한 글로, 제휴 링크는 댓글로
+          if (isProd && t.platform === 'facebook') { // 페이스북은 링크 댓글이 안 돼서 본문에: 본문에 없는 댓글 줄(대가성 문구 등)만 덧붙인다
+            const extra = comment.split('\n').filter(l => l.trim() && !caption.includes(l.trim())).join('\n');
+            p = await postToPlatformWithMedia('facebook', c.access_token, c.platform_user_id, extra ? `${caption}\n\n${extra}` : caption, [job.video_url]);
+          } else if (isProd && ['threads', 'twitter'].includes(t.platform)) { // 상품 영상: 후킹 멘트+영상을 한 글로, 제휴 링크는 댓글로
             p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
             if (comment) {
               if (t.platform === 'threads') await waitThreadsPostAccessible(p.id, c.access_token);
@@ -80,7 +83,7 @@ export async function POST(req: NextRequest) {
             await waitThreadsPostAccessible(p.id, c.access_token);
             await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, credit || '▶ 영상으로 보기', [job.video_url]);
             if (comment) await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push('threads 링크 댓글: ' + (e as Error).message));
-          } else if (comment && ['twitter', 'facebook'].includes(t.platform)) {
+          } else if (comment && t.platform === 'twitter') {
             p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
             await postCommentOnOwnPost(t.platform, c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push(`${t.platform} 링크 댓글: ${(e as Error).message}`));
           } else p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, comment ? `${caption}\n\n${comment}` : caption, [job.video_url]);
