@@ -41,13 +41,17 @@ export async function POST(req: NextRequest) {
       const res = await fetch(job.video_url);
       if (!res.ok) throw new Error(`영상 읽기 실패 ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
-      const caption: string = job.description || '';
+      // 상품 영상: "🛒 상품번호 #N …" 줄은 유튜브용(쇼츠는 링크가 안 눌려 채널 프로필 링크 → loov.co.kr/shop 에서 번호로 찾는다). 다른 SNS 본문에선 뺀다
+      const full: string = job.description || '';
+      const shopLine = full.split('\n').find((l: string) => l.startsWith('🛒 상품번호')) || '';
+      const caption: string = shopLine ? full.split('\n').filter((l: string) => l !== shopLine).join('\n').replace(/\n{3,}/g, '\n\n').trim() : full;
+      const ytComment = shopLine ? [shopLine, comment].filter(Boolean).join('\n\n') : comment;
       const tags = (caption.match(/#[^\s#]+/g) || []).map((t: string) => t.slice(1)).join(',');
 
       const isMongle = String(job.id).startsWith('hold_mongle_'); // 몽글 꿀팁 릴스: 유튜브 없이 @mongle.by.2days 인스타로만
       if (!isMongle) try {
         const conn = await youtubeAccess(admin, user.id, job.phrase || '');
-        const r = await uploadShort(conn.accessToken, { buf, title: job.title || '쇼츠', description: comment ? `${caption}\n\n${comment}` : caption, tags, comment }); // 유튜브 댓글은 force-ssl 권한이 있어야 달려서 설명란에도 둔다
+        const r = await uploadShort(conn.accessToken, { buf, title: job.title || '쇼츠', description: [shopLine, caption, comment].filter(Boolean).join('\n\n'), tags, comment: ytComment }); // 유튜브 댓글은 force-ssl 권한이 있어야 달려서 설명란에도 둔다
         ytUrl = r.url; ytId = r.videoId;
       } catch (e) { notes.push('YouTube: ' + (e as Error).message); }
 
