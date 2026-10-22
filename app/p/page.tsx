@@ -9,11 +9,12 @@ export default async function Picks({ searchParams }: { searchParams: Promise<{ 
   const q = String((await searchParams).q || '').replace(/[^0-9]/g, ''), all = readShop();
   const list = q ? all.filter(x => String(x.no) === q) : all.slice(0, 200);
   return (
-    <main style={{ maxWidth: 560, margin: '0 auto', padding: '24px 16px 60px', fontFamily: '-apple-system, "Apple SD Gothic Neo", sans-serif', color: '#1b1b1f' }}>
+    <main className="picks" style={{ boxSizing: 'border-box', maxWidth: 560, margin: '0 auto', padding: '24px 16px 60px', fontFamily: '-apple-system, "Apple SD Gothic Neo", sans-serif', color: '#1b1b1f' }}>
+      <style>{'.picks *{box-sizing:border-box}'}</style>
       <h1 style={{ fontSize: 24, margin: '0 0 6px' }}>🛒 쇼츠 상품 모음</h1>
       <p style={{ color: '#666', margin: '0 0 16px', fontSize: 14 }}>영상에 나온 <b>상품번호</b>로 찾아보세요. 최신 상품이 위에 있어요.</p>
       <form style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-        <input name="q" defaultValue={q} inputMode="numeric" placeholder="상품번호 (예: 37)" style={{ flex: 1, padding: '12px 14px', fontSize: 16, border: '1px solid #ddd', borderRadius: 12 }} />
+        <input name="q" defaultValue={q} inputMode="numeric" placeholder="상품번호 (예: 37)" style={{ flex: 1, minWidth: 0, padding: '12px 14px', fontSize: 16, border: '1px solid #ddd', borderRadius: 12 }} />
         <button style={{ padding: '0 18px', fontSize: 16, border: 0, borderRadius: 12, background: '#111', color: '#fff' }}>찾기</button>
       </form>
       {q && !list.length && <p>#{q} 상품을 찾지 못했어요. <a href="/p">전체 보기</a></p>}
