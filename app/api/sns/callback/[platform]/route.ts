@@ -177,6 +177,8 @@ export async function GET(
         platformUsername = `@${userData.username || ''}`;
         platformDisplayName = userData.username || '';
         platformAvatar = null;
+        // 댓글 웹훅 구독(댓글 키워드 → 가이드 DM 자동 발송용). 실패해도 연결은 계속
+        await fetch(`https://graph.instagram.com/v21.0/me/subscribed_apps?subscribed_fields=comments&access_token=${accessToken}`, { method: 'POST' }).catch(() => {});
         break;
       }
       case 'linkedin': {

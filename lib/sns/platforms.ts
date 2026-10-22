@@ -39,7 +39,7 @@ export const PLATFORMS: Record<Platform, {
     name: 'Instagram',
     authUrl: 'https://api.instagram.com/oauth/authorize',
     tokenUrl: 'https://api.instagram.com/oauth/access_token',
-    scopes: ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_comments'],
+    scopes: ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_comments', 'instagram_business_manage_messages'],
     charLimit: 2200,
   },
   linkedin: {
