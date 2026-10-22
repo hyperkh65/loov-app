@@ -10,7 +10,8 @@ export const maxDuration = 300;
 const TARGETS = [{ platform: 'threads', id: '25203934249239577' }, { platform: 'instagram', id: '34489947500650071' }] as const;
 // 딸깍 제휴 상품 영상(hold_prod_…)은 @seanonthemail 스레드로만 (사용자 확정: 인스타 제외)
 const PROD_TARGETS = [{ platform: 'threads', id: '28733238669628153' }] as const;
-const MONGLE_IG = '@mongle.by.2days';
+const MONGLE = 'mongle.by.2days'; // 몽글 AI 꿀팁 릴스를 보낼 인스타·스레드 계정
+const sameUser = (u: string | null | undefined) => String(u || '').replace(/^@/, '').toLowerCase() === MONGLE;
 
 // 발행 대기(source='hold') 영상을 [발행] 클릭 한 번으로 YouTube + Threads + Instagram에 올린다.
 export async function POST(req: NextRequest) {
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
       const ytComment = shopLine ? [shopLine, comment].filter(Boolean).join('\n\n') : comment;
       const tags = (caption.match(/#[^\s#]+/g) || []).map((t: string) => t.slice(1)).join(',');
 
-      const isMongle = String(job.id).startsWith('hold_mongle_'); // 몽글 꿀팁 릴스: 유튜브 없이 @mongle.by.2days 인스타로만
+      const isMongle = String(job.id).startsWith('hold_mongle_'); // 몽글 꿀팁 릴스: 유튜브 없이 @mongle.by.2days 인스타·스레드로만
       if (!isMongle) try {
         const conn = await youtubeAccess(admin, user.id, job.phrase || '');
         const r = await uploadShort(conn.accessToken, { buf, title: job.title || '쇼츠', description: [shopLine, caption, comment].filter(Boolean).join('\n\n'), tags, comment: ytComment }); // 유튜브 댓글은 force-ssl 권한이 있어야 달려서 설명란에도 둔다
@@ -62,16 +63,24 @@ export async function POST(req: NextRequest) {
       for (const pf of ['facebook', 'twitter', 'bluesky', 'linkedin', 'telegram'] as const) {
         const c = (conns || []).find(x => x.platform === pf); if (c) prodTargets.push({ platform: pf as Pf, id: c.platform_user_id });
       }
-      const mongle = (conns || []).find(x => x.platform === 'instagram' && x.platform_username === MONGLE_IG);
-      const mongleTargets = mongle ? [{ platform: 'instagram' as Pf, id: mongle.platform_user_id }] : [];
-      if (isMongle && !mongle) notes.push(`instagram: ${MONGLE_IG} 연결 없음`);
+      const mongleTargets: { platform: Pf; id: string }[] = [];
+      if (isMongle) for (const pf of ['instagram', 'threads'] as const) {
+        const m = (conns || []).find(x => x.platform === pf && sameUser(x.platform_username));
+        if (m) mongleTargets.push({ platform: pf as Pf, id: m.platform_user_id }); else notes.push(`${pf}: @${MONGLE} 연결 없음`);
+      }
       for (const t of isMongle ? mongleTargets : String(job.id).startsWith('hold_prod_') ? prodTargets : TARGETS) {
         const c = (conns || []).find(x => x.platform === t.platform && x.platform_user_id === t.id);
         if (!c) { notes.push(`${t.platform}: 연결 없음`); continue; }
         try {
           let p: { id: string };
           const isProd = String(job.id).startsWith('hold_prod_');
-          if (isProd && t.platform === 'facebook') { // 페이스북은 링크 댓글이 안 돼서 본문에: 본문에 없는 댓글 줄(대가성 문구 등)만 덧붙인다
+          if (isMongle) { // 캡션+영상 한 글. 스레드는 📖 가이드 링크 줄을 댓글로(본문 링크는 노출이 줄어서), BGM 줄은 뺀다
+            const lines = caption.split('\n').filter(l => !l.startsWith('🎵'));
+            const guide = lines.filter(l => l.startsWith('📖')).join('\n');
+            const body = (t.platform === 'threads' ? lines.filter(l => !l.startsWith('📖')) : lines).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, body, [job.video_url]);
+            if (t.platform === 'threads' && guide) { await waitThreadsPostAccessible(p.id, c.access_token); await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, guide).catch(e => notes.push('threads 가이드 댓글: ' + (e as Error).message)); }
+          } else if (isProd && t.platform === 'facebook') { // 페이스북은 링크 댓글이 안 돼서 본문에: 본문에 없는 댓글 줄(대가성 문구 등)만 덧붙인다
             const extra = comment.split('\n').filter(l => l.trim() && !caption.includes(l.trim())).join('\n');
             p = await postToPlatformWithMedia('facebook', c.access_token, c.platform_user_id, extra ? `${caption}\n\n${extra}` : caption, [job.video_url]);
           } else if (isProd && ['threads', 'twitter'].includes(t.platform)) { // 상품 영상: 후킹 멘트+영상을 한 글로, 제휴 링크는 댓글로
