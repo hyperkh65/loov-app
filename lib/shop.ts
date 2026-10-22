@@ -1,4 +1,4 @@
-/** 쇼츠 상품 링크 모음(유튜브 쇼츠는 설명란 링크가 안 눌려서, 채널 프로필 링크 → 이 페이지 → 상품번호로 찾는다). NAS 파일 하나에 저장 */
+/** 쇼츠 상품 링크 모음 loov.co.kr/p (유튜브 쇼츠는 설명란 링크가 안 눌려서, 채널 프로필 링크 → 이 페이지 → 상품번호로 찾는다). NAS 파일 하나에 저장 */
 import fs from 'fs';
 import path from 'path';
 import { NASQ_DIR } from '@/lib/shorts-nasq';
