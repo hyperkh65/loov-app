@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 
 interface Job {
+  post?: { keyword: string; dm: string; guide: string; threads?: string } | null;
   id: string; title: string | null; phrase: string | null; description: string | null; status: 'created' | 'scheduled' | 'uploading' | 'uploaded' | 'failed';
   source: string; scheduled_at: string | null; uploaded_at: string | null; video_id: string | null; video_url: string | null; error: string | null; thumb: string | null; created_at: string; updated_at?: string | null;
 }
@@ -104,7 +105,7 @@ function Publish({ job, onDone }: { job: Job; onDone: () => void }) {
   const [msg, setMsg] = useState('');
   const stuck = job.status === 'uploading' && !!job.updated_at && Date.now() - new Date(job.updated_at).getTime() > 10 * 60_000;
   async function go() {
-    if (!confirm(`"${job.title}"\n\nYouTube · Threads · Instagram(@2dayskr)에 지금 발행할까요?`)) return;
+    if (!confirm(`"${job.title}"\n\n${job.id.startsWith('hold_mongle_') ? '@mongle.by.2days 인스타 · 스레드' : 'YouTube · Threads · Instagram(@2dayskr)'}에 지금 발행할까요?`)) return;
     setBusy(true); setMsg('발행 중… (1~3분)');
     try {
       const r = await fetch('/api/shorts-inbox/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: job.id }) });
@@ -119,7 +120,30 @@ function Publish({ job, onDone }: { job: Job; onDone: () => void }) {
       <button disabled={busy || (job.status === 'uploading' && !stuck)} onClick={go} className="mt-2 w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">{busy || (job.status === 'uploading' && !stuck) ? '발행 중…' : stuck ? '다시 발행 (멈춤)' : '발행'}</button>
       {stuck && !busy && <div className="text-xs text-amber-600 mt-1">10분 넘게 멈춰 있어요. 이미 올라간 곳이 있을 수 있으니 유튜브·스레드·인스타를 먼저 확인하고 다시 발행하세요.</div>}
       {msg && <div className="text-xs text-gray-600 mt-1">{msg}</div>}
+      {job.post && <MonglePost p={job.post} />}
       {['created', 'failed'].includes(job.status) && !busy && <button onClick={async () => { if (!confirm(`"${job.title}" 카드를 지울까요?`)) return; const r = await fetch('/api/shorts-inbox/publish?id=' + encodeURIComponent(job.id), { method: 'DELETE' }); if (r.ok) onDone(); else setMsg('삭제 실패'); }} className="mt-1 w-full px-3 py-1 rounded-lg text-xs text-gray-500 hover:text-red-600">삭제</button>}
     </>
+  );
+}
+
+// 몽글 카드: ManyChat에 손으로 넣을 문구(댓글 키워드 → DM)와 바로가기
+function MonglePost({ p }: { p: NonNullable<Job['post']> }) {
+  const [ok, setOk] = useState('');
+  const copy = (k: string, t: string) => navigator.clipboard.writeText(t).then(() => { setOk(k); setTimeout(() => setOk(''), 1500); });
+  const Row = ({ k, label, text }: { k: string; label: string; text: string }) => (
+    <div className="mt-2">
+      <div className="flex items-center justify-between text-[11px] text-gray-500"><span>{label}</span><button onClick={() => copy(k, text)} className="text-blue-600">{ok === k ? '복사됨 ✓' : '복사'}</button></div>
+      <div className="text-xs bg-gray-50 border border-gray-200 rounded-md p-1.5 whitespace-pre-line break-all max-h-28 overflow-auto">{text}</div>
+    </div>
+  );
+  return (
+    <div className="mt-2 border-t border-dashed border-gray-300 pt-2">
+      <div className="text-xs font-semibold text-purple-700">ManyChat 댓글 자동화</div>
+      <Row k="kw" label="① 댓글 키워드" text={p.keyword} />
+      <Row k="dm" label="② 보낼 DM 문구" text={p.dm} />
+      {p.guide && <Row k="gd" label="③ 가이드 주소(링크 버튼)" text={p.guide} />}
+      {p.threads && <Row k="th" label="스레드용 글" text={p.threads} />}
+      <a href="https://app.manychat.com" target="_blank" rel="noopener" className="mt-2 block text-center w-full px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs">ManyChat 열기 ↗</a>
+    </div>
   );
 }

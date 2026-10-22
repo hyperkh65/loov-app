@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { saveMonglePost, parseMonglePost } from '@/lib/mongle-posts';
 import { createAdminClient } from '@/lib/supabase-server';
 import { youtubeAccess, uploadShort, ShortsError, inboxAuthed } from '@/lib/shorts-youtube';
 import { r2Available, uploadToR2 } from '@/lib/r2-storage';
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
       const id = `hold_${str('job') || Date.now()}_${str('clip') || '0'}`;
       const url = await uploadToR2(`shorts/${id}.mp4`, Buffer.from(await video.arrayBuffer()), 'video/mp4');
       await admin.from('shorts_jobs').upsert({ id, user_id: conn.user_id, title: str('title') || '쇼츠', description: str('description'), phrase: str('channel') || null, status: 'created', source: 'hold', video_url: url, error: null, updated_at: new Date().toISOString() });
+      const mp = str('post') && id.startsWith('hold_mongle_') ? parseMonglePost(str('post')) : null; if (mp) saveMonglePost(id, mp); // 몽글: ManyChat에 붙여 넣을 문구
       return NextResponse.json({ ok: true, url, hold: true });
     }
     const buf = Buffer.from(await video.arrayBuffer());
