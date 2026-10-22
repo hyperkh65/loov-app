@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
           if (isMongle) { // 캡션+영상 한 글. 스레드는 📖 가이드 링크를 첫 댓글로
             // 본문은 후킹 캡션 + 해시태그 한 번만: 가이드 주소·원본 출처·BGM 줄은 빼고, 같은 해시태그 묶음이 두 번 붙은 건 하나로
             const all = caption.split('\n'), guide = all.filter(l => l.startsWith('📖')).join('\n');
-            const body = all.filter(l => !/^(📖|🎵|원본 출처|상품:)/.test(l.trim())).join('\n').split(/\n{2,}/).map(x => x.trim()).filter((x, i, a) => x && a.indexOf(x) === i).join('\n\n');
+            const body = all.filter(l => !/^(📖|🎵|원본 출처|상품:)/.test(l.trim())).join('\n').split(/\n{2,}/).map(x => x.trim()).filter((x, i, a) => x && a.indexOf(x) === i).join('\n\n').replace(/(^|\n)(\S*\s*)댓글에 ("[^"]+") 남기면/g, (m, a1, a2, kw) => /팔로우/.test(a2) ? m : `${a1}${a2}팔로우하고 댓글에 ${kw} 남기면`); // 팔로우 유도(영상은 그대로)
             p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, body, [job.video_url]);
             if (t.platform === 'threads' && guide) { await waitThreadsPostAccessible(p.id, c.access_token); await postCommentOnOwnPost('threads', c.access_token, c.platform_user_id, p.id, guide).catch(e => notes.push('threads 가이드 댓글: ' + (e as Error).message)); }
           } else if (isProd && t.platform === 'facebook') { // 페이스북은 링크 댓글이 안 돼서 본문에: 본문에 없는 댓글 줄(대가성 문구 등)만 덧붙인다
