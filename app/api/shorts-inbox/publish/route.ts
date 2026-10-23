@@ -84,7 +84,9 @@ export async function POST(req: NextRequest) {
             const extra = comment.split('\n').filter(l => l.trim() && !caption.includes(l.trim())).join('\n');
             p = await postToPlatformWithMedia('facebook', c.access_token, c.platform_user_id, extra ? `${caption}\n\n${extra}` : caption, [job.video_url]);
           } else if (isProd && ['threads', 'twitter'].includes(t.platform)) { // 상품 영상: 후킹 멘트+영상을 한 글로, 제휴 링크는 댓글로
-            p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, caption, [job.video_url]);
+            // 설명문(유튜브용)엔 CTA+링크 줄이 들어 있다 → 본문에서 링크 줄과 댓글에 나갈 줄을 뺀다(본문 링크는 스레드 노출 페널티, 2026-10-23)
+            const body = caption.split('\n').filter(l => !/https?:\/\/|link\.coupang/.test(l) && !(l.trim() && comment.includes(l.trim()))).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            p = await postToPlatformWithMedia(t.platform, c.access_token, c.platform_user_id, body, [job.video_url]);
             if (comment) {
               if (t.platform === 'threads') await waitThreadsPostAccessible(p.id, c.access_token);
               await postCommentOnOwnPost(t.platform, c.access_token, c.platform_user_id, p.id, comment).catch(e => notes.push(`${t.platform} 링크 댓글: ${(e as Error).message}`));
