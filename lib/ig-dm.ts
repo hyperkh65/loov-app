@@ -51,8 +51,15 @@ export const NOT_YET = '아직 팔로우가 확인되지 않아요 🥲\n@mongle
 /** 댓글 → 이미 팔로워면 바로 가이드, 아니면(또는 모르면) 팔로우 요청 DM(비공개 답장, 댓글당 1번·7일 이내) + 공개 답글 */
 export async function onKeywordComment(token: string, commentId: string, fromId: string | undefined, username: string | undefined, p: MonglePost) {
   const f = fromId ? await follows(token, fromId) : null;
-  if (f === true) await send(token, { comment_id: commentId }, guideText(p));
-  else { await send(token, { comment_id: commentId }, ASK_FOLLOW(p.keyword)); if (fromId) setPending(fromId, { keyword: p.keyword, username, at: Date.now() }); }
+  try {
+    if (f === true) await send(token, { comment_id: commentId }, guideText(p));
+    else { await send(token, { comment_id: commentId }, ASK_FOLLOW(p.keyword)); if (fromId) setPending(fromId, { keyword: p.keyword, username, at: Date.now() }); }
+  } catch (e) {
+    // 팔로우 안 한 사람이 "팔로우한 사람 메시지만 받기"로 해 두면 DM이 거절된다(code 1) → 공개 답글로 팔로우 후 다시 댓글을 부탁한다
+    if (!/"code":1\b/.test((e as Error).message)) throw e;
+    await fetch(`${G}/${commentId}/replies`, { method: 'POST', headers: auth(token), body: JSON.stringify({ message: `${username ? '@' + username + ' ' : ''}팔로우하고 댓글 한 번 더 남겨 주시면 가이드 DM으로 바로 보내 드려요 💜` }) });
+    return 'asked-public';
+  }
   await fetch(`${G}/${commentId}/replies`, { method: 'POST', headers: auth(token), body: JSON.stringify({ message: 'DM 보냈어요 💜 메시지함(또는 요청함)을 확인해 주세요!' }) }).catch(() => {});
   return f === true ? 'guide' : 'ask-follow';
 }
