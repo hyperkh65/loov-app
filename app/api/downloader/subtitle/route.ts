@@ -36,7 +36,7 @@ async function readFileFromNAS(remotePath: string): Promise<Buffer> {
       host: process.env.NAS_SSH_HOST || 'hy64.synology.me',
       port: parseInt(process.env.NAS_SSH_PORT || '22'),
       username: process.env.NAS_SSH_USER || 'urjent',
-      password: process.env.NAS_SSH_PASSWORD || '***',
+      password: process.env.NAS_SSH_PASSWORD || '',
       tryKeyboard: true,
       readyTimeout: 15000,
     });

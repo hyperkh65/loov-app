@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-server';
 import { NAS_TARGETS, WEB_ROOT, type NasKey } from '@/lib/nas-targets';
@@ -6,7 +7,8 @@ const PUB_ID = 'ca-pub-8940400388075870';
 // 사이트마다 admin 계정을 따로 관리하기 번거로워서 고정 계정으로 통일 —
 // 아이디도 흔한 "admin" 대신 urjent로 둬서 자동화 봇의 기본 무차별 대입 표적을 피함
 const ADMIN_USER = 'urjent';
-const ADMIN_PASS = '***';
+// 사이트마다 새 무작위 관리자 비밀번호(예전엔 모든 사이트가 공개 저장소에 적힌 같은 비밀번호를 써서 해킹당했다)
+const newAdminPass = () => randomBytes(18).toString('base64url');
 
 function makeAdPlugin(fqdn: string): string {
   return `<?php
@@ -92,6 +94,7 @@ add_action('wp_head', function() {
 }
 
 export async function POST(req: NextRequest) {
+  const ADMIN_PASS = newAdminPass();
   const body = await req.json().catch(() => ({}));
   const { subdomain, title, topic, nas } = body as {
     subdomain: string; title: string; topic: string; nas?: NasKey;

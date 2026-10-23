@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   if (action === 'backup') {
     if (target === 'hy64') {
-      nasExec('echo "***" | sudo -S /usr/local/bin/backup_all_mariadb.sh > /tmp/manual_backup.log 2>&1 &').catch(console.error);
+      nasExec(`echo ${JSON.stringify(process.env.NAS_SSH_PASSWORD || '')} | sudo -S /usr/local/bin/backup_all_mariadb.sh > /tmp/manual_backup.log 2>&1 &`).catch(console.error);
     } else if (target === '2days') {
       nas2daysExec('echo "***" | sudo -S /usr/local/bin/backup_2days.sh > /tmp/manual_backup.log 2>&1 &').catch(console.error);
     }

@@ -17,7 +17,7 @@ interface Site {
 
 const NAVER_ADVISOR_URL = 'https://searchadvisor.naver.com/';
 const ADMIN_USER = 'urjent';
-const ADMIN_PASS = '***';
+const ADMIN_PASS = '(설치 결과에 표시)';
 
 type Nas = 'hy64' | 'hy65';
 const NAS_LABEL: Record<Nas, { domain: string; box: string }> = {
@@ -283,7 +283,7 @@ export default function WpAutoPage() {
                   </div>
 
                   <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-600">
-                    모든 사이트가 같은 관리자 계정을 씁니다 — <span className="font-mono">{ADMIN_USER}</span> / <span className="font-mono">{ADMIN_PASS}</span>
+                    관리자 비밀번호는 사이트마다 새로 만들어 설치 결과에 한 번 보여 줍니다(꼭 따로 보관) — <span className="font-mono">{ADMIN_USER}</span> / <span className="font-mono">{ADMIN_PASS}</span>
                   </div>
                 </div>
               </div>

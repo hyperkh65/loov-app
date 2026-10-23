@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
   const token   = notionToken || process.env.NOTION_API_KEY || '';
   const dbId    = notionDbId  || process.env.NOTION_MEMO_DBID || '';
   const nasBase = nasPath     || process.env.NAS_MEMO_PATH   || '/volume1/memos';
-  const nasPass = process.env.NAS_SSH_PASSWORD || '***';
+  const nasPass = process.env.NAS_SSH_PASSWORD || '';
   const nasDir  = `${nasBase}/${memo.memo_date}_${id.slice(0, 8)}`;
 
   // 1. NAS: 디렉토리 생성 (sudo) + JSON 메타 저장

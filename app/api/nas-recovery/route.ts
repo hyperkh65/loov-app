@@ -16,7 +16,7 @@ const DOCKER = '/var/packages/ContainerManager/target/usr/bin/docker';
 const BACKUP_ROOT = '/volumeUSB1/usbshare/nas_backup';
 
 function sudoPass() {
-  return process.env.NAS_SSH_PASSWORD || '***';
+  return process.env.NAS_SSH_PASSWORD || '';
 }
 
 export async function GET() {
