@@ -22,6 +22,7 @@ export function markDone(commentId: string): boolean { // 이미 보낸 댓글�
   d[commentId] = Date.now(); const keep = Object.entries(d).filter(([, t]) => Date.now() - t < 30 * 864e5);
   fs.mkdirSync(NASQ_DIR, { recursive: true }); fs.writeFileSync(DONE, JSON.stringify(Object.fromEntries(keep))); return true;
 }
+export function unmarkDone(commentId: string) { const d = done(); delete d[commentId]; fs.writeFileSync(DONE, JSON.stringify(d)); } // 보내기 실패 → 다음에 다시 시도
 export const logDm = (o: object) => { try { fs.appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), ...o }) + '\n'); } catch {} };
 
 // 팔로우 확인 대기: 댓글 단 사람(IGSID) → 받을 가이드. "완료" 답장이 오면 팔로우를 확인하고 보낸다

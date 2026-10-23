@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { createAdminClient } from '@/lib/supabase-server';
 import { getSetting } from '@/lib/get-setting';
-import { matchPost, markDone, logDm, onKeywordComment, onReply } from '@/lib/ig-dm';
+import { matchPost, markDone, unmarkDone, logDm, onKeywordComment, onReply } from '@/lib/ig-dm';
 
 // Meta(Instagram) 웹훅: 댓글이 달리면 키워드를 보고 가이드 DM을 보낸다. 대시보드 웹훅 설정의 콜백 URL = https://loov.co.kr/api/ig-webhook
 const VERIFY_TOKEN = 'loov-ig-comments-dm';
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       if (!token || !p) { logDm({ skip: !token ? 'no-token' : 'no-keyword', account: e.id, text: text.slice(0, 60) }); continue; }
       if (!markDone(cid)) continue;
       try { const r = await onKeywordComment(token, cid, v.from?.id, v.from?.username, p); logDm({ ok: r, account: e.id, from: v.from?.username, keyword: p.keyword, comment: cid }); }
-      catch (err) { logDm({ ok: false, account: e.id, from: v.from?.username, keyword: p.keyword, error: (err as Error).message }); }
+      catch (err) { unmarkDone(cid); logDm({ ok: false, account: e.id, from: v.from?.username, keyword: p.keyword, error: (err as Error).message }); }
     }
   });
   return NextResponse.json({ ok: true });
