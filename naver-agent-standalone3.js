@@ -17,7 +17,7 @@
 // ── 설정 (여기만 수정하면 됨) ─────────────────────────────────────────
 const CONFIG = {
   SUPABASE_URL: 'https://zzgwizsrgjziwexuxquv.supabase.co',
-  SUPABASE_KEY: '***',
+  SUPABASE_KEY: process.env.SUPABASE_KEY || '',
   // ─ 구형 맥(macOS 10.15 등) Chromium 오류 시 아래를 'chrome'으로 변경 ─
   // 'chrome' 사용 시 Google Chrome이 설치되어 있어야 함
   // 'chromium' = Playwright 번들 Chromium (기본값, npx playwright install chromium 필요)

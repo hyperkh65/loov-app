@@ -64,7 +64,7 @@ function nasExecOnce(command: string, timeoutMs = 120_000): Promise<SSHResult> {
       host: process.env.NAS_SSH_HOST || 'hy64.synology.me',
       port: parseInt(process.env.NAS_SSH_PORT || '22'),
       username: process.env.NAS_SSH_USER || 'urjent',
-      password: process.env.NAS_SSH_PASSWORD || '***',
+      password: process.env.NAS_SSH_PASSWORD || '',
       tryKeyboard: true, // Synology NAS keyboard-interactive 인증 지원
       readyTimeout: 10000,
     });
@@ -129,7 +129,7 @@ function nasExecWithStdinOnce(command: string, stdinData: Buffer | string, timeo
       host: process.env.NAS_SSH_HOST || 'hy64.synology.me',
       port: parseInt(process.env.NAS_SSH_PORT || '22'),
       username: process.env.NAS_SSH_USER || 'urjent',
-      password: process.env.NAS_SSH_PASSWORD || '***',
+      password: process.env.NAS_SSH_PASSWORD || '',
       tryKeyboard: true,
       readyTimeout: 15000,
     });
