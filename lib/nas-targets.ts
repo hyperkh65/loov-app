@@ -19,12 +19,12 @@ export const NAS_TARGETS = {
       host: process.env.NAS2_SSH_HOST || '2days.kr',
       port: parseInt(process.env.NAS2_SSH_PORT || '22'),
       username: process.env.NAS2_SSH_USER || 'urjent',
-      password: process.env.NAS2_SSH_PASSWORD || '***',
+      password: process.env.NAS2_SSH_PASSWORD || '',
     }),
     domainSuffix: '2days.kr',
     adminEmail: 'admin@2days.kr',
     ddnsHost: '2days.kr',
-    mysqlRootPass: process.env.NAS2_MYSQL_ROOT_PASS || '***',
+    mysqlRootPass: process.env.NAS2_MYSQL_ROOT_PASS || '',
   },
 } as const;
 

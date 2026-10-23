@@ -12,7 +12,7 @@ import { NAS_TARGETS } from '@/lib/nas-targets';
 
 const SUDO_PASS: Record<NasKey, string> = {
   hy64: process.env.NAS_SYNO_ADMIN_PASS || '',
-  hy65: process.env.NAS2_SSH_PASSWORD || '***',
+  hy65: process.env.NAS2_SSH_PASSWORD || '',
 };
 
 export async function ensureWordPressRewrite(nas: NasKey, fqdn: string): Promise<{ fixed: boolean; note: string }> {

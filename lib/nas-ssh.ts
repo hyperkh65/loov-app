@@ -250,7 +250,7 @@ export function nas2daysExec(command: string): Promise<SSHResult> {
       host: process.env.NAS2_SSH_HOST || '2days.kr',
       port: parseInt(process.env.NAS2_SSH_PORT || '22'),
       username: process.env.NAS2_SSH_USER || 'urjent',
-      password: process.env.NAS2_SSH_PASSWORD || '***',
+      password: process.env.NAS2_SSH_PASSWORD || '',
       tryKeyboard: true,
       readyTimeout: 15000,
     });

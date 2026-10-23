@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
     if (target === 'hy64') {
       nasExec(`echo ${JSON.stringify(process.env.NAS_SSH_PASSWORD || '')} | sudo -S /usr/local/bin/backup_all_mariadb.sh > /tmp/manual_backup.log 2>&1 &`).catch(console.error);
     } else if (target === '2days') {
-      nas2daysExec('echo "***" | sudo -S /usr/local/bin/backup_2days.sh > /tmp/manual_backup.log 2>&1 &').catch(console.error);
+      nas2daysExec(`echo ${JSON.stringify(process.env.NAS2_SSH_PASSWORD || '')} | sudo -S /usr/local/bin/backup_2days.sh > /tmp/manual_backup.log 2>&1 &`).catch(console.error);
     }
     return NextResponse.json({ ok: true, message: `${target} 백업 시작됨` });
   }
