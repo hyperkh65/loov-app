@@ -32,6 +32,7 @@ function BacklinkSettingsPanel() {
   const [tumblrBlog, setTumblrBlog] = useState('');
   const [pinterestToken, setPinterestToken] = useState('');
   const [pinterestBoardId, setPinterestBoardId] = useState('');
+  const [pinterestSecret, setPinterestSecret] = useState('');
   const [pinterestBoards, setPinterestBoards] = useState<{ id: string; name: string; privacy: string }[]>([]);
   const [pinterestBoardsLoading, setPinterestBoardsLoading] = useState(false);
   const [pinterestBoardsError, setPinterestBoardsError] = useState('');
@@ -47,6 +48,8 @@ function BacklinkSettingsPanel() {
     pinterest_token_set: boolean;
     pinterest_configured: boolean;
     pinterest_board_id: string;
+    pinterest_secret_set?: boolean;
+    pinterest_auto_refresh?: boolean;
     linkedin_configured: boolean;
   }>({
     medium_configured: false, tumblr_configured: false, tumblr_blog: '',
@@ -78,6 +81,7 @@ function BacklinkSettingsPanel() {
     if (tumblrAccessToken) body.tumblr_access_token = tumblrAccessToken;
     if (tumblrAccessTokenSecret) body.tumblr_access_token_secret = tumblrAccessTokenSecret;
     if (pinterestToken) body.pinterest_access_token = pinterestToken;
+    if (pinterestSecret) body.pinterest_app_secret = pinterestSecret;
     if (linkedinToken) body.linkedin_access_token = linkedinToken;
     const res = await fetch('/api/backlink/settings', {
       method: 'POST',
@@ -90,7 +94,7 @@ function BacklinkSettingsPanel() {
       setMediumToken('');
       setTumblrConsumerKey(''); setTumblrConsumerSecret('');
       setTumblrAccessToken(''); setTumblrAccessTokenSecret('');
-      setPinterestToken(''); setLinkedinToken('');
+      setPinterestToken(''); setPinterestSecret(''); setLinkedinToken('');
       const r = await fetch('/api/backlink/settings').then(x => x.json());
       if (!r.error) { setStatus(r); setPinterestBoardId(r.pinterest_board_id || ''); }
     } else {
@@ -219,6 +223,22 @@ function BacklinkSettingsPanel() {
           <p>1. <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">developers.pinterest.com/apps</a> → 앱에서 토큰 생성</p>
           <p>2. 스코프: <strong>boards:read, pins:write</strong> 포함 필요</p>
           <p>3. 토큰 저장 후 아래 "내 보드 목록 가져오기" 버튼으로 보드 선택</p>
+        </div>
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-2">
+          <p className="font-semibold">🔁 자동 연결 (권장: 쓰기 권한 + 자동 갱신)</p>
+          <p>1. 아래 "앱 비밀 키"를 넣고 저장 → 2. "핀터레스트 승인하기"를 누르고 허용 → 자동으로 토큰이 저장·갱신됩니다.</p>
+          <input
+            type="password"
+            value={pinterestSecret}
+            onChange={e => setPinterestSecret(e.target.value)}
+            placeholder={status.pinterest_secret_set ? '••••••••• (앱 비밀 키 저장됨 · 변경 시 입력)' : '앱 비밀 키 (developers.pinterest.com 앱 화면)'}
+            className="w-full border border-blue-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          <a
+            href="https://www.pinterest.com/oauth/?client_id=1583709&redirect_uri=https%3A%2F%2Floov.co.kr%2Fpin-cb&response_type=code&scope=boards%3Aread%2Cboards%3Awrite%2Cpins%3Aread%2Cpins%3Awrite&state=loov"
+            className="inline-block px-3 py-2 bg-red-600 text-white rounded-xl font-semibold"
+          >📌 핀터레스트 승인하기</a>
+          {status.pinterest_auto_refresh && <span className="ml-2 text-green-700 font-semibold">✅ 자동 갱신 켜짐</span>}
         </div>
         <div className="space-y-3">
           <div>

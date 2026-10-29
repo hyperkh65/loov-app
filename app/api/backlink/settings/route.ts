@@ -7,7 +7,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const [mediumToken, consumerKey, consumerSecret, accessToken, accessTokenSecret, blogName, pinterestToken, pinterestBoardId, linkedinToken] = await Promise.all([
+  const [mediumToken, consumerKey, consumerSecret, accessToken, accessTokenSecret, blogName, pinterestToken, pinterestBoardId, linkedinToken, pinterestSecret, pinterestRefresh] = await Promise.all([
     getSetting('MEDIUM_INTEGRATION_TOKEN'),
     getSetting('TUMBLR_CONSUMER_KEY'),
     getSetting('TUMBLR_CONSUMER_SECRET'),
@@ -17,6 +17,8 @@ export async function GET() {
     getSetting('PINTEREST_ACCESS_TOKEN'),
     getSetting('PINTEREST_BOARD_ID'),
     getSetting('LINKEDIN_ACCESS_TOKEN'),
+    getSetting('PINTEREST_APP_SECRET'),
+    getSetting('PINTEREST_REFRESH_TOKEN'),
   ]);
 
   const tumblrConfigured = !!(consumerKey && consumerSecret && accessToken && accessTokenSecret && blogName);
@@ -30,6 +32,8 @@ export async function GET() {
     pinterest_token_set: !!pinterestToken,
     pinterest_configured: !!(pinterestToken && pinterestBoardId),
     pinterest_board_id: pinterestBoardId || '',
+    pinterest_secret_set: !!pinterestSecret,
+    pinterest_auto_refresh: !!(pinterestSecret && pinterestRefresh),
     linkedin_configured: !!linkedinToken,
   });
 }
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
 
-  const { medium_token, tumblr_consumer_key, tumblr_consumer_secret, tumblr_access_token, tumblr_access_token_secret, tumblr_blog, pinterest_access_token, pinterest_board_id, linkedin_access_token } = await req.json() as {
+  const { medium_token, tumblr_consumer_key, tumblr_consumer_secret, tumblr_access_token, tumblr_access_token_secret, tumblr_blog, pinterest_access_token, pinterest_board_id, pinterest_app_secret, linkedin_access_token } = await req.json() as {
     medium_token?: string;
     tumblr_consumer_key?: string;
     tumblr_consumer_secret?: string;
@@ -48,6 +52,7 @@ export async function POST(req: NextRequest) {
     tumblr_blog?: string;
     pinterest_access_token?: string;
     pinterest_board_id?: string;
+    pinterest_app_secret?: string;
     linkedin_access_token?: string;
   };
 
@@ -68,6 +73,7 @@ export async function POST(req: NextRequest) {
   if (tumblr_blog !== undefined) updated.TUMBLR_BLOG_NAME = tumblr_blog.trim();
   if (pinterest_access_token?.trim()) updated.PINTEREST_ACCESS_TOKEN = pinterest_access_token.trim();
   if (pinterest_board_id?.trim()) updated.PINTEREST_BOARD_ID = pinterest_board_id.trim();
+  if (pinterest_app_secret?.trim()) updated.PINTEREST_APP_SECRET = pinterest_app_secret.trim();
   if (linkedin_access_token?.trim()) updated.LINKEDIN_ACCESS_TOKEN = linkedin_access_token.trim();
 
   const { error } = await admin
