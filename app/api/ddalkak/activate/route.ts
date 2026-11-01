@@ -6,7 +6,8 @@ import { hashCode, addMonths, signingKey, signCert, PLANS } from '@/lib/ddalkak-
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
 export async function POST(req: NextRequest) {
-  const b = await req.json().catch(() => ({})) as { code?: string; email?: string; deviceId?: string; deviceName?: string };
+  const b = await req.json().catch(() => ({})) as { code?: string; email?: string; deviceId?: string; deviceName?: string; consent?: boolean };
+  if (b.consent !== true) return fail('이용약관과 개인정보처리방침에 동의해 주세요');
   const email = String(b.email || '').trim().toLowerCase(), deviceId = String(b.deviceId || ''), code = String(b.code || '');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('이메일 주소를 확인해 주세요');
   if (deviceId.length < 16 || deviceId.length > 80) return fail('기기 정보가 올바르지 않아요');
