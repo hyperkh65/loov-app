@@ -312,3 +312,9 @@ export function normalizeHtml(html: string): string {
     .replace(/<a\s+([^>]*href=["']https?:[^>]*)>/gi, (m, a) => /\bclass=["'][^"']*loov-link/i.test(a) ? m : `<a ${a.replace(/\s?(target|rel|style|class)=("[^"]*"|'[^']*')/gi, '')} class="loov-link" target="_blank" rel="noopener noreferrer" style="${LINK_STYLE}">`)
     + LINK_CSS;
 }
+
+/** ChatGPT 플러그인(MCP 커넥터)은 헤더에 키를 못 넣어서 URL 경로에 키를 둔다. 딸깍과 공유하는 SHORTS_INBOX_TOKEN에서 파생(TOP10 커넥터와 같은 방식). */
+export function blogMcpKey(): string | null {
+  const t = process.env.SHORTS_INBOX_TOKEN;
+  return t ? crypto.createHash('sha256').update(t + ':blog-mcp').digest('hex').slice(0, 40) : null;
+}
