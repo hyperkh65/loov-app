@@ -8,9 +8,10 @@ import { getSetting, invalidateSettingsCache } from '@/lib/get-setting';
 
 export const PLANS = {
   trial1: { label: '무료 1개월 쿠폰', months: 1 },
+  m1: { label: '1개월', months: 1 },
   m3: { label: '3개월', months: 3 },
   m6: { label: '6개월', months: 6 },
-  m9: { label: '9개월', months: 9 },
+  m9: { label: '9개월(구 요금제)', months: 9 },
   m12: { label: '12개월', months: 12 },
 } as const;
 export type PlanId = keyof typeof PLANS;
