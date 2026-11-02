@@ -918,7 +918,7 @@ export default function AutoServicePage() {
     const pollShortsJob = async (id: string, title: string) => {
       let curId = id;
       setShortsJobs(prev => prev.map(j => j.id === curId && j.status === 'running' ? { ...j, progress: '연결이 끊겨 서버 진행 상태를 확인하는 중...' } : j));
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 360; i++) {
         await new Promise(r => setTimeout(r, 5000));
         try {
           const d = await (await fetch('/api/shorts/queue')).json() as { jobs?: { id: string; title: string; status: string; progress: string; video_url?: string; yt_url?: string; error_message?: string }[] };
@@ -935,7 +935,8 @@ export default function AutoServicePage() {
     const tempId = `tmp_${Date.now()}`;
     setShortsJobs(prev => [{ id: tempId, title: payload.title, status: 'running', progress: '연결 중...' }, ...prev]);
 
-    (async () => {
+    // 맥(딸깍)이 켜져 있으면 맥에서 만들어 현가젯 채널에 올린다. 꺼져 있거나 실패하면 아래 NAS 방식으로 진행
+    const runNas = async () => {
       let jobId = tempId;
       let finished = false;
       try {
@@ -988,6 +989,17 @@ export default function AutoServicePage() {
       } catch {
         pollShortsJob(jobId, payload.title);
       }
+    };
+    (async () => {
+      try {
+        const m = await (await fetch('/api/blog-video-inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ article_id: payload.article_id, title: payload.title, keyword: payload.keyword, description: payload.description, blog_url: payload.blog_url }) })).json() as { mac?: boolean; job_id?: string };
+        if (m.mac && m.job_id) {
+          const macId = m.job_id;
+          setShortsJobs(prev => prev.map(j => j.id === tempId ? { ...j, id: macId, progress: '맥에서 영상 제작 대기 중...' } : j));
+          return pollShortsJob(macId, payload.title);
+        }
+      } catch { /* 맥 요청 실패 → NAS 방식 */ }
+      runNas();
     })();
   };
 

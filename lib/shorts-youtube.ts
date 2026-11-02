@@ -14,7 +14,7 @@ export async function youtubeAccess(admin: Admin, userId?: string, channel?: str
   const uid = userId || process.env.OWNER_USER_ID;
   if (uid) q = q.eq('user_id', uid);
   const ch = (channel || '').trim();
-  if (ch) q = ch.startsWith('UC') ? q.eq('platform_user_id', ch) : q.ilike('platform_username', ch);
+  if (ch) q = ch.startsWith('UC') ? q.eq('platform_user_id', ch) : q.ilike('platform_username', ch.includes('%') ? ch : `%${ch}%`);
   const { data: conn } = await q.maybeSingle();
   if (!conn) throw new ShortsError(ch ? `LOOV에 '${ch}' 채널이 연결돼 있지 않아요` : 'LOOV에 YouTube가 연결돼 있지 않아요', 400);
 
