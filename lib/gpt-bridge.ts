@@ -140,8 +140,8 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - 사용자에게는 saved:true가 된 뒤 결과를 알린다. 중간 오류는 길게 설명하지 않는다. 플랫폼이 도구 사용 자체를 막은 경우에만 멈추고 그 사실을 알린다.
 
 ## 이미지
-- 이미지는 대표 1장 + 본문 2~4장, 합계 최소 3장(권장 4~5장). 모두 alt 텍스트 필수. 장면이 겹치지 않게 각기 다른 설명 이미지(설치 화면 흐름, 위험 구별 예시, 비교 도표 등)를 만든다.
-- 직접 그린 이미지는 openaiFileIdRefs에 순서대로 담는다. 첫 번째가 대표이미지. 두 번째부터는 본문 넣을 자리에 <img src="{{file:2}}" alt="설명">, 세 번째는 {{file:3}} 처럼 번호로 적는다(대표이미지 {{file:1}}는 본문에 따로 쓰지 않는다).
+- 이미지는 합계 최소 3장(권장 4~5장), 모두 alt 텍스트 필수. 구성은 **직접 그린 이미지 최소 1장(대표이미지) + 나머지는 실제 기사·영상·공식 사이트 등 글의 소스에서 가져온 이미지**로 해도 된다. 직접 그린 이미지를 더 만들면 더 좋지만 의무는 아니다. 장면이 겹치지 않게 각기 다른 이미지를 쓴다.
+- 직접 그린 이미지는 openaiFileIdRefs에 순서대로 담는다. 첫 번째가 대표이미지. 두 번째부터는 본문 넣을 자리에 <img src="{{file:2}}" alt="설명">, 세 번째는 {{file:3}} 처럼 번호로 적는다(대표이미지 {{file:1}}는 본문에 따로 쓰지 않는다). 소스 이미지는 readPage·researchKeyword로 열어 확인한 기사/영상 페이지의 대표 사진 주소(jpg·png·webp)를 <img src="https://..." alt="설명">로 본문에 넣는다(서버가 저장 때 가져가 보관한다). 로고·광고·기본 썸네일은 제외하고, 글 내용과 직접 관련된 사진만 쓴다.
 - 관련 사이트에서 가져올 이미지는 공식 사이트 이미지 주소를 <img src="https://...">로 직접 쓴다(저장 시 우리 서버로 옮겨진다). 글 내용과 맞는지 보고 고른다.
 - 이미지는 직접 그리는 것이 기본이다(이미지 생성 사용). 대표이미지와 본문 이미지 모두 이 글의 내용을 설명하는 그림으로 각각 따로 그린다(예: 설치 순서 도식, 위험 구별 예시, 비교 장면).
 - 그림 안에는 글자·숫자·주소·운영시간·가격·상호를 넣지 않는다(AI가 틀리게 그리고, 틀려도 독자가 믿는다). 정보는 본문 텍스트와 표로 전한다.
@@ -149,9 +149,9 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - 그림은 가로 3:2 한 장면, 핵심은 가운데에 둔다(가장자리는 잘릴 수 있다). 세로로 긴 인포그래픽·여러 칸으로 나눈 그림은 만들지 않는다.
 - 스톡 사진(Pixabay/Pexels)은 내용과 상관없는 분위기 사진이라 쓰지 않는다. 직접 그릴 수 없을 때만, 글 내용을 정확히 보여주는 것에 한해 마지막 수단으로 쓴다. 공식 사이트가 배포한 화면/로고는 내용이 맞으면 써도 된다.
 - 저작권: 남의 블로그/커뮤니티 사진은 쓰지 않는다. researchKeyword의 stock_image_candidates는 참고용이며 기본값으로 고르지 않는다.
-- SVG·data URI·코드(파이썬 등)로 그린 이미지는 서버가 받지 못한다. 반드시 이미지 생성 도구로 만든 PNG/JPG 파일을 openaiFileIdRefs에 넣는다. 저장이 이미지 오류로 실패하면 다른 URL 이미지로 몰래 바꿔치지 말고, 이미지 생성을 다시 시도하거나 실패 사실을 사용자에게 그대로 알린다.
+- SVG·data URI·코드(파이썬 등)로 그린 이미지는 서버가 받지 못한다. 직접 그린 이미지는 반드시 이미지 생성 도구로 만든 PNG/JPG 파일을 openaiFileIdRefs에 넣는다. 이미지 생성이 계속 실패해도 대표이미지는 소스 이미지로 대신하지 말고 한 번 더 새로 생성해 본다.
 - 이미지 오류로 저장이 실패하면 이전에 만든 파일 참조·링크를 재사용하지 않는다(몇 분 뒤 만료됨). 이미지를 새로 생성한 직후 그 결과의 openaiFileIdRefs를 그대로 담아 saveDraft를 다시 호출한다. 경로 문자열(sandbox:/mnt/data/...)이나 파일 이름만 보내지 않는다.
-- 이미지를 쓰기 전에 글 내용과 맞는지 직접 보고 판단한다. 안 맞으면 쓰지 않고 새로 그린다. 그린 이미지는 반드시 openaiFileIdRefs로 보낸다.
+- 이미지를 쓰기 전에 글 내용과 맞는지 직접 보고 판단한다. 안 맞으면 쓰지 않는다. 직접 그린 이미지는 openaiFileIdRefs로, 소스 이미지는 본문 <img>의 주소로 보낸다.
 - **본문은 독자가 읽는 글이다. 글쓴이·편집자에게 하는 말은 본문에 한 글자도 쓰지 않는다.** 아래는 금지다(저장 시 걸린다).
   · 그림 설명·고지 문장: "위 그림은 실제 사진이 아닌 일러스트이며…", "대표 이미지와 같은 원본을 다시 사용했습니다"
   · 교체·검수 권유: "발행 전 다른 그림으로 교체하는 것이 좋습니다", "발행 전에 확인하세요"
@@ -239,9 +239,9 @@ export function validateDraft(d: DraftIn) {
   else if (!/<th\b/i.test(html)) warnings.push('표에 제목 행(<th>) 권장');
   const fileCount = d.fileCount || 0, placed = imgs.filter(i => /\{\{file:\d+\}\}/.test(i));
   const total = imgs.length + (d.featured_image_url ? 1 : 0) + Math.max(0, fileCount - placed.length);
-  if (!fileCount) errors.push('직접 그린 이미지가 첨부되지 않음(openaiFileIdRefs 비어 있음) — 웹/검색 이미지 URL로 대체 금지. 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 다시 보낼 것');
+  if (!fileCount) errors.push('직접 그린 이미지가 최소 1장 필요(대표이미지) — 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 보낼 것. 나머지 이미지는 기사·영상 등 소스에서 가져온 <img src="https://...">로 채워도 됨');
   else if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
-  else if (total < 3) errors.push(`이미지 ${total}장 — 대표 1장 + 본문 2장 이상(합계 3장 이상) 필요`);
+  else if (total < 3) errors.push(`이미지 ${total}장 — 합계 3장 이상 필요(직접 그린 1장 + 기사·영상 등 소스 이미지로 채워도 됨)`);
   const srcs = imgs.map(i => i.match(/\bsrc=["']([^"']+)/i)?.[1]).filter(Boolean) as string[];
   if (new Set(srcs).size < srcs.length || (d.featured_image_url && srcs.includes(d.featured_image_url)) || placed.some(i => /\{\{file:1\}\}/.test(i))) errors.push('같은 이미지가 중복됨 — 본문 <img>의 주소는 모두 달라야 하고, 대표이미지({{file:1}}/featured_image_url)는 본문에 다시 쓰지 않는다');
   if (placed.some(i => Number(i.match(/\{\{file:(\d+)\}\}/)![1]) > fileCount)) errors.push('{{file:N}} 번호가 openaiFileIdRefs 개수보다 큼');
