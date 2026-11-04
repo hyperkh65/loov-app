@@ -45,7 +45,7 @@ export default function ShortsInboxPage() {
             const v = vid(j), img = v ? `https://i.ytimg.com/vi/${v}/hqdefault.jpg` : j.thumb || '';
             const body = (
               <>
-                {j.source === 'hold' && j.video_url?.endsWith('.mp4') ? <video src={j.video_url} controls preload="metadata" className="w-full aspect-[9/16] object-cover bg-black" /> : img ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={img} alt="" className="w-full aspect-[9/16] object-cover bg-gray-100" /> : <div className="w-full aspect-[9/16] bg-gray-100" />}
+                {j.source === 'hold' && j.video_url?.endsWith('.mp4') ? <video src={j.video_url} controls preload="metadata" className="w-full aspect-[9/16] object-cover bg-black" /> : img ? /* eslint-disable-next-line @next/next/no-img-element */ <img loading="lazy" src={img} alt="" className="w-full aspect-[9/16] object-cover bg-gray-100" /> : <div className="w-full aspect-[9/16] bg-gray-100" />}
                 <div className="p-2 text-sm">
                   <div className="font-medium line-clamp-2">{j.title || j.phrase || j.id}</div>
                   <div className="text-xs mt-1 flex items-center gap-1 flex-wrap">
