@@ -935,71 +935,17 @@ export default function AutoServicePage() {
     const tempId = `tmp_${Date.now()}`;
     setShortsJobs(prev => [{ id: tempId, title: payload.title, status: 'running', progress: '연결 중...' }, ...prev]);
 
-    // 맥(딸깍)이 켜져 있으면 맥에서 만들어 현가젯 채널에 올린다. 꺼져 있거나 실패하면 아래 NAS 방식으로 진행
-    const runNas = async () => {
-      let jobId = tempId;
-      let finished = false;
-      try {
-        const res = await fetch('/api/shorts/auto-generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const headerJobId = res.headers.get('X-Job-ID');
-        if (headerJobId) {
-          jobId = headerJobId;
-          setShortsJobs(prev => prev.map(j => j.id === tempId ? { ...j, id: jobId } : j));
-        }
-
-        if (!res.body) throw new Error('스트림 없음');
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop() ?? '';
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            try {
-              const evt = JSON.parse(line.slice(6));
-              if (evt.type === 'progress') {
-                setShortsJobs(prev => prev.map(j => j.id === jobId
-                  ? { ...j, status: 'running', progress: evt.msg }
-                  : j));
-              } else if (evt.type === 'done') {
-                finished = true;
-                setShortsJobs(prev => prev.map(j => j.id === jobId
-                  ? { ...j, status: 'done', progress: '완료!', video_url: evt.video_url, yt_url: evt.yt_url }
-                  : j));
-              } else if (evt.type === 'error') {
-                finished = true;
-                setShortsJobs(prev => prev.map(j => j.id === jobId
-                  ? { ...j, status: 'error', progress: evt.msg }
-                  : j));
-              }
-            } catch { /* JSON parse 실패 무시 */ }
-          }
-        }
-        // SSE가 done/error 없이 끊겨도 서버 작업은 계속 돌므로 error로 단정하지 않고 DB 상태를 폴링
-        if (!finished) pollShortsJob(jobId, payload.title);
-      } catch {
-        pollShortsJob(jobId, payload.title);
-      }
-    };
+    // 영상은 항상 맥(딸깍)에서 만들어 현가젯 채널에 올린다(NAS에서는 만들지 않는다). 맥이 꺼져 있으면 켜질 때까지 대기
     (async () => {
       try {
-        const m = await (await fetch('/api/blog-video-inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ article_id: payload.article_id, title: payload.title, keyword: payload.keyword, description: payload.description, blog_url: payload.blog_url }) })).json() as { mac?: boolean; job_id?: string };
+        const m = await (await fetch('/api/blog-video-inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ article_id: payload.article_id, title: payload.title, keyword: payload.keyword, description: payload.description, blog_url: payload.blog_url }) })).json() as { mac?: boolean; online?: boolean; job_id?: string };
         if (m.mac && m.job_id) {
           const macId = m.job_id;
-          setShortsJobs(prev => prev.map(j => j.id === tempId ? { ...j, id: macId, progress: '맥에서 영상 제작 대기 중...' } : j));
+          setShortsJobs(prev => prev.map(j => j.id === tempId ? { ...j, id: macId, progress: m.online === false ? '맥이 꺼져 있어요 — 켜지면 영상을 만들어 올려요' : '맥에서 영상 제작 대기 중...' } : j));
           return pollShortsJob(macId, payload.title);
         }
-      } catch { /* 맥 요청 실패 → NAS 방식 */ }
-      runNas();
+      } catch { /* 요청 실패 */ }
+      setShortsJobs(prev => prev.map(j => j.id === tempId ? { ...j, status: 'error', progress: '맥에서 영상 만들기 요청에 실패했어요. 잠시 뒤 다시 시도해주세요.' } : j));
     })();
   };
 

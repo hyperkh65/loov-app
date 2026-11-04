@@ -7,14 +7,14 @@ const CHANNEL = '현가젯'; // 블로그 영상을 올릴 유튜브 채널(LOOV
 
 const plain = (html: string) => html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 
-// POST: 발행 화면이 "맥에서 영상 만들기"를 요청. 맥이 꺼져 있으면 {mac:false} → 화면이 기존 NAS 방식으로 넘어간다
+// POST: 발행 화면이 "맥에서 영상 만들기"를 요청. 영상은 항상 맥(딸깍)에서 만든다. 맥이 꺼져 있으면 쌓아 두었다가 켜지면 만든다
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: '로그인 필요' }, { status: 401 });
   const b = await req.json().catch(() => ({})) as { article_id?: string; title?: string; keyword?: string; description?: string; blog_url?: string };
   if (!b.article_id || !b.title) return NextResponse.json({ error: 'article_id와 title이 필요해요' }, { status: 400 });
-  if (!(await macOnline())) return NextResponse.json({ mac: false });
+  const online = await macOnline(); // 맥이 꺼져 있어도 일감은 쌓아 두고, 맥이 켜지면 가져가 만든다(NAS에서는 만들지 않는다)
 
   const { data: art } = await supabase.from('bossai_auto_articles').select('content, representative_image_url').eq('id', b.article_id).eq('user_id', user.id).single();
   if (!art) return NextResponse.json({ error: '글을 찾을 수 없어요' }, { status: 404 });
@@ -23,10 +23,10 @@ export async function POST(req: NextRequest) {
 
   const admin = createAdminClient();
   const now = new Date().toISOString();
-  const { data: job } = await admin.from('bossai_shorts_queue').insert({ user_id: user.id, article_id: b.article_id, title: b.title, keyword: b.keyword ?? '', status: 'pending', progress: '맥에서 영상 제작 대기 중...', created_at: now, updated_at: now }).select('id').single();
+  const { data: job } = await admin.from('bossai_shorts_queue').insert({ user_id: user.id, article_id: b.article_id, title: b.title, keyword: b.keyword ?? '', status: 'pending', progress: online ? '맥에서 영상 제작 대기 중...' : '맥이 꺼져 있어요 — 켜지면 영상을 만들어 올려요', created_at: now, updated_at: now }).select('id').single();
   if (!job) return NextResponse.json({ error: 'DB 저장 실패' }, { status: 500 });
   await addItem(job.id, { job_id: job.id, title: b.title, keyword: b.keyword ?? '', description: b.description ?? '', blog_url: b.blog_url ?? '', text: plain(html).slice(0, 6000), images, channel: CHANNEL });
-  return NextResponse.json({ mac: true, job_id: job.id });
+  return NextResponse.json({ mac: true, online, job_id: job.id });
 }
 
 // GET: 맥(딸깍)이 주기적으로 가져간다(가져가는 것 자체가 "맥 켜짐" 신호)
