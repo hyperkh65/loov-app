@@ -18,7 +18,9 @@ const BADGE: Record<string, string> = { created: '대기', uploading: '업로드
 export default function ShortsInboxPage() {
   const [rows, setRows] = useState<Job[] | null>(null);
   const [tab, setTab] = useState<Tab>('hold');
-  const load = useCallback(() => { fetch('/api/shorts-inbox/list').then(r => r.json()).then(d => setRows(Array.isArray(d) ? d : [])).catch(() => setRows([])); }, []);
+  const [asked, setAsked] = useState<string[]>([]);
+  const loadAsked = useCallback(() => { fetch('/api/shorts-inbox/request').then(r => r.json()).then(d => setAsked(Array.isArray(d.ids) ? d.ids : [])).catch(() => {}); }, []);
+  const load = useCallback(() => { loadAsked(); fetch('/api/shorts-inbox/list').then(r => r.json()).then(d => setRows(Array.isArray(d) ? d : [])).catch(() => setRows([])); }, [loadAsked]);
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
 
   const isHold = (j: Job) => j.source === 'hold' && j.status !== 'uploaded';
@@ -53,6 +55,7 @@ export default function ShortsInboxPage() {
                     <span className="text-gray-500">{j.status === 'scheduled' ? `${ko(j.scheduled_at)} 공개` : j.status === 'uploaded' ? ko(j.uploaded_at) : ko(j.created_at)}</span>
                   </div>
                   {tab === 'hold' && <Publish job={j} onDone={load} />}
+                  {tab === 'created' && j.source !== 'hold' && ['created', 'failed'].includes(j.status) && <SendHold job={j} requested={asked.includes(j.id)} onDone={load} />}
                   {j.error && <div className="text-xs text-red-500 mt-1 line-clamp-2">{j.error}</div>}
                 </div>
               </>
@@ -97,6 +100,28 @@ function ManualUpload({ onDone }: { onDone: () => void }) {
       <button disabled={busy} className="px-5 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">{busy ? '업로드 중…' : '업로드'}</button>
       {msg && <p className="text-sm text-gray-600">{msg}</p>}
     </form>
+  );
+}
+
+function SendHold({ job, requested, onDone }: { job: Job; requested: boolean; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  async function go() {
+    if (!confirm(`"${job.title}"\n\n맥이 영상 파일을 올리면 "발행 대기"로 옮겨져요. 보낼까요? (맥이 켜져 있어야 해요)`)) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/shorts-inbox/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: job.id }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      setMsg('맥에 요청했어요. 1~2분 뒤 "발행 대기"에 나타나요');
+    } catch (err) { setMsg('실패: ' + (err as Error).message); } finally { setBusy(false); onDone(); }
+  }
+  const waiting = requested || !!msg.startsWith('맥에');
+  return (
+    <>
+      <button disabled={busy || waiting} onClick={go} className="mt-2 w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">{busy ? '요청 중…' : waiting ? '맥이 올리는 중…' : '발행 대기로 보내기'}</button>
+      {msg && !msg.startsWith('맥에') && <div className="text-xs text-red-500 mt-1">{msg}</div>}
+    </>
   );
 }
 
