@@ -16,16 +16,18 @@ export async function POST(req: NextRequest) {
   if (!b.article_id || !b.title) return NextResponse.json({ error: 'article_id와 title이 필요해요' }, { status: 400 });
   const online = await macOnline(); // 맥이 꺼져 있어도 일감은 쌓아 두고, 맥이 켜지면 가져가 만든다(NAS에서는 만들지 않는다)
 
-  const { data: art } = await supabase.from('bossai_auto_articles').select('content, representative_image_url').eq('id', b.article_id).eq('user_id', user.id).single();
+  const { data: art } = await supabase.from('bossai_auto_articles').select('content, representative_image_url, published_urls').eq('id', b.article_id).eq('user_id', user.id).single();
   if (!art) return NextResponse.json({ error: '글을 찾을 수 없어요' }, { status: 404 });
   const html = String(art.content || '');
+  // 화면이 글 주소를 못 넘긴 경우(발행 결과에 주소가 없을 때)에도 이미 발행된 글 주소를 DB에서 찾아 영상 설명란·댓글에 넣는다
+  const blogUrl = (b.blog_url || Object.values((art.published_urls || {}) as Record<string, string>).find(u => typeof u === 'string' && /^https?:\/\//.test(u)) || '') as string;
   const images = [...new Set([art.representative_image_url, ...[...html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)].map(m => m[1])].filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u)))].slice(0, 12);
 
   const admin = createAdminClient();
   const now = new Date().toISOString();
   const { data: job } = await admin.from('bossai_shorts_queue').insert({ user_id: user.id, article_id: b.article_id, title: b.title, keyword: b.keyword ?? '', status: 'pending', progress: online ? '맥에서 영상 제작 대기 중...' : '맥이 꺼져 있어요 — 켜지면 영상을 만들어 올려요', created_at: now, updated_at: now }).select('id').single();
   if (!job) return NextResponse.json({ error: 'DB 저장 실패' }, { status: 500 });
-  await addItem(job.id, { job_id: job.id, title: b.title, keyword: b.keyword ?? '', description: b.description ?? '', blog_url: b.blog_url ?? '', text: plain(html).slice(0, 6000), images, channel: CHANNEL });
+  await addItem(job.id, { job_id: job.id, title: b.title, keyword: b.keyword ?? '', description: b.description ?? '', blog_url: blogUrl, text: plain(html).slice(0, 6000), images, channel: CHANNEL });
   return NextResponse.json({ mac: true, online, job_id: job.id });
 }
 
