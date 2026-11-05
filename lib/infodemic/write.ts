@@ -108,12 +108,12 @@ ${srcBlock(srcs)}
 TITLE: 제목 28~40자, 핵심 검색어 포함, 낚시·과장 금지
 ANSWER: 직답 2~3문장
 H2: 소제목 (질문형 또는 명확한 명사구)
-P: 문단(60~140자)
+P: 문단(100~200자, 출처로 확인된 사실만으로)
 P: 문단
 BULLET: (선택) 짧은 항목
 TH: 항목 | 내용        ← 표가 필요한 섹션에만(1~2곳), 이어서 TR 줄 3~5개
 TR: 값1 | 값2
-(H2는 3~4개, 각 H2마다 P 2~3개)
+(H2는 4개, 각 H2마다 P 2~3개. 확인된 사실이 부족하면 문단을 억지로 늘리지 말고 있는 사실을 구체적으로 풀어 쓴다)
 Q: 독자가 실제로 궁금해할 질문
 A: 출처로 확인되는 답 1~2문장
 (Q/A 3쌍)
@@ -142,12 +142,28 @@ export async function findUnsupported(d: Draft, srcs: Source[]): Promise<string[
   );
 }
 
+
+/** 근거 없다고 표시된 주장이 들어 있는 문장을 지운다(글 전체를 다시 쓰지 않고 그 문장만 뺀다) */
+export function dropClaims(d: Draft, bad: string[]): Draft {
+  const norm = (t: string) => t.replace(/[\s.,!?'"“”‘’]/g, '');
+  const keys = bad.map(norm).filter(k => k.length >= 6);
+  const hit = (sent: string) => { const n = norm(sent); return n.length >= 6 && keys.some(k => n.includes(k.slice(0, 14)) || k.includes(n.slice(0, 14))); };
+  const cleanPara = (p: string) => p.split(/(?<=[.!?]|다\.|요\.)\s+/).filter(x => !hit(x)).join(' ').trim();
+  return {
+    ...d,
+    answer: cleanPara(d.answer) || d.answer,
+    sections: d.sections.map(sec => ({ ...sec, paras: sec.paras.map(cleanPara).filter(Boolean), bullets: (sec.bullets || []).filter(b => !hit(b)), table: sec.table ? { ...sec.table, rows: sec.table.rows.filter(r => !hit(r.join(' '))) } : undefined })),
+    faq: d.faq.filter(f => !hit(f.q) && !hit(f.a)),
+    card: { ...d.card, rows: d.card.rows.filter(r => !hit(`${r.k} ${r.v}`)) },
+  };
+}
+
 const shingles = (s: string, n = 12) => { const t = s.replace(/\s+/g, ''); const out = new Set<string>(); for (let i = 0; i + n <= t.length; i += 2) out.add(t.slice(i, i + n)); return out; };
 
 /** 품질 게이트: 문제가 있으면 이유를 돌려준다(null이면 통과) */
 export function lint(d: Draft, srcs: Source[]): string | null {
   const text = flat(d), body = d.sections.flatMap(s => s.paras).join(' ');
-  if (body.replace(/\s/g, '').length < 700) return '본문이 짧아요';
+  if (body.replace(/\s/g, '').length < 800) return `본문이 짧아요(${body.replace(/\s/g, '').length}자)`;
   if (findForeignWords(text).length) return '외국어 단어 섞임: ' + findForeignWords(text).slice(0, 4).join(',');
   if (/[฀-๿Ѐ-ӿ؀-ۿ぀-ヿऀ-ॿ]/.test(text)) return '외국 문자 섞임';
   if (d.sections.some(s => !s.h2.trim() || /(^|\s),|\(\s*\)/.test(s.h2))) return '깨진 소제목';

@@ -8,7 +8,7 @@ import { assertPublishableHtml, tightTitle } from '@/lib/html-gate';
 import { r2Available } from '@/lib/r2-storage';
 import { getWpCredentials, publishSlotFree, publishToWordPress } from '@/lib/scheduler/blog-runner';
 import type { Schedule } from '@/lib/scheduler';
-import { askJson, writeDraft, findUnsupported, lint, isSensitive, type Draft, type Source } from './write';
+import { askJson, writeDraft, findUnsupported, dropClaims, lint, isSensitive, type Draft, type Source } from './write';
 import { renderCover, renderInfoCard } from './card';
 
 export interface InfodemicConfig { wp_site_id?: string; dry_run?: boolean; used?: string[]; min_external?: number }
@@ -147,9 +147,13 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
     const srcs = [base, ...ext];
 
     let draft = await writeDraft({ title: c.title, entity: pk.entity, query: pk.query }, srcs);
-    let bad = await findUnsupported(draft, srcs);
-    if (bad.length) { draft = await writeDraft({ title: c.title, entity: pk.entity, query: pk.query }, srcs, bad); bad = await findUnsupported(draft, srcs); }
-    if (bad.length) { notes.push(`${pk.entity}: 근거 없는 주장 ${bad.length}건 [${bad.slice(0, 4).map(x => x.slice(0, 50)).join(' / ')}]`); continue; }
+    let bad: string[] = [];
+    for (let round = 0; round < 3; round++) { // 근거 없는 주장은 그 문장만 지우고 다시 대조한다
+      bad = await findUnsupported(draft, srcs);
+      if (!bad.length) break;
+      draft = dropClaims(draft, bad);
+    }
+    if (bad.length) { notes.push(`${pk.entity}: 근거 없는 주장이 계속 남음 [${bad.slice(0, 3).map(x => x.slice(0, 40)).join(' / ')}]`); continue; }
     const why = lint(draft, srcs);
     if (why) { notes.push(`${pk.entity}: ${why}`); continue; }
 
