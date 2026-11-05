@@ -50,20 +50,33 @@ async function readSource(url: string, n: number, external: boolean, diag?: stri
   } catch (e) { diag?.push(`${host(url)}: ${String(e).slice(0, 50)}`); return null; }
 }
 
-/** 네이버 뉴스 검색에서 서로 다른 언론사 기사를 모아 읽는다(주제어가 실제로 들어 있는 것만) */
-async function externalSources(query: string, entity: string, startN: number, diag: string[]): Promise<Source[]> {
-  let html = '';
-  try { html = await fetchText(`https://search.naver.com/search.naver?where=news&sort=1&query=${encodeURIComponent(query)}`); } catch (e) { diag.push(`검색 실패 ${String(e).slice(0, 40)}`); return []; }
+/** 뉴스 검색(Bing 뉴스 RSS → 안 되면 네이버)에서 서로 다른 언론사 기사를 모아 읽는다(주제어가 실제로 들어 있는 것만) */
+async function newsLinks(query: string, diag: string[]): Promise<string[]> {
   const links: string[] = [], hosts = new Set<string>();
-  for (const m of html.matchAll(/href="(https?:\/\/[^"#]+)"/g)) {
-    const u = m[1].replace(/&amp;/g, '&');
+  const add = (raw: string) => {
+    let u = raw.replace(/&amp;/g, '&').trim();
+    try { const x = new URL(u); const real = x.searchParams.get('url'); if (/bing\.com$/.test(x.hostname) && real) u = decodeURIComponent(real); } catch { return; }
     const h = host(u);
-    if (/naver|pstatic|daum|kakao|google|youtube|infodemic|tistory|instagram|facebook/.test(h) || hosts.has(h)) continue;
-    if (!/(article|news|view|read|page|newsView|articleView)/i.test(u)) continue;
+    if (!/^https?:/.test(u) || /naver|pstatic|daum|kakao|google|youtube|infodemic|tistory|instagram|facebook|bing\.com|msn\.com/.test(h) || hosts.has(h)) return;
     hosts.add(h); links.push(u);
-    if (links.length >= 7) break;
+  };
+  try {
+    const xml = await fetchText(`https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss&setmkt=ko-KR&cc=kr`);
+    for (const b of xml.match(/<item>[\s\S]*?<\/item>/g) || []) add(b.match(/<link>([^<]*)<\/link>/)?.[1] || '');
+    diag.push(`Bing 뉴스 ${links.length}곳`);
+  } catch (e) { diag.push(`Bing 실패 ${String(e).slice(0, 30)}`); }
+  if (links.length < 3) {
+    try {
+      const html = await fetchText(`https://search.naver.com/search.naver?where=news&sort=1&query=${encodeURIComponent(query)}`);
+      for (const m of html.matchAll(/href="(https?:\/\/[^"#]+)"/g)) { if (/(article|news|view|read|page)/i.test(m[1])) add(m[1]); }
+      diag.push(`네이버 보강 후 ${links.length}곳`);
+    } catch (e) { diag.push(`네이버 실패 ${String(e).slice(0, 30)}`); }
   }
-  diag.push(`검색결과 링크 ${links.length}개(${html.length}자)`);
+  return links.slice(0, 8);
+}
+
+async function externalSources(query: string, entity: string, startN: number, diag: string[]): Promise<Source[]> {
+  const links = await newsLinks(query, diag);
   const key = (entity.split(/\s+/)[0] || entity).trim();
   const out: Source[] = [];
   for (const u of links) {
