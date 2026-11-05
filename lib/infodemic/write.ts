@@ -49,6 +49,53 @@ const RULES = `[작성 규칙]
 - 한국어 ~요/~입니다 체를 섞어 자연스럽게. 같은 어미 반복·"단정한/차분한" 같은 무난한 형용사 반복·추상적인 감성 문장 금지.
 - 외국어·특수문자·이모지 금지(고유명사 제외). 낚시 제목 금지.`;
 
+/** 줄 단위 태그 형식(JSON보다 따옴표·길이에 강하다)을 읽는다 */
+function parseDraft(raw: string): Draft | string {
+  const d: Draft = { title: '', answer: '', sections: [], faq: [], card: { kicker: '', headline: '', rows: [] }, tags: [] };
+  let cur: Draft['sections'][number] | null = null, q = '';
+  const pair = (v: string): [string, string] => { const i = v.indexOf('|'); return i < 0 ? [v.trim(), ''] : [v.slice(0, i).trim(), v.slice(i + 1).trim()]; };
+  for (const line of raw.replace(/```[a-z]*/gi, '').split('\n')) {
+    const l = line.trim(); const m = l.match(/^([A-Z0-9_]+)\s*[:：]\s*(.*)$/); if (!m) continue;
+    const k = m[1], v = m[2].trim(); if (!v && k !== 'TH') continue;
+    if (k === 'TITLE') d.title = v;
+    else if (k === 'ANSWER') d.answer = v;
+    else if (k === 'H2') { cur = { h2: v, paras: [] }; d.sections.push(cur); }
+    else if (k === 'P' && cur) cur.paras.push(v);
+    else if (k === 'BULLET' && cur) (cur.bullets ||= []).push(v);
+    else if (k === 'TH' && cur) { const [x, y] = pair(v); cur.table = { head: [x || '항목', y || '내용'], rows: [] }; }
+    else if (k === 'TR' && cur?.table) cur.table.rows.push(pair(v));
+    else if (k === 'Q') q = v;
+    else if (k === 'A' && q) { d.faq.push({ q, a: v }); q = ''; }
+    else if (k === 'CARD_KICKER') d.card.kicker = v;
+    else if (k === 'CARD_HEADLINE') d.card.headline = v;
+    else if (k === 'CARD_ROW') { const [x, y] = pair(v); if (x && y) d.card.rows.push({ k: x, v: y }); }
+    else if (k === 'TAGS') d.tags = v.split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 8);
+  }
+  d.sections.forEach(sec => { if (sec.table && sec.table.rows.length < 2) delete sec.table; });
+  if (d.title.length < 12 || d.title.length > 60) return 'title 길이';
+  if (d.answer.length < 40) return 'answer 짧음';
+  if (d.sections.length < 3) return `sections 부족(${d.sections.length})`;
+  if (d.sections.some(x => x.paras.length < 2)) return '섹션 문단 부족';
+  if (d.faq.length < 2) return 'faq 부족';
+  if (d.card.rows.length < 3) return 'card 행 부족';
+  if (!d.card.headline) d.card.headline = d.title.slice(0, 18);
+  return d;
+}
+
+/** 텍스트 답을 받아 파서로 검증한다. 모델을 바꿔 가며 시도하고 실패 이유를 모두 남긴다. */
+async function askParsed<T>(prompt: string, parse: (raw: string) => T | string, stage: string): Promise<T> {
+  const log: string[] = [];
+  for (const model of ['claude', 'gemini', 'openrouter', 'groq']) {
+    try {
+      const raw = await generateText(prompt, model, undefined, undefined, undefined, undefined, { multilingual: true });
+      const r = parse(raw);
+      if (typeof r !== 'string') return r;
+      log.push(`${model}: ${r}(${raw.length}자)`);
+    } catch (e) { log.push(`${model}: ${String(e).slice(0, 80)}`); }
+  }
+  throw new Error(`[${stage}] AI 답 실패 — ${log.join(' / ')}`.slice(0, 600));
+}
+
 export async function writeDraft(topic: { title: string; entity: string; query: string }, srcs: Source[], forbid: string[] = []): Promise<Draft> {
   const prompt = `당신은 사실 확인을 철저히 하는 한국 정보 블로그 에디터입니다. "${topic.query}"를 검색한 독자를 위한 글을 씁니다.
 ${RULES}
@@ -57,23 +104,25 @@ ${forbid.length ? `- 아래 문장/주장은 근거가 없다고 확인됐으니
 [출처]
 ${srcBlock(srcs)}
 
-JSON만 출력:
-{"title":"제목 28~40자, 핵심 검색어 포함, 낚시·과장 금지",
-"answer":"직답 2~3문장(HTML 없이)",
-"sections":[{"h2":"소제목(질문형 또는 명확한 명사구)","paras":["문단 2~3개(각 60~140자)"],"bullets":["선택: 짧은 항목 3~5개"],"table":{"head":["항목","내용"],"rows":[["",""]]}}],
-"faq":[{"q":"독자가 실제로 궁금해할 질문","a":"출처로 확인되는 답 1~2문장"}],
-"card":{"kicker":"정보카드 위 작은 문구(예: 방송 정보)","headline":"카드 제목 18자 이내","rows":[{"k":"항목(6자 이내)","v":"값(출처로 확인된 것만, 22자 이내)"}]},
-"tags":["검색 태그 6개"]}
-조건: sections 3~4개(각각 h2마다 paras 2~3개), table은 비교·정리가 필요한 섹션 1~2곳에만, faq 3개, card.rows 4~6행.`;
-  return askJson<Draft>(prompt, v => {
-    if (!v.title || v.title.length < 12 || v.title.length > 60) return 'title 길이';
-    if (!v.answer || v.answer.length < 40) return 'answer 짧음';
-    if (!Array.isArray(v.sections) || v.sections.length < 3) return 'sections 부족';
-    if (v.sections.some(s => !s.h2 || !Array.isArray(s.paras) || s.paras.length < 2)) return '섹션 문단 부족';
-    if (!Array.isArray(v.faq) || v.faq.length < 2) return 'faq 부족';
-    if (!v.card || !Array.isArray(v.card.rows) || v.card.rows.length < 3) return 'card 행 부족';
-    return null;
-  }, '글 쓰기');
+아래 "줄 형식"으로만 출력하세요(JSON·마크다운 금지). 각 줄은 "키: 내용" 한 줄입니다. 내용 안에 줄바꿈을 넣지 마세요.
+TITLE: 제목 28~40자, 핵심 검색어 포함, 낚시·과장 금지
+ANSWER: 직답 2~3문장
+H2: 소제목 (질문형 또는 명확한 명사구)
+P: 문단(60~140자)
+P: 문단
+BULLET: (선택) 짧은 항목
+TH: 항목 | 내용        ← 표가 필요한 섹션에만(1~2곳), 이어서 TR 줄 3~5개
+TR: 값1 | 값2
+(H2는 3~4개, 각 H2마다 P 2~3개)
+Q: 독자가 실제로 궁금해할 질문
+A: 출처로 확인되는 답 1~2문장
+(Q/A 3쌍)
+CARD_KICKER: 정보카드 위 작은 문구 (예: 방송 정보)
+CARD_HEADLINE: 카드 제목 18자 이내
+CARD_ROW: 항목(6자 이내) | 값(출처로 확인된 것만, 22자 이내)
+(CARD_ROW 4~6줄)
+TAGS: 태그1, 태그2, 태그3, 태그4, 태그5, 태그6`;
+  return askParsed<Draft>(prompt, parseDraft, '글 쓰기');
 }
 
 const flat = (d: Draft) => [d.title, d.answer, ...d.sections.flatMap(s => [s.h2, ...s.paras, ...(s.bullets || []), ...(s.table ? s.table.rows.flat() : [])]), ...d.faq.flatMap(f => [f.q, f.a]), ...d.card.rows.map(r => `${r.k} ${r.v}`)].join('\n');
@@ -81,12 +130,16 @@ export const draftText = flat;
 
 /** 쓴 글의 사실 주장 중 출처로 확인되지 않는 것을 찾는다 */
 export async function findUnsupported(d: Draft, srcs: Source[]): Promise<string[]> {
-  const v = await askJson<{ unsupported: string[] }>(
-    `당신은 엄격한 팩트체커입니다. 아래 [글]의 사실 주장(이름·날짜·시간·나이·숫자·관계·방송사·사건)을 하나씩 [출처]와 대조하세요.\n출처 어디에도 없거나 출처와 다른 주장만 골라 "문장 일부"를 그대로 적으세요. 모두 확인되면 빈 배열.\n의견·일반론은 제외하고 사실 주장만 봅니다.\n\n[글]\n${flat(d)}\n\n[출처]\n${srcBlock(srcs)}\n\nJSON만: {"unsupported":["근거 없는 주장 1", "..."]}`,
-    x => (Array.isArray(x.unsupported) ? null : 'unsupported 없음'),
+  return askParsed<string[]>(
+    `당신은 엄격한 팩트체커입니다. 아래 [글]의 사실 주장(이름·날짜·시간·나이·숫자·관계·방송사·사건)을 하나씩 [출처]와 대조하세요.\n출처 어디에도 없거나 출처와 다른 주장만 골라 "UNSUPPORTED: 문장 일부" 형식으로 한 줄씩 적으세요. 모두 확인되면 "NONE" 한 줄만 쓰세요.\n의견·일반론은 제외하고 사실 주장만 봅니다. 다른 설명은 쓰지 마세요.\n\n[글]\n${flat(d)}\n\n[출처]\n${srcBlock(srcs)}`,
+    raw => {
+      const lines = raw.split('\n').map(l => l.trim());
+      const bad = lines.filter(l => /^UNSUPPORTED\s*[:：]/.test(l)).map(l => l.replace(/^UNSUPPORTED\s*[:：]\s*/, '')).filter(Boolean).slice(0, 12);
+      if (bad.length) return bad;
+      return lines.some(l => /^NONE\b/.test(l)) ? [] : '형식 못 읽음';
+    },
     '사실 대조',
   );
-  return v.unsupported.filter(Boolean).slice(0, 12);
 }
 
 const shingles = (s: string, n = 12) => { const t = s.replace(/\s+/g, ''); const out = new Set<string>(); for (let i = 0; i + n <= t.length; i += 2) out.add(t.slice(i, i + n)); return out; };
