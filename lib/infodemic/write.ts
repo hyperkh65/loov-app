@@ -39,7 +39,7 @@ export interface Draft {
 const SENSITIVE = /불륜|성폭|성추행|성범죄|몰카|사망|별세|자살|극단적|마약|구속|기소|재판|소송|의혹|열애설|파경|혼외|폭행|학폭|논란/;
 export const isSensitive = (s: string) => SENSITIVE.test(s);
 
-const srcBlock = (srcs: Source[]) => srcs.map(s => `[출처 ${s.n}] ${s.host} — ${s.title}\n${s.text.slice(0, 3200)}`).join('\n\n');
+const srcBlock = (srcs: Source[]) => srcs.map(s => `[출처 ${s.n}] ${s.host} — ${s.title}\n${s.text.slice(0, 4500)}`).join('\n\n');
 
 const RULES = `[작성 규칙]
 - 아래 [출처]들은 사실 확인용 자료다. 문장·표현을 베끼지 말고 전부 새 문장으로 쓴다(같은 어구를 이어 쓰지 말 것).
@@ -131,7 +131,7 @@ export const draftText = flat;
 /** 쓴 글의 사실 주장 중 출처로 확인되지 않는 것을 찾는다 */
 export async function findUnsupported(d: Draft, srcs: Source[]): Promise<string[]> {
   return askParsed<string[]>(
-    `당신은 엄격한 팩트체커입니다. 아래 [글]의 사실 주장(이름·날짜·시간·나이·숫자·관계·방송사·사건)을 하나씩 [출처]와 대조하세요.\n출처 어디에도 없거나 출처와 다른 주장만 골라 "UNSUPPORTED: 문장 일부" 형식으로 한 줄씩 적으세요. 모두 확인되면 "NONE" 한 줄만 쓰세요.\n의견·일반론은 제외하고 사실 주장만 봅니다. 다른 설명은 쓰지 마세요.\n\n[글]\n${flat(d)}\n\n[출처]\n${srcBlock(srcs)}`,
+    `당신은 엄격한 팩트체커입니다. 아래 [글]의 사실 주장(이름·날짜·시간·나이·숫자·관계·방송사·사건)을 하나씩 [출처]와 대조하세요.\n출처 어디에도 없거나 출처와 다른 주장만 골라 "UNSUPPORTED: 문장 일부" 형식으로 한 줄씩 적으세요. 모두 확인되면 "NONE" 한 줄만 쓰세요.\n의견·일반론은 제외하고 사실 주장만 봅니다. 출처 내용을 다른 말로 바꿔 쓴 것(표현만 다른 것)은 근거가 있는 것으로 보고, 출처에 없는 구체적 사실(날짜·숫자·이름·관계)이나 출처와 어긋나는 것만 표시하세요. 출처가 여러 개이면 어느 하나에라도 있으면 근거가 있는 것입니다. 다른 설명은 쓰지 마세요.\n\n[글]\n${flat(d)}\n\n[출처]\n${srcBlock(srcs)}`,
     raw => {
       const lines = raw.split('\n').map(l => l.trim());
       const bad = lines.filter(l => /^UNSUPPORTED\s*[:：]/.test(l)).map(l => l.replace(/^UNSUPPORTED\s*[:：]\s*/, '')).filter(Boolean).slice(0, 12);

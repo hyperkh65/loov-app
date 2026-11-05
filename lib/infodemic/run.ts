@@ -26,15 +26,15 @@ async function fetchText(url: string, ms = 15000): Promise<string> {
   return r.text();
 }
 
-interface Cand { title: string; link: string; summary: string }
+interface Cand { title: string; link: string; summary: string; body: string }
 async function candidates(used: Set<string>): Promise<Cand[]> {
   const xml = await fetchText(FEED);
   const out: Cand[] = [];
   for (const b of (xml.match(/<item>[\s\S]*?<\/item>/g) || []).slice(0, 40)) {
-    const title = tag(b, 'title'), link = tag(b, 'link'), summary = tag(b, 'description').slice(0, 400);
+    const title = tag(b, 'title'), link = tag(b, 'link'), full = tag(b, 'description'), summary = full.slice(0, 400);
     if (!title || !/^https?:/.test(link) || used.has(link)) continue;
     if (isSensitive(title) || isSensitive(summary)) continue;
-    out.push({ title, link, summary });
+    out.push({ title, link, summary, body: full });
   }
   return out;
 }
@@ -141,7 +141,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
     const c = top[pk.i]; if (!c || !pk.entity || !pk.query) continue;
     if (recent.some(t => similar(t, c.title) > 0.55 || similar(t, pk.query) > 0.55)) { notes.push(`${c.title.slice(0, 20)}: 최근 글과 겹침`); continue; }
     const dg: string[] = [];
-    const base = await readSource(c.link, 1, false, dg);
+    const base: Source | null = c.body.length >= 500 ? { n: 1, url: c.link, host: 'infodemic.kr', title: c.title, text: c.body.slice(0, 6000), external: false } : await readSource(c.link, 1, false, dg);
     const ext = await externalSources(pk.query, pk.entity, 2, dg);
     if (!base || ext.length < minExt) { notes.push(`${pk.entity}: 확인 출처 부족(${ext.length}/${minExt}${base ? '' : ', 참고글 못 읽음'}) [${dg.join('; ').slice(0, 260)}]`); continue; }
     const srcs = [base, ...ext];
