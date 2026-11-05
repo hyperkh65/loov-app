@@ -32,7 +32,7 @@
  * );
  */
 
-export type ScheduleType = 'blog_auto' | 'coupang_auto' | 'agoda_auto' | 'shorts_auto' | 'instagram_auto' | 'naver_tech_auto' | 'naver_econ_auto' | 'affiliate_publish_auto' | 'affiliate_discover_auto' | 'viral_video_youtube_auto' | 'musinsa_curator_auto' | 'keyword_auto' | 'toss_auto' | 'techhub_auto';
+export type ScheduleType = 'blog_auto' | 'coupang_auto' | 'agoda_auto' | 'shorts_auto' | 'instagram_auto' | 'naver_tech_auto' | 'naver_econ_auto' | 'affiliate_publish_auto' | 'affiliate_discover_auto' | 'viral_video_youtube_auto' | 'musinsa_curator_auto' | 'keyword_auto' | 'toss_auto' | 'techhub_auto' | 'infodemic_auto';
 
 export interface BlogAutoConfig {
   content_type: 'product' | 'info';
@@ -77,7 +77,7 @@ export interface Schedule {
   is_active: boolean;
   interval_hours: number;
   run_at_hour: number;
-  config: BlogAutoConfig | CoupangAutoConfig | AgodaAutoConfig | ShortsAutoConfig | InstagramAutoConfig;
+  config: BlogAutoConfig | { wp_site_id?: string; dry_run?: boolean; used?: string[] } | CoupangAutoConfig | AgodaAutoConfig | ShortsAutoConfig | InstagramAutoConfig;
   last_run_at: string | null;
   next_run_at: string | null;
   last_status: string | null;

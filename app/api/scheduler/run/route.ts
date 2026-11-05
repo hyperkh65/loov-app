@@ -31,6 +31,7 @@ import { runNaverEconAuto } from '@/lib/scheduler/naver-econ-runner';
 import { runKeywordAuto } from '@/lib/scheduler/keyword-auto-runner';
 import { runTossAuto } from '@/lib/scheduler/toss-runner';
 import { runTechHub } from '@/lib/techhub/run';
+import { runInfodemic } from '@/lib/infodemic/run';
 import { createGoLink, pickContentAngle } from '@/lib/affiliate-tracking';
 import { fetchDemandKeywords, matchesDemand } from '@/lib/affiliate-demand-signal';
 import { recordPriceSnapshot, getPriceDropNote } from '@/lib/affiliate-price-history';
@@ -1107,6 +1108,12 @@ async function executeSchedule(schedule: Schedule) {
         const r = await runKeywordAuto(schedule.user_id, kwConfig.source_id, kwConfig.category || 'twenties',
           kwConfig.tistory_blog_name ? { blog_name: kwConfig.tistory_blog_name, category_id: kwConfig.tistory_category_id } : undefined);
         result = r as unknown as Record<string, unknown>;
+        summary = r.summary;
+        break;
+      }
+      case 'infodemic_auto': {
+        const r = await runInfodemic(schedule);
+        result = r.result;
         summary = r.summary;
         break;
       }
