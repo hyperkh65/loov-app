@@ -971,7 +971,7 @@ export default function AutoServicePage() {
         }),
       });
       const text = await res.text();
-      let data: { results?: Record<string, { success: boolean; url?: string; error?: string }>; error?: string } = {};
+      let data: { results?: Record<string, { success: boolean; url?: string; error?: string }>; published_urls?: Record<string, string>; error?: string } = {};
       try { data = JSON.parse(text); } catch { throw new Error(`서버 오류 (${res.status}): ${text.slice(0, 200)}`); }
       setPublishResult(data.results || {});
       if (data.error) alert(`발행 오류: ${data.error}`);
