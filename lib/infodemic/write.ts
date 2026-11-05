@@ -163,7 +163,8 @@ const shingles = (s: string, n = 12) => { const t = s.replace(/\s+/g, ''); const
 /** 품질 게이트: 문제가 있으면 이유를 돌려준다(null이면 통과) */
 export function lint(d: Draft, srcs: Source[]): string | null {
   const text = flat(d), body = d.sections.flatMap(s => s.paras).join(' ');
-  if (body.replace(/\s/g, '').length < 800) return `본문이 짧아요(${body.replace(/\s/g, '').length}자)`;
+  const bl = body.replace(/\s/g, '').length, tl = text.replace(/\s/g, '').length; // 확인된 사실만 쓰므로 길이는 본문+표+FAQ 합으로 본다
+  if (bl < 500 || tl < 1100) return `본문이 짧아요(문단 ${bl}자, 전체 ${tl}자)`;
   if (findForeignWords(text).length) return '외국어 단어 섞임: ' + findForeignWords(text).slice(0, 4).join(',');
   if (/[฀-๿Ѐ-ӿ؀-ۿ぀-ヿऀ-ॿ]/.test(text)) return '외국 문자 섞임';
   if (d.sections.some(s => !s.h2.trim() || /(^|\s),|\(\s*\)/.test(s.h2))) return '깨진 소제목';
