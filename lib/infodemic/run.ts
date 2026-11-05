@@ -39,21 +39,21 @@ async function candidates(used: Set<string>): Promise<Cand[]> {
   return out;
 }
 
-async function readSource(url: string, n: number, external: boolean): Promise<Source | null> {
+async function readSource(url: string, n: number, external: boolean, diag?: string[]): Promise<Source | null> {
   try {
     const a = await timeout(scrapeArticleFull(url), 20000);
     const text = (a.text || '').replace(/\s+/g, ' ').trim();
-    if (text.length < 400) return null;
+    if (text.length < 400) { diag?.push(`${host(url)}: 본문 짧음(${text.length})`); return null; }
     let title = '';
     try { title = tag(await fetchText(url, 8000), 'title').slice(0, 80); } catch { /* 제목은 선택 */ }
     return { n, url, host: host(url), title: title || host(url), text: text.slice(0, 6000), external };
-  } catch { return null; }
+  } catch (e) { diag?.push(`${host(url)}: ${String(e).slice(0, 50)}`); return null; }
 }
 
 /** 네이버 뉴스 검색에서 서로 다른 언론사 기사를 모아 읽는다(주제어가 실제로 들어 있는 것만) */
-async function externalSources(query: string, entity: string, startN: number): Promise<Source[]> {
+async function externalSources(query: string, entity: string, startN: number, diag: string[]): Promise<Source[]> {
   let html = '';
-  try { html = await fetchText(`https://search.naver.com/search.naver?where=news&sort=1&query=${encodeURIComponent(query)}`); } catch { return []; }
+  try { html = await fetchText(`https://search.naver.com/search.naver?where=news&sort=1&query=${encodeURIComponent(query)}`); } catch (e) { diag.push(`검색 실패 ${String(e).slice(0, 40)}`); return []; }
   const links: string[] = [], hosts = new Set<string>();
   for (const m of html.matchAll(/href="(https?:\/\/[^"#]+)"/g)) {
     const u = m[1].replace(/&amp;/g, '&');
@@ -63,10 +63,12 @@ async function externalSources(query: string, entity: string, startN: number): P
     hosts.add(h); links.push(u);
     if (links.length >= 7) break;
   }
+  diag.push(`검색결과 링크 ${links.length}개(${html.length}자)`);
   const key = (entity.split(/\s+/)[0] || entity).trim();
   const out: Source[] = [];
   for (const u of links) {
-    const s = await readSource(u, startN + out.length, true);
+    const s = await readSource(u, startN + out.length, true, diag);
+    if (s && !s.text.includes(key)) diag.push(`${host(u)}: 주제어(${key}) 없음`);
     if (s && s.text.includes(key)) out.push(s);
     if (out.length >= 4) break;
   }
@@ -122,9 +124,10 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
   for (const pk of pick.picks.slice(0, 3)) {
     const c = top[pk.i]; if (!c || !pk.entity || !pk.query) continue;
     if (recent.some(t => similar(t, c.title) > 0.55 || similar(t, pk.query) > 0.55)) { notes.push(`${c.title.slice(0, 20)}: 최근 글과 겹침`); continue; }
-    const base = await readSource(c.link, 1, false);
-    const ext = await externalSources(pk.query, pk.entity, 2);
-    if (!base || ext.length < minExt) { notes.push(`${pk.entity}: 확인 출처 부족(${ext.length}/${minExt})`); continue; }
+    const dg: string[] = [];
+    const base = await readSource(c.link, 1, false, dg);
+    const ext = await externalSources(pk.query, pk.entity, 2, dg);
+    if (!base || ext.length < minExt) { notes.push(`${pk.entity}: 확인 출처 부족(${ext.length}/${minExt}${base ? '' : ', 참고글 못 읽음'}) [${dg.join('; ').slice(0, 260)}]`); continue; }
     const srcs = [base, ...ext];
 
     let draft = await writeDraft({ title: c.title, entity: pk.entity, query: pk.query }, srcs);
@@ -149,5 +152,5 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
     await createAdminClient().from('bossai_schedules').update({ config: { ...(schedule.config as object), used: next } }).eq('id', schedule.id);
     return { summary: `${title} → ${post.link}`, result };
   }
-  return { summary: `발행 없음(검증 통과 못 함): ${notes.join(' | ').slice(0, 300)}`, result: { skipped: 'verify', notes } };
+  return { summary: `발행 없음(검증 통과 못 함): ${notes.join(' | ').slice(0, 900)}`, result: { skipped: 'verify', notes } };
 }
