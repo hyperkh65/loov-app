@@ -2,8 +2,28 @@
  * 인포데믹 참고 → 미라쿨 글쓰기. 소스는 "주제·사실 확인용"으로만 쓰고 문장은 새로 쓴다.
  * 사실은 여러 출처로 확인된 것만 쓰고, 쓴 뒤 한 번 더 "근거 없는 주장"을 찾아 지운다.
  */
-import { askJson } from '@/lib/techhub/write';
+import { generateText } from '@/lib/auto-blog-ai';
 import { findForeignWords } from '@/lib/html-gate';
+
+
+/** JSON 답을 받는다. 모델을 바꿔 가며 시도하고, 실패하면 어느 단계·모델에서 무슨 답이 왔는지 남긴다. */
+export async function askJson<T>(prompt: string, check: (v: T) => string | null, stage = 'ai'): Promise<T> {
+  const log: string[] = [];
+  for (const model of ['claude', 'gemini', 'openrouter', 'groq']) {
+    try {
+      const raw = await generateText(prompt, model, undefined, undefined, undefined, undefined, { multilingual: true });
+      const s = raw.replace(/```(?:json)?/gi, '');
+      const a = s.indexOf('{'), b = s.lastIndexOf('}');
+      if (a < 0 || b <= a) { log.push(`${model}: JSON 없음(${raw.length}자 "${raw.slice(0, 60).replace(/\s+/g, ' ')}")`); continue; }
+      let v: T;
+      try { v = JSON.parse(s.slice(a, b + 1)) as T; } catch (e) { log.push(`${model}: JSON 깨짐 ${(e as Error).message.slice(0, 40)} (${raw.length}자)`); continue; }
+      const bad = check(v);
+      if (!bad) return v;
+      log.push(`${model}: ${bad}`);
+    } catch (e) { log.push(`${model}: ${String(e).slice(0, 80)}`); }
+  }
+  throw new Error(`[${stage}] AI JSON 실패 — ${log.join(' / ')}`.slice(0, 600));
+}
 
 export interface Source { n: number; url: string; host: string; title: string; text: string; external: boolean }
 export interface InfoCard { kicker: string; headline: string; rows: Array<{ k: string; v: string }> }
@@ -53,7 +73,7 @@ JSON만 출력:
     if (!Array.isArray(v.faq) || v.faq.length < 2) return 'faq 부족';
     if (!v.card || !Array.isArray(v.card.rows) || v.card.rows.length < 3) return 'card 행 부족';
     return null;
-  });
+  }, '글 쓰기');
 }
 
 const flat = (d: Draft) => [d.title, d.answer, ...d.sections.flatMap(s => [s.h2, ...s.paras, ...(s.bullets || []), ...(s.table ? s.table.rows.flat() : [])]), ...d.faq.flatMap(f => [f.q, f.a]), ...d.card.rows.map(r => `${r.k} ${r.v}`)].join('\n');
@@ -64,6 +84,7 @@ export async function findUnsupported(d: Draft, srcs: Source[]): Promise<string[
   const v = await askJson<{ unsupported: string[] }>(
     `당신은 엄격한 팩트체커입니다. 아래 [글]의 사실 주장(이름·날짜·시간·나이·숫자·관계·방송사·사건)을 하나씩 [출처]와 대조하세요.\n출처 어디에도 없거나 출처와 다른 주장만 골라 "문장 일부"를 그대로 적으세요. 모두 확인되면 빈 배열.\n의견·일반론은 제외하고 사실 주장만 봅니다.\n\n[글]\n${flat(d)}\n\n[출처]\n${srcBlock(srcs)}\n\nJSON만: {"unsupported":["근거 없는 주장 1", "..."]}`,
     x => (Array.isArray(x.unsupported) ? null : 'unsupported 없음'),
+    '사실 대조',
   );
   return v.unsupported.filter(Boolean).slice(0, 12);
 }

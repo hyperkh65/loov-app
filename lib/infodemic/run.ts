@@ -5,11 +5,10 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
 import { assertPublishableHtml, tightTitle } from '@/lib/html-gate';
-import { askJson } from '@/lib/techhub/write';
 import { r2Available } from '@/lib/r2-storage';
 import { getWpCredentials, publishSlotFree, publishToWordPress } from '@/lib/scheduler/blog-runner';
 import type { Schedule } from '@/lib/scheduler';
-import { writeDraft, findUnsupported, lint, isSensitive, type Draft, type Source } from './write';
+import { askJson, writeDraft, findUnsupported, lint, isSensitive, type Draft, type Source } from './write';
 import { renderCover, renderInfoCard } from './card';
 
 export interface InfodemicConfig { wp_site_id?: string; dry_run?: boolean; used?: string[]; min_external?: number }
@@ -116,6 +115,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
   const pick = await askJson<{ picks: Array<{ i: number; entity: string; query: string }> }>(
     `당신은 정보 블로그 편집자입니다. 아래는 참고 블로그의 최근 글 제목입니다. 이 중 "사람들이 검색할 만하고, 공개된 기사로 사실 확인이 되는" 주제를 최대 3개 고르세요.\n선호: 방송·작품 정보(방영일, 출연, 줄거리 정리), 공개된 프로필 정보(데뷔, 작품, 소속 등), 일정·결과 정리. 제외: 사생활 폭로, 의혹, 사건사고, 루머.\n각 항목: i=번호, entity=핵심 대상 이름(프로그램/작품/인물 1개), query=독자가 검색할 만한 문장(예: "이혼숙려캠프 26기 출연 부부 정보").\n${top.map((c, i) => `${i}. ${c.title}`).join('\n')}\nJSON만: {"picks":[{"i":0,"entity":"","query":""}]}`,
     v => (Array.isArray(v.picks) && v.picks.length ? null : 'picks 없음'),
+    '주제 고르기',
   );
 
   const notes: string[] = [];
