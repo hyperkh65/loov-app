@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
 import { blogMcpKey, GUIDE, RISK_NOTES, needsRiskNotes } from '@/lib/gpt-bridge';
 import { runGptAction } from '@/lib/gpt-actions';
+import { TOP10_GUIDE, validateTop10 } from '@/lib/top10-guide';
+import { addItem as addTop10 } from '@/lib/top10-inbox';
 
 export const maxDuration = 120;
 
@@ -31,9 +33,11 @@ const TOOLS = [
   { name: 'readPage', description: '웹페이지 본문 텍스트와 이미지 주소 읽기(직접 브라우징이 막힐 때 백업)', inputSchema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } }, annotations: { readOnlyHint: true, openWorldHint: true } },
   { name: 'validateDraft', description: '초안의 형태 검사. errors가 비어야 저장 가능. 이미지는 image_1.. 파일로 함께 보낸다.', inputSchema: { type: 'object', required: ['title', 'content_html'], properties: draftProps }, _meta: FILE_META, annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'saveDraft', description: '검사 통과한 글을 초안으로 저장(이미지 재호스팅 포함). article_id를 주면 그 초안을 수정. 이미지 오류로 실패하면 이미지를 새로 생성한 직후 다시 호출한다.', inputSchema: { type: 'object', required: ['keyword', 'title', 'meta_description', 'content_html'], properties: { ...draftProps, article_id: { type: 'string' } } }, _meta: FILE_META, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: 'getTop10Guide', description: 'TOP10 인포그래픽(딸깍 영상) 작성 지침과 JSON 형식. TOP10을 만들기 전에 반드시 호출한다.', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'sendTop10ToDdalkak', description: '출처 2곳 이상으로 검증이 끝난 TOP10 JSON을 딸깍(맥) 영상 제작 대기열로 보낸다. getTop10Guide의 형식 그대로 data에 넣고, 한 JSON당 한 번만 호출한다. errors가 오면 고쳐서 다시 호출한다.', inputSchema: { type: 'object', required: ['data'], properties: { data: { type: 'object', description: 'TOP10 JSON (title, rows 10개, source, sources 등)', additionalProperties: true } } }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
 ];
 
-const ok = (id: unknown, result: unknown) => NextResponse.json({ jsonrpc: '2.0', id, result });
+const ok =  (id: unknown, result: unknown) => NextResponse.json({ jsonrpc: '2.0', id, result });
 const err = (id: unknown, code: number, message: string) => NextResponse.json({ jsonrpc: '2.0', id, error: { code, message } });
 const keyOk = (k: string) => { const w = blogMcpKey(); return !!w && k.length === w.length && timingSafeEqual(Buffer.from(k), Buffer.from(w)); };
 const text = (id: unknown, t: string, isError = false) => ok(id, { content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
@@ -64,6 +68,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ key
       const name = m.params?.name || '', a = m.params?.arguments || {};
       if (!TOOLS.some(t => t.name === name)) return err(m.id, -32602, 'unknown tool');
       try {
+        if (name === 'getTop10Guide') return text(m.id, TOP10_GUIDE);
+        if (name === 'sendTop10ToDdalkak') {
+          let d: unknown = (a as { data?: unknown }).data;
+          if (typeof d === 'string') { try { d = JSON.parse(d.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { d = null; } }
+          if (!d || typeof d !== 'object') return text(m.id, JSON.stringify({ sent: false, errors: ['data에 TOP10 JSON 객체가 필요해요'] }), true);
+          const v = validateTop10(d as Record<string, unknown>);
+          if (v.errors.length) return text(m.id, JSON.stringify({ sent: false, errors: v.errors, warnings: v.warnings }), true);
+          if (JSON.stringify(d).length > 60_000) return text(m.id, JSON.stringify({ sent: false, errors: ['JSON이 너무 커요'] }), true);
+          const r = await addTop10(d as Record<string, unknown>);
+          return text(m.id, JSON.stringify({ sent: true, id: r.id, duplicate: r.dup, warnings: v.warnings, message: r.dup ? '이미 받은 JSON이에요' : '딸깍으로 전달했어요. 영상이 만들어지면 LOOV 발행 대기에 올라가요.' }));
+        }
         if (name === 'getWritingGuide') return text(m.id, GUIDE + (needsRiskNotes(String(a.keyword || '')) ? '\n\n' + RISK_NOTES : '') + MAP_NOTE);
         const action = ({ researchKeyword: 'research', readPage: 'page', validateDraft: 'validate', saveDraft: 'draft' } as Record<string, string>)[name];
         const body: Record<string, unknown> = { ...a };
