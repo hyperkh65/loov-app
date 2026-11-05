@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { inboxAuthed } from '@/lib/shorts-youtube';
 import { beat, macOnline, addItem, takePending, ack } from '@/lib/blog-video-inbox';
+import { isBlogUrl, pickBlogUrl } from '@/lib/blog-url';
 
 const CHANNEL = '현가젯'; // 블로그 영상을 올릴 유튜브 채널(LOOV에 연결된 채널 이름에 포함된 글자)
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
   if (!art) return NextResponse.json({ error: '글을 찾을 수 없어요' }, { status: 404 });
   const html = String(art.content || '');
   // 화면이 글 주소를 못 넘긴 경우(발행 결과에 주소가 없을 때)에도 이미 발행된 글 주소를 DB에서 찾아 영상 설명란·댓글에 넣는다
-  const blogUrl = (b.blog_url || Object.values((art.published_urls || {}) as Record<string, string>).find(u => typeof u === 'string' && /^https?:\/\//.test(u)) || '') as string;
+  const blogUrl = (isBlogUrl(b.blog_url) ? b.blog_url : pickBlogUrl(null, (art.published_urls || {}) as Record<string, string>)) as string; // 카페 주소는 쓰지 않는다
   const images = [...new Set([art.representative_image_url, ...[...html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)].map(m => m[1])].filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u)))].slice(0, 12);
 
   const admin = createAdminClient();

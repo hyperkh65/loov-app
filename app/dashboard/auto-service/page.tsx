@@ -1,5 +1,6 @@
 'use client';
 
+import { pickBlogUrl } from '@/lib/blog-url';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DEFAULT_BLOG_PROMPT_TEMPLATE } from '@/lib/auto-blog-prompt';
 
@@ -979,7 +980,7 @@ export default function AutoServicePage() {
       // YouTube Shorts 자동 생성 (SSE 스트리밍)
       if (autoShorts) {
         // 발행된 블로그 URL 전달 → auto-generate에서 블로그 이미지 추출에 사용
-        const blogUrl = Object.values(data.results || {}).find((r: { success: boolean; url?: string }) => r.success && r.url)?.url;
+        const blogUrl = pickBlogUrl(data.results, data.published_urls) || undefined; // 블로그 글 주소만(카페 주소 제외)
         startShortsStream({
           article_id: publishArticle.id,
           title: publishArticle.title,
