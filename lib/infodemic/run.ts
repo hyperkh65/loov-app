@@ -51,7 +51,7 @@ async function readSource(url: string, n: number, external: boolean, diag?: stri
 }
 
 /** 뉴스 검색(Bing 뉴스 RSS → 안 되면 네이버)에서 서로 다른 언론사 기사를 모아 읽는다(주제어가 실제로 들어 있는 것만) */
-async function newsLinks(query: string, diag: string[]): Promise<string[]> {
+async function newsLinks(queries: string[], diag: string[]): Promise<string[]> {
   const links: string[] = [], hosts = new Set<string>();
   const add = (raw: string) => {
     let u = raw.replace(/&amp;/g, '&').trim();
@@ -60,14 +60,17 @@ async function newsLinks(query: string, diag: string[]): Promise<string[]> {
     if (!/^https?:/.test(u) || /naver|pstatic|daum|kakao|google|youtube|infodemic|tistory|instagram|facebook|bing\.com|msn\.com/.test(h) || hosts.has(h)) return;
     hosts.add(h); links.push(u);
   };
-  try {
-    const xml = await fetchText(`https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss&setmkt=ko-KR&cc=kr`);
-    for (const b of xml.match(/<item>[\s\S]*?<\/item>/g) || []) add(b.match(/<link>([^<]*)<\/link>/)?.[1] || '');
-    diag.push(`Bing 뉴스 ${links.length}곳`);
-  } catch (e) { diag.push(`Bing 실패 ${String(e).slice(0, 30)}`); }
+  for (const query of queries) {
+    if (links.length >= 4) break;
+    try {
+      const xml = await fetchText(`https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss&setmkt=ko-KR&cc=kr`);
+      for (const b of xml.match(/<item>[\s\S]*?<\/item>/g) || []) add(b.match(/<link>([^<]*)<\/link>/)?.[1] || '');
+      diag.push(`Bing "${query.slice(0, 14)}" → ${links.length}곳`);
+    } catch (e) { diag.push(`Bing 실패 ${String(e).slice(0, 30)}`); }
+  }
   if (links.length < 3) {
     try {
-      const html = await fetchText(`https://search.naver.com/search.naver?where=news&sort=1&query=${encodeURIComponent(query)}`);
+      const html = await fetchText(`https://search.naver.com/search.naver?where=news&sort=1&query=${encodeURIComponent(queries[queries.length - 1])}`);
       for (const m of html.matchAll(/href="(https?:\/\/[^"#]+)"/g)) { if (/(article|news|view|read|page)/i.test(m[1])) add(m[1]); }
       diag.push(`네이버 보강 후 ${links.length}곳`);
     } catch (e) { diag.push(`네이버 실패 ${String(e).slice(0, 30)}`); }
@@ -76,7 +79,7 @@ async function newsLinks(query: string, diag: string[]): Promise<string[]> {
 }
 
 async function externalSources(query: string, entity: string, startN: number, diag: string[]): Promise<Source[]> {
-  const links = await newsLinks(query, diag);
+  const links = await newsLinks([...new Set([query, entity, `${entity} 정보`])], diag);
   const key = (entity.split(/\s+/)[0] || entity).trim();
   const out: Source[] = [];
   for (const u of links) {
@@ -146,7 +149,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
     let draft = await writeDraft({ title: c.title, entity: pk.entity, query: pk.query }, srcs);
     let bad = await findUnsupported(draft, srcs);
     if (bad.length) { draft = await writeDraft({ title: c.title, entity: pk.entity, query: pk.query }, srcs, bad); bad = await findUnsupported(draft, srcs); }
-    if (bad.length) { notes.push(`${pk.entity}: 근거 없는 주장 ${bad.length}건(${bad[0].slice(0, 30)})`); continue; }
+    if (bad.length) { notes.push(`${pk.entity}: 근거 없는 주장 ${bad.length}건 [${bad.slice(0, 4).map(x => x.slice(0, 50)).join(' / ')}]`); continue; }
     const why = lint(draft, srcs);
     if (why) { notes.push(`${pk.entity}: ${why}`); continue; }
 
