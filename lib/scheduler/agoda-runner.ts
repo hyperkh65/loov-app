@@ -7,11 +7,31 @@ import { postToPlatformWithMedia, postCommentOnOwnPost } from '@/lib/sns/platfor
 import { publishToWordPress, getWpCredentials, wpDue, markWpPublished } from './blog-runner';
 import { buildTravelCards, htmlToText } from '@/lib/sns/travel-cards';
 import { composeModelScene, AI_IMAGE_NOTE } from '@/lib/travel-model';
+import { getSetting } from '@/lib/get-setting';
 import type { Platform } from '@/lib/sns/platforms';
 import type { Schedule, AgodaAutoConfig } from './index';
 
-const AGODA_SITE_ID = (process.env.AGODA_SITE_ID || '1959217').trim();
-const AGODA_API_KEY = (process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30').trim();
+// 아고다 제휴 CID는 사이트별로 따로 발급됨(aboda.kr·miracool.co.kr 등) — 예전엔
+// CID 하나를 코드에 박아두고 전부 그걸로 호출했는데, 그 CID가 승인 만료되면서
+// 전부 401로 막힘(2026-11-06 확인). 설정 AGODA_KEYS_BY_SITE(JSON, {"도메인
+// 일부":"CID:APIKEY"})에서 사이트 도메인으로 찾고, 없으면 레거시 단일 키로 폴백.
+async function getAgodaAuth(siteUrl?: string): Promise<string> {
+  try {
+    const raw = await getSetting('AGODA_KEYS_BY_SITE');
+    if (raw) {
+      const map = JSON.parse(raw) as Record<string, string>;
+      if (siteUrl) {
+        const hit = Object.entries(map).find(([domain]) => siteUrl.includes(domain));
+        if (hit) return hit[1];
+      }
+      const first = Object.values(map)[0];
+      if (first) return first;
+    }
+  } catch { /* 설정 없음/파싱 실패 — 레거시로 폴백 */ }
+  const legacyId = (await getSetting('AGODA_SITE_ID')) || process.env.AGODA_SITE_ID || '1959217';
+  const legacyKey = (await getSetting('AGODA_API_KEY')) || process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30';
+  return `${legacyId.trim()}:${legacyKey.trim()}`;
+}
 export const PERSONA = `[화자] 20~30대 여성 여행 크리에이터. 호텔을 직접 비교해 "가성비 좋은 곳"만 골라주는 친구 같은 톤. 가격·평점은 위 데이터 숫자만 그대로 쓰고, 묵어본 척·후기·경험은 지어내지 마라.
 [Threads 추가 규칙] 첫 줄에 "1박 N원" 같은 가격 숫자 또는 "이 돈에 이 평점?" 식 가성비 반전을 넣고, 이 호텔이 어떤 사람(혼행/친구/커플/가족)에게 맞는지 한 줄 넣어라.`;
 export const DISCLOSURE = '이 포스팅은 아고다 제휴 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
@@ -49,15 +69,16 @@ interface AgodaHotel {
   landingURL: string;
 }
 
-async function fetchAgodaHotels(cityId: number): Promise<AgodaHotel[]> {
+async function fetchAgodaHotels(cityId: number, siteUrl?: string): Promise<AgodaHotel[]> {
   const ci = new Date(); ci.setDate(ci.getDate() + 7);
   const co = new Date(ci); co.setDate(co.getDate() + 1);
   const checkIn = ci.toISOString().split('T')[0];
   const checkOut = co.toISOString().split('T')[0];
+  const auth = await getAgodaAuth(siteUrl);
 
   const res = await fetch('http://affiliateapi7643.agoda.com/affiliateservice/lt_v1', {
     method: 'POST',
-    headers: { Authorization: `${AGODA_SITE_ID}:${AGODA_API_KEY}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: auth, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       criteria: {
         additional: { currency: 'KRW', language: 'ko-kr', maxResult: 5, minimumReviewScore: 7, minimumStarRating: 3, sortBy: 'AllGuestsReviewScore', occupancy: { numberOfAdult: 2, numberOfChildren: 0 } },
@@ -151,7 +172,8 @@ export async function runAgodaAuto(schedule: Schedule): Promise<{ city: string; 
     ? config.cities[Math.floor(Math.random() * config.cities.length)]
     : config.cities[idx];
 
-  const hotels = await fetchAgodaHotels(city.id);
+  const siteUrl = config.wp_site_id ? (await getWpCredentials(config.wp_site_id)).url : undefined;
+  const hotels = await fetchAgodaHotels(city.id, siteUrl);
   if (!hotels.length) throw new Error(`${city.name} 호텔 데이터를 가져오지 못했습니다`);
 
   const travelStyle = config.travel_style || '커플';
