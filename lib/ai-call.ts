@@ -33,7 +33,7 @@ interface FallbackEntry {
 
 const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
   { provider: 'groq',       model: 'qwen/qwen3.8-27b' },
-  { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free' },
+  { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
   { provider: 'openrouter', model: 'google/gemma-4-31b-it:free' },
   { provider: 'gemini',     model: 'gemini-flash-latest' },
   { provider: 'claude',     model: 'claude-haiku-4-5-20251001' },
@@ -51,8 +51,13 @@ async function resolveApiKey(provider: string, override?: string): Promise<strin
       const keys = await getGeminiKeys();
       return keys[0] || '';
     }
-    case 'openrouter':
-      return getSetting('OPENROUTER_API_KEY');
+    case 'openrouter': {
+      // 설정 페이지의 "OpenRouter API Keys" 다중 등록(OPENROUTER_API_KEYS)을
+      // 지금까지 무시하고 예전 단일 키(OPENROUTER_API_KEY)만 읽고 있었음 —
+      // Gemini/Groq/Ollama처럼 배열을 먼저 보고, 없으면 단일 키로 폴백.
+      const keys = await getOpenrouterKeys();
+      return keys[0] || '';
+    }
     case 'groq': {
       const keys = await getGroqKeys();
       return keys[0] || '';
@@ -95,6 +100,22 @@ export async function getGeminiKeys(): Promise<string[]> {
     }
   } catch { /* ignore */ }
   const legacy = await getSetting('GEMINI_API_KEY');
+  if (legacy && !keys.includes(legacy)) keys.push(legacy);
+  return keys;
+}
+
+// OpenRouter 멀티키 풀(OPENROUTER_API_KEYS, JSON 배열) — Gemini와 동일한 패턴.
+// 배열이 비어있으면 기존 단일 OPENROUTER_API_KEY로 폴백.
+async function getOpenrouterKeys(): Promise<string[]> {
+  const keys: string[] = [];
+  try {
+    const raw = await getSetting('OPENROUTER_API_KEYS');
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr)) keys.push(...arr.filter(Boolean));
+    }
+  } catch { /* ignore */ }
+  const legacy = await getSetting('OPENROUTER_API_KEY');
   if (legacy && !keys.includes(legacy)) keys.push(legacy);
   return keys;
 }
@@ -155,7 +176,7 @@ function defaultModel(provider: string): string {
     case 'gpt4o':       return 'gpt-4o';
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
-    case 'openrouter':  return 'nvidia/nemotron-3-super-120b-a12b:free';
+    case 'openrouter':  return 'nvidia/nemotron-3-ultra-550b-a55b:free'; // nemotron-3-super 계열은 OpenRouter에서 퇴역됨(2026-11-06 확인)
     case 'groq':        return 'qwen/qwen3.8-27b';
     case 'ollama':      return 'qwen3.5';
     default:            return 'qwen3.5';
