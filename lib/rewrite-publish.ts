@@ -93,15 +93,16 @@ export async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null
 }
 
 
-// 2days.kr은 "자동(리라이트 파이프라인) 발행"만 하루 3건 보장하고 초과분은 아래
-// OVERFLOW_CHAIN(미라쿨→아보다)으로 분산한다 — 전부 차면 그제서야 티스토리로.
-// (사용자 확정 2026-10-06 → 2026-11-07 티스토리 하루 15건 한도에 몰려 71% 실패
-// 확인되어 분산으로 변경). 2days.kr 외 사이트도 이 리라이트 발행만 따로 3건으로
-// 캡 걸어서(미라쿨은 infodemic_auto와 별개 예산, 아보다는 트렌드글과 별개 예산)
-// 받는 양이 과거처럼 과다해지지 않게 함.
+// 순서(사용자 확정 2026-11-07): 2days.kr(하루 3건) → 티스토리(플랫폼 자체
+// 하루 15건 한도) → 티스토리도 막히면 미라쿨→아보다→2days.kr 순으로 분산.
+// one.yoosol/yoonfree/infolife 3곳에서 하루 87건을 가져오는데 전부 티스토리
+// 하나로 몰려 71%(62/87) 실패하던 걸 이렇게 바꿈(2026-11-07 확인).
+// 2days.kr 외 사이트도 이 리라이트 발행만 따로 3건으로 캡 걸어서(미라쿨은
+// infodemic_auto와 별개 예산, 아보다는 트렌드글과 별개 예산) 받는 양이
+// 과거처럼 과다해지지 않게 함.
 const SITE_DAILY_CAP = 3;
-// 2days.kr이 꽉 찼을 때 순서대로 시도할 사이트(각자 이 리라이트 발행 몫만 3건 캡)
-const OVERFLOW_CHAIN = ['https://miracool.co.kr', 'https://aboda.kr'];
+// 티스토리도 막혔을 때 순서대로 시도할 사이트(각자 이 리라이트 발행 몫만 3건 캡)
+const OVERFLOW_CHAIN = ['https://miracool.co.kr', 'https://aboda.kr', 'https://2days.kr'];
 
 async function siteDailyCapReached(admin: ReturnType<typeof createAdminClient>, siteUrl: string): Promise<boolean> {
   const kstMidnightUtc = new Date(new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) + 'T00:00:00+09:00').toISOString();
@@ -202,13 +203,18 @@ export async function publishRewrittenArticle(
       .eq('id', wpSiteId)
       .single();
     if (site) {
-      // 2days.kr은 하루 3건 캡이 있음 — 꽉 찼으면 미라쿨→아보다 순으로 빈 곳을
-      // 찾고, 거기도 다 차야 마지막으로 티스토리(이것도 하루 15건 한도).
+      // 2days.kr은 하루 3건 캡 — 꽉 차면 티스토리(하루 15건 한도)로, 티스토리도
+      // 막히면 미라쿨→아보다→2days.kr 순으로 빈 자리를 찾는다.
       const needsOverflow = /^https:\/\/2days\.kr\/?$/.test(site.site_url) && await siteDailyCapReached(admin, site.site_url);
-      const target = needsOverflow ? await findOverflowSite(admin) : site;
-      if (needsOverflow && !target) {
-        wordpressUrl = await publishRewrittenToTistory(admin, userId, article);
-      } else if (target) {
+      let target: { site_url: string; wp_username: string; app_password: string } | null = needsOverflow ? null : site;
+      if (needsOverflow) {
+        try {
+          wordpressUrl = await publishRewrittenToTistory(admin, userId, article);
+        } catch {
+          target = await findOverflowSite(admin); // 티스토리도 막힘 — 분산 사이트로
+        }
+      }
+      if (target) {
         wpCreds = { url: target.site_url, username: target.wp_username, appPassword: target.app_password };
         // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
         // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행 자체는 진행
