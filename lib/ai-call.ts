@@ -511,7 +511,10 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
     } catch { /* use default */ }
   }
 
-  if (!primaryModelOpt) {
+  // 전역 모델 설정(AI_GLOBAL_MODEL)은 공급자도 지정 안 됐을 때만 적용한다.
+  // 공급자를 명시한 호출(provider만 주고 model은 안 준 경우)까지 전역값을 쓰면
+  // 예: 전역이 ollama/llama3.2:3b 일 때 claude·gemini 요청에도 그 모델명이 섞여 들어가 전부 실패한다.
+  if (!primaryProviderOpt && !primaryModelOpt) {
     try {
       const globalModel = await getSetting('AI_GLOBAL_MODEL');
       if (globalModel) primaryModelFallback = globalModel;

@@ -76,9 +76,21 @@ export function formatHookLines(text: string): string {
   return [parts[0], '', ...parts.slice(1)].join('\n');
 }
 
-// 모델이 금지 이모지·해시태그를 어겼을 때의 최후 방어선 + 줄바꿈 보정
+// 모델이 금지 이모지·해시태그·URL을 어겼을 때의 최후 방어선 + 줄바꿈 보정
+// (프롬프트에 "URL 없이"라고만 지시했을 뿐 강제하지 않아서, 모델이 가끔
+// 링크를 본문에 끼워 넣는 경우가 실사용 중 확인됨 — 여기서 확실히 걷어낸다.
+// 링크는 별도로 댓글에만 달려야 한다: lib/scheduler/blog-runner.ts crossPostBlogToSns)
 export function scrubThreads(text: string): string {
-  return formatHookLines(text.replace(/[💥👀🔥😱]/gu, '').replace(/\s#[^\s#]+/g, '').replace(/[ \t]+\n/g, '\n').trim());
+  return formatHookLines(
+    text
+      .replace(/[💥👀🔥😱]/gu, '')
+      .replace(/\s#[^\s#]+/g, '')
+      .replace(/https?:\/\/\S+/gi, '')
+      .replace(/\b[a-z0-9-]+\.(co\.kr|com|kr|net|org)\S*/gi, '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
 }
 
 
