@@ -93,17 +93,36 @@ export async function toInstagramSafeImage(url: string, wpCreds?: WpCreds | null
 }
 
 
-// 2days.kr은 "자동(리라이트 파이프라인) 발행"만 하루 3건 보장하고 초과분은 티스토리로 보낸다
-// (사용자 확정 2026-10-06 — 수동/타 소스 발행 건수와 무관하게 자동 3건 확보).
-const TWODAYS_DAILY_CAP = 3;
+// 2days.kr은 "자동(리라이트 파이프라인) 발행"만 하루 3건 보장하고 초과분은 아래
+// OVERFLOW_CHAIN(미라쿨→아보다)으로 분산한다 — 전부 차면 그제서야 티스토리로.
+// (사용자 확정 2026-10-06 → 2026-11-07 티스토리 하루 15건 한도에 몰려 71% 실패
+// 확인되어 분산으로 변경). 2days.kr 외 사이트도 이 리라이트 발행만 따로 3건으로
+// 캡 걸어서(미라쿨은 infodemic_auto와 별개 예산, 아보다는 트렌드글과 별개 예산)
+// 받는 양이 과거처럼 과다해지지 않게 함.
+const SITE_DAILY_CAP = 3;
+// 2days.kr이 꽉 찼을 때 순서대로 시도할 사이트(각자 이 리라이트 발행 몫만 3건 캡)
+const OVERFLOW_CHAIN = ['https://miracool.co.kr', 'https://aboda.kr'];
 
-async function twodaysCapReached(admin: ReturnType<typeof createAdminClient>, siteUrl: string): Promise<boolean> {
-  if (!/^https:\/\/2days\.kr\/?$/.test(siteUrl)) return false;
+async function siteDailyCapReached(admin: ReturnType<typeof createAdminClient>, siteUrl: string): Promise<boolean> {
   const kstMidnightUtc = new Date(new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) + 'T00:00:00+09:00').toISOString();
   const { count, error } = await admin.from('bossai_rewrite_articles').select('id', { count: 'exact', head: true })
-    .eq('status', 'published').gte('published_at', kstMidnightUtc).like('published_urls->>wordpress', 'https://2days.kr/%');
-  if (error) return true; // 세어 보지 못하면 상한을 지키는 쪽(티스토리)으로
-  return (count ?? 0) >= TWODAYS_DAILY_CAP;
+    .eq('status', 'published').gte('published_at', kstMidnightUtc).like('published_urls->>wordpress', `${siteUrl}/%`);
+  if (error) return true; // 세어 보지 못하면 상한을 지키는 쪽으로
+  return (count ?? 0) >= SITE_DAILY_CAP;
+}
+
+// 2days.kr이 캡에 걸렸을 때 미라쿨→아보다 순으로 자리 있는 곳을 찾는다.
+// 전부 캡에 걸렸으면 null(호출 측이 티스토리로 폴백).
+async function findOverflowSite(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<{ site_url: string; wp_username: string; app_password: string } | null> {
+  for (const siteUrl of OVERFLOW_CHAIN) {
+    if (await siteDailyCapReached(admin, siteUrl)) continue;
+    const { data: site } = await admin.from('wordpress_sites')
+      .select('site_url, wp_username, app_password').eq('site_url', siteUrl).single();
+    if (site) return site;
+  }
+  return null;
 }
 
 async function publishRewrittenToTistory(
@@ -183,20 +202,24 @@ export async function publishRewrittenArticle(
       .eq('id', wpSiteId)
       .single();
     if (site) {
-      wpCreds = { url: site.site_url, username: site.wp_username, appPassword: site.app_password };
-      if (await twodaysCapReached(admin, site.site_url)) {
+      // 2days.kr은 하루 3건 캡이 있음 — 꽉 찼으면 미라쿨→아보다 순으로 빈 곳을
+      // 찾고, 거기도 다 차야 마지막으로 티스토리(이것도 하루 15건 한도).
+      const needsOverflow = /^https:\/\/2days\.kr\/?$/.test(site.site_url) && await siteDailyCapReached(admin, site.site_url);
+      const target = needsOverflow ? await findOverflowSite(admin) : site;
+      if (needsOverflow && !target) {
         wordpressUrl = await publishRewrittenToTistory(admin, userId, article);
-      } else {
-      // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
-      // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행 자체는 진행
-      const crossLink = await findCrossSiteLink(site.site_url, article.title).catch(() => null);
-      const contentWithLink = appendCrossLink(article.content, crossLink);
-      const wpResult = await publishToWordPress(
-        site.site_url, site.wp_username, site.app_password,
-        article.title, contentWithLink, article.representative_image_url, 'publish',
-      );
-      wordpressUrl = wpResult.link;
-      if (wpResult.featuredImageUrl) snsImageUrl = wpResult.featuredImageUrl;
+      } else if (target) {
+        wpCreds = { url: target.site_url, username: target.wp_username, appPassword: target.app_password };
+        // 외부 백링크(핀터레스트/미디엄)가 정책상 막혀서, LOOV 소유 사이트끼리라도
+        // 상호링크를 걸어 체류시간/내부 SEO 신호를 확보 — 실패해도 발행 자체는 진행
+        const crossLink = await findCrossSiteLink(target.site_url, article.title).catch(() => null);
+        const contentWithLink = appendCrossLink(article.content, crossLink);
+        const wpResult = await publishToWordPress(
+          target.site_url, target.wp_username, target.app_password,
+          article.title, contentWithLink, article.representative_image_url, 'publish',
+        );
+        wordpressUrl = wpResult.link;
+        if (wpResult.featuredImageUrl) snsImageUrl = wpResult.featuredImageUrl;
       }
     }
   }

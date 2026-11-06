@@ -101,7 +101,7 @@ async function publishArticle(supabase: ReturnType<typeof createAdminClient>, ow
     // 재시도 루프에 빠짐 — 여기도 'failed'로 종결.
     await supabase
       .from('bossai_rewrite_articles')
-      .update({ status: 'failed', published_urls: { publish_error: String(e).slice(0, 300) }, updated_at: new Date().toISOString() })
+      .update({ status: 'failed', error_message: String(e).slice(0, 300), published_urls: { publish_error: String(e).slice(0, 300) }, updated_at: new Date().toISOString() })
       .eq('id', article.id);
     return { ok: false, error: String(e), data: { id: article.id, title: article.rewritten_title } };
   }
