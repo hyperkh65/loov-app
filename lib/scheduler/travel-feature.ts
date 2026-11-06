@@ -90,7 +90,7 @@ HTML 본문`;
 
   // 아고다 설정 도시와 맞으면 숙소 위젯 + 제휴 고지
   const city = (cfg.cities || []).find(c => topic!.place.includes(c.name));
-  if (city && kind !== 'food') content += `<h2>${topic.place} 숙소 최저가 보기</h2>${buildAffiliateWidgetHtml(city.id, String(Date.now()).slice(-9))}<p style="font-size:12px;color:#888">${DISCLOSURE}</p>`;
+  if (city && kind !== 'food') content += `<h2>${topic.place} 숙소 최저가 보기</h2>${await buildAffiliateWidgetHtml(city.id, String(Date.now()).slice(-9), BLOG)}<p style="font-size:12px;color:#888">${DISCLOSURE}</p>`;
 
   let url = '';
   try {

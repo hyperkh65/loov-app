@@ -76,9 +76,10 @@ async function fetchAgodaHotels(cityId: number, siteUrl?: string): Promise<Agoda
   const checkOut = co.toISOString().split('T')[0];
   const auth = await getAgodaAuth(siteUrl);
 
-  const res = await fetch('http://affiliateapi7643.agoda.com/affiliateservice/lt_v1', {
+  // http(평문)로 호출하면 CID가 멀쩡해도 "Site ID invalid"로 거절됨(2026-11-06 확인) — https 필수.
+  const res = await fetch('https://affiliateapi7643.agoda.com/affiliateservice/lt_v1', {
     method: 'POST',
-    headers: { Authorization: auth, 'Content-Type': 'application/json' },
+    headers: { Authorization: auth, 'Content-Type': 'application/json', 'Accept-Encoding': 'gzip,deflate' },
     body: JSON.stringify({
       criteria: {
         additional: { currency: 'KRW', language: 'ko-kr', maxResult: 5, minimumReviewScore: 7, minimumStarRating: 3, sortBy: 'AllGuestsReviewScore', occupancy: { numberOfAdult: 2, numberOfChildren: 0 } },
@@ -148,18 +149,17 @@ function buildHotelCard(h: AgodaHotel, formatPrice: (p: number) => string): stri
 </div>`;
 }
 
-/** 아고다 Sherpa 위젯(사용자가 직접 아고다 파트너 대시보드에서 발급받아 제공한 실제 코드) —
- * 도시별 딜을 보여주는 다이나믹 배너. City 파라미터만 매 포스트마다 실제 도시 id로 교체.
- * 우리 API 크레덴셜(AGODA_SITE_ID=1959217/AGODA_API_KEY)과 Cid·ApiKey가 일치하는 것만 사용 —
- * 사용자가 같이 준 다른 두 개(Cid=1945810)는 이 계정과 안 맞아서(다른 사이트ID로 보임)
- * 확인 전까지는 넣지 않음. */
-export function buildAffiliateWidgetHtml(cityId: number, divSeed: string): string {
+/** 아고다 Sherpa 위젯 — 도시별 딜을 보여주는 다이나믹 배너. City 파라미터만 매 포스트마다
+ * 실제 도시 id로 교체. CID·API 키는 발행 대상 사이트에 맞는 것을 getAgodaAuth로 찾아서 씀
+ * (예전엔 CID 하나를 코드에 박아뒀었는데, 그 CID 승인이 만료돼 바꿈 — 2026-11-06). */
+export async function buildAffiliateWidgetHtml(cityId: number, divSeed: string, siteUrl?: string): Promise<string> {
   const divId = `adgshp${divSeed}`;
+  const [cid, apiKey] = (await getAgodaAuth(siteUrl)).split(':');
   return `
 <div id="${divId}"></div>
 <script type="text/javascript" src="//cdn0.agoda.net/images/sherpa/js/init-dynamic_v8.min.js"></script>
 <script type="text/javascript">
-var stg = new Object(); stg.crt="5384551278740";stg.version="1.05"; stg.id=stg.name="${divId}"; stg.Width="300px"; stg.Height="300px";stg.RefKey="egGqIV7JzENp0+lIKc8n7A==";stg.AutoScrollSpeed=3000;stg.AutoScrollToggle=true;stg.SearchboxShow=false;stg.DiscountedOnly=false;stg.Layout="squaredynamic"; stg.Language="ko-kr";stg.ApiKey="${AGODA_API_KEY}";stg.Cid="${AGODA_SITE_ID}";  stg.City="${cityId}";stg.Currency="KRW";stg.OverideConf=false; new AgdDynamic('${divId}').initialize(stg);
+var stg = new Object(); stg.crt="5384551278740";stg.version="1.05"; stg.id=stg.name="${divId}"; stg.Width="300px"; stg.Height="300px";stg.RefKey="egGqIV7JzENp0+lIKc8n7A==";stg.AutoScrollSpeed=3000;stg.AutoScrollToggle=true;stg.SearchboxShow=false;stg.DiscountedOnly=false;stg.Layout="squaredynamic"; stg.Language="ko-kr";stg.ApiKey="${apiKey}";stg.Cid="${cid}";  stg.City="${cityId}";stg.Currency="KRW";stg.OverideConf=false; new AgdDynamic('${divId}').initialize(stg);
 </script>`;
 }
 
@@ -251,7 +251,7 @@ HTML 본문 전체`;
   });
 
   // 아고다 제휴 배너 위젯(사용자 파트너 대시보드에서 발급된 실제 코드) — 글 도입부 뒤에 1개.
-  const widget = buildAffiliateWidgetHtml(city.id, String(Date.now()).slice(-9));
+  const widget = await buildAffiliateWidgetHtml(city.id, String(Date.now()).slice(-9), siteUrl);
   const firstH2End = content.indexOf('</h2>');
   content = firstH2End !== -1
     ? content.slice(0, firstH2End + 5) + widget + content.slice(firstH2End + 5)
