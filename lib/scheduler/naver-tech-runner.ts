@@ -55,6 +55,13 @@ const TECH_FEEDS = [
   { name: '9to5Google', url: 'https://9to5google.com/feed/' },
   { name: 'Android Authority', url: 'https://www.androidauthority.com/feed/' },
   { name: 'GSMArena', url: 'https://www.gsmarena.com/rss-news-reviews.php3' },
+  // 유출·루머·가십 위주라 더 자극적이고 클릭 유도가 강함(2026-11-07 추가, 전부 RSS 응답 확인됨)
+  { name: 'BGR', url: 'https://www.bgr.com/feed/' },
+  { name: 'WccfTech', url: 'https://wccftech.com/feed/' },
+  { name: 'Gizmodo', url: 'https://gizmodo.com/feed' },
+  { name: 'SlashGear', url: 'https://www.slashgear.com/feed/' },
+  { name: 'Android Police', url: 'https://www.androidpolice.com/feed/' },
+  { name: 'Digital Trends', url: 'https://www.digitaltrends.com/feed/' },
 ];
 
 /** 이미 발행한 원문(source url)은 빼고, 최근 올라온 기사 하나를 고른다 */
