@@ -187,15 +187,15 @@ export async function POST(req: NextRequest) {
     method: 'POST', headers, signal: AbortSignal.timeout(50_000),
   }).catch(() => {});
 
-  // 6. finance.2days.kr엔 더 이상 글을 올리지 않기로 함(2026-11-08) — 전용 강제
-  // 슬롯을 blog.2days.kr로 대체. 나머지는 전과 동일(공용 슬롯과 무관하게 매
-  // 크론마다 무조건 새 글이 나가야 함).
+  // 6. finance.2days.kr은 전체 소스가 공유하는 발행 슬롯(위 3번, 20분당 1건을
+  // 30개 넘는 소스가 나눠 씀)과 무관하게 매 크론(20분)마다 무조건 새 글이
+  // 나가야 해서 전용 슬롯으로 따로 처리
   let financeCycleResult: unknown = null;
   try {
-    if (!await publishSlotFree('https://blog.2days.kr')) throw Object.assign(new Error('skip'), { skip: true });
+    if (!await publishSlotFree('https://finance.2days.kr')) throw Object.assign(new Error('skip'), { skip: true });
     const res = await fetch(`${BASE}/api/rewrite/site-cycle`, {
       method: 'POST', headers,
-      body: JSON.stringify({ site_url: 'https://blog.2days.kr' }),
+      body: JSON.stringify({ site_url: 'https://finance.2days.kr' }),
       signal: AbortSignal.timeout(280_000),
     });
     financeCycleResult = await res.json();
@@ -205,11 +205,11 @@ export async function POST(req: NextRequest) {
 
   // 7. money.2days.kr — 뉴스 리라이팅과 별개로, 진짜 돈 되는(diamond/gold)
   // 키워드를 정면으로 노리는 오리지널 글 전용 사이클. 라우트 내부에서 4시간
-  // 최소 간격을 자체 체크하니 매 크론 불러도 됨. finance.2days.kr은 제외(2026-11-08).
+  // 최소 간격을 자체 체크하니 매 크론 불러도 됨.
   const moneyCycleResult: Record<string, unknown> = {};
   // miracool.co.kr 툴 가이드는 3시간에 1번만(크론 20분 간격이라 정각대 첫 회차에만)
   const now = new Date();
-  const sites = ['https://money.2days.kr'];
+  const sites = ['https://money.2days.kr', 'https://finance.2days.kr'];
   if (now.getHours() % 3 === 0 && now.getMinutes() < 20) sites.push('https://miracool.co.kr');
   for (const site_url of sites) {
     try {
