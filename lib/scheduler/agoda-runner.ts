@@ -15,22 +15,29 @@ import type { Schedule, AgodaAutoConfig } from './index';
 // CID 하나를 코드에 박아두고 전부 그걸로 호출했는데, 그 CID가 승인 만료되면서
 // 전부 401로 막힘(2026-11-06 확인). 설정 AGODA_KEYS_BY_SITE(JSON, {"도메인
 // 일부":"CID:APIKEY"})에서 사이트 도메인으로 찾고, 없으면 레거시 단일 키로 폴백.
-async function getAgodaAuth(siteUrl?: string): Promise<string> {
+// 사이트에 딱 맞는 키가 없거나 만료(401)돼도 멈추지 않도록, 후보를 순서대로 돌려 쓰고
+// 성공한 키는 기억해 둔다(blog.2days.kr처럼 전용 키가 없는 사이트도 발행되게 — 2026-11-08,
+// 레거시 CID 1959217은 이제 "Site ID invalid"로 완전히 죽음).
+const workingAuth = new Map<string, string>();
+async function getAgodaAuthCandidates(siteUrl?: string): Promise<string[]> {
+  const out: string[] = [];
+  const add = (a?: string) => { if (a && !out.includes(a)) out.push(a); };
+  add(workingAuth.get(siteUrl || ''));
   try {
     const raw = await getSetting('AGODA_KEYS_BY_SITE');
     if (raw) {
       const map = JSON.parse(raw) as Record<string, string>;
-      if (siteUrl) {
-        const hit = Object.entries(map).find(([domain]) => siteUrl.includes(domain));
-        if (hit) return hit[1];
-      }
-      const first = Object.values(map)[0];
-      if (first) return first;
+      if (siteUrl) add(Object.entries(map).find(([domain]) => siteUrl.includes(domain))?.[1]);
+      Object.values(map).forEach(add);
     }
   } catch { /* 설정 없음/파싱 실패 — 레거시로 폴백 */ }
   const legacyId = (await getSetting('AGODA_SITE_ID')) || process.env.AGODA_SITE_ID || '1959217';
   const legacyKey = (await getSetting('AGODA_API_KEY')) || process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30';
-  return `${legacyId.trim()}:${legacyKey.trim()}`;
+  add(`${legacyId.trim()}:${legacyKey.trim()}`);
+  return out;
+}
+async function getAgodaAuth(siteUrl?: string): Promise<string> {
+  return (await getAgodaAuthCandidates(siteUrl))[0];
 }
 export const PERSONA = `[화자] 20~30대 여성 여행 크리에이터. 호텔을 직접 비교해 "가성비 좋은 곳"만 골라주는 친구 같은 톤. 가격·평점은 위 데이터 숫자만 그대로 쓰고, 묵어본 척·후기·경험은 지어내지 마라.
 [Threads 추가 규칙] 첫 줄에 "1박 N원" 같은 가격 숫자 또는 "이 돈에 이 평점?" 식 가성비 반전을 넣고, 이 호텔이 어떤 사람(혼행/친구/커플/가족)에게 맞는지 한 줄 넣어라.`;
@@ -74,23 +81,31 @@ async function fetchAgodaHotels(cityId: number, siteUrl?: string): Promise<Agoda
   const co = new Date(ci); co.setDate(co.getDate() + 1);
   const checkIn = ci.toISOString().split('T')[0];
   const checkOut = co.toISOString().split('T')[0];
-  const auth = await getAgodaAuth(siteUrl);
+  const body = JSON.stringify({
+    criteria: {
+      additional: { currency: 'KRW', language: 'ko-kr', maxResult: 5, minimumReviewScore: 7, minimumStarRating: 3, sortBy: 'AllGuestsReviewScore', occupancy: { numberOfAdult: 2, numberOfChildren: 0 } },
+      checkInDate: checkIn, checkOutDate: checkOut, cityId,
+    },
+  });
 
   // http(평문)로 호출하면 CID가 멀쩡해도 "Site ID invalid"로 거절됨(2026-11-06 확인) — https 필수.
-  const res = await fetch('https://affiliateapi7643.agoda.com/affiliateservice/lt_v1', {
-    method: 'POST',
-    headers: { Authorization: auth, 'Content-Type': 'application/json', 'Accept-Encoding': 'gzip,deflate' },
-    body: JSON.stringify({
-      criteria: {
-        additional: { currency: 'KRW', language: 'ko-kr', maxResult: 5, minimumReviewScore: 7, minimumStarRating: 3, sortBy: 'AllGuestsReviewScore', occupancy: { numberOfAdult: 2, numberOfChildren: 0 } },
-        checkInDate: checkIn, checkOutDate: checkOut, cityId,
-      },
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) throw new Error(`Agoda API 오류 ${res.status}`);
-  const data = await res.json();
-  return (data.results || []) as AgodaHotel[];
+  // 401이면 다음 후보 키로 재시도(전용 키 없음/만료 대비).
+  let lastStatus = 0;
+  for (const auth of await getAgodaAuthCandidates(siteUrl)) {
+    const res = await fetch('https://affiliateapi7643.agoda.com/affiliateservice/lt_v1', {
+      method: 'POST',
+      headers: { Authorization: auth, 'Content-Type': 'application/json', 'Accept-Encoding': 'gzip,deflate' },
+      body,
+      signal: AbortSignal.timeout(15000),
+    });
+    lastStatus = res.status;
+    if (res.status === 401) continue;
+    if (!res.ok) throw new Error(`Agoda API 오류 ${res.status}`);
+    workingAuth.set(siteUrl || '', auth);
+    const data = await res.json();
+    return (data.results || []) as AgodaHotel[];
+  }
+  throw new Error(`Agoda API 오류 ${lastStatus} (등록된 모든 CID가 거절됨 — 아고다 파트너 대시보드에서 유효한 CID/API키 확인 필요)`);
 }
 
 async function getBloggerTokenAdmin(userId: string): Promise<string | null> {
