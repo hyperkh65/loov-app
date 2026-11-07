@@ -18,6 +18,12 @@ import type { Schedule, AgodaAutoConfig } from './index';
 // 사이트에 딱 맞는 키가 없거나 만료(401)돼도 멈추지 않도록, 후보를 순서대로 돌려 쓰고
 // 성공한 키는 기억해 둔다(blog.2days.kr처럼 전용 키가 없는 사이트도 발행되게 — 2026-11-08,
 // 레거시 CID 1959217은 이제 "Site ID invalid"로 완전히 죽음).
+// 아고다 파트너스에서 받은 사이트별 키(2026-11-06 사용자 제공, 2026-11-08 호출 200 확인).
+// 설정(AGODA_KEYS_BY_SITE)에 없을 때를 대비한 내장 기본값 — 전용 키 없는 사이트(blog.2days.kr 등)도 이 키로 발행.
+const BUILTIN_AGODA_KEYS: Record<string, string> = {
+  'aboda.kr': '1979998:c4c439da-6739-42a0-a75c-284b1af5de4d',
+  'miracool.co.kr': '1979999:b829fb2b-c0d2-4123-ac83-ec6f90ac1567',
+};
 const workingAuth = new Map<string, string>();
 async function getAgodaAuthCandidates(siteUrl?: string): Promise<string[]> {
   const out: string[] = [];
@@ -31,6 +37,8 @@ async function getAgodaAuthCandidates(siteUrl?: string): Promise<string[]> {
       Object.values(map).forEach(add);
     }
   } catch { /* 설정 없음/파싱 실패 — 레거시로 폴백 */ }
+  if (siteUrl) add(Object.entries(BUILTIN_AGODA_KEYS).find(([domain]) => siteUrl.includes(domain))?.[1]);
+  Object.values(BUILTIN_AGODA_KEYS).forEach(add);
   const legacyId = (await getSetting('AGODA_SITE_ID')) || process.env.AGODA_SITE_ID || '1959217';
   const legacyKey = (await getSetting('AGODA_API_KEY')) || process.env.AGODA_API_KEY || 'c7ca62e2-55fa-4f42-b691-f949948ecc30';
   add(`${legacyId.trim()}:${legacyKey.trim()}`);
