@@ -8,7 +8,7 @@ import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { uploadToR2 } from '@/lib/r2-storage';
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
-import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem, findForeignWords } from '@/lib/html-gate';
+import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem, findForeignWords, stripForeignSentences } from '@/lib/html-gate';
 
 // ── 이미지 스크래핑 ────────────────────────────────────────────────────────
 export async function scrapeArticleImages(
@@ -620,8 +620,13 @@ export async function generateBlogContent(keyword: string, aiModel = 'qwen3', ra
     parsed = parseAiOutput(raw);
     if (parsed.title && parsed.content && !findHtmlProblem(parsed.title, parsed.content) && parsed.content.replace(/<[^>]*>/g, '').length >= 1000 && findForeignWords(parsed.content).length === 0) break;
   }
-  const { title, meta_description, content: rawContent, keywords } = parsed;
-  if (!title || !rawContent) throw new Error('AI 출력 파싱 실패');
+  const { title, meta_description, content: parsedContent, keywords } = parsed;
+  if (!title || !parsedContent) throw new Error('AI 출력 파싱 실패');
+  // 외국어가 섞인 문장만 지우고 진행(2026-11-08: 단어 하나 때문에 글 전체를 버리던 실패 알림 급증) —
+  // 지운 뒤에도 남아 있거나 본문이 너무 짧아지면 아래 기존 차단 로직이 그대로 막는다.
+  const stripped = stripForeignSentences(parsedContent);
+  if (stripped.removed) console.warn(`[blog-gen] 외국어 문장 ${stripped.removed}개 제거 후 진행: ${keyword}`);
+  const rawContent = stripped.html;
   const foreign = findForeignWords(rawContent);
   if (foreign.length) throw new Error(`발행 차단: 외국어 혼입(${foreign.slice(0, 5).join(', ')})`);
   const bodyLen = rawContent.replace(/<[^>]*>/g, '').length;

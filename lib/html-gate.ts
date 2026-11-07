@@ -107,6 +107,22 @@ export function findForeignWords(html: string): string[] {
   return [...new Set((text.match(/\b[a-z]{4,}\b/g) || []).filter(w => !FOREIGN_ALLOW.has(w)))];
 }
 
+// 외국어가 섞인 "문장만" 지운다(글 전체를 버리지 않음). <p>·<li> 안에서 문장 단위로 걸러내고,
+// 문장이 전부 지워진 문단은 문단째 제거. 제목(h태그)은 건드리지 않음 — 거기 섞였으면 남아서 호출부가 차단.
+export function stripForeignSentences(html: string): { html: string; removed: number } {
+  let removed = 0;
+  const out = html.replace(/(<(p|li)\b[^>]*>)([\s\S]*?)(<\/\2>)/g, (m, open, _t, inner, close) => {
+    if (findForeignWords(inner).length === 0) return m;
+    const kept = inner.split(/(?<=[.!?。])\s+/).filter((sentence: string) => {
+      const bad = findForeignWords(sentence).length > 0;
+      if (bad) removed++;
+      return !bad;
+    });
+    return kept.length ? `${open}${kept.join(' ')}${close}` : '';
+  });
+  return { html: out, removed };
+}
+
 // 제목은 프롬프트로 20~32자 유도, 여기선 비정상적으로 긴 경우(50자 초과)만 안전망으로 정리 — 조금 넘는 건 자르지 않음
 // 잘린 끝이 "및"·"그리고"·쉼표처럼 뜻 없이 매달리지 않게 정리
 export function tightTitle(title: string, max = 50): string {
