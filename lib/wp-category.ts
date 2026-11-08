@@ -24,6 +24,8 @@ export async function pickWpCategory(siteUrl: string, title: string, text = ''):
     const out = await callAISimple(
       `블로그 글에 가장 알맞은 카테고리 ID 하나만 숫자로 답하세요. 목록에 없거나 애매하면 ${ABODA}.\n\n[카테고리]\n${menu}\n\n[제목] ${title}\n[본문 일부] ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 600)}`,
       '당신은 블로그 카테고리 분류기입니다. 숫자 ID만 출력합니다.',
+      // Gemini 키가 무효(API_KEY_INVALID)라 기본값(gemini)으로 부르면 폴백까지 ~65초 걸림 — Groq 직접 호출은 ~1.3초(2026-11-09 실측)
+      'groq',
     );
     const id = Number(out.match(/\d+/)?.[0]);
     return byId.has(id) ? id : ABODA;
