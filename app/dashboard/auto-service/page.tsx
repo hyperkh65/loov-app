@@ -196,11 +196,15 @@ export default function AutoServicePage() {
   const [selWpSiteIds, setSelWpSiteIds] = useState<string[]>([]);
   const [wpCats, setWpCats] = useState<{ id: number; name: string; parent: number }[]>([]);
   const [selWpCat, setSelWpCat] = useState('');
+  const [wpCatsState, setWpCatsState] = useState<'loading' | 'done' | 'error'>('loading');
   const twoDaysSel = wpSites.some(s => selWpSiteIds.includes(s.id) && s.site_url.replace(/\/$/, '') === 'https://2days.kr');
   useEffect(() => {
     if (!twoDaysSel || !publishArticle) return;
     setSelWpCat('');
-    fetch('/api/auto-service/wp-categories?article_id=' + publishArticle.id).then(r => r.json()).then(d => { setWpCats(d.categories || []); if (d.suggested) setSelWpCat(String(d.suggested)); }).catch(() => {});
+    setWpCatsState('loading');
+    // 목록은 즉시, AI 추천은 따로(느려도 목록을 막지 않음)
+    fetch('/api/auto-service/wp-categories?suggest=0').then(r => r.json()).then(d => { setWpCats(d.categories || []); setWpCatsState(d.categories?.length ? 'done' : 'error'); }).catch(() => setWpCatsState('error'));
+    fetch('/api/auto-service/wp-categories?article_id=' + publishArticle.id).then(r => r.json()).then(d => { if (d.suggested) setSelWpCat(String(d.suggested)); }).catch(() => {});
   }, [twoDaysSel, publishArticle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 예약 발행 모달
@@ -2351,7 +2355,7 @@ export default function AutoServicePage() {
                               <div className="ml-7 -mt-1 mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
                                 <div className="text-xs font-semibold text-blue-700 mb-1">📂 카테고리 (주제에 맞게 자동 선택됨 · 변경 가능)</div>
                                 <select value={selWpCat} onChange={e => setSelWpCat(e.target.value)} className="w-full border border-blue-300 bg-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                                  <option value="">{wpCats.length ? '자동 (AI가 선택)' : '카테고리 불러오는 중...'}</option>
+                                  <option value="">{wpCats.length ? '자동 (AI가 선택)' : wpCatsState === 'error' ? '카테고리를 불러오지 못함 — 자동(AI가 선택)으로 발행됩니다' : '카테고리 불러오는 중...'}</option>
                                   {wpCats.map(c => <option key={c.id} value={String(c.id)}>{c.parent ? '└ ' : ''}{c.name}</option>)}
                                 </select>
                               </div>
