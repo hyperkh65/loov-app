@@ -35,7 +35,7 @@ const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
   { provider: 'groq',       model: 'qwen/qwen3.8-27b' },
   { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
   { provider: 'openrouter', model: 'google/gemma-4-31b-it:free' },
-  { provider: 'gemini',     model: 'gemini-3.5-flash' },
+  { provider: 'gemini',     model: 'gemini-3.5-flash-lite' },
   { provider: 'claude',     model: 'claude-haiku-4-5-20251001' },
   { provider: 'gpt4o',      model: 'gpt-4o-mini' },
 ];
@@ -172,7 +172,7 @@ async function getLatestClaudeModel(tier: 'sonnet' | 'haiku' | 'opus', apiKey: s
 function defaultModel(provider: string): string {
   switch (provider) {
     case 'claude':      return 'claude-sonnet-4-6';  // 런타임에 getLatestClaudeModel()로 덮어씀
-    case 'gemini':      return 'gemini-3.5-flash';
+    case 'gemini':      return 'gemini-3.5-flash-lite';
     case 'gpt4o':       return 'gpt-4o';
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
@@ -220,7 +220,25 @@ async function callClaude(
   return data.content?.[0]?.text?.trim() || '';
 }
 
+// 2026-11-09 실측(키 2개×12회 동시 호출): flash-lite 계열은 한도(429) 0건·약 1.4초,
+// 3.5-flash는 12회 중 4회 429·약 3.3초. 막히면 이 순서로 다음 모델을 시도한다.
+const GEMINI_MODEL_ORDER = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.5-flash'];
+
 async function callGemini(
+  messages: AIMessage[],
+  model: string,
+): Promise<string> {
+  // 우리 기본 계열 모델이면 막힐 때 다음 모델로 폴백, 호출부가 따로 지정한 모델은 그대로만 시도
+  const models = GEMINI_MODEL_ORDER.includes(model) ? [model, ...GEMINI_MODEL_ORDER.filter((m) => m !== model)] : [model];
+  let lastErr: Error = new Error('Gemini: 사용 가능한 모델이 없습니다.');
+  for (const m of models) {
+    try { return await callGeminiOnce(messages, m); }
+    catch (e) { lastErr = e as Error; }
+  }
+  throw lastErr;
+}
+
+async function callGeminiOnce(
   messages: AIMessage[],
   model: string,
 ): Promise<string> {
