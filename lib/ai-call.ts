@@ -35,7 +35,7 @@ const DEFAULT_FALLBACK_CHAIN: FallbackEntry[] = [
   { provider: 'groq',       model: 'qwen/qwen3.8-27b' },
   { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
   { provider: 'openrouter', model: 'google/gemma-4-31b-it:free' },
-  { provider: 'gemini',     model: 'gemini-flash-latest' },
+  { provider: 'gemini',     model: 'gemini-3.5-flash' },
   { provider: 'claude',     model: 'claude-haiku-4-5-20251001' },
   { provider: 'gpt4o',      model: 'gpt-4o-mini' },
 ];
@@ -172,7 +172,7 @@ async function getLatestClaudeModel(tier: 'sonnet' | 'haiku' | 'opus', apiKey: s
 function defaultModel(provider: string): string {
   switch (provider) {
     case 'claude':      return 'claude-sonnet-4-6';  // 런타임에 getLatestClaudeModel()로 덮어씀
-    case 'gemini':      return 'gemini-flash-latest';
+    case 'gemini':      return 'gemini-3.5-flash';
     case 'gpt4o':       return 'gpt-4o';
     case 'gpt4':        return 'gpt-4-turbo';
     case 'gpt35':       return 'gpt-3.5-turbo';
