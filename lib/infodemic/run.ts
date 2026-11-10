@@ -214,6 +214,8 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
           const result: Record<string, unknown> = { title, source: c.link, entity: pk.entity, pool: pool.name, external: ext.map(s => s.host), cover, card, chars: html.length, attempts: notes.length + 1 };
           if (dry) return { summary: `[드라이런] ${title} — 출처 ${ext.length}곳, ${html.length}자`, result: { ...result, html: html.slice(0, 6000) } };
 
+          // 글을 쓰는 몇 분 사이에 다른 발행이 간격을 차지했을 수 있다 — 다 쓴 글을 버리지 않도록 최대 4분 기다렸다가 올린다
+          for (let w = 0; w < 8 && !await publishSlotFree(wp.url); w++) await new Promise(r => setTimeout(r, 30_000));
           const post = await publishToWordPress(wp.url, wp.username, wp.appPassword, title, html, cover, 'publish');
           result.url = post.link;
           await saveCfg({ used: [...(cfg.used || []), c.link].slice(-400), stats: { day: today, n: stats.n + 1, last_at: Date.now() } });
