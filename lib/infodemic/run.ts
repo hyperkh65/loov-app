@@ -114,7 +114,7 @@ async function recentTitles(wpUrl: string, n = 40): Promise<string[]> {
 
 function toHtml(d: Draft, cardUrl: string, srcs: Source[], today: string): string {
   const p = (t: string) => `<p style="margin-bottom:15px;">${esc(t)}</p>`;
-  const parts: string[] = [p(d.answer), `<figure style="text-align:center;margin:0 auto 28px;"><img src="${cardUrl}" alt="${esc(d.card.headline)} 정보 카드" loading="lazy" style="max-width:100%;height:auto;border-radius:12px;" /></figure>`, p(`확인 기준일: ${today} · 아래 자료에서 공통으로 확인되는 내용만 정리했어요.`)];
+  const parts: string[] = [p(d.answer), `<figure style="text-align:center;margin:0 auto 28px;"><img src="${cardUrl}" alt="${esc(d.card.headline)} 정보 카드" loading="lazy" style="max-width:100%;height:auto;border-radius:12px;" /></figure>`, p(`확인 기준일: ${today} · 여러 보도에서 공통으로 확인되는 내용만 정리했어요.`)];
   for (const s of d.sections) {
     parts.push(`<h2>${esc(s.h2)}</h2>`, ...s.paras.map(p));
     if (s.bullets?.length) parts.push(`<ul>${s.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`);
