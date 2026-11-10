@@ -14,6 +14,7 @@ import { KEYWORD_SEED_BANK } from '@/lib/keyword-seed-bank';
 const norm = (k: string) => k.replace(/\s+/g, '').toLowerCase();
 // ponytail: 동시 실행 경합은 프로세스 내 Set으로만 막음(단일 서버). 다중 인스턴스면 DB claim 테이블 필요.
 const claimed = new Set<string>();
+const claimedRaw: string[] = [];
 
 async function loadUsed(): Promise<Set<string>> {
   const supabase = createAdminClient();
@@ -38,6 +39,7 @@ async function loadUsed(): Promise<Set<string>> {
 
 function claim(kw: string): string {
   claimed.add(norm(kw));
+  claimedRaw.push(kw);
   return kw;
 }
 
@@ -153,8 +155,28 @@ export async function fetchNaverAdData(keywords: string[]): Promise<Array<{
 // (2days.kr/aboda.kr에 "연금저축펀드 vs IRP" 류가 반복). 같은 주제 뿌리를 공유하면
 // 리터럴이 달라도 최근 사용으로 취급해서 다른 주제로 강제 분산시킴.
 const TOPIC_ROOTS = ['연금', '세액공제', 'IRP', '대출', '보험', '카드', '신용점수', '리볼빙', '저축은행', '환전', '절세', '금리', '증권', '펀드', '주식'];
+// 단어만 바꾼 틀 반복("겨울 패딩 방풍"/"겨울 재킷 방풍"/"겨울 패드 방수")도 같은 주제로 취급 —
+// 공백 단위 단어가 2개 이상 겹치고 짧은 쪽 단어의 3분의 2 이상이 겹치면 near-duplicate.
+export function isNearDuplicate(a: string, b: string): boolean {
+  const ta = new Set(a.trim().split(/\s+/)), tb = new Set(b.trim().split(/\s+/));
+  let inter = 0;
+  ta.forEach((t) => { if (tb.has(t)) inter++; });
+  return inter >= 2 && inter / Math.min(ta.size, tb.size) >= 2 / 3;
+}
 function sharesTopicRoot(a: string, b: string): boolean {
-  return TOPIC_ROOTS.some(root => a.includes(root) && b.includes(root));
+  return TOPIC_ROOTS.some(root => a.includes(root) && b.includes(root)) || isNearDuplicate(a, b);
+}
+
+// 최근 N일 발행에 쓴 키워드 원문(공백 유지) — 비슷한 키워드 회피용
+async function loadRecentKeywords(days = 14): Promise<string[]> {
+  const { data } = await createAdminClient()
+    .from('bossai_schedule_logs')
+    .select('result')
+    .gte('started_at', new Date(Date.now() - days * 24 * 3600 * 1000).toISOString())
+    .in('status', ['success', 'running'])
+    .not('result->>keyword', 'is', null)
+    .limit(2000);
+  return [...claimedRaw, ...(data || []).map((l) => (l.result as { keyword?: string })?.keyword).filter(Boolean) as string[]];
 }
 
 // ── Money Score 계산 (advanced API와 동일) ─────────────────────────────────
@@ -232,20 +254,21 @@ export async function pickFromKeywordList(
 ): Promise<string | null> {
   if (!keywords.length) throw new Error('키워드 목록이 비어있음');
   const supabase = createAdminClient();
-  const used = await loadUsed();
+  const [used, recentRaw] = await Promise.all([loadUsed(), loadRecentKeywords()]);
+  const similar = (k: string) => recentRaw.some((r) => isNearDuplicate(r, k));
   const start = schedule.keyword_index % keywords.length;
 
   if (mode === 'rotate') {
     for (let i = 0; i < keywords.length; i++) {
       const idx = (start + i) % keywords.length;
-      if (used.has(norm(keywords[idx]))) continue;
+      if (used.has(norm(keywords[idx])) || similar(keywords[idx])) continue;
       await supabase.from('bossai_schedules').update({ keyword_index: (idx + 1) % keywords.length }).eq('id', schedule.id);
       return claim(keywords[idx]);
     }
     return null; // 목록 소진 → 호출 쪽이 동적/트렌딩 발굴로 넘어감
   }
 
-  const fresh = keywords.filter(k => !used.has(norm(k)));
+  const fresh = keywords.filter(k => !used.has(norm(k)) && !similar(k));
   return fresh.length ? claim(fresh[Math.floor(Math.random() * fresh.length)]) : null;
 }
 

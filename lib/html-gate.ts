@@ -43,15 +43,23 @@ export function sanitizeInvisible(s: string): string {
     .replace(/([.!?]["')\]]?[ \t]+)(?:<(?:b|strong)>)?핵심\s*[:：]\s*(?:<\/(?:b|strong)>)?[ \t]*/g, '$1');
 }
 
+// 한국어 글에 섞이면 안 되는 문자(태국·키릴·아랍·히브리·데바나가리·미얀마·크메르). 모델이 한 단어 중간에 끼워 넣는 깨짐(예: "304스แตน리스")을 잡는다.
+// 한자·가나는 인명·곡명에 정당하게 쓰여 제외.
+export const FOREIGN_SCRIPT_RE = /[\u0E00-\u0E7F\u0400-\u04FF\u0600-\u06FF\u0590-\u05FF\u0900-\u097F\u1000-\u109F\u1780-\u17FF]/;
+
 const PAIRED_TAGS = ['p', 'h2', 'h3', 'h4', 'div', 'ul', 'ol', 'li', 'figure', 'figcaption', 'b', 'i', 'strong', 'em', 'span', 'a', 'table', 'tr', 'td', 'th'];
 
 /** 문제가 있으면 사유 문자열, 정상이면 null */
 export function findHtmlProblem(title: string, html: string): string | null {
   if (!title || title.trim().length < 5) return '제목 없음/너무 짧음';
   if (!html) return '본문 없음';
+  if (FOREIGN_SCRIPT_RE.test(title)) return `제목에 외국 문자가 섞임: ${title.match(FOREIGN_SCRIPT_RE)![0]}`;
 
   const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   if (text.length < 300) return `본문이 너무 짧음(${text.length}자)`;
+
+  const fs = text.match(FOREIGN_SCRIPT_RE);
+  if (fs) return `본문에 외국 문자가 섞임: ${text.slice(Math.max(0, fs.index! - 10), fs.index! + 10)}`;
 
   // 끝이 태그 조각 중간에서 끊김
   if (/<[a-zA-Z/][^>]*$/.test(html.trimEnd())) return '본문 끝이 태그 중간에서 잘림';
@@ -112,9 +120,9 @@ export function findForeignWords(html: string): string[] {
 export function stripForeignSentences(html: string): { html: string; removed: number } {
   let removed = 0;
   const out = html.replace(/(<(p|li)\b[^>]*>)([\s\S]*?)(<\/\2>)/g, (m, open, _t, inner, close) => {
-    if (findForeignWords(inner).length === 0) return m;
+    if (findForeignWords(inner).length === 0 && !FOREIGN_SCRIPT_RE.test(inner)) return m;
     const kept = inner.split(/(?<=[.!?。])\s+/).filter((sentence: string) => {
-      const bad = findForeignWords(sentence).length > 0;
+      const bad = findForeignWords(sentence).length > 0 || FOREIGN_SCRIPT_RE.test(sentence);
       if (bad) removed++;
       return !bad;
     });
