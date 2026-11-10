@@ -168,6 +168,7 @@ export function lint(d: Draft, srcs: Source[]): string | null {
   if (findForeignWords(text).length) return '외국어 단어 섞임: ' + findForeignWords(text).slice(0, 4).join(',');
   if (/[฀-๿Ѐ-ӿ؀-ۿ぀-ヿऀ-ॿ]/.test(text)) return '외국 문자 섞임';
   if (d.sections.some(s => !s.h2.trim() || /(^|\s),|\(\s*\)/.test(s.h2))) return '깨진 소제목';
+  if (/인포데믹|infodemic|mbcdy|유니워니/i.test(text)) return '참고 사이트 이름이 본문에 있음';
   if (/\*\*|^#{1,3}\s|```/m.test(text)) return '마크다운 기호 남음';
   if (/충격|경악|난리|발칵|헉|대박/.test(d.title)) return '낚시성 제목';
   if (/사별|재혼|이혼|투병|암 진단|혼외|자녀|아들|딸|배우자|아내|남편/.test(text)) return '사생활 내용 포함';

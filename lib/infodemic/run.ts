@@ -10,9 +10,12 @@ import { getWpCredentials, publishSlotFree, publishToWordPress } from '@/lib/sch
 import type { Schedule } from '@/lib/scheduler';
 import { askJson, writeDraft, findUnsupported, dropClaims, lint, isSensitive, type Draft, type Source } from './write';
 import { renderCover, renderInfoCard } from './card';
+import { radarCandidates } from './radar';
 
 export interface InfodemicConfig {
-  wp_site_id?: string; dry_run?: boolean; used?: string[]; min_external?: number;
+  wp_site_id?: string; dry_run?: boolean;
+  /** 'mbcdy': 주제 레이더 모드 — mbcdy.com 피드는 "지금 뜨는 주제" 신호로만 쓰고(글·출처로 쓰지 않음) 사실은 언론 기사 3곳 이상으로 확인해 새로 쓴다 */
+  radar?: 'mbcdy'; used?: string[]; min_external?: number;
   /** 하루 발행 목표(기본 3) — 실패하면 다른 주제로 바꿔 시도하고, 스케줄이 짧은 주기로 다시 돌아 채운다 */
   daily?: number; min_gap_h?: number;
   /** 최근 시도했다 실패한 주제(24시간 동안 다시 안 고름) */
@@ -22,6 +25,7 @@ export interface InfodemicConfig {
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
 const FEED = 'https://infodemic.kr/rss';
+const RADAR_FEED = 'https://www.mbcdy.com/feed';
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const tag = (b: string, t: string) => (b.match(new RegExp(`<${t}[^>]*>([\\s\\S]*?)</${t}>`))?.[1] || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/\s+/g, ' ').trim();
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
@@ -64,7 +68,7 @@ async function newsLinks(queries: string[], diag: string[]): Promise<string[]> {
     let u = raw.replace(/&amp;/g, '&').trim();
     try { const x = new URL(u); const real = x.searchParams.get('url'); if (/bing\.com$/.test(x.hostname) && real) u = decodeURIComponent(real); } catch { return; }
     const h = host(u);
-    if (!/^https?:/.test(u) || /naver|pstatic|daum|kakao|google|youtube|infodemic|tistory|instagram|facebook|bing\.com|msn\.com/.test(h) || hosts.has(h)) return;
+    if (!/^https?:/.test(u) || /naver|pstatic|daum|kakao|google|youtube|infodemic|mbcdy|tistory|instagram|facebook|bing\.com|msn\.com/.test(h) || hosts.has(h)) return;
     hosts.add(h); links.push(u);
   };
   for (const query of queries) {
@@ -101,9 +105,9 @@ async function externalSources(query: string, entity: string, startN: number, di
 const bigrams = (s: string) => { const t = s.replace(/\s+/g, ''); const o = new Set<string>(); for (let i = 0; i + 2 <= t.length; i++) o.add(t.slice(i, i + 2)); return o; };
 const similar = (a: string, b: string) => { const x = bigrams(a), y = bigrams(b); let i = 0; x.forEach(v => { if (y.has(v)) i++; }); return i / Math.max(1, x.size + y.size - i); };
 
-async function recentTitles(wpUrl: string): Promise<string[]> {
+async function recentTitles(wpUrl: string, n = 40): Promise<string[]> {
   try {
-    const r = await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts?per_page=40&_fields=title`, { signal: AbortSignal.timeout(10000) });
+    const r = await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts?per_page=${n}&_fields=title`, { signal: AbortSignal.timeout(10000) });
     return ((await r.json()) as Array<{ title: { rendered: string } }>).map(p => p.title.rendered);
   } catch { return []; }
 }
@@ -117,8 +121,7 @@ function toHtml(d: Draft, cardUrl: string, srcs: Source[], today: string): strin
     if (s.table?.rows?.length) parts.push(`<table style="width:100%;border-collapse:collapse;margin:0 0 20px;"><thead><tr>${s.table.head.map(h => `<th style="border:1px solid #ddd;background:#f6f7f9;padding:10px;text-align:left;">${esc(h)}</th>`).join('')}</tr></thead><tbody>${s.table.rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #ddd;padding:10px;">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
   }
   parts.push('<h2>자주 묻는 질문</h2>', ...d.faq.map(f => `<div style="font-weight:bold;margin:14px 0 4px;">${esc(f.q)}</div>\n<div style="color:#555;">${esc(f.a)}</div>`));
-  const ext = srcs.filter(s => s.external);
-  if (ext.length) parts.push('<h2>참고한 자료</h2>', `<ul>${ext.map(s => `<li><a href="${esc(s.url)}" target="_blank" rel="nofollow noopener">${esc(s.host)}</a></li>`).join('')}</ul>`, p('이 글은 위 자료에서 공개된 사실을 확인해 새로 작성했어요. 내용이 바뀌거나 정정되면 다시 확인해 고쳐요.'));
+  // 출처(참고 사이트·언론사)는 글에 쓰지 않는다 — 사용자 확정 2026-11-10
   return parts.join('\n');
 }
 
@@ -157,16 +160,17 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
   const now = Date.now();
   const tried: Record<string, number> = Object.fromEntries(Object.entries(cfg.tried || {}).filter(([, t]) => now - t < 24 * 3600e3));
   const used = new Set([...(cfg.used || []), ...Object.keys(tried)]);
-  const recent = await recentTitles(wp.url);
+  const recent = await recentTitles(wp.url, cfg.radar ? 100 : 40);
   const saveCfg = async (patch: Partial<InfodemicConfig>) => { await createAdminClient().from('bossai_schedules').update({ config: { ...(schedule.config as object), tried, ...patch } }).eq('id', schedule.id); };
 
   const notes: string[] = [];
   const t0 = Date.now();
-  const pools: Array<{ name: string; list: Cand[]; withBase: boolean }> = [
-    { name: '인포데믹', list: await candidates(used), withBase: true },
-    { name: '보충(뉴스)', list: [], withBase: false },
-  ];
-  pools[1].list = await fallbackCandidates(used);
+  const pools: Array<{ name: string; list: Cand[]; withBase: boolean }> = cfg.radar
+    ? [{ name: '이슈 레이더', list: await radarCandidates(used), withBase: false }]
+    : [
+      { name: '인포데믹', list: await candidates(used), withBase: true },
+      { name: '보충(뉴스)', list: await fallbackCandidates(used), withBase: false },
+    ];
 
   for (const pool of pools) {
     let list = pool.list;
@@ -175,7 +179,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
       let picks: Array<{ i: number; entity: string; query: string }> = [];
       try {
         picks = (await askJson<{ picks: Array<{ i: number; entity: string; query: string }> }>(
-          `당신은 정보 블로그 편집자입니다. 아래는 ${pool.name} 후보 제목입니다. 이 중 "사람들이 검색할 만하고, 공개된 기사로 사실 확인이 되는" 주제를 최대 3개 고르세요.\n선호: 방송·작품 정보(방영일, 출연, 줄거리 정리), 공개된 프로필 정보(데뷔, 작품, 소속 등), 일정·결과 정리. 제외: 사생활 폭로, 의혹, 사건사고, 루머, 일반인 사정.\n각 항목: i=번호, entity=핵심 대상 이름(프로그램/작품/인물 1개), query=독자가 검색할 만한 문장(예: "OO 출연진 정보").\n${top.map((c, i) => `${i}. ${c.title}`).join('\n')}\nJSON만: {"picks":[{"i":0,"entity":"","query":""}]}`,
+          `당신은 정보 블로그 편집자입니다. 아래는 ${pool.name} 후보 제목입니다. 이 중 "사람들이 검색할 만하고, 공개된 기사로 사실 확인이 되는" 주제를 최대 3개 고르세요.\n${cfg.radar ? '선호: 경제·투자 해설(주가·실적·공모주·정책), 부동산·연금·세금·지원금·제도 안내, 신제품·자동차 정보, 질환·건강 정보 설명, 일정·결과 정리(수능·청약 등). 제외: 연예인 사생활, 정치 공방, 의혹·사건사고, 루머, 일반인 사정.' : '선호: 방송·작품 정보(방영일, 출연, 줄거리 정리), 공개된 프로필 정보(데뷔, 작품, 소속 등), 일정·결과 정리. 제외: 사생활 폭로, 의혹, 사건사고, 루머, 일반인 사정.'}\n각 항목: i=번호, entity=핵심 대상 이름(프로그램/작품/인물 1개), query=독자가 검색할 만한 문장(예: "OO 출연진 정보").\n${top.map((c, i) => `${i}. ${c.title}`).join('\n')}\nJSON만: {"picks":[{"i":0,"entity":"","query":""}]}`,
           v => (Array.isArray(v.picks) && v.picks.length ? null : 'picks 없음'),
           '주제 고르기',
         )).picks.slice(0, 3);

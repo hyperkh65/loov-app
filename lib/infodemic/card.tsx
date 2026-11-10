@@ -50,7 +50,7 @@ export async function renderCover(title: string, kicker: string, key: string): P
       </div>
     </div>
   );
-  return uploadToR2(`miracool/infodemic/${key}-cover.jpg`, await toJpeg(el, 1200, 630), 'image/jpeg');
+  return uploadToR2(`miracool/cards/${key}-cover.jpg`, await toJpeg(el, 1200, 630), 'image/jpeg');
 }
 
 /** 본문 정보 카드(표 형태) */
@@ -71,5 +71,5 @@ export async function renderInfoCard(card: InfoCard, key: string): Promise<strin
       <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 24, fontWeight: 700, color: T.sub, marginTop: 'auto' }}>미라쿨 · 공개된 출처 기준</div>
     </div>
   );
-  return uploadToR2(`miracool/infodemic/${key}-card.jpg`, await toJpeg(el, 1080, h), 'image/jpeg');
+  return uploadToR2(`miracool/cards/${key}-card.jpg`, await toJpeg(el, 1080, h), 'image/jpeg');
 }
