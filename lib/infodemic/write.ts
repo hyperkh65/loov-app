@@ -38,6 +38,19 @@ export interface Draft {
 
 const SENSITIVE = /불륜|상간|성폭|성추행|성범죄|몰카|사망|별세|자살|극단적|마약|구속|기소|재판|소송|의혹|열애설|파경|혼외|폭행|학폭|논란|이혼숙려|결혼지옥|가사조사|부부 갈등|통제형|회피형/;
 export const isSensitive = (s: string) => SENSITIVE.test(s);
+/** 뉴스(레이더) 모드에서도 다루지 않는 주제: 성범죄·자살·아동학대 */
+export const HARD_BLOCK = /성폭|성추행|성범죄|몰카|자살|극단적|아동학대|성매매/;
+
+/** 뉴스(레이더) 모드: 정치·사건·연예도 다루되 확인된 사실만, 단정·비방·일반인 신상 금지 */
+const NEWS_RULES = `[작성 규칙]
+- 아래 [출처]들은 사실 확인용 자료다. 문장·표현을 베끼지 말고 전부 새 문장으로 쓴다.
+- 글에 쓰는 사실(이름, 날짜, 숫자, 직책, 발언, 결정)은 [출처]에 실제로 있는 것만 쓴다. 출처에 없으면 쓰지 않는다. 출처끼리 다르면 쓰지 않거나 "보도마다 다르다"고 적는다.
+- 정치·사건·재판: 수사·재판 중인 사안은 "~혐의를 받고 있다", "~라고 주장했다"처럼 누구의 말인지 밝히고 유죄·무죄를 단정하지 않는다. 확정된 결과(판결·공식 발표·의결)와 진행 중인 사안을 구분해서 쓴다. 정당·정치인을 편드는 평가·비방·감정적 표현 금지.
+- 연예: 본인·소속사의 공식 발표, 방송·작품·공연 등 확인된 사실 중심. 루머·추측·익명 제보 금지.
+- 일반인(피해자·피의자·유족·미성년자)의 이름·신상·사진, 성범죄 상세, 자살 방법·수단은 쓰지 않는다.
+- 첫 문단(answer)에서 독자가 검색한 질문에 바로 답한다(2~3문장, 결론 먼저).
+- 한국어 ~요/~입니다 체를 섞어 자연스럽게. 같은 어미 반복·추상적인 감성 문장 금지.
+- 외국어·특수문자·이모지 금지(고유명사 제외). 낚시 제목 금지.`;
 
 const srcBlock = (srcs: Source[]) => srcs.map(s => `[출처 ${s.n}] ${s.host} — ${s.title}\n${s.text.slice(0, 4500)}`).join('\n\n');
 
@@ -96,9 +109,9 @@ async function askParsed<T>(prompt: string, parse: (raw: string) => T | string, 
   throw new Error(`[${stage}] AI 답 실패 — ${log.join(' / ')}`.slice(0, 600));
 }
 
-export async function writeDraft(topic: { title: string; entity: string; query: string }, srcs: Source[], forbid: string[] = []): Promise<Draft> {
+export async function writeDraft(topic: { title: string; entity: string; query: string }, srcs: Source[], forbid: string[] = [], mode?: 'news'): Promise<Draft> {
   const prompt = `당신은 사실 확인을 철저히 하는 한국 정보 블로그 에디터입니다. "${topic.query}"를 검색한 독자를 위한 글을 씁니다.
-${RULES}
+${mode === 'news' ? NEWS_RULES : RULES}
 ${forbid.length ? `- 아래 문장/주장은 근거가 없다고 확인됐으니 절대 쓰지 않는다:\n${forbid.map(f => '  · ' + f).join('\n')}\n` : ''}
 [주제] ${topic.title} (핵심 대상: ${topic.entity})
 [출처]
@@ -161,7 +174,7 @@ export function dropClaims(d: Draft, bad: string[]): Draft {
 const shingles = (s: string, n = 12) => { const t = s.replace(/\s+/g, ''); const out = new Set<string>(); for (let i = 0; i + n <= t.length; i += 2) out.add(t.slice(i, i + n)); return out; };
 
 /** 품질 게이트: 문제가 있으면 이유를 돌려준다(null이면 통과) */
-export function lint(d: Draft, srcs: Source[]): string | null {
+export function lint(d: Draft, srcs: Source[], mode?: 'news'): string | null {
   const text = flat(d), body = d.sections.flatMap(s => s.paras).join(' ');
   const bl = body.replace(/\s/g, '').length, tl = text.replace(/\s/g, '').length; // 확인된 사실만 쓰므로 길이는 본문+표+FAQ 합으로 본다
   if (bl < 500 || tl < 1100) return `본문이 짧아요(문단 ${bl}자, 전체 ${tl}자)`;
@@ -171,7 +184,8 @@ export function lint(d: Draft, srcs: Source[]): string | null {
   if (/인포데믹|infodemic|mbcdy|유니워니/i.test(text)) return '참고 사이트 이름이 본문에 있음';
   if (/\*\*|^#{1,3}\s|```/m.test(text)) return '마크다운 기호 남음';
   if (/충격|경악|난리|발칵|헉|대박/.test(d.title)) return '낚시성 제목';
-  if (/사별|재혼|이혼|투병|암 진단|혼외|자녀|아들|딸|배우자|아내|남편/.test(text)) return '사생활 내용 포함';
+  if (mode !== 'news' && /사별|재혼|이혼|투병|암 진단|혼외|자녀|아들|딸|배우자|아내|남편/.test(text)) return '사생활 내용 포함';
+  if (mode === 'news' && HARD_BLOCK.test(text)) return '다루지 않는 주제(성범죄·자살·아동학대) 포함';
   const mine = shingles(text);
   for (const s of srcs) {
     const theirs = shingles(s.text);

@@ -179,7 +179,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
       let picks: Array<{ i: number; entity: string; query: string }> = [];
       try {
         picks = (await askJson<{ picks: Array<{ i: number; entity: string; query: string }> }>(
-          `당신은 정보 블로그 편집자입니다. 아래는 ${pool.name} 후보 제목입니다. 이 중 "사람들이 검색할 만하고, 공개된 기사로 사실 확인이 되는" 주제를 최대 3개 고르세요.\n${cfg.radar ? '선호: 경제·투자 해설(주가·실적·공모주·정책), 부동산·연금·세금·지원금·제도 안내, 신제품·자동차 정보, 질환·건강 정보 설명, 일정·결과 정리(수능·청약 등). 제외: 연예인 사생활, 정치 공방, 의혹·사건사고, 루머, 일반인 사정.' : '선호: 방송·작품 정보(방영일, 출연, 줄거리 정리), 공개된 프로필 정보(데뷔, 작품, 소속 등), 일정·결과 정리. 제외: 사생활 폭로, 의혹, 사건사고, 루머, 일반인 사정.'}\n각 항목: i=번호, entity=핵심 대상 이름(프로그램/작품/인물 1개), query=독자가 검색할 만한 문장(예: "OO 출연진 정보").\n${top.map((c, i) => `${i}. ${c.title}`).join('\n')}\nJSON만: {"picks":[{"i":0,"entity":"","query":""}]}`,
+          `당신은 정보 블로그 편집자입니다. 아래는 ${pool.name} 후보 제목입니다. 이 중 "사람들이 검색할 만하고, 공개된 기사로 사실 확인이 되는" 주제를 최대 3개 고르세요.\n${cfg.radar ? '선호(광고 단가·검색량이 높은 순): 경제·투자 해설(주가·실적·공모주·정책), 부동산·연금·세금·지원금·제도 안내, 신제품·자동차, 건강 정보, 정치(정책·국회 의결·선거 일정·공식 발표), 사건(수사·재판 결과 등 확인된 사실), 연예(공식 발표·방송·작품·컴백·결혼 발표), 스포츠 결과. 제외: 루머·추측·익명 제보, 성범죄, 자살, 아동학대, 일반인(피해자·피의자·유족) 신상.' : '선호: 방송·작품 정보(방영일, 출연, 줄거리 정리), 공개된 프로필 정보(데뷔, 작품, 소속 등), 일정·결과 정리. 제외: 사생활 폭로, 의혹, 사건사고, 루머, 일반인 사정.'}\n각 항목: i=번호, entity=핵심 대상 이름(프로그램/작품/인물 1개), query=독자가 검색할 만한 문장(예: "OO 출연진 정보").\n${top.map((c, i) => `${i}. ${c.title}`).join('\n')}\nJSON만: {"picks":[{"i":0,"entity":"","query":""}]}`,
           v => (Array.isArray(v.picks) && v.picks.length ? null : 'picks 없음'),
           '주제 고르기',
         )).picks.slice(0, 3);
@@ -195,7 +195,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
           const ext = await externalSources(pk.query, pk.entity, base ? 2 : 1, dg);
           if ((pool.withBase && !base) || ext.length < need) { notes.push(`${pk.entity}: 확인 출처 부족(${ext.length}/${need}) [${dg.join('; ').slice(0, 200)}]`); continue; }
           const srcs = base ? [base, ...ext] : ext;
-          let draft = await writeDraft({ title: c.title, entity: pk.entity, query: pk.query }, srcs);
+          let draft = await writeDraft({ title: c.title, entity: pk.entity, query: pk.query }, srcs, [], cfg.radar ? 'news' : undefined);
           let bad: string[] = [];
           for (let round = 0; round < 3; round++) { // 근거 없는 주장은 그 문장만 지우고 다시 대조한다
             bad = await findUnsupported(draft, srcs);
@@ -203,7 +203,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
             draft = dropClaims(draft, bad);
           }
           if (bad.length) { notes.push(`${pk.entity}: 근거 없는 주장이 남음 [${bad.slice(0, 2).map(x => x.slice(0, 40)).join(' / ')}]`); continue; }
-          const why = lint(draft, srcs);
+          const why = lint(draft, srcs, cfg.radar ? 'news' : undefined);
           if (why) { notes.push(`${pk.entity}: ${why}`); continue; }
 
           const key = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
