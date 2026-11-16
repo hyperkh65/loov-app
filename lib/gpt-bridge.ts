@@ -140,6 +140,13 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - 사용자에게는 saved:true가 된 뒤 결과를 알린다. 중간 오류는 길게 설명하지 않는다. 플랫폼이 도구 사용 자체를 막은 경우에만 멈추고 그 사실을 알린다.
 
 ## 이미지
+- **[이미지는 반드시 한 장씩, 단계별로 그린다]** 이미지 생성 도구는 한 번에 여러 장을 요청하면 일부가 실행되지 않거나 실패하는 일이 잦다. 그래서 아래 순서를 지킨다. 이미지는 계속 직접 그리며(품질 때문), 서버가 대신 만들어 주지 않는다.
+  1) 글(HTML)을 먼저 완성해 validateDraft를 통과시킨다(이미지 부족은 경고일 뿐 막지 않는다).
+  2) 이미지를 **딱 한 장만 생성**한다. 그림이 실제로 만들어졌는지 확인한 뒤에만 다음으로 넘어간다. "만들겠습니다"라고 말만 하고 넘어가거나, 요청이 실행되지 않았는데 끝난 것처럼 말하지 않는다. 실행되지 않았다면 같은 요청을 즉시 다시 실행한다.
+  3) 대표이미지 1장이 만들어지면 곧바로 saveDraft로 **먼저 저장**한다(openaiFileIdRefs에 그 1장). 응답의 article_id와 image_urls를 기억한다.
+  4) 본문 이미지를 더 그릴 때는 **한 장 생성 → 곧바로 같은 article_id로 saveDraft** 를 장마다 반복한다. 이때 featured_image_url에 앞서 저장된 대표이미지 주소(응답의 featured_image_url)를 그대로 넣으면, openaiFileIdRefs에는 **새로 그린 본문 이미지만** 담고 본문에는 <img src="{{file:1}}"> 처럼 쓴다. 앞서 저장된 이미지는 응답의 image_urls 주소를 <img src="...">로 본문에 그대로 다시 넣는다(서버 보관 주소라 다시 가져오지 않는다). 글 전체 HTML을 다시 보낸다.
+  5) 한 장이 실패하면 **그 장만** 다시 생성한다. 같은 장이 3번 연속 실패하면 그 자리에는 소스 이미지를 넣고 다음 장으로 넘어간다. 전체를 처음부터 다시 만들거나 중단하지 않는다.
+  6) 저장 응답의 images_needed가 0이 될 때까지(합계 3장 이상) 반복한다. 사용자에게는 마지막에 결과를 알린다.
 - **[이미지 규칙은 이 지침이 우선]** GPT 지시문에 "이미지는 3장 모두 직접 그린다"고 적혀 있어도, 이미지는 아래 규칙을 따른다(직접 그린 1장 + 소스 이미지로 3장 충족 가능).
 - 이미지는 합계 최소 3장(권장 4~5장), 모두 alt 텍스트 필수. 구성은 **직접 그린 이미지 최소 1장(대표이미지) + 나머지는 실제 기사·영상·공식 사이트 등 글의 소스에서 가져온 이미지**로 해도 된다. 직접 그린 이미지를 더 만들면 더 좋지만 의무는 아니다. 장면이 겹치지 않게 각기 다른 이미지를 쓴다.
 - 직접 그린 이미지는 openaiFileIdRefs에 순서대로 담는다. 첫 번째가 대표이미지. 두 번째부터는 본문 넣을 자리에 <img src="{{file:2}}" alt="설명">, 세 번째는 {{file:3}} 처럼 번호로 적는다(대표이미지 {{file:1}}는 본문에 따로 쓰지 않는다). 소스 이미지는 readPage·researchKeyword로 열어 확인한 기사/영상 페이지의 대표 사진 주소(jpg·png·webp)를 <img src="https://..." alt="설명">로 본문에 넣는다(서버가 저장 때 가져가 보관한다). 로고·광고·기본 썸네일은 제외하고, 글 내용과 직접 관련된 사진만 쓴다.
@@ -203,7 +210,7 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 "이 글 하나만 읽고 다른 탭을 안 열어도 되는가? 상위 글보다 확실히 나은 점이 있는가? 틀린 정보·지어낸 URL은 없는가? 뉴스 기사와 구별되는 글쓴이의 느낌·의견이 있는가?" 넷 중 하나라도 아니면 고쳐서 다시 검사한다.`;
 
 // ── 형태 검사 ────────────────────────────────────────────────────────────
-export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean; fileCount?: number }
+export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean; fileCount?: number; bodyOnlyFiles?: boolean }
 
 export function validateDraft(d: DraftIn) {
   const errors: string[] = [], warnings: string[] = [];
@@ -240,11 +247,11 @@ export function validateDraft(d: DraftIn) {
   else if (!/<th\b/i.test(html)) warnings.push('표에 제목 행(<th>) 권장');
   const fileCount = d.fileCount || 0, placed = imgs.filter(i => /\{\{file:\d+\}\}/.test(i));
   const total = imgs.length + (d.featured_image_url ? 1 : 0) + Math.max(0, fileCount - placed.length);
-  if (!fileCount) errors.push('직접 그린 이미지가 최소 1장 필요(대표이미지) — 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 보낼 것. 나머지 이미지는 기사·영상 등 소스에서 가져온 <img src="https://...">로 채워도 됨');
-  else if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
-  else if (total < 3) errors.push(`이미지 ${total}장 — 합계 3장 이상 필요(직접 그린 1장 + 기사·영상 등 소스 이미지로 채워도 됨)`);
+  // 이미지가 모자라도 저장은 막지 않는다(이미지 생성 도구가 한 장씩 실패할 수 있음) — 경고로 알리고, 같은 article_id로 이어서 저장해 채운다.
+  if (!fileCount && !d.featured_image_url) warnings.push('직접 그린 이미지가 아직 없음 — 이미지를 한 장 생성한 뒤 같은 article_id로 saveDraft를 다시 호출해 채울 것(대표이미지 먼저)');
+  if (total < 3) warnings.push(`이미지 ${total}장 — 합계 3장 이상 필요(${3 - total}장 더). 한 장 생성 → saveDraft(같은 article_id) 를 반복해 채울 것`);
   const srcs = imgs.map(i => i.match(/\bsrc=["']([^"']+)/i)?.[1]).filter(Boolean) as string[];
-  if (new Set(srcs).size < srcs.length || (d.featured_image_url && srcs.includes(d.featured_image_url)) || placed.some(i => /\{\{file:1\}\}/.test(i))) errors.push('같은 이미지가 중복됨 — 본문 <img>의 주소는 모두 달라야 하고, 대표이미지({{file:1}}/featured_image_url)는 본문에 다시 쓰지 않는다');
+  if (new Set(srcs).size < srcs.length || (d.featured_image_url && srcs.includes(d.featured_image_url)) || (!d.bodyOnlyFiles && placed.some(i => /\{\{file:1\}\}/.test(i)))) errors.push('같은 이미지가 중복됨 — 본문 <img>의 주소는 모두 달라야 하고, 대표이미지({{file:1}}/featured_image_url)는 본문에 다시 쓰지 않는다');
   if (placed.some(i => Number(i.match(/\{\{file:(\d+)\}\}/)![1]) > fileCount)) errors.push('{{file:N}} 번호가 openaiFileIdRefs 개수보다 큼');
   if (imgs.some(i => !/\balt=["'][^"']+/i.test(i))) warnings.push('alt 없는 이미지가 있음');
   if (hosts.size < 1) errors.push('외부 링크(<a href>)가 필요 — 출처/공식 사이트 2곳 이상'); else if (hosts.size < 2) warnings.push('서로 다른 사이트 링크 2곳 이상 권장');
