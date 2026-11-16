@@ -6,7 +6,7 @@
 import { uploadToR2 } from '@/lib/r2-storage';
 import { createAdminClient } from '@/lib/supabase-server';
 import { scrapeArticleFull } from '@/lib/rewrite-site-scraper';
-import { rehostImages, searchStockImages, searchInlineImages, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
+import { rehostImages, searchStockImages, insertRepresentativeImageIntoContent, insertImagesIntoContent } from '@/lib/blog-content-generator';
 import { safeUrl, research, RISK_NOTES, needsRiskNotes, validateDraft, normalizeHtml } from '@/lib/gpt-bridge';
 
 export interface ActionResult { status: number; body: unknown }
@@ -50,10 +50,7 @@ export async function runGptAction(action: string, b: any): Promise<ActionResult
   }
 
   const files: string[] = (b.openaiFileIdRefs || []).map((f: { download_link?: string }) => f.download_link).filter(Boolean);
-  // 이어 저장 모드: 앞서 저장된 대표이미지 주소(R2)를 featured_image_url로 주면, 이번 openaiFileIdRefs는 전부 본문 이미지로 본다({{file:1}}부터).
-  const r2base = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
-  const bodyOnly = !!(b.article_id && b.featured_image_url && r2base && String(b.featured_image_url).startsWith(r2base));
-  const v = validateDraft({ ...b, hasFileImages: files.length > 0, fileCount: files.length, bodyOnlyFiles: bodyOnly });
+  const v = validateDraft({ ...b, hasFileImages: files.length > 0, fileCount: files.length });
   const refs = Array.isArray(b.openaiFileIdRefs) ? b.openaiFileIdRefs : [];
   console.log(`[gpt-${action}] openaiFileIdRefs=${refs.length} usable=${files.length} keys=${refs[0] ? Object.keys(refs[0]).join(',') : '-'} mime=${refs.map((f: { mime_type?: string }) => f.mime_type || '?').join(',')}`);
   if (!files.length && refs.length) { v.errors.push(`openaiFileIdRefs ${refs.length}개를 받았지만 download_link가 없음(받은 키: ${Object.keys(refs[0]).join(',')})`); v.pass = false; }
@@ -80,31 +77,15 @@ export async function runGptAction(action: string, b: any): Promise<ActionResult
     if (!re) dropped.push(u.slice(0, 80));
     content = content.split(tag).join(re ? tag.replace(u, re) : '');
   }
-  const extraTry = await Promise.all(files.map(async (f, i) => (usedFiles.has(i + 1) || (i === 0 && !b.featured_image_url && !bodyOnly) ? undefined : { i, u: await rehost(f) })));
+  const extraTry = await Promise.all(files.map(async (f, i) => (usedFiles.has(i + 1) || (i === 0 && !b.featured_image_url) ? undefined : { i, u: await rehost(f) })));
   for (const x of extraTry) if (x && !x.u) dropped.push(`openaiFileIdRefs[${x.i + 1}]`);
   const extra = extraTry.map(x => x?.u).filter((u): u is string => !!u);
   if (extra.length) content = insertImagesIntoContent(content, extra, b.keyword);
-  // 이미지를 가져오지 못해도 글 저장은 막지 않는다 — 깨진 <img>는 이미 빼 두었고, 경고로 알려 같은 article_id로 이어서 채우게 한다.
-  const imageWarn: string[] = [];
-  if (dropped.length) imageWarn.push(`본문 이미지 ${dropped.length}장을 가져오지 못해 뺀 채로 저장함(${dropped.map(d => d.slice(0, 40)).join(', ')})${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''} — 이미지를 새로 생성해 같은 article_id로 이어서 saveDraft 할 것`);
+  if (dropped.length) return R({ saved: false, errors: [`본문 이미지 ${dropped.length}장을 가져오지 못해 저장 중단: ${dropped.join(', ')} — 같은 이미지를 다시 첨부하거나 이미지를 새로 만들어 다시 saveDraft 할 것. 이미지 빼고 저장 금지${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`], warnings: v.warnings }, { status: 422 });
   let featured: string | undefined;
-  const candidates = [b.featured_image_url, ...(bodyOnly ? [] : [files[0]])].filter(Boolean) as string[];
+  const candidates = [b.featured_image_url, files[0]].filter(Boolean) as string[];
   for (const w of candidates) { featured = await rehost(w); if (featured) break; }
-  if (candidates.length && !featured) imageWarn.push(`대표이미지를 가져오지 못해 대표이미지 없이 저장함 — SVG/data URI/코드로 그린 이미지·sandbox 주소는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 만든 파일을 openaiFileIdRefs로 담아 같은 article_id로 이어서 saveDraft 할 것${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`);
-  // 이미지가 3장에 못 미치면 관련 이미지(네이버 이미지 검색 → 스톡)로 자동 보충 — 직접 그린 이미지가 모자라도 글은 3장을 갖춘다.
-  {
-    const srcOf = (html: string) => [...html.matchAll(/<img\b[^>]*\ssrc=["']([^"']+)["']/gi)].map(m => m[1]);
-    const have = new Set([...srcOf(content), ...(featured ? [featured] : [])]);
-    const need = 3 - have.size;
-    if (need > 0 && b.keyword) {
-      const rel = await searchInlineImages(String(b.keyword), need + 2).catch(() => ({ displayUrls: [] as string[] }));
-      const add = rel.displayUrls.filter(u => !have.has(u)).slice(0, need);
-      if (add.length) {
-        content = insertImagesIntoContent(content, add, b.keyword);
-        imageWarn.push(`관련 이미지 ${add.length}장을 이미지 검색으로 자동 보충함(직접 그린 이미지가 모자라서). 직접 그린 이미지가 생기면 그것으로 대신한다`);
-      }
-    }
-  }
+  if (candidates.length && !featured) return R({ saved: false, errors: [`대표이미지를 가져오지 못함 — SVG/data URI/코드로 그린 이미지는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 PNG를 만들어 openaiFileIdRefs로 보낼 것. 다른 URL로 바꿔치기 금지${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`], warnings: v.warnings }, { status: 422 });
   const att = await saveAttachments(b.attachments || []);
   if (att.html) { const k = content.search(/<h2[^>]*>(?:(?!<\/h2>)[\s\S])*출처/i); content = k > 0 ? content.slice(0, k) + att.html + content.slice(k) : content + att.html; }
   if (featured) content = insertRepresentativeImageIntoContent(content, featured, b.title);
@@ -119,16 +100,5 @@ export async function runGptAction(action: string, b: any): Promise<ActionResult
   const q = createAdminClient().from('bossai_auto_articles');
   const { data, error } = await (b.article_id ? q.update(row).eq('id', b.article_id).select('id').single() : q.insert(row).select('id').single());
   if (error) return R({ saved: false, errors: [error.message] }, { status: 500 });
-  // 이어서 채울 수 있게: 저장된 이미지 주소 목록과 부족한 장수를 돌려준다(대표이미지 포함, 중복 제외)
-  const imageUrls = [...new Set([featured, ...(content.match(/<img\b[^>]*>/gi) || []).map(t => t.match(/\ssrc=["']([^"']+)["']/i)?.[1])].filter((u): u is string => !!u))];
-  const imagesNeeded = Math.max(0, 3 - imageUrls.length);
-  const imgNote = imagesNeeded ? `이미지 ${imageUrls.length}/3장 — ${imagesNeeded}장 더 필요. 이미지를 한 장 생성한 뒤 article_id를 같은 값으로, featured_image_url에 위 featured_image_url을 넣어 saveDraft를 다시 호출해 채울 것(새 그림만 openaiFileIdRefs에 담고 본문에 {{file:1}})` : '';
-  const hasDrawn = files.length > 0 || bodyOnly; // GPT가 직접 그린 이미지가 이번 저장에 들어 있는가(관련 이미지 보충과 구분)
-  const complete = imagesNeeded === 0 && hasDrawn;
-  const nextAction = !hasDrawn
-    ? `아직 끝나지 않음(complete:false) — 직접 그린 이미지가 없다. 관련 이미지로 ${imageUrls.length}/3장은 채워졌지만 대표이미지는 직접 그린 그림이어야 한다. 사용자에게 보고하지 말고 지금 곧바로 글자 없는 대표이미지를 새로 한 장 생성해서 같은 article_id로 saveDraft(새 그림을 openaiFileIdRefs 첫 번째로)를 호출할 것. 그 뒤 complete:true가 되면 결과를 알린다.`
-    : imagesNeeded
-      ? `아직 끝나지 않음(complete:false) — 이미지 ${imageUrls.length}/3장, ${imagesNeeded}장 더 필요. 사용자에게 보고하지 말고 지금 곧바로 이미지를 새로 한 장 생성해서 같은 article_id로 saveDraft(featured_image_url에는 위 featured_image_url, 새 그림은 openaiFileIdRefs·{{file:1}})를 호출해 채울 것. complete:true가 될 때까지 반복한 뒤에 결과를 알린다.`
-      : '완료(complete:true) — 이미지 3장 이상 채워짐. 이제 사용자에게 결과를 알려도 된다.';
-  return R({ saved: true, complete, next_action: nextAction, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, image_urls: imageUrls, images_total: imageUrls.length, images_needed: imagesNeeded, warnings: [...imageWarn, ...(imgNote ? [imgNote] : []), ...v.warnings, ...att.skipped.map(x => `첨부 제외 — ${x}`)], stats: v.stats });
+  return R({ saved: true, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, warnings: [...v.warnings, ...att.skipped.map(x => `첨부 제외 — ${x}`)], stats: v.stats });
 }
