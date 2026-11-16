@@ -84,11 +84,13 @@ export async function runGptAction(action: string, b: any): Promise<ActionResult
   for (const x of extraTry) if (x && !x.u) dropped.push(`openaiFileIdRefs[${x.i + 1}]`);
   const extra = extraTry.map(x => x?.u).filter((u): u is string => !!u);
   if (extra.length) content = insertImagesIntoContent(content, extra, b.keyword);
-  if (dropped.length) return R({ saved: false, errors: [`본문 이미지 ${dropped.length}장을 가져오지 못해 저장 중단: ${dropped.join(', ')} — 같은 이미지를 다시 첨부하거나 이미지를 새로 만들어 다시 saveDraft 할 것. 이미지 빼고 저장 금지${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`], warnings: v.warnings }, { status: 422 });
+  // 이미지를 가져오지 못해도 글 저장은 막지 않는다 — 깨진 <img>는 이미 빼 두었고, 경고로 알려 같은 article_id로 이어서 채우게 한다.
+  const imageWarn: string[] = [];
+  if (dropped.length) imageWarn.push(`본문 이미지 ${dropped.length}장을 가져오지 못해 뺀 채로 저장함(${dropped.map(d => d.slice(0, 40)).join(', ')})${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''} — 이미지를 새로 생성해 같은 article_id로 이어서 saveDraft 할 것`);
   let featured: string | undefined;
   const candidates = [b.featured_image_url, ...(bodyOnly ? [] : [files[0]])].filter(Boolean) as string[];
   for (const w of candidates) { featured = await rehost(w); if (featured) break; }
-  if (candidates.length && !featured) return R({ saved: false, errors: [`대표이미지를 가져오지 못함 — SVG/data URI/코드로 그린 이미지는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 PNG를 만들어 openaiFileIdRefs로 보낼 것. 다른 URL로 바꿔치기 금지${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`], warnings: v.warnings }, { status: 422 });
+  if (candidates.length && !featured) imageWarn.push(`대표이미지를 가져오지 못해 대표이미지 없이 저장함 — SVG/data URI/코드로 그린 이미지·sandbox 주소는 불가(jpg·png·webp·gif만). 이미지 생성 도구로 만든 파일을 openaiFileIdRefs로 담아 같은 article_id로 이어서 saveDraft 할 것${why.length ? ` [원인: ${why.slice(0, 3).join(' | ')}]` : ''}`);
   const att = await saveAttachments(b.attachments || []);
   if (att.html) { const k = content.search(/<h2[^>]*>(?:(?!<\/h2>)[\s\S])*출처/i); content = k > 0 ? content.slice(0, k) + att.html + content.slice(k) : content + att.html; }
   if (featured) content = insertRepresentativeImageIntoContent(content, featured, b.title);
@@ -107,5 +109,5 @@ export async function runGptAction(action: string, b: any): Promise<ActionResult
   const imageUrls = [...new Set([featured, ...(content.match(/<img\b[^>]*>/gi) || []).map(t => t.match(/\ssrc=["']([^"']+)["']/i)?.[1])].filter((u): u is string => !!u))];
   const imagesNeeded = Math.max(0, 3 - imageUrls.length);
   const imgNote = imagesNeeded ? `이미지 ${imageUrls.length}/3장 — ${imagesNeeded}장 더 필요. 이미지를 한 장 생성한 뒤 article_id를 같은 값으로, featured_image_url에 위 featured_image_url을 넣어 saveDraft를 다시 호출해 채울 것(새 그림만 openaiFileIdRefs에 담고 본문에 {{file:1}})` : '';
-  return R({ saved: true, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, image_urls: imageUrls, images_total: imageUrls.length, images_needed: imagesNeeded, warnings: [...(imgNote ? [imgNote] : []), ...v.warnings, ...att.skipped.map(x => `첨부 제외 — ${x}`)], stats: v.stats });
+  return R({ saved: true, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, image_urls: imageUrls, images_total: imageUrls.length, images_needed: imagesNeeded, warnings: [...imageWarn, ...(imgNote ? [imgNote] : []), ...v.warnings, ...att.skipped.map(x => `첨부 제외 — ${x}`)], stats: v.stats });
 }
