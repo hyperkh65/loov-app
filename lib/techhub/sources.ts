@@ -158,5 +158,18 @@ export async function dropUsed(list: Candidate[]): Promise<Candidate[]> {
   const { data } = await admin.from('bossai_naver_tech_posts').select('source_url, source_title').order('created_at', { ascending: false }).limit(300);
   const usedUrl = new Set((data || []).map((r: { source_url: string }) => norm(r.source_url || '')));
   const usedTk = (data || []).slice(0, 80).map((r: { source_title: string }) => tokens(r.source_title || ''));
-  return list.filter(c => !usedUrl.has(norm(c.link)) && !usedTk.some(t => shared(tokens(c.title), t) >= 3));
+  // 같은 사건 중복 방지: 핵심어(6자 이상 고유 단어)가 2개 이상 겹치면 같은 이슈로 본다(예: gemini + hydrogen). 기존 기준(3개 겹침)도 유지.
+  const longShared = (a: Set<string>, b: Set<string>) => { let n = 0; for (const w of a) if (w.length >= 6 && b.has(w)) n++; return n; };
+  return list.filter(c => {
+    const ct = tokens(c.title);
+    return !usedUrl.has(norm(c.link)) && !usedTk.some(t => shared(ct, t) >= 3 || longShared(ct, t) >= 2);
+  });
+}
+
+
+/** 이슈성 가산점 — 대형 브랜드 + 사건 단어(출시·장애·중단·유출 등)가 제목에 있으면 올린다(검색이 몰리는 속보형). */
+const BIG_BRAND = /\b(google|gemini|apple|iphone|samsung|galaxy|microsoft|windows|outlook|teams|nvidia|openai|chatgpt|anthropic|claude|meta|tesla|spacex|starship|amazon|alexa|intel|amd|qualcomm|sony|netflix|youtube|instagram|whatsapp|x\.com|starlink|huawei|xiaomi|nintendo|playstation|xbox)\b/i;
+const EVENT_WORD = /\b(launch(es|ed)?|release[sd]?|unveil(s|ed)?|announce[sd]?|debut(s|ed)?|outage|down|halt(s|ed)?|ground(s|ed)?|recall(s|ed)?|ban(s|ned)?|breach|leak(s|ed)?|hack(ed)?|crash(es|ed)?|fail(s|ed|ure)?|price|available|rollout|update)\b/i;
+export function issueBoost(title: string): number {
+  return (BIG_BRAND.test(title) ? 1.35 : 1) * (EVENT_WORD.test(title) ? 1.25 : 1);
 }

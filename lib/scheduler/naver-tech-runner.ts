@@ -23,6 +23,7 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
 import { searchNaver, searchInlineImages } from '@/lib/blog-content-generator';
 import { sanitizeForNaver } from '@/lib/naver-blog';
+import { collectCandidates, dropUsed, issueBoost } from '@/lib/techhub/sources';
 
 export async function dispatchNaverPublishJob(jobId: string): Promise<void> {
   const pat = process.env.GITHUB_PAT;
@@ -64,8 +65,20 @@ const TECH_FEEDS = [
   { name: 'Digital Trends', url: 'https://www.digitaltrends.com/feed/' },
 ];
 
-/** 이미 발행한 원문(source url)은 빼고, 최근 올라온 기사 하나를 고른다 */
+/**
+ * 주제 선택(이슈성 우선): 여러 매체·커뮤니티에 동시에 뜬 정도 + 최신성 + 대형 브랜드·사건 단어 가산점으로 점수를 매겨
+ * 가장 뜨거운 새 이슈를 고른다. 이미 쓴 원문·같은 사건은 제외. 점수 수집이 실패하면 예전 방식(피드 순서대로 첫 새 글)으로 대체.
+ */
 async function pickTopic(): Promise<{ title: string; link: string; source: string } | null> {
+  try {
+    const { list } = await collectCandidates();
+    // 전자제품·소비자 이슈 채널이라 개발자·논문 위주 소스는 후보에서 뺀다
+    const fresh = (await dropUsed(list)).filter(c => !/^(HF Papers|GitHub Trending|Lobsters|IEEE Spectrum|MIT Tech Review)$/.test(c.source));
+    const ranked = fresh
+      .map(c => ({ c, s: c.score * issueBoost(c.title) }))
+      .sort((x, y) => y.s - x.s);
+    if (ranked.length) return { title: ranked[0].c.title, link: ranked[0].c.link, source: ranked[0].c.source };
+  } catch { /* 아래 예전 방식으로 */ }
   const perFeed = await Promise.all(TECH_FEEDS.map(async (f) => {
     try {
       const items = await fetchFeedItems(f.url, 5);
@@ -141,7 +154,7 @@ ${refBlock}
 7. 글 마지막에 자주 묻는 질문 3~4개(질문+답변 2~3문장)
 
 [출력 형식 — 순수 HTML만, 다른 설명·코드블록 없이. 첫 줄은 반드시 제목 주석]
-<!--TITLE: (한국 소비자가 검색할 제품명·핵심 키워드로 시작 + 출시일/가격/스펙/비교/후기 같은 검색 의도어 + 얻는 정보 하나, 20~32자. 연도 숫자·"살펴보기"·"알아보기" 같은 서술어·감성 문장 금지)-->
+<!--TITLE: (한국 사용자가 네이버에서 실제로 검색할 말 그대로. 반드시 한글 제목. 브랜드·제품명 + 사건 한마디(출시·장애·중단·가격·스펙·비교·해결) 중심으로 20~32자. 제품명·고유명사는 한국에서 가장 흔히 검색되는 표기로 쓴다(예: 하이드로젠보다 하이드로겐처럼 검색이 더 많은 표기). 표기가 헷갈리면 원어 발음 그대로 가장 흔한 표기를 고른다. 연도 숫자·"살펴보기"·"알아보기" 같은 서술어·감성 문장 금지. 영어 원문 제목을 그대로 쓰지 말 것)-->
 <h2>(소제목1)</h2>
 <p>(단락1)</p>
 <p>(단락2)</p>
@@ -155,6 +168,7 @@ ${refBlock}
     const title = tightTitle((titleMatch?.[1] || topic.title).trim());
     const content = repairHtml(sanitizeInvisible(cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, ''))); // 태그 짝이 어긋난 글을 버리지 않고 고쳐서 검사
     if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
+    if (!/[가-힣]/.test(title)) throw new Error('제목에 한글이 없음(영어 원문 제목 그대로) — 한국어 제목으로 다시 생성 필요');
     assertPublishableHtml(title, content);
     return { title, content, foreign: findForeignWords(content) };
   };
