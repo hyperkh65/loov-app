@@ -109,5 +109,8 @@ export async function runGptAction(action: string, b: any): Promise<ActionResult
   const imageUrls = [...new Set([featured, ...(content.match(/<img\b[^>]*>/gi) || []).map(t => t.match(/\ssrc=["']([^"']+)["']/i)?.[1])].filter((u): u is string => !!u))];
   const imagesNeeded = Math.max(0, 3 - imageUrls.length);
   const imgNote = imagesNeeded ? `이미지 ${imageUrls.length}/3장 — ${imagesNeeded}장 더 필요. 이미지를 한 장 생성한 뒤 article_id를 같은 값으로, featured_image_url에 위 featured_image_url을 넣어 saveDraft를 다시 호출해 채울 것(새 그림만 openaiFileIdRefs에 담고 본문에 {{file:1}})` : '';
-  return R({ saved: true, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, image_urls: imageUrls, images_total: imageUrls.length, images_needed: imagesNeeded, warnings: [...imageWarn, ...(imgNote ? [imgNote] : []), ...v.warnings, ...att.skipped.map(x => `첨부 제외 — ${x}`)], stats: v.stats });
+  const nextAction = imagesNeeded
+    ? `아직 끝나지 않음(complete:false) — 이미지 ${imageUrls.length}/3장, ${imagesNeeded}장 더 필요. 사용자에게 보고하지 말고 지금 곧바로 이미지를 새로 한 장 생성해서 같은 article_id로 saveDraft(featured_image_url에는 위 featured_image_url, 새 그림은 openaiFileIdRefs·{{file:1}})를 호출해 채울 것. complete:true가 될 때까지 반복한 뒤에 결과를 알린다.`
+    : '완료(complete:true) — 이미지 3장 이상 채워짐. 이제 사용자에게 결과를 알려도 된다.';
+  return R({ saved: true, complete: imagesNeeded === 0, next_action: nextAction, article_id: data.id, review_url: 'https://loov.co.kr/dashboard/auto-service', featured_image_url: featured, image_urls: imageUrls, images_total: imageUrls.length, images_needed: imagesNeeded, warnings: [...imageWarn, ...(imgNote ? [imgNote] : []), ...v.warnings, ...att.skipped.map(x => `첨부 제외 — ${x}`)], stats: v.stats });
 }
