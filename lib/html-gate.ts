@@ -49,6 +49,35 @@ export const FOREIGN_SCRIPT_RE = /[\u0E00-\u0E7F\u0400-\u04FF\u0600-\u06FF\u0590
 
 const PAIRED_TAGS = ['p', 'h2', 'h3', 'h4', 'div', 'ul', 'ol', 'li', 'figure', 'figcaption', 'b', 'i', 'strong', 'em', 'span', 'a', 'table', 'tr', 'td', 'th'];
 
+/**
+ * AI가 낸 HTML의 여닫는 태그 짝을 맞춘다(검사에서 통째로 버려지기 전에 고침).
+ * - 닫는 태그가 없으면 그 자리에서 닫고(<p> 안에 블록이 시작되면 <p>를 먼저 닫음), 짝 없는 닫는 태그는 버린다.
+ * - 글 내용은 바꾸지 않는다. PAIRED_TAGS 안의 태그만 다룬다.
+ */
+export function repairHtml(html: string): string {
+  const BLOCK = new Set(['p', 'h2', 'h3', 'h4', 'div', 'ul', 'ol', 'table', 'figure']);
+  const stack: string[] = [], out: string[] = [];
+  for (const part of html.split(/(<[^>]*>)/)) {
+    const close = part.match(/^<\/([a-zA-Z][a-zA-Z0-9]*)\s*>$/), open = part.match(/^<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>$/);
+    if (close) {
+      const t = close[1].toLowerCase();
+      if (!PAIRED_TAGS.includes(t)) { out.push(part); continue; }
+      const i = stack.lastIndexOf(t);
+      if (i < 0) continue; // 짝 없는 닫는 태그는 버림
+      while (stack.length - 1 > i) out.push(`</${stack.pop()}>`);
+      stack.pop(); out.push(part);
+    } else if (open && !open[2]) {
+      const t = open[1].toLowerCase();
+      if (!PAIRED_TAGS.includes(t)) { out.push(part); continue; }
+      if (BLOCK.has(t) && stack[stack.length - 1] === 'p') out.push(`</${stack.pop()}>`); // <p> 안에 블록이 열리면 <p>를 먼저 닫음
+      if (t === 'li' && stack[stack.length - 1] === 'li') out.push(`</${stack.pop()}>`);
+      stack.push(t); out.push(part);
+    } else out.push(part);
+  }
+  while (stack.length) out.push(`</${stack.pop()}>`);
+  return out.join('');
+}
+
 /** 문제가 있으면 사유 문자열, 정상이면 null */
 export function findHtmlProblem(title: string, html: string): string | null {
   if (!title || title.trim().length < 5) return '제목 없음/너무 짧음';

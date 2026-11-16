@@ -17,7 +17,7 @@
  * 같은 기사 자동화 용도로 성공 이력이 있다(status: completed, 실제 post_url
  * 확인됨) — 검증된 경로로 되돌리는 것.
  */
-import { tightTitle, sanitizeInvisible, assertPublishableHtml, findForeignWords } from '@/lib/html-gate';
+import { tightTitle, sanitizeInvisible, assertPublishableHtml, findForeignWords, repairHtml } from '@/lib/html-gate';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateText } from '@/lib/auto-blog-ai';
 import { scrapeArticleFull, fetchFeedItems } from '@/lib/rewrite-site-scraper';
@@ -153,7 +153,7 @@ ${refBlock}
     const cleaned = rawOut.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim();
     const titleMatch = cleaned.match(/^<!--\s*TITLE:\s*(.+?)\s*-->/i);
     const title = tightTitle((titleMatch?.[1] || topic.title).trim());
-    const content = sanitizeInvisible(cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, ''));
+    const content = repairHtml(sanitizeInvisible(cleaned.replace(/^<!--\s*TITLE:.*?-->\s*/i, ''))); // 태그 짝이 어긋난 글을 버리지 않고 고쳐서 검사
     if (!content || content.length < 500) throw new Error('AI 응답이 비었거나 너무 짧음');
     assertPublishableHtml(title, content);
     return { title, content, foreign: findForeignWords(content) };
