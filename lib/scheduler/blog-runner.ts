@@ -265,9 +265,14 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
       const imgRes = await fetch(featuredImageUrl, { signal: AbortSignal.timeout(15000) });
       if (imgRes.ok) {
         const imgBuffer = await imgRes.arrayBuffer();
-        const ext = featuredImageUrl.split('.').pop()?.split('?')[0] || 'png';
-        const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-        const mime = mimeMap[ext] || 'image/png';
+        // 쿠팡 이미지 주소(ads-partners.coupang.com/image1/<해시>)는 확장자가 없고 302로 넘어가므로
+        // URL이 아니라 실제 응답의 Content-Type으로 확장자를 정한다 (URL로 정하면 파일명이 깨져 업로드가 거부됨)
+        const extMap: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+        const ctype = (imgRes.headers.get('content-type') || '').split(';')[0].trim();
+        const urlExt = featuredImageUrl.split('?')[0].match(/\.(jpe?g|png|webp|gif)$/i)?.[1]?.toLowerCase().replace('jpeg', 'jpg');
+        const ext = extMap[ctype] || urlExt || 'jpg';
+        const mimeMap: Record<string, string> = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+        const mime = mimeMap[ext];
         const uploadRes = await fetch(`${wpUrl.replace(/\/$/, '')}/wp-json/wp/v2/media`, {
           method: 'POST',
           headers: {
@@ -281,9 +286,9 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
           const uploadData = await uploadRes.json();
           featuredMediaId = uploadData.id;
           uploadedImageUrl = uploadData.source_url || null;
-        }
-      }
-    } catch { /* featured image optional */ }
+        } else console.error('[blog-runner] 대표이미지 업로드 거부:', uploadRes.status, (await uploadRes.text().catch(() => '')).slice(0, 120));
+      } else console.error('[blog-runner] 대표이미지 다운로드 실패:', imgRes.status, featuredImageUrl.slice(0, 80));
+    } catch (e) { console.error('[blog-runner] 대표이미지 처리 오류(이미지 없이 발행):', (e as Error).message); }
   }
 
   const body: Record<string, unknown> = { title, content, status };
