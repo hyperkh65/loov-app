@@ -84,6 +84,8 @@ function stripMarkerArtifacts(s: string): string {
 function stripStrayLatinWords(html: string): string {
   return html.replace(/>([^<]*)</g, (_match, text: string) => {
     const cleaned = text
+      // 실측: 본문에 태국어("ไหม") 한 단어가 섞여 발행됨 — 라틴 단어 필터가 못 잡던 문자군도 함께 제거
+      .replace(/[\u0E00-\u0E7F\u0600-\u06FF\u0590-\u05FF\u0900-\u097F\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]+/g, '')
       .replace(/\b[A-Za-z]{3,}\b/g, '')
       .replace(/[ \t]{2,}/g, ' ')
       .replace(/\s+([,.!?、])/g, '$1');
@@ -117,8 +119,22 @@ export async function fetchComparisonProducts(
       try { pool = await searchProducts(product.categoryName, accessKey, secretKey); } catch { /* keep whatever we have */ }
     }
   }
-  return pool
-    .filter(p => String(p.productId) !== String(product.productId) && p.productPrice > 0 && p.productImage)
+  // 실측: 같은 상품이 그리드에 두 번 들어가고, 밀폐용기 글에 라탄 바스켓이 비교 대상으로 나옴 —
+  // 같은 상품(id·이름)은 한 번만, 상품명에 공통 한글 단어가 있는 "같은 종류"만 비교 대상으로 쓴다.
+  // 판매자 이름·홍보 문구("활용도 좋은" 등)만 겹치는 다른 종류 상품을 거르려고, 흔한 홍보어는 빼고 2단어 이상 겹칠 때만 같은 종류로 본다.
+  const GENERIC = new Set(['활용도', '좋은', '추천', '세트', '용품', '정품', '무료배송', '당일', '대용량', '사은품', '인기', '신상']);
+  const toks = (n: string) => new Set((n.match(/[가-힣]{2,}/g) || []).filter(t => !GENERIC.has(t)));
+  const mine = toks(product.productName);
+  const need = Math.min(2, mine.size);
+  const seen = new Set<string>([String(product.productId), product.productName.slice(0, 20)]);
+  const related = pool.filter(p => {
+    const key = String(p.productId), nm = p.productName.slice(0, 20);
+    if (seen.has(key) || seen.has(nm)) return false;
+    seen.add(key); seen.add(nm);
+    return [...toks(p.productName)].filter(t => mine.has(t)).length >= need;
+  });
+  return related
+    .filter(p => p.productPrice > 0 && p.productImage)
     .sort((a, b) => a.productPrice - b.productPrice)
     .slice(0, 3)
     .map(p => ({ name: p.productName, price: p.productPrice, image: p.productImage, url: p.productUrl }));
@@ -160,7 +176,7 @@ export async function buildProductBlogPost(
   scraped: { reviews: { content: string }[] } | null,
   comparisonProducts: ComparisonProduct[],
   priceDropNote?: string | null,
-): Promise<{ title: string; content: string }> {
+): Promise<{ title: string; content: string; excerpt: string }> {
   const realReviews = (scraped?.reviews || []).map(r => r.content).filter(Boolean).slice(0, 5);
 
   const reviewBlock = realReviews.length
@@ -177,55 +193,58 @@ export async function buildProductBlogPost(
     '링크는 아래에 있습니다', '오늘 소개할 상품은',
   ];
 
+  // 비교 상품에서 "코드가 직접 계산한" 사실 — AI가 숫자를 지어내지 않고 이 값만 근거로 쓰게 한다
+  const cmpPrices = comparisonProducts.map(c => c.price);
+  const priceFact = cmpPrices.length
+    ? `같은 종류로 함께 조회된 상품 ${cmpPrices.length}개 중 이 상품보다 싼 것 ${cmpPrices.filter(x => x < product.productPrice).length}개, 비싼 것 ${cmpPrices.filter(x => x >= product.productPrice).length}개 (비교군 가격대 ${Math.min(...cmpPrices).toLocaleString()}원~${Math.max(...cmpPrices).toLocaleString()}원)`
+    : '';
+
   const prompt = `너는 쿠팡파트너스 제휴 블로그를 운영하는 실력 있는 카피라이터 겸 MD야. 아래 상품으로
-"이걸 왜 안 사?"라는 생각이 들게 만드는, 실제로 클릭·구매로 이어지는 워드프레스 글을 써줘.
-스펙을 나열하는 백과사전식 글이 아니라, 사람 마음을 움직이는 마케팅 카피여야 한다.
+"이걸 왜 안 사지?" 싶을 만큼 읽는 사람이 자기 상황에 대입해 보게 되는, 실제로 클릭·구매로 이어지는 워드프레스 글을 써줘.
+백과사전식 스펙 나열이 아니라 한 사람에게 말 걸듯 구체적인 장면과 결과로 설득하는 글이어야 한다.
 
 상품명: ${product.productName}
 가격: ${product.productPrice.toLocaleString()}원${product.discountRate ? ` (정가 대비 ${product.discountRate}% 할인 중 — 실데이터, 강조할 것)` : ''}
 카테고리: ${product.categoryName || '미상'}
-${priceDropNote ? `${priceDropNote}\n` : ''}
+${priceDropNote ? `${priceDropNote}\n` : ''}${priceFact ? `가격 위치(실데이터): ${priceFact}\n` : ''}
 ${comparisonBlock}
 
 ${reviewBlock}
 
-[글 구조 — 아래 목적을 이 순서로 담되, h2 소제목 문구는 매번 상품에 맞게 새로 창작할 것.
-절대 아래 예시 문구를 그대로/비슷하게 재사용하지 마라(이미 여러 번 써서 진부해진 금지어):
-${bannedPhrases.map(p => `"${p}"`).join(', ')}]
-1. 후킹 오프닝 1문단: "이 제품 추천해요" 식으로 시작하지 말고, 이 제품이 없어서/안 사서 지금 계속 보고 있는 손해나 불편이 뭔지부터 깨닫게 하는 문장으로 시작. 공감형/질문형/장면 묘사 등 매번 다른 방식으로. "안녕하세요", "오늘 소개할 상품은" 같은 밋밋한 인사말 절대 금지.
-2. 가격/할인/비교 근거 섹션: 위에 준 실제 가격·할인율·비교 상품 데이터를 근거로 왜 지금이 살 타이밍인지 짧게(2~3문장). 이 h2 바로 뒤에 비교 이미지 그리드가 자동 삽입되니, 그리드를 직접 언급하기보다 뒤에 이어질 내용을 자연스럽게 열어주는 정도로 짧게 써라. 주어지지 않은 숫자는 절대 지어내지 마라.
-3. 장점 섹션: 장점부터 늘어놓지 말고, 먼저 이 제품군을 써본 사람들이 가장 많이 공감할 만한 불만/불편 포인트 하나를 짚어 공감대를 형성한 뒤, 그걸 이 제품이 어떻게 해소하는지로 자연스럽게 연결. 이후 장점 3~4가지는 용량·두께·mm 같은 스펙 나열이 아니라 "그래서 뭐가 좋아졌는지" 결과 중심으로, 가능하면 "전에는 이랬는데 지금은 이래요" 식 이전/이후 비교 문장으로. 위 리뷰 데이터가 있으면 우선 반영.
-4. 추천 대상 섹션: 구체적인 대상 3~4개 bullet.
-4-1. 정직한 단점 섹션(짧게, 2~3문장): 장점만 나열하면 오히려 신뢰가 떨어진다.
-   "이런 분들껜 안 맞을 수도 있어요" 같은 소제목으로, 이 제품군 특성상 합리적으로
-   추론 가능한 단점/안 맞는 상황 하나를 정직하게 짚어라. 없는 단점을 지어내지 말고,
-   너무 사소해서 신뢰도 안 떨어지는 가짜 단점("색상이 마음에 안 들 수도")도 금지 —
-   실제로 살까 말까 고민하게 만들 만한 수준으로.
-5. {{CTA_BUTTON}} ← 이 토큰을 정확히 이 자리에 한 줄로 넣어라 (구매 버튼이 자동 삽입됨).
-6. 결론 문단(길게, 새로운 관점 추가): "링크는 아래에 있습니다" 같은 뻔한 결제 유도 대신, 지금 안 사면 계속 손해를 보게 된다는 걸 읽는 사람이 스스로 판단하게 만드는 문장으로 마무리 + 마지막에 {{CTA_BUTTON}} 토큰 한 번 더.
+[글 구조 — 아래 순서로, <h2> 소제목은 매번 이 상품에 맞게 새로 창작(아래 금지 문구 재사용 금지: ${bannedPhrases.map(p => `"${p}"`).join(', ')})]
+0. 후킹 오프닝 1~2문단(h2 없이 맨 앞): "추천해요"로 시작 금지. 지금 이걸 안 쓰고 있어서 겪는 구체적 장면·손해(시간·돈·스트레스)를 한 장면으로 보여줘라. 인사말 금지.
+0-1. <h2>한눈에 보기</h2> 성격의 짧은 요약 <ul><li> 3줄: 가격, 누구에게 맞는지, 가장 큰 변화 한 가지. 숫자는 위 실데이터만.
+1. 가격·비교 섹션(h2): 위 실데이터로 지금 살 만한 이유를 2~4문장. 이 h2 뒤에 비교 이미지 그리드가 자동 삽입된다. 가격을 "커피 한 잔 값" 같은 일상 단위로 환산하는 건 좋지만 지어낸 정가·할인율은 금지. 이 문단 끝에 {{CTA_BUTTON}} 한 줄.
+2. 이런 장면에서 달라집니다(h2): 실제 사용 장면 3가지를 각각 한 문단씩 — "아침 출근 전", "퇴근하고 지친 날" 처럼 시간·장소가 보이는 구체적 장면 + 그래서 뭐가 달라지는지 결과. 스펙 숫자 나열 금지.
+3. 장점 섹션(h2): 이 제품군 사용자가 가장 자주 겪는 불편 하나를 먼저 짚고, 이 제품이 어떻게 해소하는지 "전에는 ~했는데 이제는 ~합니다" 식 이전/이후 문장으로 3~4가지. 리뷰 데이터가 있으면 우선 반영.
+4. 이런 분께 추천(h2): 구체적 대상 3~4개 bullet(<ul><li>).
+5. 정직한 단점(h2, 2~3문장): "이런 분들껜 안 맞을 수도 있어요" 식으로 실제 구매 망설임이 생길 만한 현실적 단점 하나. 없는 단점 지어내기·사소한 가짜 단점 금지.
+6. 구매 전 체크할 것(h2): 크기·호환·설치·관리 등 사기 전에 확인할 포인트 3~4개 <ul><li> — 상품명과 카테고리에서 합리적으로 추론 가능한 것만.
+7. 자주 묻는 질문(h2): 실제 검색자가 궁금해할 질문 3개를 <p><strong>Q. …</strong><br>A. …</p> 형식으로. 확인 불가한 정보는 "상품 상세 페이지에서 확인하세요"로 안내.
+8. 결론(h2 없이 마지막 문단들): 새로운 관점 1개 + 지금 결정하면 얻는 것으로 마무리하고, 마지막에 {{CTA_BUTTON}} 토큰 한 줄.
+
+[문장 품질 — 가장 중요]
+- 한 문장은 60자 안팎, 주어와 서술어가 분명하게. 번역투·어색한 조사("~에 의존해 필요한 수보다 더 낫습니다" 같은 뜻 모를 문장) 금지. 쓰고 나서 모든 문장이 소리 내 읽어도 뜻이 통하는지 스스로 점검해라.
+- 같은 말 되풀이, "~할 수 있습니다"의 연속, "다양한/효율적인/최적의" 같은 빈 형용사 금지. 구체적 명사와 동사로 써라.
+- 친근한 존댓말(해요체/합니다체 중 하나로 통일).
 
 [절대 규칙]
-- 반드시 한국어로만. 중국어·일본어·러시아어·기타 외국 문자 절대 금지. 영어 단어도 절대 섞지 마라
-  (실제로 나온 실수 예 — 이런 식으로 단어 하나만 영어/독일어로 새는 것 금지: "klassischen",
-  "repeatedly", "enthusiast", "conscious", "perspective", "cola"(→"콜라"로 쓸 것)). 브랜드
-  고유명사(코카콜라, 펩시 등)만 예외.
-- 최소 1600자 이상 — 짧고 성의 없다는 피드백을 받았으니 각 섹션을 충분히 구체적으로 늘려 써라.
-- {{CTA_BUTTON}}, {{COMPARISON_TABLE}} 토큰 외에는 본문에 링크나 이미지 태그를 절대 넣지 마라(이미지 URL을 직접 지어내지 마라).
-- 마커나 섹션 이름(TITLE, CONTENT 등)을 본문/제목 텍스트 안에 절대 포함하지 마라 — 아래 지정된 구분자 형식 밖에는 어떤 텍스트도 추가하지 마라.
-- 없는 사실(가짜 리뷰, 가짜 가격 비교, 가짜 정가)을 지어내지 마라 — 과장은 표현 수위에서만, 데이터는 항상 정직하게.
-- 출력은 순수 HTML(<p>, <h2>, <ul><li> 등)만. 마크다운, 코드블록, 설명 문구 없이.
-- 태그를 연 것과 같은 종류로 정확히 닫아라 — 특히 <h2>로 연 소제목을 </p>로 닫는 실수(실제로 나온 적 있음) 절대 금지. 모든 태그는 열고 닫는 종류가 반드시 일치해야 한다.
-- 제목(검색 유입이 목적 — 가장 중요): 소비자가 네이버/구글 검색창에 실제로 칠 말로 시작한다.
-  형식: [제품군 + 짧은 제품명(브랜드·모델)] + [검색 의도어: 추천/후기/가격/비교/장단점/사용법 중 1~2개] + [해결하는 문제·대상 한 구절].
-  핵심 검색어(제품군·제품명)는 앞 15자 안에. 20~32자(절대 초과 금지, 이득은 하나만). 감성 문장·은유·질문형 제목 금지(예: "피부는 바싹, 답이 없는 지금" 같은 것 금지).
+- 반드시 한국어로만. 중국어·일본어·러시아어·태국어·영어 등 외국 문자·단어 금지(코카콜라·펩시 같은 고유 브랜드명만 예외).
+- 최소 2800자 이상, 각 섹션을 구체적으로 충분히 써라.
+- {{CTA_BUTTON}}, {{COMPARISON_TABLE}} 토큰 외에는 링크나 이미지 태그를 넣지 마라(이미지 URL 지어내기 금지).
+- 마커나 섹션 이름(TITLE, CONTENT 등)을 본문/제목에 포함하지 마라. 아래 형식 밖에는 어떤 텍스트도 쓰지 마라.
+- 없는 사실(가짜 리뷰, 가짜 가격·정가, 가짜 스펙 수치)을 지어내지 마라 — 과장은 표현 수위에서만, 데이터는 항상 정직하게. 주어지지 않은 숫자는 쓰지 마라.
+- 출력은 순수 HTML(<p>, <h2>, <ul><li>, <strong>)만. 마크다운·코드블록·설명 없이. <h2>를 </p>로 닫는 식으로 태그 종류를 틀리지 마라.
+- 제목(검색 유입이 목적): 소비자가 검색창에 실제로 칠 말로 시작. [제품군 + 짧은 제품명(브랜드·모델)] + [검색 의도어: 추천/후기/가격/비교/장단점/사용법 중 1~2개] + [해결하는 문제·대상 한 구절]. 핵심 검색어는 앞 15자 안에. 20~32자(초과 금지). 감성 문장·은유·질문형 금지.
   좋은 예: "무향 바디로션 추천, 세타필 보습 후기" / "원룸 가습기 추천 샤오미 소음 비교"
-- 반드시 아래 형식으로만 출력, 다른 텍스트 절대 추가하지 마라:
+- 반드시 아래 형식으로만 출력:
 [[[TITLE]]]
 제목 (검색어로 시작, 20~32자)
 [[[CONTENT]]]
 본문 HTML`;
 
-  const aiText = await generateText(prompt, 'groq');
+  // 실측: 고정 'groq' 모델로는 어색한 문장·외국어 혼입이 잦았다 — 설정 모델(기본 claude)을 쓰고 실패하면 기존 폴백 체인이 이어받는다
+  const aiText = await generateText(prompt, aiModel || 'claude');
   let title = stripMarkerArtifacts(getSection(aiText, 'TITLE', ['TITLE', 'CONTENT']) || '');
   let rawContent = getSection(aiText, 'CONTENT', ['TITLE', 'CONTENT']);
 
@@ -251,10 +270,21 @@ ${bannedPhrases.map(p => `"${p}"`).join(', ')}]
     { name: product.productName, price: product.productPrice, image: product.productImage },
     comparisonProducts,
   );
+  // "한눈에 보기" 요약 목록이 먼저 나오므로 그리드는 가격·비교 섹션(두 번째 h2) 뒤에 둔다.
+  // h2가 하나도 없으면(AI 형식 이탈) 글 맨 위가 아니라 첫 문단 뒤에 넣는다 — 맨 위에 두면 요약문(excerpt)이 가격표가 된다.
   if (comparisonHtml) {
-    const firstH2End = content.indexOf('</h2>');
-    if (firstH2End !== -1) content = content.slice(0, firstH2End + 5) + comparisonHtml + content.slice(firstH2End + 5);
-    else content = comparisonHtml + content;
+    const h2Ends = [...content.matchAll(/<\/h2>/g)].map(m => m.index! + 5);
+    const at = h2Ends[1] ?? h2Ends[0];
+    if (at !== undefined) content = content.slice(0, at) + comparisonHtml + content.slice(at);
+    else {
+      const p1 = content.indexOf('</p>');
+      content = p1 !== -1 ? content.slice(0, p1 + 4) + comparisonHtml + content.slice(p1 + 4) : comparisonHtml + content;
+    }
+  } else if (product.productImage) {
+    // 같은 종류 비교 상품이 없으면 그리드를 건너뛰되, 상품 사진은 첫 문단 뒤에 한 장 보여준다
+    const fig = `<p style="text-align:center;margin:20px 0;"><img src="${product.productImage}" alt="${product.productName.slice(0, 40)}" style="max-width:100%;height:auto;border-radius:10px;" /></p>`;
+    const p1 = content.indexOf('</p>');
+    content = p1 !== -1 ? content.slice(0, p1 + 4) + fig + content.slice(p1 + 4) : fig + content;
   }
 
   const ctaButtonHtml = `<p style="text-align:center;margin:28px 0;"><a href="${affiliateUrl}" target="_blank" rel="nofollow sponsored noopener" style="display:inline-block;background:#e11d48;color:#fff;font-weight:700;font-size:17px;padding:14px 34px;border-radius:8px;text-decoration:none;">🛒 최저가로 확인하기</a></p>`;
@@ -269,7 +299,13 @@ ${bannedPhrases.map(p => `"${p}"`).join(', ')}]
   }
   content += `\n<p style="font-size:12px;color:#888;">${DISCLOSURE}</p>`;
 
-  return { title, content };
+  // 목록·검색결과에 보이는 요약문 — 기본 자동 발췌는 본문 앞부분(그리드 가격표 등)을 그대로 잘라 써서 상품 목록처럼 보였다.
+  // 첫 문단의 문장을 120자 안에서 끊어 직접 지정한다.
+  const firstP = (content.match(/<p(?![^>]*style=)[^>]*>([\s\S]*?)<\/p>/) || [])[1] || '';
+  const plain = firstP.replace(/<[^>]+>/g, '').replace(/&#8216;|&#8217;/g, "'").replace(/\s+/g, ' ').trim();
+  const excerpt = plain.length > 120 ? plain.slice(0, 118).replace(/[^\s]*$/, '').trim() + '…' : plain;
+
+  return { title, content, excerpt };
 }
 
 export async function runCoupangAuto(
@@ -478,9 +514,9 @@ ${PRODUCT_HOOK_GUIDE}
       // 실측: qwen3 기본값이 Ollama 무료 모델로 라우팅되면서 "partout", "questi점" 같은
       // 외국어 단어 혼입이 반복 확인됨. Claude 키가 설정돼 있어 기본값을 claude로 올림
       // (config.ai_model로 언제든 재정의 가능 — 기존 SNS 텍스트 생성은 qwen3 그대로 유지).
-      const { title, content } = await buildProductBlogPost(product, wpAffiliateUrl, config.ai_model || 'claude', scraped, comparisonProducts, priceDropNote);
+      const { title, content, excerpt } = await buildProductBlogPost(product, wpAffiliateUrl, config.ai_model || 'claude', scraped, comparisonProducts, priceDropNote);
       const { url, username, appPassword } = await getWpCredentials(config.wp_site_id);
-      wordpressUrl = (await publishToWordPress(url, username, appPassword, title, content, product.productImage || null)).link;
+      wordpressUrl = (await publishToWordPress(url, username, appPassword, title, content, product.productImage || null, 'publish', { excerpt })).link;
       results.push(`wordpress: 발행 완료 (${wordpressUrl})`);
       await markWpPublished(schedule);
     } catch (err) {

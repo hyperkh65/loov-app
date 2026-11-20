@@ -246,7 +246,7 @@ export async function publishSlotFree(wpUrl: string): Promise<boolean> {
   return now - last >= SITE_GAP_MS;
 }
 
-export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish', opts: { bypassSlot?: boolean; categories?: number[] } = {}): Promise<WordPressPublishResult> {
+export async function publishToWordPress(wpUrl: string, username: string, appPassword: string, title: string, content: string, featuredImageUrl: string | null, status: 'publish' | 'draft' = 'publish', opts: { bypassSlot?: boolean; categories?: number[]; excerpt?: string } = {}): Promise<WordPressPublishResult> {
   if (status === 'publish' && !opts.bypassSlot) {
     if (!await publishSlotFree(wpUrl)) throw new Error(`${SLOT_WAIT_ERROR}(${wpUrl})`);
     lastGlobalAt = Date.now();
@@ -293,6 +293,7 @@ export async function publishToWordPress(wpUrl: string, username: string, appPas
 
   const body: Record<string, unknown> = { title, content, status };
   if (featuredMediaId) body.featured_media = featuredMediaId;
+  if (opts.excerpt) body.excerpt = opts.excerpt;
   const safeCategories = opts.categories || (isTwoDays(wpUrl) ? [await pickWpCategory(wpUrl, title, content)] : getSafeCategoryFor(wpUrl));
   if (safeCategories) body.categories = safeCategories;
 
