@@ -243,9 +243,10 @@ ${reviewBlock}
 [[[CONTENT]]]
 본문 HTML`;
 
-  // 실측: 고정 'groq' 모델로는 어색한 문장·외국어 혼입이 잦았다. 이 서버엔 Claude 키가 없고 Gemini가 실제로 동작 중이라(sns-caption 로그)
-  // 'claude'(기본값)면 gemini를 먼저 쓰고, 실패하면 generateText의 기존 폴백 체인(openrouter 등)이 이어받는다.
-  const aiText = await generateText(prompt, aiModel && aiModel !== 'claude' ? aiModel : 'gemini');
+  // 실측: 고정 'groq' 모델로는 어색한 문장·외국어 혼입이 잦았다. 일반 블로그 본문과 같은 무료 스택을 쓴다 —
+  // 'qwen3'(기본)이면 Ollama Cloud → NVIDIA nemotron → OpenRouter 무료 모델 순(lib/auto-blog-ai.ts). 이 서버엔 Claude 키가 없다.
+  // 외국어 혼입은 아래 cleanForeignWords·stripStrayLatinWords(태국어·한자 포함)가 마지막에 걸러낸다.
+  const aiText = await generateText(prompt, aiModel && aiModel !== 'claude' ? aiModel : 'qwen3');
   let title = stripMarkerArtifacts(getSection(aiText, 'TITLE', ['TITLE', 'CONTENT']) || '');
   let rawContent = getSection(aiText, 'CONTENT', ['TITLE', 'CONTENT']);
 
