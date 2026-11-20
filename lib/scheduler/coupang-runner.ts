@@ -243,8 +243,9 @@ ${reviewBlock}
 [[[CONTENT]]]
 본문 HTML`;
 
-  // 실측: 고정 'groq' 모델로는 어색한 문장·외국어 혼입이 잦았다 — 설정 모델(기본 claude)을 쓰고 실패하면 기존 폴백 체인이 이어받는다
-  const aiText = await generateText(prompt, aiModel || 'claude');
+  // 실측: 고정 'groq' 모델로는 어색한 문장·외국어 혼입이 잦았다. 이 서버엔 Claude 키가 없고 Gemini가 실제로 동작 중이라(sns-caption 로그)
+  // 'claude'(기본값)면 gemini를 먼저 쓰고, 실패하면 generateText의 기존 폴백 체인(openrouter 등)이 이어받는다.
+  const aiText = await generateText(prompt, aiModel && aiModel !== 'claude' ? aiModel : 'gemini');
   let title = stripMarkerArtifacts(getSection(aiText, 'TITLE', ['TITLE', 'CONTENT']) || '');
   let rawContent = getSection(aiText, 'CONTENT', ['TITLE', 'CONTENT']);
 
