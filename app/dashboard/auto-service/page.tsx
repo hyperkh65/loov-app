@@ -90,6 +90,8 @@ const STATUS_LABELS: Record<Status, { label: string; color: string }> = {
 
 export default function AutoServicePage() {
   const [tab, setTab] = useState<Tab>('auto');
+  // ?tab=drafts 로 열면 해당 탭부터 보여준다(아이폰 홈 화면 바로가기용)
+  useEffect(() => { const t = new URLSearchParams(location.search).get('tab'); if (t === 'drafts' || t === 'history' || t === 'auto') setTab(t); }, []);
 
   // 자동실행 설정
   const [autoSettings, setAutoSettings] = useState<AutoSettings>({
