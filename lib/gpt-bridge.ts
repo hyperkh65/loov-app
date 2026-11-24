@@ -150,7 +150,7 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 - 그림은 가로 3:2 한 장면, 핵심은 가운데에 둔다(가장자리는 잘릴 수 있다). 세로로 긴 인포그래픽·여러 칸으로 나눈 그림은 만들지 않는다.
 - 스톡 사진(Pixabay/Pexels)은 내용과 상관없는 분위기 사진이라 쓰지 않는다. 직접 그릴 수 없을 때만, 글 내용을 정확히 보여주는 것에 한해 마지막 수단으로 쓴다. 공식 사이트가 배포한 화면/로고는 내용이 맞으면 써도 된다.
 - 저작권: 남의 블로그/커뮤니티 사진은 쓰지 않는다. researchKeyword의 stock_image_candidates는 참고용이며 기본값으로 고르지 않는다.
-- SVG·data URI·코드(파이썬 등)로 그린 이미지는 서버가 받지 못한다. 직접 그린 이미지는 반드시 이미지 생성 도구로 만든 PNG/JPG 파일을 openaiFileIdRefs에 넣는다. 이미지 생성이 실패하면 대표이미지는 소스 이미지로 대신하지 말고 새로 다시 생성해 본다(최소 2회). **이미지 생성 도구 자체가 오류로 실행되지 않는 상태가 2회 연속 이어질 때만** saveDraft에 image_tool_failed=true를 넣고, 소스 이미지(공식 사이트·기사 등 실제 출처)를 대표(featured_image_url)+본문으로 합쳐 3장 이상 담아 저장한다. 저장되면 사용자에게 '이미지 생성 도구 오류로 대표이미지를 소스 이미지로 저장했으니 검수 때 교체하라'고 알린다.
+- SVG·data URI·코드(파이썬 등)로 그린 이미지는 서버가 받지 못한다. 직접 그린 이미지는 반드시 이미지 생성 도구로 만든 PNG/JPG 파일을 openaiFileIdRefs에 넣는다. 이미지 생성이 계속 실패해도 대표이미지는 소스 이미지로 대신하지 말고 한 번 더 새로 생성해 본다.
 - 이미지 오류로 저장이 실패하면 이전에 만든 파일 참조·링크를 재사용하지 않는다(몇 분 뒤 만료됨). 이미지를 새로 생성한 직후 그 결과의 openaiFileIdRefs를 그대로 담아 saveDraft를 다시 호출한다. 경로 문자열(sandbox:/mnt/data/...)이나 파일 이름만 보내지 않는다.
 - 이미지를 쓰기 전에 글 내용과 맞는지 직접 보고 판단한다. 안 맞으면 쓰지 않는다. 직접 그린 이미지는 openaiFileIdRefs로, 소스 이미지는 본문 <img>의 주소로 보낸다.
 - **본문은 독자가 읽는 글이다. 글쓴이·편집자에게 하는 말은 본문에 한 글자도 쓰지 않는다.** 아래는 금지다(저장 시 걸린다).
@@ -203,7 +203,7 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 "이 글 하나만 읽고 다른 탭을 안 열어도 되는가? 상위 글보다 확실히 나은 점이 있는가? 틀린 정보·지어낸 URL은 없는가? 뉴스 기사와 구별되는 글쓴이의 느낌·의견이 있는가?" 넷 중 하나라도 아니면 고쳐서 다시 검사한다.`;
 
 // ── 형태 검사 ────────────────────────────────────────────────────────────
-export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean; fileCount?: number; image_tool_failed?: boolean }
+export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean; fileCount?: number }
 
 export function validateDraft(d: DraftIn) {
   const errors: string[] = [], warnings: string[] = [];
@@ -240,12 +240,7 @@ export function validateDraft(d: DraftIn) {
   else if (!/<th\b/i.test(html)) warnings.push('표에 제목 행(<th>) 권장');
   const fileCount = d.fileCount || 0, placed = imgs.filter(i => /\{\{file:\d+\}\}/.test(i));
   const total = imgs.length + (d.featured_image_url ? 1 : 0) + Math.max(0, fileCount - placed.length);
-  // 이미지 생성 도구 자체가 오류로 못 돌 때(ChatGPT 쪽 장애)만: 소스 이미지 3장 이상이면 초안 저장을 허용하고 경고로 남긴다
-  const toolFailed = !!d.image_tool_failed && !fileCount;
-  if (toolFailed) {
-    if (total < 3) errors.push(`이미지 생성 도구 오류 모드 — 소스 이미지(<img src="https://...">·featured_image_url)로 합계 3장 이상 필요(현재 ${total}장)`);
-    else warnings.push('이미지 생성 도구 오류로 직접 그린 이미지 없이 저장됨 — 검수 때 대표이미지를 직접 그린 것으로 교체 권장');
-  } else if (!fileCount) errors.push('직접 그린 이미지가 최소 1장 필요(대표이미지) — 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 보낼 것. 나머지 이미지는 기사·영상 등 소스에서 가져온 <img src="https://...">로 채워도 됨. (이미지 생성 도구 자체가 2회 연속 오류로 실행되지 않을 때만 image_tool_failed=true로 소스 이미지 3장 이상과 함께 저장)');
+  if (!fileCount) errors.push('직접 그린 이미지가 최소 1장 필요(대표이미지) — 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 보낼 것. 나머지 이미지는 기사·영상 등 소스에서 가져온 <img src="https://...">로 채워도 됨');
   else if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
   else if (total < 3) errors.push(`이미지 ${total}장 — 합계 3장 이상 필요(직접 그린 1장 + 기사·영상 등 소스 이미지로 채워도 됨)`);
   const srcs = imgs.map(i => i.match(/\bsrc=["']([^"']+)/i)?.[1]).filter(Boolean) as string[];
