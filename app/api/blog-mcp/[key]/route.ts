@@ -22,6 +22,7 @@ const draftProps = {
   meta_description: { type: 'string', description: '메타 설명(100~160자)' },
   content_html: { type: 'string', description: '본문 HTML 조각(<h1>/<body> 없이). 표·링크·이미지(합계 3장 이상) 포함. 직접 만든 이미지는 <img src="{{file:2}}">처럼 image_N 순번으로 넣는다(image_1=대표이미지는 본문에 따로 쓰지 않는다). 직접 그린 이미지는 1장(image_1)만 있어도 되고, 나머지는 열어 확인한 기사·영상·공식 사이트의 관련 사진을 <img src="https://…" alt="…">로 넣어 합계 3장을 채워도 된다' },
   featured_image_url: { type: 'string', description: '대표이미지 URL (직접 만든 이미지는 image_1 파일로)' },
+  image_tool_failed: { type: 'boolean', description: '이미지 생성 도구 자체가 오류로 2회 연속 실행되지 않을 때만 true. 이때 직접 그린 이미지 없이도 소스 이미지 3장 이상이면 초안 저장(검수 때 교체)' },
   attachments: { type: 'array', description: '관련 양식/자료 파일(pdf,hwp,docx,xlsx 등). 올려도 되는지 직접 페이지를 열어 판단한 것만', items: { type: 'object', properties: { url: { type: 'string', description: '파일 직접 주소' }, name: { type: 'string' }, source_page_url: { type: 'string', description: '파일이 있던 페이지 주소' }, permission_note: { type: 'string', description: '올려도 되는 근거(10자 이상)' } } } },
   ...fileProps,
 };
