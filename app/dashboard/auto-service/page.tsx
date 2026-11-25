@@ -3,6 +3,7 @@
 import { pickBlogUrl } from '@/lib/blog-url';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DEFAULT_BLOG_PROMPT_TEMPLATE } from '@/lib/auto-blog-prompt';
+import MacDraft from '@/components/auto-service/MacDraft';
 
 function modelEmoji(id: string): string {
   if (id.includes('qwen')) return '🔮';
@@ -2473,6 +2474,8 @@ export default function AutoServicePage() {
                     </div>
                   </label>
                 </div>
+
+                <MacDraft articleId={publishArticle.id} />
 
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setPublishArticle(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">취소</button>
