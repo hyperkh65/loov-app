@@ -211,13 +211,14 @@ async function callOllama(apiKey: string, model: string, prompt: string): Promis
 
 const exhaustedNvidia = new Map<string, number>();
 
-// NVIDIA NIM(build.nvidia.com) 무료 호출 — Ollama와 같은 nemotron-3-super 계열이라 블로그 본문에도 동일 품질로 쓴다.
+// NVIDIA NIM(build.nvidia.com) 무료 호출 — Ollama와 같은 nemotron 계열이라 블로그 본문에도 동일 품질로 쓴다.
+// nemotron-3-super-120b-a12b는 2026-10-03 서비스 종료(410)라 후속 ultra로 교체. 추론 모델이라 2천자 글에 60~80초 걸려 타임아웃 120초.
 async function callNvidia(apiKey: string, prompt: string): Promise<string> {
   const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'nvidia/nemotron-3-super-120b-a12b', messages: [{ role: 'user', content: prompt }], max_tokens: 16000, temperature: 0.7 }),
-    signal: AbortSignal.timeout(90_000),
+    body: JSON.stringify({ model: 'nvidia/nemotron-3-ultra-550b-a55b', messages: [{ role: 'user', content: prompt }], max_tokens: 16000, temperature: 0.7 }),
+    signal: AbortSignal.timeout(120_000),
   });
   if (!res.ok) throw new Error(`NVIDIA ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const choice = (await res.json()).choices?.[0];
