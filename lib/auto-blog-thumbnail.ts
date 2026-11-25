@@ -1,3 +1,4 @@
+import sharp from 'sharp'
 import { uploadToR2 } from './r2-storage'
 
 // /api/gen-thumbnail 호출 → PNG 반환 → R2 업로드
@@ -41,6 +42,14 @@ export async function generateAndUploadThumbnail(
     out = aiOut?.hasBg ? aiOut : (out || await render())
   }
 
-  const filename = `thumbnails/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`
-  return uploadToR2(filename, out.buffer, 'image/png')
+  // PNG(평균 약 1.1MB)는 R2 저장 용량의 주범(월 5~6GB씩 증가) → JPEG q88로 저장(약 1/4~1/6).
+  // WebP는 인스타·스레드 등 SNS 업로드가 받지 못해 JPEG로 통일. 변환 실패 시 기존 PNG로 폴백.
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  try {
+    const jpg = await sharp(out.buffer).flatten({ background: '#ffffff' }).jpeg({ quality: 88, mozjpeg: true }).toBuffer()
+    return await uploadToR2(`thumbnails/${id}.jpg`, jpg, 'image/jpeg')
+  } catch (e) {
+    console.error('[thumbnail] JPEG 변환 실패→PNG 저장:', (e as Error).message)
+    return uploadToR2(`thumbnails/${id}.png`, out.buffer, 'image/png')
+  }
 }
