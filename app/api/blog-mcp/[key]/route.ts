@@ -10,7 +10,8 @@ import { blogMcpKey, GUIDE, RISK_NOTES, needsRiskNotes } from '@/lib/gpt-bridge'
 import { runGptAction } from '@/lib/gpt-actions';
 import { TOP10_GUIDE, validateTop10 } from '@/lib/top10-guide';
 import { addItem as addTop10 } from '@/lib/top10-inbox';
-import { searchNaverImages } from '@/lib/blog-content-generator';
+import { searchNaverImages, searchStockImages } from '@/lib/blog-content-generator';
+import { screenPhotos, ogImages } from '@/lib/photo-screen';
 
 export const maxDuration = 120;
 
@@ -48,7 +49,7 @@ const STOP_NOTE = '사용자에게 조사 결과·표·작업 상태·다음 단
 const IMG_ONLY = /직접 그린 이미지가 최소 1장 필요/;
 const PORTAL_NOTE = `# 이미지 규칙 (LOOV 블로그 작가 2 — 아래 지침의 이미지 규칙보다 우선)
 - 이미지 생성 도구를 쓰지 않는다. 그림을 그리지 않는다.
-- 대표이미지 1장과 본문 사진 2장 이상을 모두 포털(네이버·다음 등)·공식 사이트·기사의 실제 사진으로 쓴다. researchKeyword의 photo_candidates에서 고르면 된다(서버가 블로그·뉴스 사진을 걸러낸 것이라 직접 열어보지 못해도 써도 된다).
+- 대표이미지 1장과 본문 사진 2장 이상을 모두 포털(네이버·다음 등)·공식 사이트·기사의 실제 사진으로 쓴다. researchKeyword의 photo_candidates(서버 AI가 직접 보고 주제 관련·로고/워터마크/글자 없음을 확인한 사진, url과 desc)에서만 고른다. desc를 보고 글 내용에 맞는 자리에 넣는다. 후보가 3장보다 적으면 다른 검색어로 researchKeyword를 한 번 더 호출한다.
 - 사진 아래쪽이나 가운데에 로고·워터마크·출처 글자·방송사 마크가 있는 것은 쓰지 않는다.
 - 대표이미지는 featured_image_url에 넣고 본문 <img>에는 다시 넣지 않는다. 본문 사진은 <img src="https://…" alt="설명">. validateDraft·saveDraft에는 image_mode:"portal"을 꼭 함께 보낸다.
 
@@ -56,7 +57,7 @@ const PORTAL_NOTE = `# 이미지 규칙 (LOOV 블로그 작가 2 — 아래 지�
 function nextStep(name: string, r: { status: number; body: Record<string, unknown> }, portal = false): string {
   const errs = (r.body.errors as string[] | undefined) ?? [];
   if (portal) {
-    if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 바로 제목·메타·본문 HTML(표·출처·FAQ 포함, 순수 텍스트 3,500자 이상)을 완성하고, photo_candidates에서 대표이미지 1장(featured_image_url)과 본문 사진 2장 이상(<img>)을 골라 image_mode:"portal"로 saveDraft를 호출한다. 그림은 그리지 않는다.`;
+    if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 바로 제목·메타·본문 HTML(표·출처·FAQ 포함, 순수 텍스트 3,500자 이상)을 완성하고, photo_candidates(검사를 통과한 사진만 들어 있음)에서 대표이미지 1장(featured_image_url)과 본문 사진 2장 이상(<img>)을 골라(3장보다 적으면 다른 검색어로 researchKeyword를 다시 호출) image_mode:"portal"로 saveDraft를 호출한다. 그림은 그리지 않는다.`;
     if (name === 'validateDraft') return errs.length ? `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐 다시 검사하거나 바로 saveDraft(image_mode:"portal")를 호출한다.` : '지금 할 일: 검사 통과. 말없이 바로 saveDraft(image_mode:"portal")를 같은 내용으로 호출한다.';
     if (name === 'saveDraft') {
       if (r.body.saved) return '지금 할 일: 저장 완료. 이제 사용자에게 article_id·제목·경고를 3줄 이내로 보고하고 끝낸다.';
@@ -68,7 +69,7 @@ function nextStep(name: string, r: { status: number; body: Record<string, unknow
       return `지금 할 일: 사용자에게 오류를 보고하지 말고 이 답변을 끝내지 않는다. ${fix.join(' / ') || 'errors 항목을 고친다'}. 그리고 즉시 saveDraft(image_mode:"portal")를 다시 호출한다(최대 4번). 그림은 그리지 않는다.`;
     }
   }
-  if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, photo_candidates(블로그·뉴스 사진을 걸러낸 네이버 이미지 검색 결과)에서 글과 맞고 로고·워터마크 없는 사진 2장 이상을 골라 <img src="https://…">로 넣고(photo_candidates는 서버가 이미 걸러낸 사진이라 직접 열어보지 못해도 그대로 써도 된다 — 사진 확인이 안 된다는 이유로 멈추지 않는다. 주소가 안 열리면 저장 응답이 알려 주니 그때 다른 후보로 바꾼다), 본문은 순수 텍스트 3,500자 이상으로 충분히 쓰고, 앞 답변에서 그린 대표이미지를 image_1에 담아 saveDraft를 호출한다. 이 답변에서 이미지를 새로 그리지 않는다.`;
+  if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, photo_candidates(블로그·뉴스 사진을 걸러낸 네이버 이미지 검색 결과)에서 글과 맞고 로고·워터마크 없는 사진 2장 이상을 골라 <img src="https://…">로 넣고(photo_candidates는 서버 AI가 직접 보고 주제 관련·로고/워터마크/글자 없음을 확인한 사진(url, desc)이라 그대로 써도 된다. photo_candidates에 없는 사진은 쓰지 않는다), 본문은 순수 텍스트 3,500자 이상으로 충분히 쓰고, 앞 답변에서 그린 대표이미지를 image_1에 담아 saveDraft를 호출한다. 이 답변에서 이미지를 새로 그리지 않는다.`;
   if (name === 'validateDraft') {
     if (!errs.length) return '지금 할 일: 검사 통과. 말없이 바로 saveDraft를 같은 내용으로 호출한다.';
     if (errs.every(e => IMG_ONLY.test(e))) return `지금 할 일: 글 검사는 통과했고 대표이미지 파일만 빠졌다. ${STOP_NOTE} 이 대화에서 이미 그린 대표이미지를 image_1에 담아 바로 saveDraft를 호출한다. 아직 그린 적이 없을 때만 대표이미지를 그린다(그리면 답변이 끝나므로 다음 답변의 첫 동작으로 saveDraft).`;
@@ -141,8 +142,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ key
         }
         const r = await runGptAction(action, body);
         if (name === 'researchKeyword' && r.status < 400 && a.keyword) {
-          const photos = await searchNaverImages(String(a.keyword), 8).catch(() => [] as string[]);
-          (r.body as Record<string, unknown>).photo_candidates = photos;
+          // 네이버 이미지 후보를 AI가 직접 보고 "주제 관련 + 로고·워터마크·글자 합성·화면 캡처 없음"만 남긴다
+          const rb = r.body as Record<string, unknown>;
+          const pages = ([...(rb.naver_news as { link?: string }[] || []), ...(rb.naver_web as { link?: string }[] || [])]).map(x => x.link).filter((x): x is string => !!x);
+          const rel = ((rb.related_keywords as unknown[]) || []).map(x => typeof x === 'string' ? x : (x as { keyword?: string })?.keyword).filter((x): x is string => !!x).slice(0, 2);
+          const [naverImgs, ogs] = await Promise.all([
+            Promise.all([String(a.keyword), ...rel].map(q => searchNaverImages(q, 10).catch(() => [] as string[]))).then(x => x.flat()),
+            ogImages(pages, 14).catch(() => [] as string[]),
+          ]);
+          let photos = await screenPhotos(String(a.keyword), [...new Set([...naverImgs, ...ogs])], 8).catch(() => []);
+          if (photos.length < 4) {   // 포털 사진이 모자라면 무료 사진(Pexels·Pixabay)으로 보충 — 같은 AI 검사를 거친다
+            const stock = await searchStockImages(String(a.keyword), 8).catch(() => [] as string[]);
+            photos = [...photos, ...(await screenPhotos(String(a.keyword), stock.filter(u => !photos.some(p => p.url === u)), 8 - photos.length).catch(() => []))];
+          }
+          rb.photo_candidates = photos;
         }
         const next = nextStep(name, r as { status: number; body: Record<string, unknown> }, a.image_mode === 'portal');
         return text(m.id, JSON.stringify(next ? { 지금_할_일: next, ...(r.body as Record<string, unknown>) } : r.body), r.status >= 400);
