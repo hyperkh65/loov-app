@@ -10,6 +10,7 @@ import { blogMcpKey, GUIDE, RISK_NOTES, needsRiskNotes } from '@/lib/gpt-bridge'
 import { runGptAction } from '@/lib/gpt-actions';
 import { TOP10_GUIDE, validateTop10 } from '@/lib/top10-guide';
 import { addItem as addTop10 } from '@/lib/top10-inbox';
+import { searchNaverImages } from '@/lib/blog-content-generator';
 
 export const maxDuration = 120;
 
@@ -46,7 +47,7 @@ const STOP_NOTE = '사용자에게 조사 결과·표·작업 상태·다음 단
 const IMG_ONLY = /직접 그린 이미지가 최소 1장 필요/;
 function nextStep(name: string, r: { status: number; body: Record<string, unknown> }): string {
   const errs = (r.body.errors as string[] | undefined) ?? [];
-  if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, 로고·워터마크 없는 관련 사진 2장 이상을 <img src="https://…">로 넣고, 앞 답변에서 그린 대표이미지를 image_1에 담아 saveDraft를 호출한다. 이 답변에서 이미지를 새로 그리지 않는다.`;
+  if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, photo_candidates(블로그·뉴스 사진을 걸러낸 네이버 이미지 검색 결과)에서 글과 맞고 로고·워터마크 없는 사진 2장 이상을 골라 <img src="https://…">로 넣고(사진을 못 찾았다는 이유로 멈추지 않는다 — 후보가 부족하면 다른 검색어로 웹 검색해 공식 사이트 사진을 쓴다), 앞 답변에서 그린 대표이미지를 image_1에 담아 saveDraft를 호출한다. 이 답변에서 이미지를 새로 그리지 않는다.`;
   if (name === 'validateDraft') {
     if (!errs.length) return '지금 할 일: 검사 통과. 말없이 바로 saveDraft를 같은 내용으로 호출한다.';
     if (errs.every(e => IMG_ONLY.test(e))) return `지금 할 일: 글 검사는 통과했고 대표이미지 파일만 빠졌다. ${STOP_NOTE} 이 대화에서 이미 그린 대표이미지를 image_1에 담아 바로 saveDraft를 호출한다. 아직 그린 적이 없을 때만 대표이미지를 그린다(그리면 답변이 끝나므로 다음 답변의 첫 동작으로 saveDraft).`;
@@ -55,6 +56,7 @@ function nextStep(name: string, r: { status: number; body: Record<string, unknow
   if (name === 'saveDraft') {
     if (r.body.saved) return '지금 할 일: 저장 완료. 이제 사용자에게 article_id·제목·경고를 3줄 이내로 보고하고 끝낸다.';
     if (errs.some(e => IMG_ONLY.test(e) || /이미지|파일/.test(e))) return `지금 할 일: ${STOP_NOTE} 오류가 가리키는 이미지만 다시 준비한다. 대표이미지 파일 문제면 새로 그리고(답변이 끝남) 다음 답변의 첫 동작으로 saveDraft를 다시 호출한다. 가져온 사진 주소 문제면 다른 사진으로 바꿔 바로 saveDraft를 다시 호출한다.`;
+    if (errs.some(e => /이미지 \d장 — 합계 3장/.test(e))) return `지금 할 일: ${STOP_NOTE} researchKeyword의 photo_candidates에서 사진을 더 골라 <img>로 넣고 바로 saveDraft를 다시 호출한다.`;
     return `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐 바로 saveDraft를 다시 호출한다.`;
   }
   return '';
@@ -116,6 +118,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ key
           body.openaiFileIdRefs = refs;
         }
         const r = await runGptAction(action, body);
+        if (name === 'researchKeyword' && r.status < 400 && a.keyword) {
+          const photos = await searchNaverImages(String(a.keyword), 8).catch(() => [] as string[]);
+          (r.body as Record<string, unknown>).photo_candidates = photos;
+        }
         const next = nextStep(name, r as { status: number; body: Record<string, unknown> });
         return text(m.id, JSON.stringify(next ? { 지금_할_일: next, ...(r.body as Record<string, unknown>) } : r.body), r.status >= 400);
       } catch (e) { return text(m.id, '처리 중 오류: ' + (e as Error).message.slice(0, 200), true); }

@@ -149,7 +149,7 @@ export async function generateAiImage(subject: string): Promise<string | null> {
 }
 
 // 네이버 이미지 검색(관련성 최우선) — 사용자 확정(2026-10-03): 본문 이미지는 예전처럼 네이버에서
-async function searchNaverImages(query: string, count: number): Promise<string[]> {
+export async function searchNaverImages(query: string, count: number): Promise<string[]> {
   const [naverClientId, naverClientSecret] = await Promise.all([getSetting('NAVER_CLIENT_ID'), getSetting('NAVER_CLIENT_SECRET')]);
   if (!naverClientId || !naverClientSecret) return [];
   try {
