@@ -201,7 +201,7 @@ export const GUIDE = `# LOOV 블로그 작성 지침 (네이버·다음 상위�
 "이 글 하나만 읽고 다른 탭을 안 열어도 되는가? 상위 글보다 확실히 나은 점이 있는가? 틀린 정보·지어낸 URL은 없는가? 뉴스 기사와 구별되는 글쓴이의 느낌·의견이 있는가?" 넷 중 하나라도 아니면 고쳐서 다시 검사한다.`;
 
 // ── 형태 검사 ────────────────────────────────────────────────────────────
-export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean; fileCount?: number }
+export interface DraftIn { title?: string; meta_description?: string; content_html?: string; keyword?: string; featured_image_url?: string; hasFileImages?: boolean; fileCount?: number; imageMode?: string }
 
 export function validateDraft(d: DraftIn) {
   const errors: string[] = [], warnings: string[] = [];
@@ -238,7 +238,10 @@ export function validateDraft(d: DraftIn) {
   else if (!/<th\b/i.test(html)) warnings.push('표에 제목 행(<th>) 권장');
   const fileCount = d.fileCount || 0, placed = imgs.filter(i => /\{\{file:\d+\}\}/.test(i));
   const total = imgs.length + (d.featured_image_url ? 1 : 0) + Math.max(0, fileCount - placed.length);
-  if (!fileCount) errors.push('직접 그린 이미지가 최소 1장 필요(대표이미지) — 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 보낼 것. 나머지 이미지는 기사·영상 등 소스에서 가져온 <img src="https://...">로 채워도 됨');
+  if (d.imageMode === 'portal') {   // LOOV 블로그 작가 2: 그림 없이 대표·본문 모두 포털 사진
+    if (!d.featured_image_url) errors.push('대표이미지(featured_image_url)가 필요 — photo_candidates 등에서 고른 로고·워터마크 없는 사진 주소');
+    else if (total < 3) errors.push(`이미지 ${total}장 — 합계 3장 이상 필요(대표 1장 + 본문 사진 2장 이상)`);
+  } else if (!fileCount) errors.push('직접 그린 이미지가 최소 1장 필요(대표이미지) — 이미지 생성 도구로 만든 파일을 openaiFileIdRefs에 담아 보낼 것. 나머지 이미지는 기사·영상 등 소스에서 가져온 <img src="https://...">로 채워도 됨');
   else if (!total) errors.push('대표이미지가 필요 (featured_image_url 또는 생성한 이미지 파일)');
   else if (total < 3) errors.push(`이미지 ${total}장 — 합계 3장 이상 필요(직접 그린 1장 + 기사·영상 등 소스 이미지로 채워도 됨)`);
   const srcs = imgs.map(i => i.match(/\bsrc=["']([^"']+)/i)?.[1]).filter(Boolean) as string[];

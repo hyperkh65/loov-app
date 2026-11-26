@@ -50,7 +50,7 @@ export async function runGptAction(action: string, b: any): Promise<ActionResult
   }
 
   const files: string[] = (b.openaiFileIdRefs || []).map((f: { download_link?: string }) => f.download_link).filter(Boolean);
-  const v = validateDraft({ ...b, hasFileImages: files.length > 0, fileCount: files.length });
+  const v = validateDraft({ ...b, imageMode: b.image_mode, hasFileImages: files.length > 0, fileCount: files.length });
   const refs = Array.isArray(b.openaiFileIdRefs) ? b.openaiFileIdRefs : [];
   console.log(`[gpt-${action}] openaiFileIdRefs=${refs.length} usable=${files.length} keys=${refs[0] ? Object.keys(refs[0]).join(',') : '-'} mime=${refs.map((f: { mime_type?: string }) => f.mime_type || '?').join(',')}`);
   if (!files.length && refs.length) { v.errors.push(`openaiFileIdRefs ${refs.length}개를 받았지만 download_link가 없음(받은 키: ${Object.keys(refs[0]).join(',')})`); v.pass = false; }

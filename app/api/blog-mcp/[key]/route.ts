@@ -24,13 +24,14 @@ const draftProps = {
   content_html: { type: 'string', description: '본문 HTML 조각(<h1>/<body> 없이). 표·링크·이미지(합계 3장 이상) 포함. 직접 만든 이미지는 <img src="{{file:2}}">처럼 image_N 순번으로 넣는다(image_1=대표이미지는 본문에 따로 쓰지 않는다). 직접 그린 이미지는 1장(image_1)만 있어도 되고, 나머지는 열어 확인한 기사·영상·공식 사이트의 관련 사진을 <img src="https://…" alt="…">로 넣어 합계 3장을 채워도 된다' },
   featured_image_url: { type: 'string', description: '대표이미지 URL (직접 만든 이미지는 image_1 파일로)' },
   attachments: { type: 'array', description: '관련 양식/자료 파일(pdf,hwp,docx,xlsx 등). 올려도 되는지 직접 페이지를 열어 판단한 것만', items: { type: 'object', properties: { url: { type: 'string', description: '파일 직접 주소' }, name: { type: 'string' }, source_page_url: { type: 'string', description: '파일이 있던 페이지 주소' }, permission_note: { type: 'string', description: '올려도 되는 근거(10자 이상)' } } } },
+  image_mode: { type: 'string', enum: ['portal'], description: "LOOV 블로그 작가 2 전용: 'portal'이면 그림을 그리지 않고 대표이미지(featured_image_url)와 본문 사진을 모두 포털·공식 사이트 사진으로 쓴다. 기본(생략)은 직접 그린 대표이미지 필수" },
   ...fileProps,
 };
 const FILE_META = { 'openai/fileParams': NAMES };
 
 const TOOLS = [
-  { name: 'getWritingGuide', description: '작성 지침 받기. 키워드를 받으면 웹 검색보다 먼저, 첫 동작으로 반드시 호출한다. 이 플러그인에서는 이미지를 openaiFileIdRefs 대신 image_1(대표), image_2… 파라미터에 순서대로 넣고, 본문의 {{file:N}}은 image_N을 뜻한다.', inputSchema: { type: 'object', properties: { keyword: { type: 'string' } } }, annotations: { readOnlyHint: true, openWorldHint: false } },
-  { name: 'researchKeyword', description: '연관·롱테일 키워드와 월간 검색량·경쟁도, 네이버 상위 글/블로그/뉴스/지식인 주소, 스톡 이미지 후보', inputSchema: { type: 'object', required: ['keyword'], properties: { keyword: { type: 'string' }, image_query_en: { type: 'string', description: '스톡 이미지 후보가 필요할 때 영어 검색어' } } }, annotations: { readOnlyHint: true, openWorldHint: true } },
+  { name: 'getWritingGuide', description: '작성 지침 받기. 키워드를 받으면 웹 검색보다 먼저, 첫 동작으로 반드시 호출한다. 이 플러그인에서는 이미지를 openaiFileIdRefs 대신 image_1(대표), image_2… 파라미터에 순서대로 넣고, 본문의 {{file:N}}은 image_N을 뜻한다.', inputSchema: { type: 'object', properties: { keyword: { type: 'string' }, image_mode: { type: 'string', enum: ['portal'], description: "LOOV 블로그 작가 2는 'portal'" } } }, annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'researchKeyword', description: '연관·롱테일 키워드와 월간 검색량·경쟁도, 네이버 상위 글/블로그/뉴스/지식인 주소, 스톡 이미지 후보', inputSchema: { type: 'object', required: ['keyword'], properties: { keyword: { type: 'string' }, image_query_en: { type: 'string', description: '스톡 이미지 후보가 필요할 때 영어 검색어' }, image_mode: { type: 'string', enum: ['portal'], description: "LOOV 블로그 작가 2는 'portal'" } } }, annotations: { readOnlyHint: true, openWorldHint: true } },
   { name: 'readPage', description: '웹페이지 본문 텍스트와 이미지 주소 읽기(직접 브라우징이 막힐 때 백업)', inputSchema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } }, annotations: { readOnlyHint: true, openWorldHint: true } },
   { name: 'validateDraft', description: '초안의 형태 검사. errors가 비어야 저장 가능. 이미지는 image_1.. 파일로 함께 보낸다.', inputSchema: { type: 'object', required: ['title', 'content_html'], properties: draftProps }, _meta: FILE_META, annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'saveDraft', description: '검사 통과한 글을 초안으로 저장(이미지 재호스팅 포함). article_id를 주면 그 초안을 수정. 이미지 오류로 실패하면 이미지를 새로 생성한 직후 다시 호출한다.', inputSchema: { type: 'object', required: ['keyword', 'title', 'meta_description', 'content_html'], properties: { ...draftProps, article_id: { type: 'string' } } }, _meta: FILE_META, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
@@ -45,8 +46,23 @@ const text = (id: unknown, t: string, isError = false) => ok(id, { content: [{ t
 // 도구 결과마다 붙이는 "지금 할 일" — 모델이 중간 보고로 답변을 끝내지 않고 다음 도구로 이어가게 한다
 const STOP_NOTE = '사용자에게 조사 결과·표·작업 상태·다음 단계 안내를 답변으로 쓰지 않는다(그렇게 끝내면 실패).';
 const IMG_ONLY = /직접 그린 이미지가 최소 1장 필요/;
-function nextStep(name: string, r: { status: number; body: Record<string, unknown> }): string {
+const PORTAL_NOTE = `# 이미지 규칙 (LOOV 블로그 작가 2 — 아래 지침의 이미지 규칙보다 우선)
+- 이미지 생성 도구를 쓰지 않는다. 그림을 그리지 않는다.
+- 대표이미지 1장과 본문 사진 2장 이상을 모두 포털(네이버·다음 등)·공식 사이트·기사의 실제 사진으로 쓴다. researchKeyword의 photo_candidates에서 고르면 된다(서버가 블로그·뉴스 사진을 걸러낸 것이라 직접 열어보지 못해도 써도 된다).
+- 사진 아래쪽이나 가운데에 로고·워터마크·출처 글자·방송사 마크가 있는 것은 쓰지 않는다.
+- 대표이미지는 featured_image_url에 넣고 본문 <img>에는 다시 넣지 않는다. 본문 사진은 <img src="https://…" alt="설명">. validateDraft·saveDraft에는 image_mode:"portal"을 꼭 함께 보낸다.
+
+`;
+function nextStep(name: string, r: { status: number; body: Record<string, unknown> }, portal = false): string {
   const errs = (r.body.errors as string[] | undefined) ?? [];
+  if (portal) {
+    if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 바로 제목·메타·본문 HTML(표·출처·FAQ 포함, 순수 텍스트 3,500자 이상)을 완성하고, photo_candidates에서 대표이미지 1장(featured_image_url)과 본문 사진 2장 이상(<img>)을 골라 image_mode:"portal"로 saveDraft를 호출한다. 그림은 그리지 않는다.`;
+    if (name === 'validateDraft') return errs.length ? `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐 다시 검사하거나 바로 saveDraft(image_mode:"portal")를 호출한다.` : '지금 할 일: 검사 통과. 말없이 바로 saveDraft(image_mode:"portal")를 같은 내용으로 호출한다.';
+    if (name === 'saveDraft') {
+      if (r.body.saved) return '지금 할 일: 저장 완료. 이제 사용자에게 article_id·제목·경고를 3줄 이내로 보고하고 끝낸다.';
+      return `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐(사진 주소 문제면 photo_candidates의 다른 사진으로, 분량 부족이면 본문을 늘려서) 바로 saveDraft(image_mode:"portal")를 다시 호출한다. 그림은 그리지 않는다.`;
+    }
+  }
   if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, photo_candidates(블로그·뉴스 사진을 걸러낸 네이버 이미지 검색 결과)에서 글과 맞고 로고·워터마크 없는 사진 2장 이상을 골라 <img src="https://…">로 넣고(photo_candidates는 서버가 이미 걸러낸 사진이라 직접 열어보지 못해도 그대로 써도 된다 — 사진 확인이 안 된다는 이유로 멈추지 않는다. 주소가 안 열리면 저장 응답이 알려 주니 그때 다른 후보로 바꾼다), 본문은 순수 텍스트 3,500자 이상으로 충분히 쓰고, 앞 답변에서 그린 대표이미지를 image_1에 담아 saveDraft를 호출한다. 이 답변에서 이미지를 새로 그리지 않는다.`;
   if (name === 'validateDraft') {
     if (!errs.length) return '지금 할 일: 검사 통과. 말없이 바로 saveDraft를 같은 내용으로 호출한다.';
@@ -109,7 +125,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ key
           const r = await addTop10(d as Record<string, unknown>);
           return text(m.id, JSON.stringify({ sent: true, id: r.id, duplicate: r.dup, warnings: v.warnings, message: r.dup ? '이미 받은 JSON이에요' : '딸깍으로 전달했어요. 영상이 만들어지면 LOOV 발행 대기에 올라가요.' }));
         }
-        if (name === 'getWritingGuide') return text(m.id, START_NOTE + GUIDE + (needsRiskNotes(String(a.keyword || '')) ? '\n\n' + RISK_NOTES : '') + MAP_NOTE);
+        if (name === 'getWritingGuide') return text(m.id, (a.image_mode === 'portal' ? PORTAL_NOTE : START_NOTE) + GUIDE + (needsRiskNotes(String(a.keyword || '')) ? '\n\n' + RISK_NOTES : '') + MAP_NOTE);
         const action = ({ researchKeyword: 'research', readPage: 'page', validateDraft: 'validate', saveDraft: 'draft' } as Record<string, string>)[name];
         const body: Record<string, unknown> = { ...a };
         if (name === 'validateDraft' || name === 'saveDraft') {
@@ -123,7 +139,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ key
           const photos = await searchNaverImages(String(a.keyword), 8).catch(() => [] as string[]);
           (r.body as Record<string, unknown>).photo_candidates = photos;
         }
-        const next = nextStep(name, r as { status: number; body: Record<string, unknown> });
+        const next = nextStep(name, r as { status: number; body: Record<string, unknown> }, a.image_mode === 'portal');
         return text(m.id, JSON.stringify(next ? { 지금_할_일: next, ...(r.body as Record<string, unknown>) } : r.body), r.status >= 400);
       } catch (e) { return text(m.id, '처리 중 오류: ' + (e as Error).message.slice(0, 200), true); }
     }
