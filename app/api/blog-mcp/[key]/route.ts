@@ -46,10 +46,10 @@ const STOP_NOTE = '사용자에게 조사 결과·표·작업 상태·다음 단
 const IMG_ONLY = /직접 그린 이미지가 최소 1장 필요/;
 function nextStep(name: string, r: { status: number; body: Record<string, unknown> }): string {
   const errs = (r.body.errors as string[] | undefined) ?? [];
-  if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, 로고·워터마크 없는 관련 사진 2장 이상을 <img src="https://…">로 넣고, validateDraft를 호출한다.`;
+  if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, 로고·워터마크 없는 관련 사진 2장 이상을 <img src="https://…">로 넣고, 앞 답변에서 그린 대표이미지를 image_1에 담아 saveDraft를 호출한다. 이 답변에서 이미지를 새로 그리지 않는다.`;
   if (name === 'validateDraft') {
     if (!errs.length) return '지금 할 일: 검사 통과. 말없이 바로 saveDraft를 같은 내용으로 호출한다.';
-    if (errs.every(e => IMG_ONLY.test(e))) return `지금 할 일: 글 검사는 통과했고 대표이미지만 남았다. ${STOP_NOTE} 지금 바로 이 글 내용에 맞는 대표이미지를 이미지 생성 도구로 그린다(이 답변의 마지막 동작). 그림이 나온 뒤 사용자가 무슨 말을 하든 그 그림을 image_1에 담아 곧바로 saveDraft를 호출한다.`;
+    if (errs.every(e => IMG_ONLY.test(e))) return `지금 할 일: 글 검사는 통과했고 대표이미지 파일만 빠졌다. ${STOP_NOTE} 이 대화에서 이미 그린 대표이미지를 image_1에 담아 바로 saveDraft를 호출한다. 아직 그린 적이 없을 때만 대표이미지를 그린다(그리면 답변이 끝나므로 다음 답변의 첫 동작으로 saveDraft).`;
     return `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐 validateDraft를 다시 호출한다. (대표이미지 관련 오류는 마지막에 그림을 그리면 해결된다)`;
   }
   if (name === 'saveDraft') {
@@ -60,10 +60,11 @@ function nextStep(name: string, r: { status: number; body: Record<string, unknow
   return '';
 }
 const START_NOTE = `# 지금부터 할 일 (반드시 이 순서, 중간에 답변으로 끝내지 않는다)
+0. 대표이미지는 앞 답변의 첫 동작으로 이미 그렸어야 한다(이미지 생성은 답변의 첫 동작일 때만 확실히 된다). 아직 안 그렸으면 지금 그리지 말고, 아래를 모두 마친 뒤 저장 단계에서 알린다.
 1. researchKeyword 호출(필요하면 웹 검색·readPage 추가).
-2. 제목·메타·본문 HTML 완성 + 로고·워터마크 없는 관련 사진 2장 이상 <img>로 넣기 → validateDraft.
-3. 대표이미지 오류만 남으면 대표이미지를 그린다(이 답변의 마지막 동작).
-4. 다음 답변(사용자가 무슨 말을 하든)의 첫 동작: 그 그림을 image_1에 담아 saveDraft.
+2. 제목·메타·본문 HTML 완성 + 로고·워터마크 없는 관련 사진 2장 이상 <img>로 넣기.
+3. 그린 대표이미지를 image_1에 담아 saveDraft. errors가 오면 고쳐서 바로 다시 saveDraft.
+4. saved:true가 나오면 3줄 이내로 보고.
 ${STOP_NOTE} 웹 검색 결과를 요약해 보여주는 것은 이 작업이 아니다.
 
 `;
