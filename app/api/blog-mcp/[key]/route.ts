@@ -28,7 +28,7 @@ const draftProps = {
 const FILE_META = { 'openai/fileParams': NAMES };
 
 const TOOLS = [
-  { name: 'getWritingGuide', description: '작성 지침 받기. 글 시작 전에 반드시 호출한다. 이 플러그인에서는 이미지를 openaiFileIdRefs 대신 image_1(대표), image_2… 파라미터에 순서대로 넣고, 본문의 {{file:N}}은 image_N을 뜻한다.', inputSchema: { type: 'object', properties: { keyword: { type: 'string' } } }, annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'getWritingGuide', description: '작성 지침 받기. 키워드를 받으면 웹 검색보다 먼저, 첫 동작으로 반드시 호출한다. 이 플러그인에서는 이미지를 openaiFileIdRefs 대신 image_1(대표), image_2… 파라미터에 순서대로 넣고, 본문의 {{file:N}}은 image_N을 뜻한다.', inputSchema: { type: 'object', properties: { keyword: { type: 'string' } } }, annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'researchKeyword', description: '연관·롱테일 키워드와 월간 검색량·경쟁도, 네이버 상위 글/블로그/뉴스/지식인 주소, 스톡 이미지 후보', inputSchema: { type: 'object', required: ['keyword'], properties: { keyword: { type: 'string' }, image_query_en: { type: 'string', description: '스톡 이미지 후보가 필요할 때 영어 검색어' } } }, annotations: { readOnlyHint: true, openWorldHint: true } },
   { name: 'readPage', description: '웹페이지 본문 텍스트와 이미지 주소 읽기(직접 브라우징이 막힐 때 백업)', inputSchema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } }, annotations: { readOnlyHint: true, openWorldHint: true } },
   { name: 'validateDraft', description: '초안의 형태 검사. errors가 비어야 저장 가능. 이미지는 image_1.. 파일로 함께 보낸다.', inputSchema: { type: 'object', required: ['title', 'content_html'], properties: draftProps }, _meta: FILE_META, annotations: { readOnlyHint: true, openWorldHint: false } },
@@ -41,6 +41,32 @@ const ok =  (id: unknown, result: unknown) => NextResponse.json({ jsonrpc: '2.0'
 const err = (id: unknown, code: number, message: string) => NextResponse.json({ jsonrpc: '2.0', id, error: { code, message } });
 const keyOk = (k: string) => { const w = blogMcpKey(); return !!w && k.length === w.length && timingSafeEqual(Buffer.from(k), Buffer.from(w)); };
 const text = (id: unknown, t: string, isError = false) => ok(id, { content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
+// 도구 결과마다 붙이는 "지금 할 일" — 모델이 중간 보고로 답변을 끝내지 않고 다음 도구로 이어가게 한다
+const STOP_NOTE = '사용자에게 조사 결과·표·작업 상태·다음 단계 안내를 답변으로 쓰지 않는다(그렇게 끝내면 실패).';
+const IMG_ONLY = /직접 그린 이미지가 최소 1장 필요/;
+function nextStep(name: string, r: { status: number; body: Record<string, unknown> }): string {
+  const errs = (r.body.errors as string[] | undefined) ?? [];
+  if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, 로고·워터마크 없는 관련 사진 2장 이상을 <img src="https://…">로 넣고, validateDraft를 호출한다.`;
+  if (name === 'validateDraft') {
+    if (!errs.length) return '지금 할 일: 검사 통과. 말없이 바로 saveDraft를 같은 내용으로 호출한다.';
+    if (errs.every(e => IMG_ONLY.test(e))) return `지금 할 일: 글 검사는 통과했고 대표이미지만 남았다. ${STOP_NOTE} 지금 바로 이 글 내용에 맞는 대표이미지를 이미지 생성 도구로 그린다(이 답변의 마지막 동작). 그림이 나온 뒤 사용자가 무슨 말을 하든 그 그림을 image_1에 담아 곧바로 saveDraft를 호출한다.`;
+    return `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐 validateDraft를 다시 호출한다. (대표이미지 관련 오류는 마지막에 그림을 그리면 해결된다)`;
+  }
+  if (name === 'saveDraft') {
+    if (r.body.saved) return '지금 할 일: 저장 완료. 이제 사용자에게 article_id·제목·경고를 3줄 이내로 보고하고 끝낸다.';
+    if (errs.some(e => IMG_ONLY.test(e) || /이미지|파일/.test(e))) return `지금 할 일: ${STOP_NOTE} 오류가 가리키는 이미지만 다시 준비한다. 대표이미지 파일 문제면 새로 그리고(답변이 끝남) 다음 답변의 첫 동작으로 saveDraft를 다시 호출한다. 가져온 사진 주소 문제면 다른 사진으로 바꿔 바로 saveDraft를 다시 호출한다.`;
+    return `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐 바로 saveDraft를 다시 호출한다.`;
+  }
+  return '';
+}
+const START_NOTE = `# 지금부터 할 일 (반드시 이 순서, 중간에 답변으로 끝내지 않는다)
+1. researchKeyword 호출(필요하면 웹 검색·readPage 추가).
+2. 제목·메타·본문 HTML 완성 + 로고·워터마크 없는 관련 사진 2장 이상 <img>로 넣기 → validateDraft.
+3. 대표이미지 오류만 남으면 대표이미지를 그린다(이 답변의 마지막 동작).
+4. 다음 답변(사용자가 무슨 말을 하든)의 첫 동작: 그 그림을 image_1에 담아 saveDraft.
+${STOP_NOTE} 웹 검색 결과를 요약해 보여주는 것은 이 작업이 아니다.
+
+`;
 const MAP_NOTE = '\n\n## 이 플러그인에서의 이미지 규칙\n- 이미지 파일은 openaiFileIdRefs 대신 도구의 image_1(대표), image_2, image_3… 파라미터에 순서대로 넣는다(빈 번호 없이 이어서).\n- 본문 <img src="{{file:N}}">의 N은 image_N이다.';
 
 // 파일 파라미터 → 기존 로직이 쓰는 openaiFileIdRefs로 변환. 비거나 문자열로 온 것은 따로 모은다.
@@ -79,17 +105,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ key
           const r = await addTop10(d as Record<string, unknown>);
           return text(m.id, JSON.stringify({ sent: true, id: r.id, duplicate: r.dup, warnings: v.warnings, message: r.dup ? '이미 받은 JSON이에요' : '딸깍으로 전달했어요. 영상이 만들어지면 LOOV 발행 대기에 올라가요.' }));
         }
-        if (name === 'getWritingGuide') return text(m.id, GUIDE + (needsRiskNotes(String(a.keyword || '')) ? '\n\n' + RISK_NOTES : '') + MAP_NOTE);
+        if (name === 'getWritingGuide') return text(m.id, START_NOTE + GUIDE + (needsRiskNotes(String(a.keyword || '')) ? '\n\n' + RISK_NOTES : '') + MAP_NOTE);
         const action = ({ researchKeyword: 'research', readPage: 'page', validateDraft: 'validate', saveDraft: 'draft' } as Record<string, string>)[name];
         const body: Record<string, unknown> = { ...a };
         if (name === 'validateDraft' || name === 'saveDraft') {
           const { refs, bad } = toRefs(a);
           for (const n of NAMES) delete body[n];
-          if (bad.length) return text(m.id, JSON.stringify({ saved: false, errors: [`이미지 ${bad.join(', ')}을(를) 파일로 받지 못했어요(빈 값이거나 경로 문자열로 전달됨). 이전 파일은 쓰지 말고, 이미지를 새로 생성한 직후 그 결과를 image_N 파일 파라미터에 담아 다시 호출하세요.`] }), true);
+          if (bad.length) return text(m.id, JSON.stringify({ 지금_할_일: `${STOP_NOTE} 그 이미지를 새로 그리고(답변이 끝남) 다음 답변의 첫 동작으로 그 결과를 image_N에 담아 다시 호출한다.`, saved: false, errors: [`이미지 ${bad.join(', ')}을(를) 파일로 받지 못했어요(빈 값이거나 경로 문자열로 전달됨). 이전 파일은 쓰지 말고, 이미지를 새로 생성한 직후 그 결과를 image_N 파일 파라미터에 담아 다시 호출하세요.`] }), true);
           body.openaiFileIdRefs = refs;
         }
         const r = await runGptAction(action, body);
-        return text(m.id, JSON.stringify(r.body), r.status >= 400);
+        const next = nextStep(name, r as { status: number; body: Record<string, unknown> });
+        return text(m.id, JSON.stringify(next ? { 지금_할_일: next, ...(r.body as Record<string, unknown>) } : r.body), r.status >= 400);
       } catch (e) { return text(m.id, '처리 중 오류: ' + (e as Error).message.slice(0, 200), true); }
     }
     default: return err(m.id, -32601, 'method not found');
