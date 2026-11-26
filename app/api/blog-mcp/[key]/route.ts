@@ -60,7 +60,12 @@ function nextStep(name: string, r: { status: number; body: Record<string, unknow
     if (name === 'validateDraft') return errs.length ? `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐 다시 검사하거나 바로 saveDraft(image_mode:"portal")를 호출한다.` : '지금 할 일: 검사 통과. 말없이 바로 saveDraft(image_mode:"portal")를 같은 내용으로 호출한다.';
     if (name === 'saveDraft') {
       if (r.body.saved) return '지금 할 일: 저장 완료. 이제 사용자에게 article_id·제목·경고를 3줄 이내로 보고하고 끝낸다.';
-      return `지금 할 일: ${STOP_NOTE} errors 항목만 고쳐(사진 주소 문제면 photo_candidates의 다른 사진으로, 분량 부족이면 본문을 늘려서) 바로 saveDraft(image_mode:"portal")를 다시 호출한다. 그림은 그리지 않는다.`;
+      const fix: string[] = [];
+      if (errs.some(e => /메인 키워드/.test(e))) fix.push('keyword를 검색량이 가장 큰 핵심어 2~3단어(예: "수도계량기 동파")로 줄이고 그 단어가 모두 제목에 들어가게 한다');
+      if (errs.some(e => /제목/.test(e))) fix.push('제목을 24~40자, "방법·정리·안내"로 끝나지 않게, 본문에 있는 숫자만 쓰게 고친다');
+      if (errs.some(e => /본문 \d+자|H2|표/.test(e))) fix.push('본문을 늘리고 H2·표를 보강한다');
+      if (errs.some(e => /이미지|사진|대표/.test(e))) fix.push('photo_candidates의 다른 사진으로 바꾼다');
+      return `지금 할 일: 사용자에게 오류를 보고하지 말고 이 답변을 끝내지 않는다. ${fix.join(' / ') || 'errors 항목을 고친다'}. 그리고 즉시 saveDraft(image_mode:"portal")를 다시 호출한다(최대 4번). 그림은 그리지 않는다.`;
     }
   }
   if (name === 'researchKeyword' || name === 'readPage') return `지금 할 일: ${STOP_NOTE} 필요한 자료를 더 확인한 뒤 바로 제목·메타·본문 HTML(표·출처·FAQ 포함)을 완성하고, photo_candidates(블로그·뉴스 사진을 걸러낸 네이버 이미지 검색 결과)에서 글과 맞고 로고·워터마크 없는 사진 2장 이상을 골라 <img src="https://…">로 넣고(photo_candidates는 서버가 이미 걸러낸 사진이라 직접 열어보지 못해도 그대로 써도 된다 — 사진 확인이 안 된다는 이유로 멈추지 않는다. 주소가 안 열리면 저장 응답이 알려 주니 그때 다른 후보로 바꾼다), 본문은 순수 텍스트 3,500자 이상으로 충분히 쓰고, 앞 답변에서 그린 대표이미지를 image_1에 담아 saveDraft를 호출한다. 이 답변에서 이미지를 새로 그리지 않는다.`;
