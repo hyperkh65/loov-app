@@ -308,6 +308,10 @@ export function normalizeHtml(html: string): string {
     .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi, '')
     .replace(/javascript:/gi, '')
     .replace(/<h2(?![^>]*\bstyle=)([^>]*)>/gi, '<h2$1 style="font-size:22px;color:#1a73e8;margin:34px 0 12px;font-weight:bold;" data-ke-size="size26">')
+    // 목록: 화면 기본 스타일이 번호·점을 지워도 보이게 목록 자체에 스타일을 넣는다. 순서 목록(절차)은 연한 상자로 묶어 단계가 한눈에 보이게
+    .replace(/<ol(?![^>]*\bstyle=)([^>]*)>/gi, '<ol$1 style="list-style:decimal;margin:16px 0;padding:14px 16px 14px 2.4em;background:#f5f8ff;border-left:4px solid #1a73e8;border-radius:8px;">')
+    .replace(/<ul(?![^>]*\bstyle=)([^>]*)>/gi, '<ul$1 style="list-style:disc;margin:14px 0;padding-left:1.6em;">')
+    .replace(/<li(?![^>]*\bstyle=)([^>]*)>/gi, '<li$1 style="margin:0 0 8px;line-height:1.7;padding-left:4px;">')
     .replace(/<table(?![^>]*\bstyle=)([^>]*)>([\s\S]*?)<\/table>/gi, '<div style="overflow-x:auto;"><table$1 style="width:100%;border-collapse:collapse;margin:18px 0;font-size:15px;">$2</table></div>')
     .replace(/<th(?![^>]*\bstyle=)([^>]*)>/gi, `<th$1 style="${th}">`)
     .replace(/<td(?![^>]*\bstyle=)([^>]*)>/gi, `<td$1 style="${td}">`)
