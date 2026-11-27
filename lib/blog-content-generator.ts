@@ -6,7 +6,8 @@ import { generateText } from '@/lib/auto-blog-ai';
 import { FRIENDLY_TONE_RULES } from '@/lib/auto-blog-prompt';
 import { generateAndUploadThumbnail } from '@/lib/auto-blog-thumbnail';
 import { uploadToR2 } from '@/lib/r2-storage';
-import sharp from 'sharp';
+import { compressForWeb } from '@/lib/image-compress';
+export { compressForWeb };
 import { getSetting } from '@/lib/get-setting';
 import { cleanWatermarks, ANTI_WATERMARK_PROMPT } from '@/lib/ai-watermark';
 import { sanitizeInvisible, assertPublishableHtml, findHtmlProblem, findForeignWords, stripForeignSentences } from '@/lib/html-gate';
@@ -228,18 +229,6 @@ export async function searchInlineImages(query: string, count = 3, opts: { aiThu
 // 외부 이미지를 우리 R2에 재호스팅 — 핫링크는 FIFU/wp.com 프록시·원본 서버 차단으로 깨짐. 실패한 건 버림.
 const IMG_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 const sniffImage = (b: Buffer): string => (b[0] === 0xff && b[1] === 0xd8 ? 'image/jpeg' : b.subarray(1, 4).toString() === 'PNG' ? 'image/png' : b.subarray(0, 3).toString() === 'GIF' ? 'image/gif' : b.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : '');
-/** 글에 넣을 사진을 웹용으로 줄인다 — 원본 PNG가 장당 2MB라 첫 방문자가 사진마다 1~2초 기다렸다(2026-11-27 측정).
- *  300KB 넘는 사진은 가로 최대 1600px·JPEG(품질 82)로 바꾸고, 더 작아질 때만 바꾼 것을 쓴다. GIF·작은 그림은 그대로. */
-export async function compressForWeb(buf: Buffer, type: string): Promise<{ buf: Buffer; type: string; ext: string }> {
-  const ext = IMG_EXT[type];
-  if (type === 'image/gif' || buf.length <= 300_000) return { buf, type, ext };
-  try {
-    const out = await sharp(buf, { failOn: 'none' }).rotate().resize({ width: 1600, withoutEnlargement: true })
-      .flatten({ background: '#ffffff' }).jpeg({ quality: 82, mozjpeg: true }).toBuffer();
-    return out.length < buf.length ? { buf: out, type: 'image/jpeg', ext: 'jpg' } : { buf, type, ext };
-  } catch { return { buf, type, ext }; }
-}
-
 export async function rehostImages(urls: string[], errs?: string[]): Promise<string[]> {
   const note = (m: string) => { console.error(m); errs?.push(m.replace('[rehost] ', '')); };
   const out = await Promise.all(urls.map(async (u) => {
@@ -252,7 +241,7 @@ export async function rehostImages(urls: string[], errs?: string[]): Promise<str
         const ext = IMG_EXT[type];
         if (!ext || buf.length < 5_000 || buf.length > 15_000_000) { note(`[rehost] 거부 type=${type || '?'} size=${buf.length} ${u.slice(0, 60)}`); return null; }
         const w = await compressForWeb(buf, type);
-        return await uploadToR2(`inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${w.ext}`, w.buf, w.type);
+        return await uploadToR2(`inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${w.ext}`, w.buf, w.type, { raw: true }); // 위에서 이미 줄였으니 두 번 줄이지 않는다
       } catch (e) { note(`[rehost] 시도${attempt + 1} 실패: ${(e as Error).message} ${u.slice(0, 60)}`); }
     }
     return null;
