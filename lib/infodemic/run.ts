@@ -126,10 +126,9 @@ function toHtml(d: Draft, cardUrl: string, srcs: Source[], today: string): strin
 }
 
 /** 참고 블로그가 부족하거나 검증에 계속 실패할 때를 위한 보충 후보: 오늘의 방송·작품·일정 기사 제목 */
-const PRACTICAL_QUERIES = ['지원금 신청 방법', '환급 신청 기간', '바우처 신청 대상', '요금 인상 시행', '제도 변경 시행 날짜', '연말정산 달라지는', '청약 일정 신청 자격', '보험료 변경'];
-async function fallbackCandidates(used: Set<string>, queries = ['드라마 방영 정보', '신작 영화 개봉', '예능 프로그램 출연진', '가수 컴백 일정', '오늘 방송 편성']): Promise<Cand[]> {
+async function fallbackCandidates(used: Set<string>): Promise<Cand[]> {
   const out: Cand[] = [], seen = new Set<string>();
-  for (const q of queries) {
+  for (const q of ['드라마 방영 정보', '신작 영화 개봉', '예능 프로그램 출연진', '가수 컴백 일정', '오늘 방송 편성']) {
     try {
       const xml = await fetchText(`https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&setmkt=ko-KR&cc=kr`);
       for (const b of xml.match(/<item>[\s\S]*?<\/item>/g) || []) {
@@ -141,9 +140,6 @@ async function fallbackCandidates(used: Set<string>, queries = ['드라마 방�
   }
   return out;
 }
-
-// 미라쿨 주제 기준(2026-11-27 노출 점검 후): 언론사가 1~10위를 차지하는 단순 뉴스 대신, 독자가 검색해서 신청·계산·변경 같은 행동을 하는 주제만
-const PRACTICAL_PREF = '선호: 독자가 직접 검색해서 행동하는 실용 주제 — 지원금·환급·바우처·세금·연금·대출·보험·청약·요금의 신청 조건과 방법, 제도·요금 변경으로 독자가 할 일과 날짜, 생활 절차(신청·해지·변경·조회 방법), 신제품·서비스의 가격·사양 비교. 제외: 연예인 결혼·열애·사생활, 시상식, 스포츠 경기 결과, 정치인 동정·인사·청문회, 재판·수사, 단순 사건사고, 기업 실적 단신, 루머. 실용 주제가 하나도 없으면 picks를 빈 배열로 둔다.';
 
 const dayKst = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 
@@ -168,13 +164,12 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
   const saveCfg = async (patch: Partial<InfodemicConfig>) => { await createAdminClient().from('bossai_schedules').update({ config: { ...(schedule.config as object), tried, ...patch } }).eq('id', schedule.id); };
 
   const notes: string[] = [];
-  const practical = /miracool\.co\.kr/.test(wp.url);   // 미라쿨: 뉴스 짜깁기 대신 검색해서 행동하는 실용 주제만(2026-11-27)
   const t0 = Date.now();
   const pools: Array<{ name: string; list: Cand[]; withBase: boolean }> = cfg.radar
-    ? [{ name: '이슈 레이더', list: await radarCandidates(used), withBase: false }, ...(practical ? [{ name: '생활 실용(뉴스)', list: await fallbackCandidates(used, PRACTICAL_QUERIES), withBase: false }] : [])]
+    ? [{ name: '이슈 레이더', list: await radarCandidates(used), withBase: false }]
     : [
       { name: '인포데믹', list: await candidates(used), withBase: true },
-      { name: '보충(뉴스)', list: await fallbackCandidates(used, practical ? PRACTICAL_QUERIES : undefined), withBase: false },
+      { name: '보충(뉴스)', list: await fallbackCandidates(used), withBase: false },
     ];
 
   for (const pool of pools) {
@@ -184,7 +179,7 @@ export async function runInfodemic(schedule: Schedule): Promise<{ summary: strin
       let picks: Array<{ i: number; entity: string; query: string }> = [];
       try {
         picks = (await askJson<{ picks: Array<{ i: number; entity: string; query: string }> }>(
-          `당신은 정보 블로그 편집자입니다. 아래는 ${pool.name} 후보 제목입니다. 이 중 "사람들이 검색할 만하고, 공개된 기사로 사실 확인이 되는" 주제를 최대 3개 고르세요.\n${practical ? PRACTICAL_PREF : cfg.radar ? '선호(광고 단가·검색량이 높은 순): 경제·투자 해설(주가·실적·공모주·정책), 부동산·연금·세금·지원금·제도 안내, 신제품·자동차, 건강 정보, 정치(정책·국회 의결·선거 일정·공식 발표), 사건(수사·재판 결과 등 확인된 사실), 연예(공식 발표·방송·작품·컴백·결혼 발표), 스포츠 결과. 제외: 루머·추측·익명 제보, 성범죄, 자살, 아동학대, 일반인(피해자·피의자·유족) 신상.' : '선호: 방송·작품 정보(방영일, 출연, 줄거리 정리), 공개된 프로필 정보(데뷔, 작품, 소속 등), 일정·결과 정리. 제외: 사생활 폭로, 의혹, 사건사고, 루머, 일반인 사정.'}\n각 항목: i=번호, entity=핵심 대상 이름(프로그램/작품/인물 1개), query=독자가 검색할 만한 문장(예: "OO 출연진 정보").\n${top.map((c, i) => `${i}. ${c.title}`).join('\n')}\nJSON만: {"picks":[{"i":0,"entity":"","query":""}]}`,
+          `당신은 정보 블로그 편집자입니다. 아래는 ${pool.name} 후보 제목입니다. 이 중 "사람들이 검색할 만하고, 공개된 기사로 사실 확인이 되는" 주제를 최대 3개 고르세요.\n${cfg.radar ? '선호(광고 단가·검색량이 높은 순): 경제·투자 해설(주가·실적·공모주·정책), 부동산·연금·세금·지원금·제도 안내, 신제품·자동차, 건강 정보, 정치(정책·국회 의결·선거 일정·공식 발표), 사건(수사·재판 결과 등 확인된 사실), 연예(공식 발표·방송·작품·컴백·결혼 발표), 스포츠 결과. 제외: 루머·추측·익명 제보, 성범죄, 자살, 아동학대, 일반인(피해자·피의자·유족) 신상.' : '선호: 방송·작품 정보(방영일, 출연, 줄거리 정리), 공개된 프로필 정보(데뷔, 작품, 소속 등), 일정·결과 정리. 제외: 사생활 폭로, 의혹, 사건사고, 루머, 일반인 사정.'}\n각 항목: i=번호, entity=핵심 대상 이름(프로그램/작품/인물 1개), query=독자가 검색할 만한 문장(예: "OO 출연진 정보").\n${top.map((c, i) => `${i}. ${c.title}`).join('\n')}\nJSON만: {"picks":[{"i":0,"entity":"","query":""}]}`,
           v => (Array.isArray(v.picks) && v.picks.length ? null : 'picks 없음'),
           '주제 고르기',
         )).picks.slice(0, 3);

@@ -414,8 +414,7 @@ export async function POST(req: NextRequest) {
         }
 
         // 기본 카테고리 이름 (대시보드 설정에서 추후 변경 가능)
-        // 미라쿨은 'Aboda' 분류를 '생활정보'로 바꿨다(2026-11-27) — 다른 사이트 이름이 분류에 보이지 않게
-        const defaultCategory = (url: string) => (/miracool\.co\.kr/.test(url) ? '생활정보' : 'Aboda');
+        const DEFAULT_CATEGORY = 'Aboda';
 
         for (const site of sites) {
           const auth = 'Basic ' + Buffer.from(`${site.wp_username}:${site.app_password}`).toString('base64');
@@ -447,7 +446,7 @@ export async function POST(req: NextRequest) {
             // 3. 카테고리 "Aboda" 조회 또는 생성
             const catId = isTwoDays(site.site_url)
               ? (Number(wp_category_id) || await pickWpCategory(site.site_url, pubTitle, pubContent))
-              : await resolveTermId(site.site_url, auth, defaultCategory(site.site_url), 'categories');
+              : await resolveTermId(site.site_url, auth, DEFAULT_CATEGORY, 'categories');
 
             if (isTwoDays(site.site_url) && catId) wpContent += await relatedPostsBox(site.site_url, catId);
 
